@@ -5,6 +5,7 @@ const withBundleAnalyzer = require("@next/bundle-analyzer")({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  compress: true,
   images: {
     remotePatterns: [
       {
@@ -12,6 +13,13 @@ const nextConfig = {
         hostname: "img.youtube.com",
       },
     ],
+  },
+  compiler: {
+    removeConsole: process.env.NODE_ENV === "production",
+  },
+  serverExternalPackages: ["next-mdx-remote"],
+  experimental: {
+    optimizePackageImports: ["antd", "lucide-react"],
   },
   async rewrites() {
     return [

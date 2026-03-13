@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useTransition, useState } from "react";
+import React, { useTransition, useState, useRef } from "react";
 import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -14,18 +14,47 @@ import { metaData } from "../../config";
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const [isPending, startTransition] = useTransition();
   const pathname = usePathname();
-  const { setNavigating } = useNavigation();
+  const { setNavigating, isNavigating } = useNavigation();
   const isActive = pathname === href || pathname.startsWith(href + "/");
+  const clickRef = useRef<boolean>(false);
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    // Only trigger navigation state if navigating to a different page
-    if (pathname !== href && !pathname.startsWith(href + "/")) {
+    // Prevent navigation if already on the exact target page
+    if (pathname === href) {
+      e.preventDefault();
+      return;
+    }
+    
+    // Block all navigation if any navigation is in progress
+    if (isNavigating || isPending) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    
+    // Prevent multiple rapid clicks on the same link
+    if (clickRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    
+    // Trigger navigation state if navigating to a different page
+    if (pathname !== href) {
+      clickRef.current = true;
       setNavigating(true);
       startTransition(() => {
         // Navigation will happen automatically via Next.js Link
       });
+      
+      // Reset click flag after navigation completes
+      setTimeout(() => {
+        clickRef.current = false;
+      }, 1500);
     }
   };
+
+  const isDisabled = isNavigating || isPending;
 
   return (
     <Link
@@ -37,9 +66,16 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
         alignItems: "center",
         gap: 8,
         textDecoration: "none",
+        opacity: isDisabled && !isActive ? 0.5 : 1,
+        pointerEvents: isDisabled && !isActive ? "none" : "auto",
+        cursor: isDisabled && !isActive ? "not-allowed" : "pointer",
+        transition: "opacity 0.2s ease",
+        padding: "8px 12px",
+        margin: "-8px -12px",
       }}
+      aria-disabled={isDisabled && !isActive}
     >
-      {isPending && <Spin size="small" />}
+      {(isPending || (isNavigating && !isActive)) && <Spin size="small" />}
       {children}
     </Link>
   );
@@ -100,7 +136,14 @@ export function Navbar() {
     return () => observer.disconnect();
   }, [theme, systemTheme]);
 
-  const handleLogoClick = () => {
+  const { isNavigating } = useNavigation();
+
+  const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (isNavigating) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (pathname !== "/") {
       setNavigating(true);
     }

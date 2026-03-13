@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Copy, Check } from "lucide-react";
 
 interface PerformanceMetrics {
   loadTime: number;
@@ -17,6 +18,7 @@ interface PerformanceMetrics {
 export function PerformanceMonitor() {
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
   const [showMonitor, setShowMonitor] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     // Only show in development
@@ -84,6 +86,32 @@ export function PerformanceMonitor() {
     };
   }, []);
 
+  const copyMetrics = async () => {
+    if (!metrics) return;
+
+    const metricsText = `Performance Metrics
+==================
+Load Time: ${metrics.loadTime}ms
+DOM Content Loaded: ${metrics.domContentLoaded}ms
+First Paint: ${metrics.firstPaint}ms
+First Contentful Paint: ${metrics.firstContentfulPaint}ms
+Time to Interactive: ${metrics.timeToInteractive}ms
+
+Resource Sizes:
+- Total: ${metrics.totalSize} KB
+- JS: ${metrics.jsSize} KB
+- CSS: ${metrics.cssSize} KB
+- Images: ${metrics.imageSize} KB`;
+
+    try {
+      await navigator.clipboard.writeText(metricsText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy metrics:", err);
+    }
+  };
+
   if (!showMonitor || !metrics) return null;
 
   return (
@@ -103,8 +131,34 @@ export function PerformanceMonitor() {
         boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
       }}
     >
-      <div style={{ marginBottom: "8px", fontWeight: "bold", borderBottom: "1px solid #444", paddingBottom: "8px" }}>
-        Performance Metrics (Press Ctrl+Shift+P to toggle)
+      <div style={{ marginBottom: "8px", fontWeight: "bold", borderBottom: "1px solid #444", paddingBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>Performance Metrics (Ctrl+Shift+P)</span>
+        <button
+          onClick={copyMetrics}
+          style={{
+            background: "transparent",
+            border: "1px solid #666",
+            color: "#fff",
+            padding: "4px 8px",
+            borderRadius: "4px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            fontSize: "11px",
+          }}
+          title="Copy metrics to clipboard"
+        >
+          {copied ? (
+            <>
+              <Check size={12} /> Copied!
+            </>
+          ) : (
+            <>
+              <Copy size={12} /> Copy
+            </>
+          )}
+        </button>
       </div>
       <div style={{ display: "grid", gap: "4px" }}>
         <div>

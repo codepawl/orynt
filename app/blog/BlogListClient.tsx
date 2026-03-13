@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Segmented } from "antd";
 import { LayoutGrid, List } from "lucide-react";
 import { ContentCard } from "../components/ui/ContentCard";
@@ -57,18 +56,9 @@ function formatDate(date: string, includeRelative = false) {
 }
 
 export function BlogListClient({ posts }: BlogListClientProps) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const [view, setView] = useState<"grid" | "list">("grid");
   const [isSwitchingView, setIsSwitchingView] = useState(false);
   const switchTimerRef = useRef<number | null>(null);
-
-  const handleClick = (href: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    startTransition(() => {
-      router.push(href);
-    });
-  };
 
   const containerClassName = useMemo(() => {
     return view === "grid"
@@ -117,10 +107,6 @@ export function BlogListClient({ posts }: BlogListClientProps) {
             date={formatDate(post.metadata.publishedAt, false)}
             href={`/blog/${post.slug}`}
             image={post.metadata.image}
-            onClick={(e) => {
-              e.preventDefault();
-              handleClick(`/blog/${post.slug}`, e);
-            }}
           />
         ))}
       </div>

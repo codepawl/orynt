@@ -7,6 +7,13 @@ export interface Project {
 
 export const projects: Project[] = [
   {
+    title: "Loclean",
+    year: 2025,
+    description:
+      "The All-in-One Local AI Data Cleaning Library. Privacy-first, zero-cost data cleaning using local small language models (SLMs) like Phi-3, Qwen, and Gemma. No GPU or API keys required.",
+    url: "https://github.com/nxank4/loclean",
+  },
+  {
     title: "ChromaFusion",
     year: 2024,
     description:

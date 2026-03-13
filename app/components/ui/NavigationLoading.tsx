@@ -2,14 +2,24 @@
 
 import { useEffect, useState, Suspense, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useTheme } from "next-themes";
 import { useNavigation } from "./NavigationContext";
 
 function NavigationLoadingBar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isNavigating, setNavigating } = useNavigation();
+  const { theme, systemTheme } = useTheme();
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const prevPathnameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const currentTheme = theme === "system" ? (systemTheme || "light") : (theme || "light");
+  const isDark = currentTheme === "dark";
 
   // Show loading when navigation starts
   useEffect(() => {
@@ -18,7 +28,7 @@ function NavigationLoadingBar() {
     }
   }, [isNavigating]);
 
-  // Hide loading when pathname changes (navigation completes)
+  // Hide loading when pathname changes (navigation completes) or when navigation is cancelled
   useEffect(() => {
     if (prevPathnameRef.current !== null && prevPathnameRef.current !== pathname) {
       // Navigation completed, hide loading after a short delay
@@ -28,13 +38,25 @@ function NavigationLoadingBar() {
       }, 300);
 
       return () => clearTimeout(timer);
+    } else if (prevPathnameRef.current === pathname && isNavigating) {
+      // Same pathname but navigation was triggered (likely prevented), hide loading
+      const timer = setTimeout(() => {
+        setLoading(false);
+        setNavigating(false);
+      }, 200);
+
+      return () => clearTimeout(timer);
     }
     
     // Update ref
     prevPathnameRef.current = pathname;
-  }, [pathname, searchParams, setNavigating]);
+  }, [pathname, searchParams, setNavigating, isNavigating]);
 
-  if (!loading) return null;
+  if (!loading || !mounted) return null;
+
+  const gradientColor = isDark 
+    ? "rgba(255, 255, 255, 0.3)" 
+    : "rgba(0, 0, 0, 0.3)";
 
   return (
     <div
@@ -51,10 +73,9 @@ function NavigationLoadingBar() {
       <div
         style={{
           height: "100%",
-          background: "linear-gradient(90deg, transparent, rgba(0,0,0,0.3), transparent)",
+          background: `linear-gradient(90deg, transparent, ${gradientColor}, transparent)`,
           animation: "shimmer 1.5s infinite",
         }}
-        className="dark:bg-gradient-to-r dark:from-transparent dark:via-white/30 dark:to-transparent"
       />
       <style jsx>{`
         @keyframes shimmer {

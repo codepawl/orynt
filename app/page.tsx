@@ -1,6 +1,6 @@
 import React from "react";
 import type { Metadata } from "next";
-import { getBlogPosts } from "app/lib/posts";
+import { getBlogPostsMetadata } from "app/lib/posts";
 import { metaData, socialLinks } from "app/config";
 import { HomePageContent } from "app/components/features/HomePageContent";
 
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  let allBlogs = getBlogPosts();
+  let allBlogs = getBlogPostsMetadata();
   let recentBlogs = allBlogs
     .sort((a, b) => {
       if (

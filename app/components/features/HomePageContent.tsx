@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -41,16 +41,35 @@ interface HomePageProps {
 export function HomePageContent({ recentBlogs }: HomePageProps) {
   const [isPending, setIsPending] = useState(false);
   const [cardLoadingSlug, setCardLoadingSlug] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [shouldLoad3D, setShouldLoad3D] = useState(false);
+  const blobContainerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
-  const { setNavigating } = useNavigation();
+  const { setNavigating, isNavigating } = useNavigation();
 
+  // Intersection Observer to load 3D only when visible
   useEffect(() => {
-    setMounted(true);
+    if (!blobContainerRef.current) return;
+    
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoad3D(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1, rootMargin: "100px" }
+    );
+    
+    observer.observe(blobContainerRef.current);
+    
+    return () => observer.disconnect();
   }, []);
 
   const handleNavigation = (href: string) => {
+    if (isNavigating || isPending) {
+      return;
+    }
     if (pathname !== href && !pathname.startsWith(href + "/")) {
       setNavigating(true);
     }
@@ -59,6 +78,9 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
   };
 
   const handleCardClick = (slug: string) => {
+    if (isNavigating || isPending) {
+      return;
+    }
     const href = `/blog/${slug}`;
     if (pathname !== href && !pathname.startsWith(href + "/")) {
       setNavigating(true);
@@ -67,36 +89,13 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
     router.push(href);
   };
 
-  if (!mounted) {
-    return (
-      <section>
-        <div style={{ marginBottom: 80 }}>
-          <div className="flex flex-col md:flex-row items-center md:items-start gap-8 md:gap-12" style={{ marginBottom: 32 }}>
-            <div style={{ flex: 1 }}>
-              <h1
-                className="text-neutral-900 dark:text-neutral-100"
-                style={{
-                  fontSize: "clamp(2.5rem, 5vw, 3.75rem)",
-                  marginBottom: 24,
-                  fontWeight: 700,
-                }}
-              >
-                core_sen
-              </h1>
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section suppressHydrationWarning>
       {/* Hero Section */}
       <div style={{ marginBottom: 80 }}>
-        <div className="flex flex-col md:flex-row items-center md:items-start gap-8 md:gap-12" style={{ marginBottom: 32 }}>
+        <div className="flex flex-col md:flex-row items-start gap-8 md:gap-12" style={{ marginBottom: 32 }}>
           {/* Text Content */}
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, alignSelf: "flex-start" }}>
             <Title
               level={1}
               className="text-neutral-900 dark:text-neutral-100"
@@ -132,6 +131,7 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 size="large"
                 loading={isPending}
                 onClick={() => handleNavigation("/blog")}
+                style={{ minWidth: 140, height: 40 }}
               >
                 Read Blog
               </Button>
@@ -140,6 +140,7 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 size="large"
                 loading={isPending}
                 onClick={() => handleNavigation("/profile")}
+                style={{ minWidth: 140, height: 40 }}
               >
                 View Profile
               </Button>
@@ -147,41 +148,51 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
           </div>
 
           {/* Morphing Blob 3D - Hidden on mobile, shown on tablet+ */}
-          <div className="hidden md:block" style={{ flexShrink: 0 }}>
-            <Suspense
-              fallback={
-                <div className="w-[300px] h-[300px] flex items-center justify-center">
-                  <div className="w-32 h-32 rounded-full bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
-                </div>
-              }
-            >
-              <MorphingBlob3D
-                width={300}
-                height={300}
-                className="relative z-0"
-              />
-            </Suspense>
+          <div 
+            ref={blobContainerRef}
+            className="hidden md:block" 
+            style={{ flexShrink: 0, width: 300, height: 300 }}
+          >
+            {shouldLoad3D ? (
+              <Suspense
+                fallback={
+                  <div className="w-[300px] h-[300px] flex items-center justify-center">
+                    <div className="w-32 h-32 rounded-full bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+                  </div>
+                }
+              >
+                <MorphingBlob3D
+                  width={300}
+                  height={300}
+                  className="relative z-0"
+                />
+              </Suspense>
+            ) : (
+              <div className="w-[300px] h-[300px] flex items-center justify-center">
+                <div className="w-32 h-32 rounded-full bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Recent Writings */}
-      <div>
-        <div className="flex justify-between items-center mb-6">
+      <div style={{ minHeight: "600px" }}>
+        <div className="flex justify-between items-center mb-6" style={{ minHeight: "40px" }}>
           <Title level={2} style={{ margin: 0 }} className="text-neutral-900 dark:text-neutral-100">
             Recent Writings
           </Title>
-                <Button
-                  type="link"
-                  onClick={() => handleNavigation("/blog")}
-                  loading={isPending}
-                  className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                  style={{ padding: 0, height: "auto" }}
-                >
-                  View all →
-                </Button>
+          <Button
+            type="link"
+            onClick={() => handleNavigation("/blog")}
+            loading={isPending}
+            className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+            style={{ padding: 0, height: "auto", minHeight: "24px" }}
+          >
+            View all →
+          </Button>
         </div>
-        <Flex vertical gap="middle">
+        <Flex vertical gap="middle" style={{ width: "100%" }}>
           {recentBlogs.map((post) => {
             const isCardLoading = cardLoadingSlug === post.slug;
             const initials =
@@ -193,63 +204,82 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 .join("") || "BL";
 
             return (
-              <div key={post.slug}>
-                <Card
-                  hoverable
-                  size="small"
-                  style={{ width: "100%", cursor: "pointer", opacity: isCardLoading ? 0.6 : 1, backgroundColor: "transparent", minHeight: "120px" }}
-                  className="card-shadow-offset"
-                  onClick={() => handleCardClick(post.slug)}
+              <Card
+                key={post.slug}
+                hoverable
+                size="small"
+                style={{ 
+                  width: "100%", 
+                  cursor: "pointer", 
+                  opacity: isCardLoading ? 0.6 : 1, 
+                  backgroundColor: "transparent",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+                className="card-shadow-offset"
+                onClick={() => handleCardClick(post.slug)}
+                styles={{
+                  body: {
+                    padding: "16px",
+                    display: "flex",
+                    flexDirection: "row",
+                    gap: "16px",
+                    alignItems: "stretch",
+                    minHeight: "120px",
+                  },
+                }}
+              >
+                <div
+                  className="relative w-32 h-32 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center"
+                  aria-hidden="true"
+                  style={{ minHeight: "128px" }}
                 >
-                  <div className="flex gap-4 items-center h-full">
-                    <div
-                      className="relative w-32 h-32 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center"
-                      aria-hidden="true"
-                    >
-                      {post.metadata.image ? (
-                        <Image
-                          src={post.metadata.image}
-                          alt={post.metadata.title}
-                          fill
-                          sizes="128px"
-                          className="object-cover"
-                        />
-                      ) : (
-                        <span className="text-neutral-700 dark:text-neutral-200 font-semibold text-lg">
-                          {initials}
-                        </span>
-                      )}
-                    </div>
-
-                    <Flex
-                      vertical
-                      justify="space-between"
-                      style={{ width: "100%", minHeight: "96px" }}
-                    >
-                      <Text
-                        strong
-                        style={{ fontSize: 16, lineHeight: 1.4 }}
-                        className="text-neutral-900 dark:text-neutral-100"
-                      >
-                        {post.metadata.title}
-                      </Text>
-                      <Text
-                        type="secondary"
-                        className="text-neutral-600 dark:text-neutral-400"
-                        style={{ fontSize: 14 }}
-                      >
-                        {formatDate(post.metadata.publishedAt, false)}
-                      </Text>
-                    </Flex>
-                  </div>
-                  {isCardLoading && (
-                    <div className="mt-2 flex items-center gap-2 text-sm text-neutral-500">
-                      <Spin size="small" />
-                      <span>Loading...</span>
-                    </div>
+                  {post.metadata.image ? (
+                    <Image
+                      src={post.metadata.image}
+                      alt={post.metadata.title}
+                      fill
+                      sizes="128px"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <span className="text-neutral-700 dark:text-neutral-200 font-semibold text-lg">
+                      {initials}
+                    </span>
                   )}
-                </Card>
-              </div>
+                </div>
+
+                <Flex
+                  vertical
+                  justify="space-between"
+                  style={{ flex: 1, minWidth: 0 }}
+                  gap="small"
+                >
+                  <Text
+                    strong
+                    style={{ fontSize: 16, lineHeight: 1.4 }}
+                    className="text-neutral-900 dark:text-neutral-100"
+                    ellipsis={{ tooltip: post.metadata.title }}
+                  >
+                    {post.metadata.title}
+                  </Text>
+                  <div style={{ marginTop: "auto" }}>
+                    <Text
+                      type="secondary"
+                      className="text-neutral-600 dark:text-neutral-400"
+                      style={{ fontSize: 14 }}
+                    >
+                      {formatDate(post.metadata.publishedAt, false)}
+                    </Text>
+                    {isCardLoading && (
+                      <div className="mt-2 flex items-center gap-2 text-sm text-neutral-500">
+                        <Spin size="small" />
+                        <span>Loading...</span>
+                      </div>
+                    )}
+                  </div>
+                </Flex>
+              </Card>
             );
           })}
         </Flex>

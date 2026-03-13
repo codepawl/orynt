@@ -37,7 +37,8 @@ export function ContentCard({
   const descriptionRef = useRef<HTMLDivElement>(null);
   const [isTruncated, setIsTruncated] = useState(false);
   const pathname = usePathname();
-  const { setNavigating } = useNavigation();
+  const { setNavigating, isNavigating } = useNavigation();
+  const clickRef = useRef<boolean>(false);
 
   // Generate initials from title if not provided
   const displayInitials = initials || 
@@ -68,16 +69,20 @@ export function ContentCard({
   const thumbClassName = "w-32 h-32";
   const displayDate = date || (year ? String(year) : "");
 
+  const isDisabled = isNavigating && pathname !== href && !pathname.startsWith(href + "/");
+  
   const cardContent = (
     <Card
-      hoverable
+      hoverable={!isDisabled}
       size="small"
       style={{ 
         width: "100%", 
-        cursor: "pointer", 
+        cursor: isDisabled ? "not-allowed" : "pointer", 
         backgroundColor: "transparent", 
         minHeight: "180px",
-        height: "100%"
+        height: "100%",
+        opacity: isDisabled ? 0.6 : 1,
+        transition: "opacity 0.2s ease",
       }}
       className={`card-shadow-offset ${className}`}
     >
@@ -176,10 +181,30 @@ export function ContentCard({
   }
 
   const handleClick = (e: React.MouseEvent) => {
+    // Prevent navigation if already on the target page
+    if (pathname === href) {
+      e.preventDefault();
+      return;
+    }
+    
+    // Block all navigation if any navigation is in progress
+    if (isNavigating || clickRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    
     // Trigger navigation state if navigating to a different page
     if (pathname !== href && !pathname.startsWith(href + "/")) {
+      clickRef.current = true;
       setNavigating(true);
+      
+      // Reset click flag after navigation completes
+      setTimeout(() => {
+        clickRef.current = false;
+      }, 1500);
     }
+    
     if (onClick) {
       onClick(e);
     }

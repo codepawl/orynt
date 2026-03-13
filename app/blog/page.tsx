@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getBlogPosts } from "app/lib/posts";
+import { getBlogPostsMetadata } from "app/lib/posts";
 import { metaData } from "app/config";
 import { BlogListClient } from "./BlogListClient";
 
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export default function BlogPosts() {
-  let allBlogs = getBlogPosts();
+  let allBlogs = getBlogPostsMetadata();
 
   const sortedBlogs = allBlogs.sort((a, b) => {
     if (

@@ -17,19 +17,32 @@ function BlobScene({
   reducedMotion,
   isHovering,
   isClicked,
+  onReady,
 }: {
   reducedMotion: boolean;
   isHovering: boolean;
   isClicked: boolean;
+  onReady?: () => void;
 }) {
   const timeRef = useRef(0);
   const { resolvedTheme } = useTheme();
   const blobGroupRef = useRef<THREE.Group>(null);
   const glowMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
   const glowOpacityRef = useRef(0);
+  const hasNotifiedReady = useRef(false);
   
   const segments = 4;
   const isDark = resolvedTheme === "dark";
+
+  useEffect(() => {
+    if (onReady && !hasNotifiedReady.current) {
+      const timer = setTimeout(() => {
+        hasNotifiedReady.current = true;
+        onReady();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [onReady]);
 
   useFrame((state, delta) => {
     if (reducedMotion) return;
@@ -124,8 +137,20 @@ export function MorphingBlob3D({
   const [hasError, setHasError] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [isClicked, setIsClicked] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isFadingOut, setIsFadingOut] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const clickTimerRef = useRef<number | null>(null);
+  const readyTriggeredRef = useRef(false);
+
+  const handleSceneReady = () => {
+    if (readyTriggeredRef.current) return;
+    readyTriggeredRef.current = true;
+    setIsFadingOut(true);
+    setTimeout(() => {
+      setIsLoading(false);
+    }, 300);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -192,6 +217,21 @@ export function MorphingBlob3D({
       className={`relative ${className}`}
       style={{ width, height }}
     >
+      {isLoading && (
+        <div 
+          className={`absolute inset-0 flex items-center justify-center z-10 transition-opacity duration-300 ${
+            isFadingOut ? "opacity-0" : "opacity-100"
+          }`}
+        >
+          <div className="relative w-24 h-24">
+            <div className="absolute inset-0 rounded-full border-4 border-neutral-200 dark:border-neutral-800" />
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-neutral-600 dark:border-t-neutral-400 animate-spin" style={{ animationDuration: "1s" }} />
+            <div className="absolute inset-2 rounded-full border-2 border-transparent border-r-neutral-400 dark:border-r-neutral-500 animate-spin" style={{ animationDirection: "reverse", animationDuration: "0.8s" }} />
+            <div className="absolute inset-4 rounded-full bg-neutral-100 dark:bg-neutral-900 animate-pulse" style={{ animationDuration: "1.5s" }} />
+            <div className="absolute inset-6 rounded-full border border-neutral-300 dark:border-neutral-700 animate-ping" style={{ animationDuration: "2s" }} />
+          </div>
+        </div>
+      )}
       {isVisible && (
         <Canvas
           gl={{
@@ -220,6 +260,7 @@ export function MorphingBlob3D({
               reducedMotion={reducedMotion}
               isHovering={isHovering}
               isClicked={isClicked}
+              onReady={handleSceneReady}
             />
           </Suspense>
         </Canvas>
