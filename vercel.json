@@ -1,7 +1,0 @@
-{
-  "buildCommand": "bun run build",
-  "installCommand": "bun install --frozen-lockfile",
-  "framework": "nextjs",
-  "bunVersion": "1.x",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- bun.lock package.json"
-}
