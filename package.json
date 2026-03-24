@@ -1,0 +1,12 @@
+{
+  "name": "codepawl",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "bun run --filter @codepawl/web dev",
+    "build": "bun run --filter @codepawl/web build",
+    "start": "bun run --filter @codepawl/web start",
+    "dev:api": "bun run --filter @codepawl/api dev",
+    "lint": "bun run --filter @codepawl/web lint"
+  }
+}
