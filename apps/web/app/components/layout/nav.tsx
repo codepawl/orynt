@@ -17,40 +17,24 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   const isActive = pathname === href || pathname.startsWith(href + "/");
   const clickRef = useRef<boolean>(false);
 
+  // Reset click lock when pathname changes (navigation completed)
+  useEffect(() => {
+    clickRef.current = false;
+  }, [pathname]);
+
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    // Prevent navigation if already on the exact target page
     if (pathname === href) {
       e.preventDefault();
       return;
     }
-    
-    // Block all navigation if any navigation is in progress
-    if (isNavigating || isPending) {
+    if (isNavigating || isPending || clickRef.current) {
       e.preventDefault();
       e.stopPropagation();
       return;
     }
-    
-    // Prevent multiple rapid clicks on the same link
-    if (clickRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    
-    // Trigger navigation state if navigating to a different page
-    if (pathname !== href) {
-      clickRef.current = true;
-      setNavigating(true);
-      startTransition(() => {
-        // Navigation will happen automatically via Next.js Link
-      });
-      
-      // Reset click flag after navigation completes
-      setTimeout(() => {
-        clickRef.current = false;
-      }, 1500);
-    }
+    clickRef.current = true;
+    setNavigating(true);
+    startTransition(() => {});
   };
 
   const isDisabled = isNavigating || isPending;

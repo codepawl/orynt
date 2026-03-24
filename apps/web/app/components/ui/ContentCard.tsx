@@ -49,6 +49,12 @@ export function ContentCard({
       .map((w) => w[0]?.toUpperCase())
       .join("") || "BL";
 
+  // Reset click lock when navigation completes (pathname changes)
+  useEffect(() => {
+    clickRef.current = false;
+    setNavigating(false);
+  }, [pathname, setNavigating]);
+
   // Check if description is truncated
   useEffect(() => {
     const checkTruncation = () => {
@@ -198,11 +204,6 @@ export function ContentCard({
     if (pathname !== href && !pathname.startsWith(href + "/")) {
       clickRef.current = true;
       setNavigating(true);
-      
-      // Reset click flag after navigation completes
-      setTimeout(() => {
-        clickRef.current = false;
-      }, 1500);
     }
     
     if (onClick) {

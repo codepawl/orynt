@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Typography, Card, Flex, Button, Space, Spin } from "antd";
 import { formatDate } from "app/lib/utils";
 import { useNavigation } from "../ui/NavigationContext";
@@ -25,29 +25,19 @@ interface HomePageProps {
 }
 
 export function HomePageContent({ recentBlogs }: HomePageProps) {
-  const [isPending, setIsPending] = useState(false);
   const [cardLoadingSlug, setCardLoadingSlug] = useState<string | null>(null);
-  const router = useRouter();
   const pathname = usePathname();
   const { setNavigating, isNavigating } = useNavigation();
 
-  const handleNavigation = (href: string) => {
-    if (isNavigating || isPending) return;
-    if (pathname !== href && !pathname.startsWith(href + "/")) {
-      setNavigating(true);
-    }
-    setIsPending(true);
-    router.push(href);
-  };
+  // Reset loading states when navigation completes
+  useEffect(() => {
+    setCardLoadingSlug(null);
+  }, [pathname]);
 
   const handleCardClick = (slug: string) => {
-    if (isNavigating || isPending) return;
-    const href = `/blog/${slug}`;
-    if (pathname !== href && !pathname.startsWith(href + "/")) {
-      setNavigating(true);
-    }
+    if (isNavigating) return;
     setCardLoadingSlug(slug);
-    router.push(href);
+    setNavigating(true);
   };
 
   return (
@@ -97,24 +87,24 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
               .
             </Paragraph>
             <Space size="middle" wrap>
-              <Button
-                type="primary"
-                size="large"
-                loading={isPending}
-                onClick={() => handleNavigation("/blog")}
-                style={{ minWidth: 140, height: 40 }}
-              >
-                Read Blog
-              </Button>
-              <Button
-                type="default"
-                size="large"
-                loading={isPending}
-                onClick={() => handleNavigation("/profile")}
-                style={{ minWidth: 140, height: 40 }}
-              >
-                View Profile
-              </Button>
+              <Link href="/blog">
+                <Button
+                  type="primary"
+                  size="large"
+                  style={{ minWidth: 140, height: 40 }}
+                >
+                  Read Blog
+                </Button>
+              </Link>
+              <Link href="/profile">
+                <Button
+                  type="default"
+                  size="large"
+                  style={{ minWidth: 140, height: 40 }}
+                >
+                  View Profile
+                </Button>
+              </Link>
             </Space>
           </div>
         </div>
@@ -126,15 +116,12 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
           <Title level={2} style={{ margin: 0 }} className="text-neutral-900 dark:text-neutral-100">
             Recent Writings
           </Title>
-          <Button
-            type="link"
-            onClick={() => handleNavigation("/blog")}
-            loading={isPending}
-            className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            style={{ padding: 0, height: "auto" }}
+          <Link
+            href="/blog"
+            className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 text-sm"
           >
             View all →
-          </Button>
+          </Link>
         </div>
         <Flex vertical gap="middle" style={{ width: "100%" }}>
           {recentBlogs.map((post) => {
@@ -148,8 +135,13 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 .join("") || "BL";
 
             return (
-              <Card
+              <Link
                 key={post.slug}
+                href={`/blog/${post.slug}`}
+                onClick={() => handleCardClick(post.slug)}
+                style={{ textDecoration: "none", display: "block" }}
+              >
+              <Card
                 hoverable
                 size="small"
                 style={{
@@ -161,7 +153,6 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                   flexDirection: "column",
                 }}
                 className="card-shadow-offset"
-                onClick={() => handleCardClick(post.slug)}
                 styles={{
                   body: {
                     padding: "16px",
@@ -222,6 +213,7 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                   </div>
                 </Flex>
               </Card>
+              </Link>
             );
           })}
         </Flex>
