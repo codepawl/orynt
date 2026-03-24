@@ -105,7 +105,7 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 fontWeight: 700,
               }}
             >
-              core_sen
+              CodePawl
             </Title>
             <Paragraph
               className="text-neutral-600 dark:text-neutral-300"
