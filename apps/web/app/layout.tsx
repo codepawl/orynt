@@ -81,6 +81,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={cx(inter.variable, jetbrainsMono.variable, playfairDisplay.variable)} suppressHydrationWarning>
       <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link
           rel="alternate"
           type="application/rss+xml"
