@@ -7,6 +7,7 @@
     "build": "bun run --filter @codepawl/web build",
     "start": "bun run --filter @codepawl/web start",
     "dev:api": "bun run --filter @codepawl/api dev",
+    "dev:github-api": "cd services/github-api && uvicorn app.main:app --reload",
     "lint": "bun run --filter @codepawl/web lint"
   }
 }
