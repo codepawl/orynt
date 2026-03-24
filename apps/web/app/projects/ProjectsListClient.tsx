@@ -54,6 +54,7 @@ export function ProjectsListClient({ projects }: ProjectsListClientProps) {
           size="small"
           value={view}
           onChange={(val) => handleViewChange(val)}
+          className="segmented-square"
           options={[
             { label: <LayoutGrid size={16} />, value: "grid" },
             { label: <List size={16} />, value: "list" },

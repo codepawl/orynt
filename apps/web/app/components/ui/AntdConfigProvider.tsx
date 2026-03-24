@@ -14,8 +14,8 @@ export function AntdConfigProvider({ children }: { children: React.ReactNode }) 
       isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
     token: {
       colorText: isDark ? "rgba(255, 255, 255, 0.85)" : "rgba(0, 0, 0, 0.88)",
-      colorTextSecondary: isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.45)",
-      colorTextTertiary: isDark ? "rgba(255, 255, 255, 0.45)" : "rgba(0, 0, 0, 0.25)",
+      colorTextSecondary: isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.55)",
+      colorTextTertiary: isDark ? "rgba(255, 255, 255, 0.45)" : "rgba(0, 0, 0, 0.35)",
       colorTextHeading: isDark ? "rgba(255, 255, 255, 0.85)" : "rgba(0, 0, 0, 0.88)",
       colorPrimary: isDark ? "#ffffff" : "#000000",
       colorPrimaryHover: isDark ? "rgba(255, 255, 255, 0.9)" : "rgba(0, 0, 0, 0.8)",
@@ -62,6 +62,15 @@ export function AntdConfigProvider({ children }: { children: React.ReactNode }) 
         headerBg: isDark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.02)",
         headerColor: isDark ? "rgba(255, 255, 255, 0.85)" : "rgba(0, 0, 0, 0.88)",
         borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.06)",
+      },
+      Segmented: {
+        itemSelectedBg: isDark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.08)",
+        itemSelectedColor: isDark ? "#ffffff" : "#000000",
+        itemColor: isDark ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.4)",
+        itemHoverColor: isDark ? "rgba(255, 255, 255, 0.85)" : "rgba(0, 0, 0, 0.88)",
+        trackBg: isDark ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.04)",
+        trackPadding: 2,
+        borderRadiusSM: 6,
       },
       Spin: {
         colorPrimary: isDark ? "rgba(255, 255, 255, 0.85)" : "rgba(0, 0, 0, 0.88)",
