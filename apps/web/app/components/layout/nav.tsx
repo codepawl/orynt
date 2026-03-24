@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useTransition, useState, useRef } from "react";
-import { useEffect } from "react";
+import React, { useTransition, useRef, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Menu, Flex, Spin } from "antd";
 import { useTheme } from "next-themes";
 import { ThemeSwitch } from "../ui/theme-switch";
 import { useNavigation } from "../ui/NavigationContext";
+import { InlineLogo } from "./InlineLogo";
 import { metaData } from "../../config";
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
@@ -91,23 +90,9 @@ export function Navbar() {
   const pathname = usePathname();
   const { theme, systemTheme } = useTheme();
   const { setNavigating } = useNavigation();
-  const [mounted, setMounted] = useState(false);
 
   // Find the active key based on the current path
   const activeKey = navItems.find((item) => pathname.startsWith(item.key))?.key;
-
-  // Determine current theme and logo path
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Determine current theme (considering system theme)
-  // Default to light mode if theme is not yet determined
-  const currentTheme = theme === "system" ? (systemTheme || "light") : (theme || "light");
-  const isDark = currentTheme === "dark";
-  
-  // Get logo path based on theme
-  const logoPath = isDark ? "/logo_for_dark_mode.svg" : "/logo_for_light_mode.svg";
 
   useEffect(() => {
     const updateMenuColors = () => {
@@ -157,18 +142,7 @@ export function Navbar() {
           onClick={handleLogoClick}
           className="text-xl font-sans font-bold text-inherit no-underline flex items-center gap-2 hover:text-inherit transition-opacity duration-200 hover:opacity-70"
         >
-          {mounted && (
-            <Image
-              src={logoPath}
-              alt={metaData.title}
-              width={32}
-              height={32}
-              className="w-8 h-8"
-            />
-          )}
-          {!mounted && (
-            <div className="w-8 h-8" />
-          )}
+          <InlineLogo size={32} />
           {metaData.title}
         </Link>
         <Flex align="center" gap="middle">
