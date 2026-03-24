@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export default function BlogPosts() {
-  let allBlogs = getBlogPostsMetadata();
+  const allBlogs = getBlogPostsMetadata();
 
   const sortedBlogs = allBlogs.sort((a, b) => {
     if (

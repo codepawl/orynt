@@ -11,15 +11,15 @@ type Metadata = {
 };
 
 function parseFrontmatter(fileContent: string) {
-  let frontmatterRegex = /---\s*([\s\S]*?)\s*---/;
-  let match = frontmatterRegex.exec(fileContent);
-  let frontMatterBlock = match![1];
-  let content = fileContent.replace(frontmatterRegex, "").trim();
-  let frontMatterLines = frontMatterBlock.trim().split("\n");
-  let metadata: Partial<Metadata> = {};
+  const frontmatterRegex = /---\s*([\s\S]*?)\s*---/;
+  const match = frontmatterRegex.exec(fileContent);
+  const frontMatterBlock = match![1];
+  const content = fileContent.replace(frontmatterRegex, "").trim();
+  const frontMatterLines = frontMatterBlock.trim().split("\n");
+  const metadata: Partial<Metadata> = {};
 
   frontMatterLines.forEach((line) => {
-    let [key, ...valueArr] = line.split(": ");
+    const [key, ...valueArr] = line.split(": ");
     let value = valueArr.join(": ").trim();
     value = value.replace(/^['"](.*)['"]$/, "$1");
     metadata[key.trim() as keyof Metadata] = value;
@@ -29,16 +29,16 @@ function parseFrontmatter(fileContent: string) {
 }
 
 function parseFrontmatterOnly(fileContent: string) {
-  let frontmatterRegex = /---\s*([\s\S]*?)\s*---/;
-  let match = frontmatterRegex.exec(fileContent);
+  const frontmatterRegex = /---\s*([\s\S]*?)\s*---/;
+  const match = frontmatterRegex.exec(fileContent);
   if (!match) return null;
   
-  let frontMatterBlock = match[1];
-  let frontMatterLines = frontMatterBlock.trim().split("\n");
-  let metadata: Partial<Metadata> = {};
+  const frontMatterBlock = match[1];
+  const frontMatterLines = frontMatterBlock.trim().split("\n");
+  const metadata: Partial<Metadata> = {};
 
   frontMatterLines.forEach((line) => {
-    let [key, ...valueArr] = line.split(": ");
+    const [key, ...valueArr] = line.split(": ");
     let value = valueArr.join(": ").trim();
     value = value.replace(/^['"](.*)['"]$/, "$1");
     metadata[key.trim() as keyof Metadata] = value;
@@ -52,22 +52,22 @@ const getMDXFiles = cache((dir: string) => {
 });
 
 const readMDXFile = cache((filePath: string) => {
-  let rawContent = fs.readFileSync(filePath, "utf-8");
+  const rawContent = fs.readFileSync(filePath, "utf-8");
   return parseFrontmatter(rawContent);
 });
 
 const readMDXFileMetadata = cache((filePath: string) => {
-  let rawContent = fs.readFileSync(filePath, "utf-8");
+  const rawContent = fs.readFileSync(filePath, "utf-8");
   return parseFrontmatterOnly(rawContent);
 });
 
 const CONTENT_DIR = path.join(process.cwd(), "content");
 
 const getMDXData = cache(() => {
-  let mdxFiles = getMDXFiles(CONTENT_DIR);
+  const mdxFiles = getMDXFiles(CONTENT_DIR);
   return mdxFiles.map((file) => {
-    let { metadata, content } = readMDXFile(path.join(CONTENT_DIR, file));
-    let slug = path.basename(file, path.extname(file));
+    const { metadata, content } = readMDXFile(path.join(CONTENT_DIR, file));
+    const slug = path.basename(file, path.extname(file));
 
     return {
       metadata,
@@ -78,14 +78,14 @@ const getMDXData = cache(() => {
 });
 
 const getMDXDataMetadata = cache(() => {
-  let mdxFiles = getMDXFiles(CONTENT_DIR);
+  const mdxFiles = getMDXFiles(CONTENT_DIR);
   return mdxFiles.map((file) => {
-    let filePath = path.join(CONTENT_DIR, file);
-    let result = readMDXFileMetadata(filePath);
+    const filePath = path.join(CONTENT_DIR, file);
+    const result = readMDXFileMetadata(filePath);
     if (!result) {
       throw new Error(`Failed to parse frontmatter for ${file}`);
     }
-    let slug = path.basename(file, path.extname(file));
+    const slug = path.basename(file, path.extname(file));
 
     return {
       metadata: result.metadata,

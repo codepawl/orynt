@@ -57,7 +57,7 @@ export function PerformanceMonitor() {
         let imageSize = 0;
 
         resources.forEach((resource) => {
-          const size = (resource as any).transferSize || 0;
+          const size = (resource as PerformanceResourceTiming).transferSize || 0;
           totalSize += size;
           if (resource.name.includes(".js")) jsSize += size;
           else if (resource.name.includes(".css")) cssSize += size;

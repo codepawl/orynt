@@ -27,8 +27,8 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  let allBlogs = getBlogPostsMetadata();
-  let recentBlogs = allBlogs
+  const allBlogs = getBlogPostsMetadata();
+  const recentBlogs = allBlogs
     .sort((a, b) => {
       if (
         new Date(a.metadata.publishedAt) >

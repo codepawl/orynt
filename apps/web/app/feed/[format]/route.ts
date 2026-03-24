@@ -62,6 +62,7 @@ export async function GET(_: Request, props: { params: Promise<{ format: string 
     
     const publishedDate = new Date(post.metadata.publishedAt);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const feedItem: any = {
       title: post.metadata.title,
       id: postUrl,

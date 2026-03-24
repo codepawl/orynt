@@ -7,6 +7,7 @@ import {
   Linkedin,
   Mail,
   Code2,
+  type LucideIcon,
 } from "lucide-react";
 import { metaData, socialLinks } from "../../config";
 import { Layout, Space, Typography } from "antd";
@@ -16,7 +17,7 @@ const { Text, Link } = Typography;
 
 const YEAR = new Date().getFullYear();
 
-function SocialLink({ href, icon: Icon, label }: { href: string; icon: any; label: string }) {
+function SocialLink({ href, icon: Icon, label }: { href: string; icon: LucideIcon; label: string }) {
   return (
     <a 
       href={href} 

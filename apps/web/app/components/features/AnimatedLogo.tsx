@@ -55,9 +55,6 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
     );
   }
 
-  // Scale factor from 500x500 viewbox to actual size
-  const scale = width / 500;
-
   return (
     <div
       className={className}

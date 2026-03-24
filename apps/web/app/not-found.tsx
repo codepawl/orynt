@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "404",
@@ -16,12 +17,12 @@ export default function NotFound() {
         404 - Page not found
       </h1>
       <p className="mb-4 text-neutral-800 dark:text-neutral-200">
-        Whoops! Looks like you wandered off the map. Maybe the page you're
+        Whoops! Looks like you wandered off the map. Maybe the page you&apos;re
         looking for is in Narnia?
       </p>
-      <a href="/" className="text-neutral-700 dark:text-neutral-300 hover:underline">
-        Let's go back home before Aslan gets upset.
-      </a>
+      <Link href="/" className="text-neutral-700 dark:text-neutral-300 hover:underline">
+        Let&apos;s go back home before Aslan gets upset.
+      </Link>
     </section>
   );
 }

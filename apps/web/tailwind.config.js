@@ -23,6 +23,6 @@ module.exports = {
       },
     },
   },
-  plugins: [require("@tailwindcss/typography")],
+  plugins: [require("@tailwindcss/typography")], // eslint-disable-line @typescript-eslint/no-require-imports
   safelist: ['glass-card', 'glass-panel'], // Ensure these serve as utilities if dynamically used, though usually not needed if class names are static.
 };

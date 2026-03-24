@@ -1,4 +1,4 @@
-export function YouTubeComponent(props: any) {
+export function YouTubeComponent(props: { videoId?: string; url?: string; children?: string }) {
   const { videoId, url, children } = props;
   
   let youtubeUrl = url;

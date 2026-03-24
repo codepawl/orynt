@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense, useState, useEffect, useRef } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useTheme } from "next-themes";
 import { BlobGeometry } from "./BlobGeometry";
@@ -162,7 +162,7 @@ export function MorphingBlob3D({
         setHasError(true);
         return;
       }
-    } catch (e) {
+    } catch {
       setHasError(true);
       return;
     }

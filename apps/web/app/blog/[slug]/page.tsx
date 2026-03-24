@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CustomMDX } from "app/components/ui/mdx";
 import { getBlogPosts } from "app/lib/posts";
-import { estimateReadingTimeMinutes, formatDate } from "app/lib/utils";
+import { estimateReadingTimeMinutes } from "app/lib/utils";
 import { metaData } from "app/config";
 import { BlogPostHeader } from "./BlogPostHeader";
 
 export async function generateStaticParams() {
-  let posts = getBlogPosts();
+  const posts = getBlogPosts();
 
   return posts.map((post) => ({
     slug: post.slug,
@@ -16,18 +16,18 @@ export async function generateStaticParams() {
 
 export async function generateMetadata(props): Promise<Metadata | undefined> {
   const params = await props.params;
-  let post = getBlogPosts().find((post) => post.slug === params.slug);
+  const post = getBlogPosts().find((post) => post.slug === params.slug);
   if (!post) {
     return;
   }
 
-  let {
+  const {
     title,
     publishedAt: publishedTime,
     summary: description,
     image,
   } = post.metadata;
-  let ogImage = image
+  const ogImage = image
     ? image
     : `${metaData.baseUrl}/og?title=${encodeURIComponent(title)}`;
 
@@ -60,7 +60,7 @@ export async function generateMetadata(props): Promise<Metadata | undefined> {
 
 export default async function Blog(props) {
   const params = await props.params;
-  let post = getBlogPosts().find((post) => post.slug === params.slug);
+  const post = getBlogPosts().find((post) => post.slug === params.slug);
 
   if (!post) {
     notFound();

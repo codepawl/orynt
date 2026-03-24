@@ -41,9 +41,9 @@ export function BlobGeometry({
     return new THREE.SphereGeometry(radius, segments, segments);
   }, [radius, segments]);
 
-  const { sphereVertices, polyhedraVertices } = useMemo(() => {
-    const sphereVerts = generateSphereVertices(radius, segments);
-    const polyVerts = [
+  useMemo(() => {
+    sphereVerticesRef.current = generateSphereVertices(radius, segments);
+    polyhedraVerticesRef.current = [
       generateTetrahedronVertices(radius),
       generateOctahedronVertices(radius),
       generateCubeVertices(radius),
@@ -51,11 +51,6 @@ export function BlobGeometry({
       generateDodecahedronVertices(radius),
       generateSphereVertices(radius, segments),
     ];
-    
-    sphereVerticesRef.current = sphereVerts;
-    polyhedraVerticesRef.current = polyVerts;
-    
-    return { sphereVertices: sphereVerts, polyhedraVertices: polyVerts };
   }, [radius, segments]);
 
   useFrame(() => {

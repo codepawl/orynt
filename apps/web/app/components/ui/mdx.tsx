@@ -14,7 +14,7 @@ import remarkMath from "remark-math";
 
 
 function CustomLink(props) {
-  let href = props.href;
+  const href = props.href;
   if (href.startsWith("/")) {
     return (
       <Link href={href} {...props}>
@@ -86,7 +86,6 @@ function formatLanguageName(lang) {
 }
 
 function Code({ children, className, ...props }) {
-  const codeText = extractCodeText(children);
   const language = getLanguageFromClassName(className);
   const isCodeBlock = className?.includes("language-");
   const isHighlighted = className?.includes("hljs");
@@ -123,7 +122,6 @@ function Code({ children, className, ...props }) {
 
 function Pre({ children, className, ...props }) {
   // Extract code element and language from children
-  let codeElement: React.ReactElement | null = null;
   let language: string | null = null;
   let codeText = "";
   let codeClassName = "";
@@ -136,7 +134,6 @@ function Pre({ children, className, ...props }) {
     if (React.isValidElement(child)) {
       // Check if it's a code element directly
       if (child.type === "code" || (typeof child.type === "string" && child.type === "code")) {
-        codeElement = child;
         const childProps = child.props as { className?: string; children?: React.ReactNode };
         codeClassName = childProps?.className || "";
         language = getLanguageFromClassName(codeClassName);
@@ -201,10 +198,10 @@ function Pre({ children, className, ...props }) {
 }
 
 function Table({ data }) {
-  let headers = data.headers.map((header, index) => (
+  const headers = data.headers.map((header, index) => (
     <th key={index} className="text-neutral-900 dark:text-neutral-100">{header}</th>
   ));
-  let rows = data.rows.map((row, index) => (
+  const rows = data.rows.map((row, index) => (
     <tr key={index}>
       {row.map((cell, cellIndex) => (
         <td key={cellIndex} className="text-neutral-800 dark:text-neutral-200">{cell}</td>
@@ -304,7 +301,7 @@ function slugify(str) {
 
 function createHeading(level) {
   const Heading = ({ children }) => {
-    let slug = slugify(children);
+    const slug = slugify(children);
     const baseTextColor = "text-neutral-900 dark:text-neutral-100";
     const animationClasses = hoverBrightness.classes;
     
@@ -334,7 +331,7 @@ function createHeading(level) {
   return Heading;
 }
 
-let components = {
+const components = {
   h1: createHeading(1),
   h2: createHeading(2),
   h3: createHeading(3),

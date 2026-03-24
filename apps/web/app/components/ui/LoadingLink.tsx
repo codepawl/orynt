@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { Spin } from "antd";
 
 interface LoadingLinkProps {
@@ -15,10 +14,8 @@ interface LoadingLinkProps {
 
 export function LoadingLink({ href, children, className, style, onClick }: LoadingLinkProps) {
   const [isPending, startTransition] = useTransition();
-  const pathname = usePathname();
-  const isActive = pathname === href || pathname.startsWith(href + "/");
 
-  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+  const handleClick = () => {
     if (onClick) {
       onClick();
     }

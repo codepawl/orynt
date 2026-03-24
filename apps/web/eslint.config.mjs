@@ -13,6 +13,14 @@ const eslintConfig = [
       "next-env.d.ts",
     ],
   },
+  {
+    rules: {
+      // setState in useEffect is a standard hydration guard pattern with next-themes
+      "react-hooks/set-state-in-effect": "off",
+      // Float32Array mutation in useFrame is the standard three.js pattern
+      "react-hooks/immutability": "off",
+    },
+  },
 ];
 
 export default eslintConfig;

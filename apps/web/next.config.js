@@ -1,4 +1,4 @@
-const withBundleAnalyzer = require("@next/bundle-analyzer")({
+const withBundleAnalyzer = require("@next/bundle-analyzer")({ // eslint-disable-line @typescript-eslint/no-require-imports
   enabled: process.env.ANALYZE === "true",
 });
 

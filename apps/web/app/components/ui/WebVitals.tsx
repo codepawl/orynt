@@ -25,7 +25,9 @@ export function WebVitals() {
     // Send to analytics in production
     function sendToAnalytics(metric: Metric) {
       // You can send to your analytics service here
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (typeof window !== "undefined" && (window as any).gtag) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).gtag("event", metric.name, {
           value: Math.round(metric.name === "CLS" ? metric.value * 1000 : metric.value),
           event_label: metric.id,

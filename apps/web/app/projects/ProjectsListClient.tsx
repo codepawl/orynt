@@ -17,12 +17,12 @@ interface ProjectsListClientProps {
 }
 
 export function ProjectsListClient({ projects }: ProjectsListClientProps) {
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [view, setView] = useState<"grid" | "list">("grid");
   const [isSwitchingView, setIsSwitchingView] = useState(false);
   const switchTimerRef = useRef<number | null>(null);
 
-  const handleClick = (url: string, e: React.MouseEvent) => {
+  const handleClick = (url: string) => {
     startTransition(() => {
       window.open(url, "_blank", "noopener,noreferrer");
     });
@@ -74,7 +74,7 @@ export function ProjectsListClient({ projects }: ProjectsListClientProps) {
             description={project.description}
             year={project.year}
             href={project.url}
-            onClick={(e) => handleClick(project.url, e)}
+            onClick={() => handleClick(project.url)}
             external={true}
           />
         ))}

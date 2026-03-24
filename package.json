@@ -7,7 +7,7 @@
     "build": "cd apps/web && bun run build",
     "start": "cd apps/web && bun run start",
     "dev:api": "cd apps/api && if [ ! -d .venv ]; then uv venv .venv && uv pip install --python .venv/bin/python -q -r requirements.txt; fi && .venv/bin/uvicorn app.main:app --reload --port 8000",
-    "lint": "cd apps/web && bun --bun next lint",
+    "lint": "cd apps/web && bunx eslint .",
     "test:api": "cd apps/api && if [ ! -d .venv ]; then uv venv .venv && uv pip install --python .venv/bin/python -q -r requirements-dev.txt; fi && .venv/bin/pytest -v"
   }
 }
