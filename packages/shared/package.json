@@ -1,0 +1,10 @@
+{
+  "name": "@codepawl/shared",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}
