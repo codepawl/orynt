@@ -1,13 +1,13 @@
 {
   "name": "codepawl",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": ["apps/web", "packages/*"],
   "scripts": {
-    "dev": "bun run --filter @codepawl/web dev",
-    "build": "bun run --filter @codepawl/web build",
-    "start": "bun run --filter @codepawl/web start",
-    "dev:api": "bun run --filter @codepawl/api dev",
-    "dev:github-api": "cd services/github-api && uvicorn app.main:app --reload",
-    "lint": "bun run --filter @codepawl/web lint"
+    "dev": "cd apps/web && bun run dev",
+    "build": "cd apps/web && bun run build",
+    "start": "cd apps/web && bun run start",
+    "dev:api": "cd apps/api && if [ ! -d .venv ]; then uv venv .venv && uv pip install --python .venv/bin/python -q -r requirements.txt; fi && .venv/bin/uvicorn app.main:app --reload --port 8000",
+    "lint": "cd apps/web && bun --bun next lint",
+    "test:api": "cd apps/api && if [ ! -d .venv ]; then uv venv .venv && uv pip install --python .venv/bin/python -q -r requirements-dev.txt; fi && .venv/bin/pytest -v"
   }
 }

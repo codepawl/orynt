@@ -4,16 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CodePawl — a personal blog and portfolio site for an AI engineer/data scientist. Bun workspaces monorepo with Next.js 16 frontend, Bun API backend, and shared packages.
+CodePawl — a personal blog and portfolio site for an AI engineer/data scientist. Bun workspaces monorepo with Next.js 16 frontend, Python FastAPI backend, and shared packages.
 
 Live: https://codepawl.com/
 
 ## Monorepo Structure
 
 - `apps/web/` — Next.js frontend (@codepawl/web): App Router, TypeScript, Tailwind CSS, Ant Design, MDX content
-- `apps/api/` — Bun API backend (@codepawl/api): Bun.serve on port 3001
+- `apps/api/` — Python FastAPI backend: GitHub stats proxy, deployed on Koyeb
 - `packages/shared/` — Shared types and utilities (@codepawl/shared)
-- `services/github-api/` — Python FastAPI backend: GitHub stats proxy, deployed on Koyeb
 
 ## Commands
 
@@ -23,13 +22,12 @@ bun install              # Install all workspace dependencies
 bun run dev              # Dev server (web)
 bun run build            # Production build (web)
 bun run start            # Production server (web)
-bun run dev:api          # Dev server (api)
-bun run dev:github-api   # Dev server (github-api, requires Python venv)
+bun run dev:api          # Dev server (api, requires Python venv)
+./dev.sh                 # Start both frontend + API
 
 # Per-app (from app directory)
 cd apps/web && bun run dev
-cd apps/api && bun run dev
-cd services/github-api && uvicorn app.main:app --reload
+cd apps/api && source .venv/bin/activate && uvicorn app.main:app --reload
 ```
 
 Always use `bun` instead of `npm`/`yarn`/`pnpm`. Bun auto-loads `.env` files.
@@ -64,4 +62,4 @@ Always use `bun` instead of `npm`/`yarn`/`pnpm`. Bun auto-loads `.env` files.
 ## Deployment
 
 - **Frontend:** Vercel with root directory set to `apps/web`. Uses Vercel Analytics and Speed Insights.
-- **GitHub API:** Koyeb (Free tier) via Dockerfile at `services/github-api/`. Env var: `CODEPAWL_GITHUB_TOKEN`.
+- **API:** Koyeb (Free tier) via Dockerfile at `apps/api/`. Env var: `CODEPAWL_GITHUB_TOKEN`.
