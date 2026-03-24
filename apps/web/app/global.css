@@ -123,19 +123,19 @@ nav a[href="/"]:visited {
 }
 
 h1, h2 {
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 h3, h4 {
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 400;
   letter-spacing: -0.01em;
 }
 
 h5, h6 {
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -146,14 +146,14 @@ code, pre, .prose code, .prose pre {
 
 .ant-typography h1,
 .ant-typography h2 {
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 .ant-typography h3,
 .ant-typography h4 {
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 400;
   letter-spacing: -0.01em;
 }
@@ -161,7 +161,7 @@ code, pre, .prose code, .prose pre {
 .ant-typography h5,
 .ant-typography h6,
 .ant-typography-title {
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -530,7 +530,7 @@ button {
 }
 
 .ant-card .ant-typography-title {
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
 }
 
 .dark .ant-card.dark\:bg-white,
@@ -778,14 +778,14 @@ button {
 
 .prose h1 {
   @apply text-4xl font-bold tracking-tight mt-6 mb-2 text-neutral-900 dark:text-neutral-100;
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 700;
 }
 
 .prose h2 {
   @apply font-semibold tracking-tight mt-6 mb-2 text-neutral-900 dark:text-neutral-100;
   font-size: 30px;
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 600;
 }
 
@@ -798,13 +798,13 @@ button {
 .prose h3 {
   @apply font-semibold tracking-tight mt-6 mb-2 text-neutral-900 dark:text-neutral-100;
   font-size: 25px;
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 400;
 }
 
 .prose h4 {
   @apply text-lg font-normal tracking-tight mt-6 mb-2 text-neutral-900 dark:text-neutral-100;
-  font-family: var(--font-playfair), serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   font-weight: 400;
 }
 
