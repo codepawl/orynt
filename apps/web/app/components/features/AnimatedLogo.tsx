@@ -42,9 +42,9 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
   const currentTheme = theme === "system" ? (systemTheme || "light") : (theme || "light");
   const isDark = currentTheme === "dark";
 
-  const bg = isDark ? "#161616" : "white";
-  const fg = isDark ? "white" : "black";
-  const borderColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+  // Logo inverts against page: dark page gets light logo, light page gets dark logo
+  const bg = isDark ? "white" : "#161616";
+  const fg = isDark ? "black" : "white";
 
   if (!mounted) {
     return (
@@ -74,14 +74,12 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
         style={{ overflow: "visible" }}
         aria-hidden="true"
       >
-        {/* Background with subtle border */}
+        {/* Background */}
         <rect
           x="100" y="100"
           width="300" height="300"
           rx="15"
           fill={bg}
-          stroke={borderColor}
-          strokeWidth="1"
         />
 
         {/* > chevron — two lines forming the prompt symbol */}
