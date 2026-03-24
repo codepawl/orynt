@@ -82,15 +82,16 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
           fill={bg}
         />
 
-        {/* > chevron — two lines forming the prompt symbol */}
+        {/* Top arm of > — flattens to horizontal dash on hover */}
         <g
           style={{
-            transform: isHovered ? "translateX(6px)" : "translateX(0)",
-            transition: "transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
-            transformOrigin: "200px 225px",
+            transform: isHovered
+              ? "rotate(45deg) translateY(-11.2px)"
+              : "rotate(0deg) translateY(0px)",
+            transformOrigin: "203.87px 235.94px",
+            transition: "transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
           }}
         >
-          {/* Top stroke of > */}
           <line
             x1="192.675" y1="247.14"
             x2="215.068" y2="224.746"
@@ -98,7 +99,18 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
             strokeWidth="21.1132"
             strokeLinecap="round"
           />
-          {/* Bottom stroke of > */}
+        </g>
+
+        {/* Bottom arm of > — flattens to horizontal dash on hover */}
+        <g
+          style={{
+            transform: isHovered
+              ? "rotate(-45deg) translateY(11.2px)"
+              : "rotate(0deg) translateY(0px)",
+            transformOrigin: "203.87px 213.55px",
+            transition: "transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
+          }}
+        >
           <line
             x1="215.069" y1="224.746"
             x2="192.675" y2="202.352"
@@ -108,17 +120,13 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
           />
         </g>
 
-        {/* Horizontal dash — cursor line */}
+        {/* Right horizontal dash — existing "eye" */}
         <line
           x1="285.269" y1="224.671"
           x2="316.938" y2="224.671"
           stroke={fg}
           strokeWidth="21.1132"
           strokeLinecap="round"
-          style={{
-            opacity: isHovered ? 1 : 1,
-            animation: isHovered ? "cursorBlink 1s step-end infinite" : "none",
-          }}
         />
 
         {/* Eye (circle) with blink animation */}
@@ -137,12 +145,6 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
         />
       </svg>
 
-      <style jsx>{`
-        @keyframes cursorBlink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }
