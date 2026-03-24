@@ -10,17 +10,17 @@ export const metadata: Metadata = {
     canonical: `${metaData.baseUrl}blog`,
   },
   openGraph: {
-    title: "Blog | CoreSen",
+    title: "Blog | CodePawl",
     description: "Explore insights in AI, data science, and machine learning through in-depth articles, tutorials, and guides.",
     url: `${metaData.baseUrl}blog`,
-    images: [`${metaData.baseUrl}/og?title=${encodeURIComponent("Blog | CoreSen")}`],
+    images: [`${metaData.baseUrl}/og?title=${encodeURIComponent("Blog | CodePawl")}`],
     siteName: metaData.name,
     locale: "en_US",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Blog | CoreSen",
+    title: "Blog | CodePawl",
     description: "Explore insights in AI, data science, and machine learning through in-depth articles, tutorials, and guides.",
   },
 };
@@ -47,12 +47,12 @@ export default function BlogPosts() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "CollectionPage",
-            name: "Blog | CoreSen",
+            name: "Blog | CodePawl",
             description: "Explore insights in AI, data science, and machine learning through in-depth articles, tutorials, and guides.",
             url: `${metaData.baseUrl}blog`,
             mainEntity: {
               "@type": "Blog",
-              name: "CoreSen Blog",
+              name: "CodePawl Blog",
               description: "Articles on AI, data science, and machine learning",
             },
           }),

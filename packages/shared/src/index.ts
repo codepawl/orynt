@@ -1,1 +1,1 @@
-export const APP_NAME = "CoreSen";
+export const APP_NAME = "CodePawl";

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CoreSen — a personal blog and portfolio site for an AI engineer/data scientist. Bun workspaces monorepo with Next.js 16 frontend, Bun API backend, and shared packages.
+CodePawl — a personal blog and portfolio site for an AI engineer/data scientist. Bun workspaces monorepo with Next.js 16 frontend, Bun API backend, and shared packages.
 
-Live: https://coresen.vercel.app/
+Live: https://codepawl.com/
 
 ## Monorepo Structure
 

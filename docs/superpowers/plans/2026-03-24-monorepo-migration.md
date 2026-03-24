@@ -289,7 +289,7 @@ git commit -m "feat: add API backend placeholder"
 - [ ] **Step 2: Create packages/shared/src/index.ts**
 
 ```typescript
-export const APP_NAME = "CoreSen";
+export const APP_NAME = "CodePawl";
 ```
 
 - [ ] **Step 3: Create packages/shared/tsconfig.json**

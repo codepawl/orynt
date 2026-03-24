@@ -1,10 +1,10 @@
-# CoreSen
+# CodePawl
 
 A personal blog and portfolio showcasing AI engineering and data science work, featuring in-depth articles, research insights, and project demonstrations.
 
 ## About
 
-CoreSen is the digital space of an AI Engineer and Data Scientist, dedicated to sharing knowledge, research findings, and practical insights in artificial intelligence, machine learning, and data science.
+CodePawl is the digital space of an AI Engineer and Data Scientist, dedicated to sharing knowledge, research findings, and practical insights in artificial intelligence, machine learning, and data science.
 
 ## Features
 
@@ -51,17 +51,17 @@ bun run start
 
 ## Live Site
 
-Visit [coresen.vercel.app](https://coresen.vercel.app)
+Visit [codepawl.com](https://codepawl.com)
 
 ## RSS Feed
 
 Stay updated with the latest blog posts by subscribing to the RSS feed:
 
-[![RSS Feed](https://img.shields.io/badge/RSS-Feed-orange)](https://coresen.vercel.app/rss.xml)
+[![RSS Feed](https://img.shields.io/badge/RSS-Feed-orange)](https://codepawl.com/rss.xml)
 
-- **RSS 2.0**: [https://coresen.vercel.app/rss.xml](https://coresen.vercel.app/rss.xml)
-- **Atom**: [https://coresen.vercel.app/atom.xml](https://coresen.vercel.app/atom.xml)
-- **JSON Feed**: [https://coresen.vercel.app/feed.json](https://coresen.vercel.app/feed.json)
+- **RSS 2.0**: [https://codepawl.com/rss.xml](https://codepawl.com/rss.xml)
+- **Atom**: [https://codepawl.com/atom.xml](https://codepawl.com/atom.xml)
+- **JSON Feed**: [https://codepawl.com/feed.json](https://codepawl.com/feed.json)
 
 ## License
 

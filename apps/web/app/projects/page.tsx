@@ -11,17 +11,17 @@ export const metadata: Metadata = {
     canonical: `${metaData.baseUrl}projects`,
   },
   openGraph: {
-    title: "Projects | CoreSen",
+    title: "Projects | CodePawl",
     description: "Explore machine learning projects, data science applications, and AI solutions developed by Nguyen Xuan An.",
     url: `${metaData.baseUrl}projects`,
-    images: [`${metaData.baseUrl}/og?title=${encodeURIComponent("Projects | CoreSen")}`],
+    images: [`${metaData.baseUrl}/og?title=${encodeURIComponent("Projects | CodePawl")}`],
     siteName: metaData.name,
     locale: "en_US",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Projects | CoreSen",
+    title: "Projects | CodePawl",
     description: "Explore machine learning projects, data science applications, and AI solutions developed by Nguyen Xuan An.",
   },
 };
@@ -36,7 +36,7 @@ export default function Projects() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "CollectionPage",
-            name: "Projects | CoreSen",
+            name: "Projects | CodePawl",
             description: "Explore machine learning projects, data science applications, and AI solutions.",
             url: `${metaData.baseUrl}projects`,
             mainEntity: {

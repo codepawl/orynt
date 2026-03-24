@@ -217,7 +217,7 @@ export default function Profile() {
       <Section title="Leadership & Activities">
         <ExperienceItem
           title="Founder & Content Creator"
-          company="CoreSen"
+          company="CodePawl"
           location="Ho Chi Minh City, Vietnam"
           period="September 2025 - Present"
           items={[

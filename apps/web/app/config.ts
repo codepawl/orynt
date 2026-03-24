@@ -1,6 +1,6 @@
 export const metaData = {
-  baseUrl: "https://coresen.vercel.app/",
-  title: "CoreSen",
+  baseUrl: "https://codepawl.com/",
+  title: "CodePawl",
   name: "Nguyen Xuan An",
   ogImage: "/opengraph-image.png",
   description:

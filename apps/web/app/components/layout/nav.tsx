@@ -107,7 +107,7 @@ export function Navbar() {
   const isDark = currentTheme === "dark";
   
   // Get logo path based on theme
-  const logoPath = isDark ? "/logo-dark.svg" : "/logo-light.svg";
+  const logoPath = isDark ? "/logo_for_dark_mode.svg" : "/logo_for_light_mode.svg";
 
   useEffect(() => {
     const updateMenuColors = () => {
@@ -161,13 +161,13 @@ export function Navbar() {
             <Image
               src={logoPath}
               alt={metaData.title}
-              width={24}
-              height={24}
-              className="w-6 h-6"
+              width={32}
+              height={32}
+              className="w-8 h-8"
             />
           )}
           {!mounted && (
-            <div className="w-6 h-6" />
+            <div className="w-8 h-8" />
           )}
           {metaData.title}
         </Link>
