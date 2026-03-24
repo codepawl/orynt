@@ -46,7 +46,7 @@ html {
   min-width: 360px;
   background-color: #ffffff;
   color: #000000;
-  transition: background-color 0.75s ease, color 0.75s ease;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 html.dark {
@@ -58,7 +58,7 @@ body {
   background-color: inherit;
   color: inherit;
   font-family: var(--font-inter), system-ui, sans-serif;
-  transition: background-color 0.75s ease, color 0.75s ease;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Smooth theme transitions for color-related properties */
@@ -66,7 +66,7 @@ body {
 *::before,
 *::after {
   transition-property: background-color, color, border-color, fill, stroke, box-shadow;
-  transition-duration: 0.75s;
+  transition-duration: 0.3s;
   transition-timing-function: ease;
 }
 
@@ -77,11 +77,10 @@ a,
 input,
 textarea,
 select {
-  transition: background-color 0.75s ease, color 0.75s ease, border-color 0.75s ease, opacity 0.2s ease, transform 0.2s ease, box-shadow 0.75s ease;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, opacity 0.2s ease, transform 0.2s ease, box-shadow 0.3s ease;
 }
 
-/* Exclude canvas and images from color transitions */
-canvas,
+/* Exclude images from color transitions */
 img,
 video,
 iframe {
@@ -1114,40 +1113,21 @@ button {
   margin-bottom: 0;
 }
 
-/* Morphing Blob Effects */
-.blob-container {
+/* Animated Logo */
+.animated-logo-container {
   position: relative;
-  will-change: transform;
-  transform: translateZ(0);
-}
-
-.blob-glow {
-  filter: blur(40px) drop-shadow(0 0 60px rgba(0, 0, 0, 0.3));
-  will-change: filter;
-  transform: translateZ(0);
-}
-
-.blob-glow-dark {
-  filter: blur(40px) drop-shadow(0 0 80px rgba(255, 255, 255, 0.4));
-}
-
-.blob-glow-light {
-  filter: blur(30px) drop-shadow(0 0 50px rgba(0, 0, 0, 0.2));
 }
 
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
-  .blob-container,
-  .blob-glow {
-    animation: none !important;
-    transition: none !important;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
-}
-
-/* Three.js Canvas container */
-canvas {
-  display: block;
-  outline: none;
 }
 
 /* Prevent layout shift for footer */
@@ -1189,28 +1169,8 @@ canvas {
   justify-content: center;
 }
 
-/* GPU acceleration for blob animations */
-.blob-svg {
-  will-change: d;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  perspective: 1000px;
-}
-
-/* Prevent layout shift for Recent Writings section */
-section > div:last-child {
-  min-height: 600px;
-  contain: layout style;
-}
-
-/* Prevent layout shift for blog cards in Recent Writings */
+/* Prevent layout shift for blog cards */
 .ant-card {
-  contain: layout style;
-}
-
-/* Ensure hero section container has stable height */
-section > div:first-child {
-  min-height: 400px;
   contain: layout style;
 }
 

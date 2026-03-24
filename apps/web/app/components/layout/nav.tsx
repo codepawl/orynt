@@ -177,10 +177,9 @@ export function Navbar() {
             selectedKeys={activeKey ? [activeKey] : []}
             items={navItems}
             theme={undefined}
-            style={{ 
-                borderBottom: "none", 
+            style={{
+                borderBottom: "none",
                 backgroundColor: "transparent",
-                minWidth: "300px",
                 justifyContent: "flex-end"
             }}
           />

@@ -1,29 +1,15 @@
 "use client";
 
-import React, { Suspense, useEffect, useState, useRef } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { usePathname } from "next/navigation";
-import dynamic from "next/dynamic";
+import { useRouter, usePathname } from "next/navigation";
 import { Typography, Card, Flex, Button, Space, Spin } from "antd";
 import { formatDate } from "app/lib/utils";
 import { useNavigation } from "../ui/NavigationContext";
+import { AnimatedLogo } from "./AnimatedLogo";
 
 const { Title, Text, Paragraph } = Typography;
-
-// Lazy load MorphingBlob3D to avoid blocking initial render
-const MorphingBlob3D = dynamic(
-  () => import("./MorphingBlob3D").then((mod) => ({ default: mod.MorphingBlob3D })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="w-[300px] h-[300px] md:w-[400px] md:h-[400px] flex items-center justify-center">
-        <div className="w-32 h-32 rounded-full bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
-      </div>
-    ),
-  }
-);
 
 interface BlogPost {
   slug: string;
@@ -41,35 +27,12 @@ interface HomePageProps {
 export function HomePageContent({ recentBlogs }: HomePageProps) {
   const [isPending, setIsPending] = useState(false);
   const [cardLoadingSlug, setCardLoadingSlug] = useState<string | null>(null);
-  const [shouldLoad3D, setShouldLoad3D] = useState(false);
-  const blobContainerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
   const { setNavigating, isNavigating } = useNavigation();
 
-  // Intersection Observer to load 3D only when visible
-  useEffect(() => {
-    if (!blobContainerRef.current) return;
-    
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setShouldLoad3D(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.1, rootMargin: "100px" }
-    );
-    
-    observer.observe(blobContainerRef.current);
-    
-    return () => observer.disconnect();
-  }, []);
-
   const handleNavigation = (href: string) => {
-    if (isNavigating || isPending) {
-      return;
-    }
+    if (isNavigating || isPending) return;
     if (pathname !== href && !pathname.startsWith(href + "/")) {
       setNavigating(true);
     }
@@ -78,9 +41,7 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
   };
 
   const handleCardClick = (slug: string) => {
-    if (isNavigating || isPending) {
-      return;
-    }
+    if (isNavigating || isPending) return;
     const href = `/blog/${slug}`;
     if (pathname !== href && !pathname.startsWith(href + "/")) {
       setNavigating(true);
@@ -90,19 +51,29 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
   };
 
   return (
-    <section suppressHydrationWarning>
+    <section>
       {/* Hero Section */}
-      <div style={{ marginBottom: 80 }}>
-        <div className="flex flex-col md:flex-row items-start gap-8 md:gap-12" style={{ marginBottom: 32 }}>
+      <div style={{ marginBottom: 64 }}>
+        <div className="flex flex-col md:flex-row items-center gap-8 md:gap-16" style={{ marginBottom: 32 }}>
+          {/* Animated Logo — replaces Three.js blob */}
+          <div className="flex-shrink-0 order-first md:order-last">
+            <AnimatedLogo
+              width={220}
+              height={220}
+              className="mx-auto"
+            />
+          </div>
+
           {/* Text Content */}
-          <div style={{ flex: 1, alignSelf: "flex-start" }}>
+          <div style={{ flex: 1 }}>
             <Title
               level={1}
               className="text-neutral-900 dark:text-neutral-100"
               style={{
-                fontSize: "clamp(2.5rem, 5vw, 3.75rem)",
-                marginBottom: 24,
+                fontSize: "clamp(2.25rem, 5vw, 3.5rem)",
+                marginBottom: 16,
                 fontWeight: 700,
+                letterSpacing: "-0.02em",
               }}
             >
               CodePawl
@@ -110,9 +81,9 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
             <Paragraph
               className="text-neutral-600 dark:text-neutral-300"
               style={{
-                fontSize: "clamp(1.25rem, 2vw, 1.5rem)",
-                marginBottom: 32,
-                lineHeight: 1.6,
+                fontSize: "clamp(1.1rem, 1.8vw, 1.35rem)",
+                marginBottom: 28,
+                lineHeight: 1.7,
               }}
             >
               Exploring the depths of AI, data science, and machine learning through{" "}
@@ -146,39 +117,12 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
               </Button>
             </Space>
           </div>
-
-          {/* Morphing Blob 3D - Hidden on mobile, shown on tablet+ */}
-          <div 
-            ref={blobContainerRef}
-            className="hidden md:block" 
-            style={{ flexShrink: 0, width: 300, height: 300 }}
-          >
-            {shouldLoad3D ? (
-              <Suspense
-                fallback={
-                  <div className="w-[300px] h-[300px] flex items-center justify-center">
-                    <div className="w-32 h-32 rounded-full bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
-                  </div>
-                }
-              >
-                <MorphingBlob3D
-                  width={300}
-                  height={300}
-                  className="relative z-0"
-                />
-              </Suspense>
-            ) : (
-              <div className="w-[300px] h-[300px] flex items-center justify-center">
-                <div className="w-32 h-32 rounded-full bg-neutral-200 dark:bg-neutral-800 animate-pulse" />
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
       {/* Recent Writings */}
-      <div style={{ minHeight: "600px" }}>
-        <div className="flex justify-between items-center mb-6" style={{ minHeight: "40px" }}>
+      <div>
+        <div className="flex justify-between items-center mb-6">
           <Title level={2} style={{ margin: 0 }} className="text-neutral-900 dark:text-neutral-100">
             Recent Writings
           </Title>
@@ -187,7 +131,7 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
             onClick={() => handleNavigation("/blog")}
             loading={isPending}
             className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-            style={{ padding: 0, height: "auto", minHeight: "24px" }}
+            style={{ padding: 0, height: "auto" }}
           >
             View all →
           </Button>
@@ -208,10 +152,10 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 key={post.slug}
                 hoverable
                 size="small"
-                style={{ 
-                  width: "100%", 
-                  cursor: "pointer", 
-                  opacity: isCardLoading ? 0.6 : 1, 
+                style={{
+                  width: "100%",
+                  cursor: "pointer",
+                  opacity: isCardLoading ? 0.6 : 1,
                   backgroundColor: "transparent",
                   display: "flex",
                   flexDirection: "column",
@@ -230,16 +174,15 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 }}
               >
                 <div
-                  className="relative w-32 h-32 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center"
+                  className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center"
                   aria-hidden="true"
-                  style={{ minHeight: "128px" }}
                 >
                   {post.metadata.image ? (
                     <Image
                       src={post.metadata.image}
                       alt={post.metadata.title}
                       fill
-                      sizes="128px"
+                      sizes="(min-width: 640px) 128px, 112px"
                       className="object-cover"
                     />
                   ) : (
@@ -274,7 +217,6 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                     {isCardLoading && (
                       <div className="mt-2 flex items-center gap-2 text-sm text-neutral-500">
                         <Spin size="small" />
-                        <span>Loading...</span>
                       </div>
                     )}
                   </div>
