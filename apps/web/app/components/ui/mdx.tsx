@@ -8,9 +8,16 @@ import { YouTubeComponent } from "../features/youtube";
 import { CodeCopyButton } from "./CodeCopyButton";
 import { hoverBrightness } from "../../lib/utils/animations";
 import { KatexLoader } from "./KatexLoader";
+import { RepoCard } from "./RepoCard";
 import rehypeKatex from "rehype-katex";
-import rehypeHighlight from "rehype-highlight";
+import rehypePrettyCode from "rehype-pretty-code";
 import remarkMath from "remark-math";
+
+const rehypePrettyCodeOptions = {
+  theme: { dark: "one-dark-pro", light: "github-light" },
+  keepBackground: false,
+  defaultLang: "plaintext",
+};
 
 
 function CustomLink(props) {
@@ -42,7 +49,7 @@ function extractCodeText(children) {
   if (!children) {
     return "";
   }
-  
+
   return Children.toArray(children)
     .map((child) => {
       if (typeof child === "string" || typeof child === "number") {
@@ -55,12 +62,6 @@ function extractCodeText(children) {
       return "";
     })
     .join("");
-}
-
-function getLanguageFromClassName(className) {
-  if (!className) return null;
-  const match = className.match(/language-(\w+)/);
-  return match ? match[1] : null;
 }
 
 function formatLanguageName(lang) {
@@ -81,118 +82,97 @@ function formatLanguageName(lang) {
     html: "HTML",
     css: "CSS",
     sql: "SQL",
+    plaintext: "Text",
   };
   return langMap[lang?.toLowerCase()] || lang?.toUpperCase() || "Code";
 }
 
 function Code({ children, className, ...props }) {
-  const language = getLanguageFromClassName(className);
-  const isCodeBlock = className?.includes("language-");
-  const isHighlighted = className?.includes("hljs");
-
-  // For code blocks (inside <pre>), return as-is - rehype-highlight or Pre component will handle highlighting
-  if (isCodeBlock) {
-    // If already highlighted by rehype-highlight, just return it
-    if (isHighlighted) {
-      return (
-        <code
-          className={className || ""}
-          {...props}
-          data-language={language || undefined}
-        >
-          {children}
-        </code>
-      );
-    }
-    // Otherwise, return as-is for Pre component to handle
-    return (
-      <code
-        className={className || ""}
-        {...props}
-        data-language={language || undefined}
-      >
-        {children}
-      </code>
-    );
-  }
-
-  // For inline code, return as plain text (rehype-highlight handles code blocks)
   return <code className={className} {...props}>{children}</code>;
 }
 
-function Pre({ children, className, ...props }) {
-  // Extract code element and language from children
-  let language: string | null = null;
-  let codeText = "";
-  let codeClassName = "";
-  let isAlreadyHighlighted = false;
-
-  // Try to find code element in children
-  const childrenArray = Children.toArray(children);
-  
-  for (const child of childrenArray) {
-    if (React.isValidElement(child)) {
-      // Check if it's a code element directly
-      if (child.type === "code" || (typeof child.type === "string" && child.type === "code")) {
-        const childProps = child.props as { className?: string; children?: React.ReactNode };
-        codeClassName = childProps?.className || "";
-        language = getLanguageFromClassName(codeClassName);
-        codeText = extractCodeText(childProps.children);
-        
-        // Check if already highlighted by rehype-highlight (has hljs class)
-        if (codeClassName.includes("hljs")) {
-          isAlreadyHighlighted = true;
-        }
-        break;
-      }
-    }
+function Figure({ children, ...props }) {
+  // rehype-pretty-code wraps code blocks in <figure>
+  if ("data-rehype-pretty-code-figure" in props) {
+    return (
+      <div className="my-6 group">
+        {children}
+      </div>
+    );
   }
+  return <figure {...props}>{children}</figure>;
+}
 
-  // If still no code found, try extracting from all children
-  if (!codeText) {
-    codeText = extractCodeText(children);
-    // Try to find language from any code element in the tree
-    Children.forEach(children, (child) => {
-      if (React.isValidElement(child)) {
-        const childClassName = (child.props as { className?: string })?.className || "";
-        if (childClassName.includes("language-")) {
-          language = getLanguageFromClassName(childClassName);
-          codeClassName = childClassName;
-        }
-        if (childClassName.includes("hljs")) {
-          isAlreadyHighlighted = true;
-        }
-      }
-    });
-  }
-
-  const displayLanguage = language ? formatLanguageName(language) : null;
-  const preClassName = `bg-neutral-100 dark:bg-neutral-800/50 rounded-md overflow-x-auto py-3 px-4 text-sm font-mono ${className || ""}`;
-
-  return (
-    <div className="my-6 group">
-      {/* Header with language label and copy button - outside pre */}
-      {(displayLanguage || codeText) && (
-        <div className="flex justify-between items-center px-4 py-2 bg-neutral-100 dark:bg-neutral-800/50 rounded-t-md border-b border-neutral-200 dark:border-neutral-700">
-          {displayLanguage && (
-            <div className="px-2 py-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              {displayLanguage}
-            </div>
-          )}
-          {codeText && (
-            <div>
-              <CodeCopyButton code={codeText} />
-            </div>
-          )}
-        </div>
-      )}
-      {/* Code block */}
-      <pre
-        className={`${preClassName} ${(displayLanguage || codeText) ? "rounded-t-none" : ""} ${isAlreadyHighlighted ? "hljs" : ""}`}
+function Figcaption({ children, ...props }) {
+  // rehype-pretty-code title (```python title="main.py")
+  if ("data-rehype-pretty-code-title" in props) {
+    return (
+      <figcaption
+        className="flex items-center px-4 py-2 text-xs font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800/50 rounded-t-md border-b border-neutral-200 dark:border-neutral-700"
         {...props}
       >
         {children}
-      </pre>
+      </figcaption>
+    );
+  }
+  return <figcaption {...props}>{children}</figcaption>;
+}
+
+function Pre({ children, ...props }) {
+  const dataLanguage = props["data-language"];
+  const isRehypePrettyCode = dataLanguage !== undefined;
+
+  // Extract code text for copy button
+  let codeText = "";
+  const childrenArray = Children.toArray(children);
+  for (const child of childrenArray) {
+    if (React.isValidElement(child)) {
+      codeText = extractCodeText((child.props as { children?: React.ReactNode }).children);
+      break;
+    }
+  }
+  if (!codeText) {
+    codeText = extractCodeText(children);
+  }
+
+  const displayLanguage = dataLanguage ? formatLanguageName(dataLanguage) : null;
+  const preClassName = "bg-neutral-100 dark:bg-neutral-800/50 rounded-md overflow-x-auto py-3 px-4 text-sm font-mono";
+
+  const headerBar = (displayLanguage || codeText) ? (
+    <div className="flex justify-between items-center px-4 py-2 bg-neutral-100 dark:bg-neutral-800/50 rounded-t-md border-b border-neutral-200 dark:border-neutral-700">
+      {displayLanguage && (
+        <div className="px-2 py-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          {displayLanguage}
+        </div>
+      )}
+      {codeText && (
+        <div>
+          <CodeCopyButton code={codeText} />
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const hasTitle = isRehypePrettyCode; // Figure component provides outer wrapper
+  const preElement = (
+    <pre
+      className={`${preClassName} ${headerBar || hasTitle ? "rounded-t-none" : ""}`}
+      {...props}
+    >
+      {children}
+    </pre>
+  );
+
+  if (isRehypePrettyCode) {
+    // Figure component provides the outer <div className="my-6 group"> wrapper
+    return <>{headerBar}{preElement}</>;
+  }
+
+  // Fallback for non-rehype-pretty-code pre blocks (e.g., plain markdown)
+  return (
+    <div className="my-6 group">
+      {headerBar}
+      {preElement}
     </div>
   );
 }
@@ -242,7 +222,7 @@ function Tags(props) {
     if (!children) {
       return "";
     }
-    
+
     return Children.toArray(children)
       .map((child) => {
         if (typeof child === "string" || typeof child === "number") {
@@ -259,7 +239,7 @@ function Tags(props) {
 
   const text = extractText(props.children);
   const trimmedText = text.trim();
-  
+
   if (!trimmedText || !trimmedText.toLowerCase().startsWith("tags:")) {
     return <p {...props} />;
   }
@@ -304,7 +284,7 @@ function createHeading(level) {
     const slug = slugify(children);
     const baseTextColor = "text-neutral-900 dark:text-neutral-100";
     const animationClasses = hoverBrightness.classes;
-    
+
     const headingClasses = {
       1: `${baseTextColor} text-4xl md:text-5xl font-bold mt-8 mb-4 block ${animationClasses}`,
       2: `${baseTextColor} text-[30px] md:text-4xl font-semibold mt-8 mb-4 block ${animationClasses}`,
@@ -343,8 +323,11 @@ const components = {
   StaticTweet: TweetComponent,
   Caption: CaptionComponent,
   YouTube: YouTubeComponent,
+  RepoCard,
   pre: Pre,
   code: Code,
+  figure: Figure,
+  figcaption: Figcaption,
   Table,
   del: Strikethrough,
   Callout,
@@ -361,7 +344,7 @@ export function CustomMDX(props) {
         options={{
           mdxOptions: {
             remarkPlugins: [remarkMath],
-            rehypePlugins: [rehypeHighlight, rehypeKatex],
+            rehypePlugins: [[rehypePrettyCode, rehypePrettyCodeOptions], rehypeKatex],
           },
         }}
       />

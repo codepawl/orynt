@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { Clipboard, CheckLg } from "react-bootstrap-icons";
 
 interface PerformanceMetrics {
   loadTime: number;
@@ -151,11 +151,11 @@ Resource Sizes:
         >
           {copied ? (
             <>
-              <Check size={12} /> Copied!
+              <CheckLg size={12} /> Copied!
             </>
           ) : (
             <>
-              <Copy size={12} /> Copy
+              <Clipboard size={12} /> Copy
             </>
           )}
         </button>

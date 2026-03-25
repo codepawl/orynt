@@ -1,26 +1,19 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Segmented } from "antd";
-import { LayoutGrid, List } from "lucide-react";
+import { Grid3x3GapFill, ListUl, StarFill, Diagram2 } from "react-bootstrap-icons";
 import { ContentCard } from "../components/ui/ContentCard";
-
-interface Project {
-  title: string;
-  year: number | string;
-  description: string;
-  url: string;
-}
+import type { EnrichedProject } from "./project-data";
 
 interface ProjectsListClientProps {
-  projects: Project[];
+  projects: EnrichedProject[];
 }
 
 export function ProjectsListClient({ projects }: ProjectsListClientProps) {
   const [, startTransition] = useTransition();
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [isSwitchingView, setIsSwitchingView] = useState(false);
-  const switchTimerRef = useRef<number | null>(null);
 
   const handleClick = (url: string) => {
     startTransition(() => {
@@ -34,51 +27,74 @@ export function ProjectsListClient({ projects }: ProjectsListClientProps) {
       : "grid gap-4 grid-cols-1 w-full items-stretch";
   }, [view]);
 
-  const handleViewChange = (nextView: "grid" | "list") => {
-    if (nextView === view) return;
-    if (switchTimerRef.current) {
-      window.clearTimeout(switchTimerRef.current);
-    }
-
-    setIsSwitchingView(true);
-    switchTimerRef.current = window.setTimeout(() => {
-      setView(nextView);
-      window.setTimeout(() => setIsSwitchingView(false), 20);
-    }, 120);
-  };
-
   return (
     <div className="w-full">
       <div className="flex justify-end mb-4">
         <Segmented<"grid" | "list">
           size="small"
           value={view}
-          onChange={(val) => handleViewChange(val)}
+          onChange={(val) => setView(val)}
           className="segmented-square"
           options={[
-            { label: <LayoutGrid size={16} />, value: "grid" },
-            { label: <List size={16} />, value: "list" },
+            { label: <Grid3x3GapFill size={16} />, value: "grid" },
+            { label: <ListUl size={16} />, value: "list" },
           ]}
         />
       </div>
 
-      <div
-        className={`${containerClassName} transition-all duration-200 ease-out ${
-          isSwitchingView ? "opacity-0 translate-y-1" : "opacity-100 translate-y-0"
-        }`}
-      >
-        {projects.map((project, index) => (
-          <ContentCard
-            key={index}
-            title={project.title}
-            description={project.description}
-            year={project.year}
-            href={project.url}
-            onClick={() => handleClick(project.url)}
-            external={true}
-          />
-        ))}
-      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={view}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          transition={{ duration: 0.15, ease: "easeOut" }}
+          className={containerClassName}
+        >
+          {projects.map((project, index) => (
+            <div key={index}>
+              <ContentCard
+                title={project.title}
+                description={project.description}
+                year={project.year}
+                href={project.url}
+                onClick={() => handleClick(project.url)}
+                external={true}
+              />
+              {project.stats && (
+                <div className="flex items-center gap-3 mt-1.5 px-2 text-xs text-neutral-500 dark:text-neutral-400">
+                  {project.stats.language && (
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full bg-neutral-400 dark:bg-neutral-500" />
+                      {project.stats.language}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1">
+                    {project.isLive && (
+                      <span className="relative flex h-2 w-2" title="Live data from GitHub">
+                        <motion.span
+                          className="absolute inline-flex h-full w-full rounded-full bg-green-400"
+                          animate={{ scale: [1, 1.5, 1], opacity: [0.75, 0, 0.75] }}
+                          transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut" }}
+                        />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                      </span>
+                    )}
+                    <StarFill size={12} />
+                    {project.stats.stars}
+                  </span>
+                  {project.stats.forks > 0 && (
+                    <span className="flex items-center gap-1">
+                      <Diagram2 size={12} />
+                      {project.stats.forks}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }

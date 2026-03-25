@@ -3,9 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
 import { Card, Flex, Typography } from "antd";
-import { useNavigation } from "./NavigationContext";
 
 const { Text } = Typography;
 
@@ -36,12 +34,8 @@ export function ContentCard({
 }: ContentCardProps) {
   const descriptionRef = useRef<HTMLDivElement>(null);
   const [isTruncated, setIsTruncated] = useState(false);
-  const pathname = usePathname();
-  const { setNavigating, isNavigating } = useNavigation();
-  const clickRef = useRef<boolean>(false);
 
-  // Generate initials from title if not provided
-  const displayInitials = initials || 
+  const displayInitials = initials ||
     title
       .split(/\s+/)
       .filter(Boolean)
@@ -49,19 +43,11 @@ export function ContentCard({
       .map((w) => w[0]?.toUpperCase())
       .join("") || "BL";
 
-  // Reset click lock when navigation completes (pathname changes)
-  useEffect(() => {
-    clickRef.current = false;
-    setNavigating(false);
-  }, [pathname, setNavigating]);
-
-  // Check if description is truncated
   useEffect(() => {
     const checkTruncation = () => {
       if (descriptionRef.current && description) {
         const element = descriptionRef.current;
-        const isTextTruncated = element.scrollHeight > element.clientHeight;
-        setIsTruncated(isTextTruncated);
+        setIsTruncated(element.scrollHeight > element.clientHeight);
       } else {
         setIsTruncated(false);
       }
@@ -75,20 +61,16 @@ export function ContentCard({
   const thumbClassName = "w-32 h-32";
   const displayDate = date || (year ? String(year) : "");
 
-  const isDisabled = isNavigating && pathname !== href && !pathname.startsWith(href + "/");
-  
   const cardContent = (
     <Card
-      hoverable={!isDisabled}
+      hoverable
       size="small"
-      style={{ 
-        width: "100%", 
-        cursor: isDisabled ? "not-allowed" : "pointer", 
-        backgroundColor: "transparent", 
+      style={{
+        width: "100%",
+        cursor: "pointer",
+        backgroundColor: "transparent",
         minHeight: "180px",
         height: "100%",
-        opacity: isDisabled ? 0.6 : 1,
-        transition: "opacity 0.2s ease",
       }}
       className={`card-shadow-offset ${className}`}
     >
@@ -149,7 +131,7 @@ export function ContentCard({
                 <div
                   ref={descriptionRef}
                   className="content-card-description text-neutral-700 dark:text-neutral-300"
-                  style={{ 
+                  style={{
                     fontSize: 14,
                     lineHeight: 1.5,
                     paddingRight: isTruncated ? "80px" : "0",
@@ -186,35 +168,10 @@ export function ContentCard({
     );
   }
 
-  const handleClick = (e: React.MouseEvent) => {
-    // Prevent navigation if already on the target page
-    if (pathname === href) {
-      e.preventDefault();
-      return;
-    }
-    
-    // Block all navigation if any navigation is in progress
-    if (isNavigating || clickRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    
-    // Trigger navigation state if navigating to a different page
-    if (pathname !== href && !pathname.startsWith(href + "/")) {
-      clickRef.current = true;
-      setNavigating(true);
-    }
-    
-    if (onClick) {
-      onClick(e);
-    }
-  };
-
   return (
     <Link
       href={href}
-      onClick={handleClick}
+      onClick={onClick}
       style={{ width: "100%", textDecoration: "none", display: "block" }}
     >
       {cardContent}

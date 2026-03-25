@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "next-themes";
+import { motion } from "motion/react";
 
 interface AnimatedLogoProps {
   width?: number;
@@ -80,14 +81,13 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
         />
 
         {/* Top arm of > — flattens to horizontal dash on hover */}
-        <g
-          style={{
-            transform: isHovered
-              ? "rotate(45deg) translateY(-11.2px)"
-              : "rotate(0deg) translateY(0px)",
-            transformOrigin: "203.87px 235.94px",
-            transition: "transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        <motion.g
+          animate={{
+            rotate: isHovered ? 45 : 0,
+            translateY: isHovered ? -11.2 : 0,
           }}
+          transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
+          style={{ transformOrigin: "203.87px 235.94px" }}
         >
           <line
             x1="192.675" y1="247.14"
@@ -96,17 +96,16 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
             strokeWidth="21.1132"
             strokeLinecap="round"
           />
-        </g>
+        </motion.g>
 
         {/* Bottom arm of > — flattens to horizontal dash on hover */}
-        <g
-          style={{
-            transform: isHovered
-              ? "rotate(-45deg) translateY(11.2px)"
-              : "rotate(0deg) translateY(0px)",
-            transformOrigin: "203.87px 213.55px",
-            transition: "transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        <motion.g
+          animate={{
+            rotate: isHovered ? -45 : 0,
+            translateY: isHovered ? 11.2 : 0,
           }}
+          transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
+          style={{ transformOrigin: "203.87px 213.55px" }}
         >
           <line
             x1="215.069" y1="224.746"
@@ -115,7 +114,7 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
             strokeWidth="21.1132"
             strokeLinecap="round"
           />
-        </g>
+        </motion.g>
 
         {/* Right horizontal dash — existing "eye" */}
         <line
@@ -127,18 +126,14 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
         />
 
         {/* Eye (circle) with blink animation */}
-        <ellipse
+        <motion.ellipse
           cx="250.432"
           cy="286.955"
           rx="15.8349"
-          ry={isBlinking ? 2 : 15.8349}
+          animate={{ ry: isBlinking ? 2 : 15.8349 }}
+          transition={{ duration: isBlinking ? 0.08 : 0.12, ease: isBlinking ? "easeIn" : "easeOut" }}
           fill={fg}
-          style={{
-            transition: isBlinking
-              ? "ry 0.08s ease-in"
-              : "ry 0.12s ease-out",
-            transformOrigin: "250.432px 286.955px",
-          }}
+          style={{ transformOrigin: "250.432px 286.955px" }}
         />
       </svg>
 

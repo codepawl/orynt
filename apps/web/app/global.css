@@ -12,34 +12,36 @@
   color: #000000;
 }
 
-:root {
-  --sh-class: #7c3aed; /* Purple for classes */
-  --sh-identifier: #1e40af; /* Blue for identifiers */
-  --sh-sign: #6b7280; /* Gray for signs */
-  --sh-string: #059669; /* Green for strings */
-  --sh-keyword: #dc2626; /* Red for keywords */
-  --sh-comment: #6b7280; /* Gray for comments */
-  --sh-jsxliterals: #7c3aed; /* Purple for JSX */
-  --sh-property: #1e40af; /* Blue for properties */
-  --sh-entity: #1e40af; /* Blue for entities */
-  --sh-number: #ea580c; /* Orange for numbers */
-  --sh-function: #7c3aed; /* Purple for functions */
-  --sh-operator: #6b7280; /* Gray for operators */
+/* rehype-pretty-code: dual theme support (shiki) */
+code[data-theme*=" "] span {
+  color: var(--shiki-light);
+}
+.dark code[data-theme*=" "] span {
+  color: var(--shiki-dark);
 }
 
-.dark {
-  --sh-class: #a78bfa; /* Light purple for classes */
-  --sh-identifier: #60a5fa; /* Light blue for identifiers */
-  --sh-sign: #9ca3af; /* Light gray for signs */
-  --sh-string: #34d399; /* Light green for strings */
-  --sh-keyword: #f87171; /* Light red for keywords */
-  --sh-comment: #9ca3af; /* Light gray for comments */
-  --sh-jsxliterals: #a78bfa; /* Light purple for JSX */
-  --sh-property: #60a5fa; /* Light blue for properties */
-  --sh-entity: #60a5fa; /* Light blue for entities */
-  --sh-number: #fb923c; /* Light orange for numbers */
-  --sh-function: #a78bfa; /* Light purple for functions */
-  --sh-operator: #9ca3af; /* Light gray for operators */
+/* rehype-pretty-code: line highlighting */
+[data-line] {
+  padding: 0 1rem;
+  border-left: 2px solid transparent;
+}
+[data-highlighted-line] {
+  background-color: rgba(200, 200, 255, 0.1);
+  border-left-color: #60a5fa;
+}
+
+/* rehype-pretty-code: line numbers (opt-in via showLineNumbers) */
+code[data-line-numbers] {
+  counter-reset: line;
+}
+code[data-line-numbers] > [data-line]::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 1rem;
+  margin-right: 1rem;
+  text-align: right;
+  color: #6b7280;
 }
 
 html {
@@ -202,136 +204,6 @@ code, pre, .prose code, .prose pre {
 
 .dark .ant-typography-title {
   color: rgba(255, 255, 255, 0.85) !important;
-}
-
-.ant-menu,
-.ant-menu-item {
-  font-family: var(--font-inter), system-ui, sans-serif;
-}
-
-.ant-menu-item {
-  position: relative !important;
-  overflow: visible !important;
-}
-
-.ant-menu-title-content {
-  position: relative !important;
-  display: inline-block !important;
-}
-
-.ant-menu-item a,
-.ant-menu-item .ant-menu-title-content a,
-.nav-link {
-  color: rgba(0, 0, 0, 0.88) !important;
-  position: relative !important;
-  text-decoration: none !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  transition: color 0.3s ease !important;
-}
-
-.dark .ant-menu-item a,
-.dark .ant-menu-item .ant-menu-title-content a,
-.dark .nav-link {
-  color: rgba(255, 255, 255, 0.85) !important;
-  transition: color 0.3s ease !important;
-}
-
-.ant-menu-item a::after,
-.ant-menu-item .ant-menu-title-content a::after,
-.nav-link::after,
-.ant-menu-title-content a::after {
-  content: "" !important;
-  position: absolute !important;
-  bottom: -2px !important;
-  left: 50% !important;
-  width: 0 !important;
-  height: 2px !important;
-  background-color: currentColor !important;
-  transform: translateX(-50%) !important;
-  transition: width 0.25s ease, opacity 0.25s ease !important;
-  opacity: 0 !important;
-  z-index: 10 !important;
-  pointer-events: none !important;
-}
-
-.ant-menu-item a:hover::after,
-.ant-menu-item .ant-menu-title-content a:hover::after,
-.nav-link:hover::after,
-.ant-menu-item-active a::after,
-.ant-menu-item-selected a::after,
-.ant-menu-item-active .ant-menu-title-content a::after,
-.ant-menu-item-selected .ant-menu-title-content a::after {
-  width: 100% !important;
-  opacity: 1 !important;
-}
-
-/* Override any Ant Design default underline */
-.ant-menu-item::before,
-.ant-menu-item::after {
-  display: none !important;
-}
-
-.ant-menu-item-active::before,
-.ant-menu-item-selected::before {
-  display: none !important;
-}
-
-.ant-menu-light .ant-menu-item-selected,
-.ant-menu-light .ant-menu-item-selected .ant-menu-title-content,
-.ant-menu-light .ant-menu-item-selected .ant-menu-title-content a,
-.ant-menu-light .ant-menu-item-selected a,
-.nav-link-active,
-a.nav-link-active,
-.ant-menu-item-selected.nav-link-active,
-.ant-menu-item.ant-menu-item-selected .ant-menu-title-content a.nav-link-active,
-.ant-menu-item.ant-menu-item-selected .ant-menu-title-content .nav-link-active,
-.ant-menu-title-content .nav-link-active,
-li.ant-menu-item.ant-menu-item-selected .ant-menu-title-content .nav-link-active,
-.ant-menu-item.ant-menu-item-selected .ant-menu-title-content a,
-.ant-menu-item.ant-menu-item-selected .ant-menu-title-content a.ant-menu-item-selected,
-li.ant-menu-item.ant-menu-item-selected .ant-menu-title-content a,
-li.ant-menu-item.ant-menu-item-selected .ant-menu-title-content a.ant-menu-item-selected {
-  color: rgba(0, 0, 0, 0.88) !important;
-  transition: color 0.3s ease !important;
-}
-
-.dark .ant-menu-item,
-.dark .ant-menu-item a {
-  color: rgba(255, 255, 255, 0.85) !important;
-  transition: color 0.3s ease !important;
-}
-
-.dark .ant-menu-item-active,
-.dark .ant-menu-item-selected,
-.dark .ant-menu-item-active a,
-.dark .ant-menu-item-selected a,
-.dark a.ant-menu-item-selected {
-  color: rgba(255, 255, 255, 1) !important;
-  transition: color 0.3s ease !important;
-}
-
-.dark .ant-menu-light .ant-menu-item-selected,
-.dark .ant-menu-light .ant-menu-item-selected .ant-menu-title-content,
-.dark .ant-menu-light .ant-menu-item-selected .ant-menu-title-content a,
-.dark .ant-menu-light .ant-menu-item-selected a,
-.dark .ant-menu-dark .ant-menu-item-selected,
-.dark .ant-menu-dark .ant-menu-item-selected .ant-menu-title-content,
-.dark .ant-menu-dark .ant-menu-item-selected .ant-menu-title-content a,
-.dark .ant-menu-dark .ant-menu-item-selected a,
-.dark .nav-link-active,
-.dark a.nav-link-active,
-.dark .ant-menu-item-selected.nav-link-active,
-.dark .ant-menu-item.ant-menu-item-selected .ant-menu-title-content a.nav-link-active,
-.dark .ant-menu-item.ant-menu-item-selected .ant-menu-title-content .nav-link-active,
-.dark .ant-menu-title-content .nav-link-active,
-.dark li.ant-menu-item.ant-menu-item-selected .ant-menu-title-content .nav-link-active,
-.dark .ant-menu-item.ant-menu-item-selected .ant-menu-title-content a,
-.dark .ant-menu-item.ant-menu-item-selected .ant-menu-title-content a.ant-menu-item-selected,
-.dark li.ant-menu-item.ant-menu-item-selected .ant-menu-title-content a,
-.dark li.ant-menu-item.ant-menu-item-selected .ant-menu-title-content a.ant-menu-item-selected {
-  color: rgba(255, 255, 255, 1) !important;
-  transition: color 0.3s ease !important;
 }
 
 .ant-card,
@@ -654,54 +526,6 @@ button {
   margin-bottom: 0;
 }
 
-/* Override highlight.js styles to match our theme */
-.prose pre.hljs,
-.prose pre code.hljs {
-  background: transparent !important;
-}
-
-.prose pre code.hljs {
-  display: block;
-  overflow-x: auto;
-  background: transparent;
-}
-
-/* Highlight.js token colors - override to match our theme */
-.prose pre code.hljs .hljs-keyword {
-  color: var(--sh-keyword) !important;
-}
-
-.prose pre code.hljs .hljs-string {
-  color: var(--sh-string) !important;
-}
-
-.prose pre code.hljs .hljs-comment {
-  color: var(--sh-comment) !important;
-  font-style: italic;
-}
-
-.prose pre code.hljs .hljs-title,
-.prose pre code.hljs .hljs-class {
-  color: var(--sh-class) !important;
-}
-
-.prose pre code.hljs .hljs-variable,
-.prose pre code.hljs .hljs-attr {
-  color: var(--sh-identifier) !important;
-}
-
-.prose pre code.hljs .hljs-number {
-  color: var(--sh-number) !important;
-}
-
-.prose pre code.hljs .hljs-function {
-  color: var(--sh-function) !important;
-}
-
-.prose pre code.hljs .hljs-operator {
-  color: var(--sh-operator) !important;
-}
-
 .prose code {
   @apply px-1 py-0.5 rounded-lg;
 }
@@ -712,97 +536,9 @@ button {
   line-height: 1.6;
   background-color: transparent;
   font-weight: 400;
-  /* Don't use color: inherit - it overrides syntax highlighting colors */
-  color: #262626; /* Default text color for unhighlighted code */
   font-size: 0.875rem;
   display: block;
   white-space: pre;
-}
-
-/* Ensure code.hljs has padding for better spacing from border */
-.prose pre code.hljs {
-  padding: 0.5rem 0.75rem !important;
-}
-
-.dark .prose pre code {
-  color: #e5e5e5; /* Default text color for dark mode */
-}
-
-/* Syntax highlighting styles for sugar-high */
-.prose pre code .sh__token--keyword,
-.prose pre code .sh__token--keyword * {
-  color: var(--sh-keyword) !important;
-  font-weight: 500;
-}
-
-.prose pre code .sh__token--string,
-.prose pre code .sh__token--string * {
-  color: var(--sh-string) !important;
-}
-
-.prose pre code .sh__token--comment,
-.prose pre code .sh__token--comment * {
-  color: var(--sh-comment) !important;
-  font-style: italic;
-}
-
-.prose pre code .sh__token--class,
-.prose pre code .sh__token--class * {
-  color: var(--sh-class) !important;
-}
-
-.prose pre code .sh__token--identifier,
-.prose pre code .sh__token--identifier * {
-  color: var(--sh-identifier) !important;
-}
-
-.prose pre code .sh__token--sign,
-.prose pre code .sh__token--sign * {
-  color: var(--sh-sign) !important;
-}
-
-.prose pre code .sh__token--property,
-.prose pre code .sh__token--property * {
-  color: var(--sh-property) !important;
-}
-
-.prose pre code .sh__token--entity,
-.prose pre code .sh__token--entity * {
-  color: var(--sh-entity) !important;
-}
-
-.prose pre code .sh__token--jsxliterals,
-.prose pre code .sh__token--jsxliterals * {
-  color: var(--sh-jsxliterals) !important;
-}
-
-.prose pre code .sh__token--number,
-.prose pre code .sh__token--number * {
-  color: var(--sh-number) !important;
-}
-
-.prose pre code .sh__token--function,
-.prose pre code .sh__token--function * {
-  color: var(--sh-function) !important;
-}
-
-.prose pre code .sh__token--operator,
-.prose pre code .sh__token--operator * {
-  color: var(--sh-operator) !important;
-}
-
-/* Inline code syntax highlighting */
-.prose code:not(pre code) .sh__token--keyword {
-  color: var(--sh-keyword);
-}
-
-.prose code:not(pre code) .sh__token--string {
-  color: var(--sh-string);
-}
-
-.prose code:not(pre code) .sh__token--comment {
-  color: var(--sh-comment);
-  font-style: italic;
 }
 
 .prose img {

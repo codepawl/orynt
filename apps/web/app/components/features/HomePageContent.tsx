@@ -1,12 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
-import { Typography, Card, Flex, Button, Space, Spin } from "antd";
+import { Typography, Card, Flex, Button, Space } from "antd";
 import { formatDate } from "app/lib/utils";
-import { useNavigation } from "../ui/NavigationContext";
 import { AnimatedLogo } from "./AnimatedLogo";
 
 const { Title, Text, Paragraph } = Typography;
@@ -25,21 +23,6 @@ interface HomePageProps {
 }
 
 export function HomePageContent({ recentBlogs }: HomePageProps) {
-  const [cardLoadingSlug, setCardLoadingSlug] = useState<string | null>(null);
-  const pathname = usePathname();
-  const { setNavigating, isNavigating } = useNavigation();
-
-  // Reset loading states when navigation completes
-  useEffect(() => {
-    setCardLoadingSlug(null);
-  }, [pathname]);
-
-  const handleCardClick = (slug: string) => {
-    if (isNavigating) return;
-    setCardLoadingSlug(slug);
-    setNavigating(true);
-  };
-
   return (
     <section>
       {/* Hero Section */}
@@ -96,13 +79,13 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                   Read Blog
                 </Button>
               </Link>
-              <Link href="/profile">
+              <Link href="/about">
                 <Button
                   type="default"
                   size="large"
                   style={{ minWidth: 140, height: 40 }}
                 >
-                  View Profile
+                  About
                 </Button>
               </Link>
             </Space>
@@ -125,7 +108,6 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
         </div>
         <Flex vertical gap="middle" style={{ width: "100%" }}>
           {recentBlogs.map((post) => {
-            const isCardLoading = cardLoadingSlug === post.slug;
             const initials =
               post.metadata.title
                 .split(/\s+/)
@@ -138,7 +120,6 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
               <Link
                 key={post.slug}
                 href={`/blog/${post.slug}`}
-                onClick={() => handleCardClick(post.slug)}
                 style={{ textDecoration: "none", display: "block" }}
               >
               <Card
@@ -147,7 +128,6 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 style={{
                   width: "100%",
                   cursor: "pointer",
-                  opacity: isCardLoading ? 0.6 : 1,
                   backgroundColor: "transparent",
                   display: "flex",
                   flexDirection: "column",
@@ -205,11 +185,6 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                     >
                       {formatDate(post.metadata.publishedAt, false)}
                     </Text>
-                    {isCardLoading && (
-                      <div className="mt-2 flex items-center gap-2 text-sm text-neutral-500">
-                        <Spin size="small" />
-                      </div>
-                    )}
                   </div>
                 </Flex>
               </Card>

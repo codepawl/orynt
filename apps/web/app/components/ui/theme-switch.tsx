@@ -3,7 +3,8 @@ import * as React from "react";
 import { useTheme } from "next-themes";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import type { ThemeProviderProps } from "next-themes";
-import { SunMoon } from "lucide-react";
+import { CircleHalf } from "react-bootstrap-icons";
+import { motion } from "motion/react";
 
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   return (
@@ -34,7 +35,7 @@ export const ThemeSwitch: React.FC = React.memo(() => {
   if (!mounted) {
     return (
       <div className="flex items-center justify-center w-9 h-9 rounded-md border border-neutral-300 dark:border-neutral-700">
-        <SunMoon
+        <CircleHalf
           className="h-5 w-5 text-neutral-900 dark:text-neutral-100"
           aria-hidden="true"
         />
@@ -45,16 +46,16 @@ export const ThemeSwitch: React.FC = React.memo(() => {
   const currentTheme = theme === "dark" ? "dark" : "light";
 
   return (
-    <button
+    <motion.button
       id="theme-toggle"
       aria-label={`${currentTheme} mode`}
       onClick={toggleTheme}
-      className="flex items-center justify-center w-9 h-9 rounded-md border border-neutral-300 dark:border-neutral-700 transition-all duration-200 hover:opacity-80 hover:border-neutral-400 dark:hover:border-neutral-600 active:scale-95"
+      className="flex items-center justify-center w-9 h-9 rounded-md border border-neutral-300 dark:border-neutral-700 hover:opacity-80 hover:border-neutral-400 dark:hover:border-neutral-600"
+      whileTap={{ scale: 0.95 }}
+      transition={{ duration: 0.15 }}
     >
-      <SunMoon
-        className="h-5 w-5 text-neutral-900 dark:text-neutral-100"
-      />
-    </button>
+      <CircleHalf className="h-5 w-5 text-neutral-900 dark:text-neutral-100" />
+    </motion.button>
   );
 });
 

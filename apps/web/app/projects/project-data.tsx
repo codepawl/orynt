@@ -5,6 +5,22 @@ export interface Project {
   url: string;
 }
 
+export interface ApiProjectStats {
+  stars: number;
+  forks: number;
+  language: string | null;
+  lastCommitDate: string | null;
+  lastCommitMessage: string | null;
+  latestRelease: string | null;
+  latestReleaseDate: string | null;
+  openIssues: number;
+}
+
+export interface EnrichedProject extends Project {
+  stats?: ApiProjectStats;
+  isLive: boolean;
+}
+
 export const projects: Project[] = [
   {
     title: "Loclean",

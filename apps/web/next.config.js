@@ -10,7 +10,7 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "img.youtube.com",
+        hostname: "**",
       },
     ],
   },
@@ -19,7 +19,7 @@ const nextConfig = {
   },
   serverExternalPackages: ["next-mdx-remote"],
   experimental: {
-    optimizePackageImports: ["antd", "lucide-react"],
+    optimizePackageImports: ["antd", "react-bootstrap-icons"],
   },
   async rewrites() {
     return [

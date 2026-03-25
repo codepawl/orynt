@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { projects } from "./project-data";
 import { metaData } from "app/config";
 import { ProjectsListClient } from "./ProjectsListClient";
+import { fetchProjectStats, mergeProjectData } from "app/lib/projects";
 
 export const metadata: Metadata = {
   title: "Projects",
@@ -26,7 +27,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Projects() {
+export default async function Projects() {
+  const statsMap = await fetchProjectStats();
+  const enrichedProjects = mergeProjectData(projects, statsMap);
+
   return (
     <>
       <script
@@ -59,7 +63,7 @@ export default function Projects() {
         <h1 className="mb-8 text-2xl font-medium tracking-tight text-neutral-900 dark:text-neutral-100">
           Projects
         </h1>
-        <ProjectsListClient projects={projects} />
+        <ProjectsListClient projects={enrichedProjects} />
       </section>
     </>
   );

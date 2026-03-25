@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { Clipboard, CheckLg } from "react-bootstrap-icons";
+import { motion, AnimatePresence } from "motion/react";
 
 interface CodeCopyButtonProps {
   code: string;
@@ -32,18 +33,31 @@ export function CodeCopyButton({ code, className = "" }: CodeCopyButtonProps) {
       style={{ width: "28px", height: "28px" }}
     >
       <div className="relative w-full h-full flex items-center justify-center">
-        <Check
-          size={16}
-          className={`text-green-600 dark:text-green-400 absolute transition-opacity duration-300 ${
-            copied ? "opacity-100" : "opacity-0"
-          }`}
-        />
-        <Copy
-          size={16}
-          className={`text-neutral-600 dark:text-neutral-400 absolute transition-opacity duration-300 ${
-            copied ? "opacity-0" : "opacity-100"
-          }`}
-        />
+        <AnimatePresence mode="wait" initial={false}>
+          {copied ? (
+            <motion.span
+              key="check"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2 }}
+              className="absolute flex items-center justify-center"
+            >
+              <CheckLg size={16} className="text-green-600 dark:text-green-400" />
+            </motion.span>
+          ) : (
+            <motion.span
+              key="copy"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2 }}
+              className="absolute flex items-center justify-center"
+            >
+              <Clipboard size={16} className="text-neutral-600 dark:text-neutral-400" />
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
     </button>
   );
