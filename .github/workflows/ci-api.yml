@@ -1,0 +1,31 @@
+name: CI API
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+  push:
+    branches: [main, staging]
+    paths:
+      - "apps/api/**"
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: apps/api/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r apps/api/requirements-dev.txt
+
+      - name: Lint
+        run: cd apps/api && ruff check .
+
+      - name: Test
+        run: cd apps/api && pytest tests/ -v

@@ -9,6 +9,8 @@
     "start": "bun --bun next start",
     "lockfile:check": "bun install --frozen-lockfile",
     "lockfile:update": "bun install",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint",
     "analyze-bundle": "node scripts/analyze-bundle.js",
     "analyze": "ANALYZE=true bun run build"
   },

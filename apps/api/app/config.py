@@ -11,4 +11,10 @@ class Settings(BaseSettings):
         "http://localhost:3000",
     ]
 
+    # Automation settings
+    admin_api_key: str = ""
+    supabase_url: str = ""
+    supabase_service_key: str = ""
+    rss_collect_interval_minutes: int = 60
+
     model_config = {"env_prefix": "CODEPAWL_"}

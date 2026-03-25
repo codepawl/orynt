@@ -1,0 +1,51 @@
+name: Feed Health Check
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Every Monday 9 AM UTC
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  check-feeds:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check RSS feed health
+        run: |
+          python3 -c "
+          import urllib.request
+          import sys
+
+          FEEDS = [
+              ('HuggingFace Blog', 'https://huggingface.co/blog/feed.xml'),
+              ('Google AI Blog', 'https://blog.google/technology/ai/rss/'),
+              ('OpenAI Blog', 'https://openai.com/blog/rss.xml'),
+              ('Anthropic News', 'https://www.anthropic.com/rss.xml'),
+              ('MIT Tech Review AI', 'https://www.technologyreview.com/topic/artificial-intelligence/feed'),
+              ('The Batch', 'https://www.deeplearning.ai/the-batch/feed/'),
+              ('Arxiv cs.AI', 'http://export.arxiv.org/rss/cs.AI'),
+              ('Arxiv cs.CL', 'http://export.arxiv.org/rss/cs.CL'),
+              ('Arxiv cs.LG', 'http://export.arxiv.org/rss/cs.LG'),
+              ('Meta AI Blog', 'https://ai.meta.com/blog/rss/'),
+              ('NVIDIA AI Blog', 'https://blogs.nvidia.com/feed/'),
+              ('Towards Data Science', 'https://towardsdatascience.com/feed'),
+              ('Machine Learning Mastery', 'https://machinelearningmastery.com/feed/'),
+          ]
+
+          broken = []
+          for name, url in FEEDS:
+              try:
+                  req = urllib.request.Request(url, headers={'User-Agent': 'CodePawl/1.0'})
+                  urllib.request.urlopen(req, timeout=10)
+                  print(f'  ✓ {name}')
+              except Exception as e:
+                  print(f'  ✗ {name}: {e}')
+                  broken.append(name)
+
+          print(f'\n{len(FEEDS) - len(broken)}/{len(FEEDS)} feeds healthy')
+
+          if len(broken) > 3:
+              print(f'\n⚠ {len(broken)} feeds broken — threshold exceeded')
+              sys.exit(1)
+          elif broken:
+              print(f'\n⚠ {len(broken)} feeds broken (within tolerance)')
+          "
