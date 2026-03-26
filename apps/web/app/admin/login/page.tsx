@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input, Typography, message } from "antd";
-import { setAdminKey, getDashboard } from "../lib/api";
+import { loginWithKey } from "../lib/api";
 
 const { Title, Text } = Typography;
 
@@ -17,13 +17,10 @@ export default function AdminLogin() {
 
     setLoading(true);
     try {
-      // Temporarily set the key to validate it
-      setAdminKey(key.trim());
-      await getDashboard();
+      await loginWithKey(key.trim());
       message.success("Authenticated");
       router.push("/admin");
     } catch {
-      setAdminKey("");
       message.error("Invalid API key");
     } finally {
       setLoading(false);

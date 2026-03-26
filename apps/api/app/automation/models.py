@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # --- Feed models ---
@@ -42,6 +42,18 @@ class ArticleUpdate(BaseModel):
     image_url: str | None = None
     meta_title: str | None = None
     meta_description: str | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        import re
+        if not re.match(r"^[a-z0-9]+(?:-[a-z0-9]+)*$", v):
+            raise ValueError("Slug must contain only lowercase letters, numbers, and hyphens")
+        if len(v) > 200:
+            raise ValueError("Slug must be 200 characters or fewer")
+        return v
 
 
 class ArticleStatusUpdate(BaseModel):

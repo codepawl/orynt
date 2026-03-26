@@ -9,7 +9,7 @@ import {
   Rss,
   BoxArrowRight,
 } from "react-bootstrap-icons";
-import { clearAdminKey } from "./lib/api";
+import { logout } from "./lib/api";
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
@@ -33,8 +33,8 @@ export default function AdminLayout({
     return <>{children}</>;
   }
 
-  const handleLogout = () => {
-    clearAdminKey();
+  const handleLogout = async () => {
+    await logout();
     router.push("/admin/login");
   };
 

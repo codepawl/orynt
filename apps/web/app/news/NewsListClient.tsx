@@ -4,10 +4,11 @@ import { useState, useCallback } from "react";
 import Link from "next/link";
 import { Card, Flex, Pagination, Tag, Typography } from "antd";
 import type { NewsArticle, NewsTag } from "app/lib/news";
+import { getBackendApiUrl } from "@codepawl/shared";
 
 const { Text } = Typography;
 
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000";
+const API_URL = getBackendApiUrl();
 
 interface Props {
   initialArticles: NewsArticle[];

@@ -3,37 +3,10 @@
  * Uses BACKEND_API_URL (server-side only), ISR-compatible with 8s timeout.
  */
 
-const API_URL = process.env.BACKEND_API_URL || "http://localhost:8000";
+import type { NewsArticle, NewsPaginatedResponse, Tag as NewsTag } from "@codepawl/shared";
+import { getBackendApiUrl } from "@codepawl/shared";
 
-interface NewsArticle {
-  id: string;
-  slug: string;
-  title: string;
-  summary: string | null;
-  tags: string;
-  image_url: string | null;
-  canonical_url: string | null;
-  meta_title: string | null;
-  meta_description: string | null;
-  published_at: string | null;
-  original_url: string;
-  original_title: string;
-  original_author: string | null;
-}
-
-interface NewsPaginatedResponse {
-  articles: NewsArticle[];
-  total: number;
-  page: number;
-  total_pages: number;
-}
-
-interface NewsTag {
-  id: string;
-  name: string;
-  slug: string;
-  article_count: number;
-}
+const API_URL = getBackendApiUrl();
 
 async function fetchWithTimeout<T>(url: string): Promise<T | null> {
   try {

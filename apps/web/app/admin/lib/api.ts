@@ -7,35 +7,44 @@ import type {
   Tag,
 } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000";
+import { getBackendApiUrl } from "@codepawl/shared";
 
-function getAdminKey(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem("admin_key") || "";
+const API_BASE = getBackendApiUrl();
+
+/**
+ * Log in via the backend /api/auth/login endpoint.
+ * Sets an httpOnly cookie — no key stored in localStorage.
+ */
+export async function loginWithKey(key: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ key }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "Login failed" }));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
 }
 
-export function setAdminKey(key: string): void {
-  localStorage.setItem("admin_key", key);
-  document.cookie = `admin_key=${key}; path=/; max-age=86400; SameSite=Strict`;
-}
-
-export function clearAdminKey(): void {
-  localStorage.removeItem("admin_key");
-  document.cookie = "admin_key=; path=/; max-age=0";
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/api/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  }).catch(() => {});
 }
 
 async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}/api/automation${path}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Admin-Key": getAdminKey(),
     ...(options.headers as Record<string, string> || {}),
   };
 
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(url, { ...options, headers, credentials: "include" });
 
   if (response.status === 401) {
-    clearAdminKey();
     if (typeof window !== "undefined") {
       window.location.href = "/admin/login";
     }
