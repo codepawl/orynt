@@ -22,10 +22,19 @@ BEGIN
     INSERT INTO profiles (id, username, display_name, avatar_url)
     VALUES (
         NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'user_name', 'user_' || LEFT(NEW.id::text, 8)),
-        NEW.raw_user_meta_data->>'full_name',
+        COALESCE(
+            NEW.raw_user_meta_data->>'user_name',
+            NEW.raw_user_meta_data->>'preferred_username',
+            NEW.raw_user_meta_data->>'login',
+            'user_' || LEFT(NEW.id::text, 8)
+        ),
+        COALESCE(
+            NEW.raw_user_meta_data->>'full_name',
+            NEW.raw_user_meta_data->>'name'
+        ),
         NEW.raw_user_meta_data->>'avatar_url'
-    );
+    )
+    ON CONFLICT (id) DO NOTHING;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

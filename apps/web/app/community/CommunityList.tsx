@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Pagination } from "antd";
+import { Pagination, message } from "antd";
 import { useRouter } from "next/navigation";
 import {
   CaretUpFill,
@@ -9,6 +10,8 @@ import {
   Clock,
   Link45deg,
 } from "react-bootstrap-icons";
+import { createClient } from "app/lib/supabase/client";
+import { vote } from "app/lib/community";
 import type { CommunityPost } from "@codepawl/shared";
 
 function timeAgo(dateStr: string): string {
@@ -41,6 +44,49 @@ interface Props {
   type?: string;
 }
 
+function VoteButton({ post }: { post: CommunityPost }) {
+  const [score, setScore] = useState(post.score);
+  const [voted, setVoted] = useState(false);
+
+  const handleVote = async () => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      message.info("Sign in to vote");
+      return;
+    }
+    const newValue = voted ? 0 : 1;
+    try {
+      const result = await vote(session.access_token, {
+        target_id: post.id,
+        target_type: "post",
+        value: newValue,
+      });
+      setScore(result.score);
+      setVoted(newValue === 1);
+    } catch {
+      message.error("Vote failed");
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center min-w-[2rem] pt-0.5">
+      <button
+        onClick={handleVote}
+        className={`border-none bg-transparent cursor-pointer p-0 transition-colors ${
+          voted ? "text-orange-500" : "text-neutral-400 hover:text-orange-500"
+        }`}
+      >
+        <CaretUpFill className="w-4 h-4" />
+      </button>
+      <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
+        {score}
+      </span>
+    </div>
+  );
+}
+
 export function CommunityList({
   posts,
   total,
@@ -65,12 +111,7 @@ export function CommunityList({
             key={post.id}
             className="flex items-start gap-3 py-3 px-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
           >
-            <div className="flex flex-col items-center min-w-[2rem] pt-0.5">
-              <CaretUpFill className="text-neutral-400 w-4 h-4" />
-              <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                {post.score}
-              </span>
-            </div>
+            <VoteButton post={post} />
             <div className="flex-1 min-w-0">
               <div className="flex items-baseline gap-2 flex-wrap">
                 <Link

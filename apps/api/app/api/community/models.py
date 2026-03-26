@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from urllib.parse import urlparse
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class PostCreate(BaseModel):
@@ -13,6 +15,22 @@ class PostCreate(BaseModel):
     url: str | None = None
     content: str | None = None
     tags: str = ""
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        # Auto-prepend https:// if no scheme
+        if not v.startswith(("http://", "https://")):
+            v = "https://" + v
+        parsed = urlparse(v)
+        if not parsed.hostname or "." not in parsed.hostname:
+            raise ValueError("Invalid URL — must be a valid web address (e.g. example.com)")
+        return v
 
 
 class CommentCreate(BaseModel):

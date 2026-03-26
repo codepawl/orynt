@@ -66,14 +66,12 @@ async def list_posts(
     if sort == "new":
         query = query.order("created_at", desc=True)
     else:
-        # Ranked: order by score desc, then created_at desc as tiebreaker
-        # Real ranking computed client-side or via calculate_rank()
         query = query.order("score", desc=True).order("created_at", desc=True)
 
     offset = (page - 1) * per_page
     query = query.range(offset, offset + per_page - 1)
 
-    result = query.execute()
+    result = await query.execute()
     total = result.count or 0
 
     posts = []
@@ -120,7 +118,7 @@ async def list_posts(
 async def get_post(post_id: str, request: Request) -> PostResponse:
     db = _get_db(request)
 
-    result = db.from_("posts").select(
+    result = await db.from_("posts").select(
         "*, author:profiles!author_id(id, username, display_name, avatar_url)"
     ).eq("id", post_id).single().execute()
 
@@ -169,14 +167,14 @@ async def create_post(
         "tags": data.tags,
     }
 
-    result = db.from_("posts").insert(insert_data).execute()
+    result = await db.from_("posts").insert(insert_data).execute()
     if not result.data:
         raise HTTPException(500, "Failed to create post")
 
     row = result.data[0]
 
     # Fetch author profile
-    profile = db.from_("profiles").select(
+    profile = await db.from_("profiles").select(
         "id, username, display_name, avatar_url"
     ).eq("id", user_id).single().execute()
 
@@ -195,13 +193,30 @@ async def create_post(
     )
 
 
+@router.delete("/posts/{post_id}", status_code=204)
+async def delete_post(
+    post_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> None:
+    db = _get_db(request)
+
+    result = await db.from_("posts").select("author_id").eq("id", post_id).single().execute()
+    if not result.data:
+        raise HTTPException(404, "Post not found")
+    if result.data["author_id"] != user_id:
+        raise HTTPException(403, "You can only delete your own posts")
+
+    await db.from_("posts").delete().eq("id", post_id).execute()
+
+
 # ── Comments ─────────────────────────────────────────────────────────
 
 @router.get("/posts/{post_id}/comments")
 async def list_comments(post_id: str, request: Request) -> list[CommentResponse]:
     db = _get_db(request)
 
-    result = db.from_("comments").select(
+    result = await db.from_("comments").select(
         "*, author:profiles!author_id(id, username, display_name, avatar_url)"
     ).eq("post_id", post_id).order("created_at").execute()
 
@@ -231,13 +246,13 @@ async def create_comment(
     db = _get_db(request)
 
     # Verify post exists
-    post = db.from_("posts").select("id").eq("id", post_id).single().execute()
+    post = await db.from_("posts").select("id").eq("id", post_id).single().execute()
     if not post.data:
         raise HTTPException(404, "Post not found")
 
     # If replying, verify parent comment exists
     if data.parent_id:
-        parent = db.from_("comments").select("id").eq("id", data.parent_id).eq("post_id", post_id).single().execute()
+        parent = await db.from_("comments").select("id").eq("id", data.parent_id).eq("post_id", post_id).single().execute()
         if not parent.data:
             raise HTTPException(404, "Parent comment not found")
 
@@ -248,15 +263,15 @@ async def create_comment(
         "content": data.content,
     }
 
-    result = db.from_("comments").insert(insert_data).execute()
+    result = await db.from_("comments").insert(insert_data).execute()
     if not result.data:
         raise HTTPException(500, "Failed to create comment")
 
     # Increment comment_count on post
-    db.rpc("increment_comment_count", {"post_id_input": post_id}).execute()
+    await db.rpc("increment_comment_count", {"post_id_input": post_id}).execute()
 
     row = result.data[0]
-    profile = db.from_("profiles").select(
+    profile = await db.from_("profiles").select(
         "id, username, display_name, avatar_url"
     ).eq("id", user_id).single().execute()
 
@@ -283,14 +298,14 @@ async def vote(
 
     if data.value == 0:
         # Remove vote
-        db.from_("votes").delete().match({
+        await db.from_("votes").delete().match({
             "user_id": user_id,
             "target_id": data.target_id,
             "target_type": data.target_type,
         }).execute()
     else:
         # Upsert vote
-        db.from_("votes").upsert({
+        await db.from_("votes").upsert({
             "user_id": user_id,
             "target_id": data.target_id,
             "target_type": data.target_type,
@@ -298,7 +313,7 @@ async def vote(
         }).execute()
 
     # Recalculate score on the target
-    score_result = db.from_("votes").select(
+    score_result = await db.from_("votes").select(
         "value"
     ).eq("target_id", data.target_id).eq("target_type", data.target_type).execute()
 
@@ -306,7 +321,7 @@ async def vote(
 
     # Update score on the target table
     target_table = "posts" if data.target_type == "post" else "comments"
-    db.from_(target_table).update({"score": new_score}).eq("id", data.target_id).execute()
+    await db.from_(target_table).update({"score": new_score}).eq("id", data.target_id).execute()
 
     return {"score": new_score, "user_vote": data.value}
 
@@ -322,7 +337,7 @@ async def flag_content(
     db = _get_db(request)
 
     try:
-        db.from_("flags").insert({
+        await db.from_("flags").insert({
             "reporter_id": user_id,
             "target_id": data.target_id,
             "target_type": data.target_type,
@@ -340,7 +355,7 @@ async def flag_content(
 async def get_post_by_article(article_id: str, request: Request) -> dict:
     """Find community post for a given news article ID (for cross-linking)."""
     db = _get_db(request)
-    result = db.from_("posts").select("id").eq(
+    result = await db.from_("posts").select("id").eq(
         "source_article_id", article_id
     ).maybe_single().execute()
 

@@ -1,9 +1,6 @@
 import { notFound } from "next/navigation";
-import { Card, Typography } from "antd";
 import { Calendar3, Star } from "react-bootstrap-icons";
 import { createClient } from "app/lib/supabase/server";
-
-const { Title, Text, Paragraph } = Typography;
 
 interface Props {
   params: Promise<{ username: string }>;
@@ -37,7 +34,7 @@ export default async function ProfilePage({ params }: Props) {
 
   return (
     <div className="max-w-2xl mx-auto w-full">
-      <Card>
+      <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-6">
         <div className="flex items-start gap-4">
           {profile.avatar_url ? (
             <img
@@ -51,12 +48,12 @@ export default async function ProfilePage({ params }: Props) {
             </div>
           )}
           <div className="flex-1">
-            <Title level={3} style={{ marginBottom: 0 }}>
+            <h2 className="text-xl font-bold mb-0">
               {profile.display_name || profile.username}
-            </Title>
-            <Text type="secondary">@{profile.username}</Text>
+            </h2>
+            <p className="text-sm text-neutral-500">@{profile.username}</p>
             {profile.bio && (
-              <Paragraph style={{ marginTop: 12 }}>{profile.bio}</Paragraph>
+              <p className="mt-3 text-neutral-700 dark:text-neutral-300">{profile.bio}</p>
             )}
             <div className="flex items-center gap-4 mt-3 text-sm text-neutral-500">
               <span className="flex items-center gap-1">
@@ -68,7 +65,7 @@ export default async function ProfilePage({ params }: Props) {
             </div>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
