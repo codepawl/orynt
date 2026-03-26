@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-import math
+import logging
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
+
+# Fixed UUID for the CodePawl Bot system account (from 004_seed_bot_account.sql)
+BOT_PROFILE_ID = "00000000-0000-0000-0000-000000000001"
 
 if TYPE_CHECKING:
     from supabase._async.client import AsyncClient
@@ -102,14 +107,56 @@ class AutomationDB:
         if status == "published":
             data["published_at"] = "now()"
         result = await self.client.table("articles").update(data).eq("id", article_id).execute()
-        return result.data[0] if result.data else {}
+        article = result.data[0] if result.data else {}
+
+        # Auto-post to community on publish
+        if status == "published" and article:
+            await self._auto_post_to_community(article)
+
+        return article
 
     async def bulk_update_status(self, ids: list[str], status: str) -> int:
         data: dict[str, Any] = {"status": status}
         if status == "published":
             data["published_at"] = "now()"
         result = await self.client.table("articles").update(data).in_("id", ids).execute()
+
+        # Auto-post each newly published article
+        if status == "published":
+            for article in result.data:
+                await self._auto_post_to_community(article)
+
         return len(result.data)
+
+    async def _auto_post_to_community(self, article: dict) -> None:
+        """Create a community post for a published article (if not already posted)."""
+        article_id = article.get("id")
+        if not article_id:
+            return
+
+        try:
+            # Check if already posted (avoid duplicates)
+            existing = await self.client.table("posts").select("id").eq(
+                "source_article_id", article_id
+            ).maybe_single().execute()
+            if existing.data:
+                return
+
+            # Build the post (inherit tags from article)
+            post_data = {
+                "author_id": BOT_PROFILE_ID,
+                "type": "link",
+                "title": article.get("title") or article.get("original_title", ""),
+                "url": article.get("original_url", ""),
+                "tags": article.get("tags", ""),
+                "is_auto": True,
+                "source_article_id": article_id,
+            }
+
+            await self.client.table("posts").insert(post_data).execute()
+            logger.info("Auto-posted article %s to community", article_id)
+        except Exception:
+            logger.exception("Failed to auto-post article %s", article_id)
 
     async def delete_article(self, article_id: str) -> None:
         await self.client.table("articles").delete().eq("id", article_id).execute()

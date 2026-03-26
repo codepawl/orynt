@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Input, Radio, Typography, message } from "antd";
+import { Button, Card, Input, Radio, Select, Typography, message } from "antd";
 import { createClient } from "app/lib/supabase/client";
 import { createPost } from "app/lib/community";
+import { CATEGORIES } from "@codepawl/shared";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -15,7 +16,14 @@ export default function SubmitPage() {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [content, setContent] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Filter out 'general' for user selection
+  const tagOptions = CATEGORIES.filter((c) => c !== "general").map((c) => ({
+    label: c,
+    value: c,
+  }));
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -46,6 +54,7 @@ export default function SubmitPage() {
         title: title.trim(),
         url: type === "link" ? url.trim() : undefined,
         content: type !== "link" ? content.trim() : undefined,
+        tags: selectedTags.join(", "),
       });
 
       message.success("Post created!");
@@ -123,6 +132,21 @@ export default function SubmitPage() {
               />
             </div>
           )}
+
+          <div>
+            <Text strong style={{ display: "block", marginBottom: 8 }}>
+              Tags (optional)
+            </Text>
+            <Select
+              mode="multiple"
+              placeholder="Select tags"
+              options={tagOptions}
+              value={selectedTags}
+              onChange={setSelectedTags}
+              style={{ width: "100%" }}
+              maxCount={6}
+            />
+          </div>
 
           <Button
             type="primary"

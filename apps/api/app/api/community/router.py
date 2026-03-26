@@ -46,6 +46,7 @@ async def list_posts(
     request: Request,
     sort: str = "ranked",
     type: Optional[str] = None,
+    tag: Optional[str] = None,
     page: int = 1,
     per_page: int = 20,
 ) -> PostListResponse:
@@ -59,6 +60,8 @@ async def list_posts(
 
     if type:
         query = query.eq("type", type)
+    if tag:
+        query = query.ilike("tags", f"%{tag}%")
 
     if sort == "new":
         query = query.order("created_at", desc=True)
@@ -93,6 +96,7 @@ async def list_posts(
             content=row.get("content"),
             score=row.get("score", 0),
             comment_count=row.get("comment_count", 0),
+            tags=row.get("tags", ""),
             is_auto=row.get("is_auto", False),
             source_article_id=row.get("source_article_id"),
             created_at=row["created_at"],
@@ -162,6 +166,7 @@ async def create_post(
         "title": data.title,
         "url": data.url,
         "content": data.content,
+        "tags": data.tags,
     }
 
     result = db.from_("posts").insert(insert_data).execute()
@@ -184,6 +189,7 @@ async def create_post(
         content=row.get("content"),
         score=0,
         comment_count=0,
+        tags=row.get("tags", ""),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -326,3 +332,19 @@ async def flag_content(
         raise HTTPException(400, "Already flagged this content")
 
     return {"ok": True}
+
+
+# ── Cross-linking ────────────────────────────────────────────────────
+
+@router.get("/by-article/{article_id}")
+async def get_post_by_article(article_id: str, request: Request) -> dict:
+    """Find community post for a given news article ID (for cross-linking)."""
+    db = _get_db(request)
+    result = db.from_("posts").select("id").eq(
+        "source_article_id", article_id
+    ).maybe_single().execute()
+
+    if not result.data:
+        raise HTTPException(404, "No community post for this article")
+
+    return {"post_id": result.data["id"]}

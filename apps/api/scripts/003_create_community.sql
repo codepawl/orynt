@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS posts (
     score INTEGER DEFAULT 0,
     comment_count INTEGER DEFAULT 0,
     is_auto BOOLEAN DEFAULT false,
+    tags TEXT DEFAULT '',
     source_article_id UUID REFERENCES articles(id),
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()

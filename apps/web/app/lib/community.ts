@@ -17,7 +17,8 @@ const API_URL = getBackendApiUrl();
 export async function fetchPosts(
   page: number = 1,
   sort: string = "ranked",
-  type?: string
+  type?: string,
+  tag?: string
 ): Promise<CommunityPostList | null> {
   try {
     const params = new URLSearchParams({
@@ -26,6 +27,7 @@ export async function fetchPosts(
       per_page: "20",
     });
     if (type) params.set("type", type);
+    if (tag) params.set("tag", tag);
 
     const res = await fetch(`${API_URL}/api/community/posts?${params}`, {
       next: { revalidate: 60 },
@@ -64,11 +66,27 @@ export async function fetchComments(
   }
 }
 
+export async function fetchPostIdByArticle(
+  articleId: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${API_URL}/api/community/by-article/${articleId}`,
+      { next: { revalidate: 300 } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.post_id;
+  } catch {
+    return null;
+  }
+}
+
 // --- Client-side (auth-required) actions ---
 
 export async function createPost(
   token: string,
-  data: { type: string; title: string; url?: string; content?: string }
+  data: { type: string; title: string; url?: string; content?: string; tags?: string }
 ): Promise<CommunityPost> {
   const res = await fetch(`${API_URL}/api/community/posts`, {
     method: "POST",

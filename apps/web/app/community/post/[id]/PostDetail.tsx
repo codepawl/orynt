@@ -9,6 +9,7 @@ import {
   Clock,
   Flag,
   Link45deg,
+  Newspaper,
 } from "react-bootstrap-icons";
 import { createClient } from "app/lib/supabase/client";
 import { vote, flagContent } from "app/lib/community";
@@ -130,6 +131,16 @@ export function PostDetail({ post }: { post: CommunityPost }) {
           {post.content && (
             <div className="prose prose-sm dark:prose-invert max-w-none mb-3 whitespace-pre-wrap">
               {post.content}
+            </div>
+          )}
+
+          {post.is_auto && post.source_article_id && (
+            <div className="mb-3 px-3 py-2 bg-neutral-50 dark:bg-neutral-800/50 rounded-md text-xs text-neutral-500 flex items-center gap-2">
+              <Newspaper className="w-3.5 h-3.5" />
+              Auto-posted from news pipeline —{" "}
+              <Link href="/news" className="underline text-inherit">
+                View original on News
+              </Link>
             </div>
           )}
 

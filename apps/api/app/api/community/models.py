@@ -12,6 +12,7 @@ class PostCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=300)
     url: str | None = None
     content: str | None = None
+    tags: str = ""
 
 
 class CommentCreate(BaseModel):
@@ -47,6 +48,7 @@ class PostResponse(BaseModel):
     content: str | None = None
     score: int = 0
     comment_count: int = 0
+    tags: str = ""
     is_auto: bool = False
     source_article_id: str | None = None
     created_at: datetime

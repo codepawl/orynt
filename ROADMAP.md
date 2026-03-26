@@ -283,25 +283,25 @@ push:  PR to staging per sub-task or grouped logically
 
 ### Tasks
 
-- [ ] **3.1** Auto-post pipeline
+- [x] **3.1** Auto-post pipeline
   - After news article status changes to "published", create a community post automatically
   - Post type: 'link', title from article title, url from article source_url
   - Author: system account (create a "CodePawl Bot" profile)
   - Set `is_auto = true`, `source_article_id = article.id`
   - Avoid duplicates: check source_article_id before inserting
 
-- [ ] **3.2** "Show CodePawl" post type
+- [x] **3.2** "Show CodePawl" post type
   - Add 'show' to post type enum
   - `/community/submit` has "Show CodePawl" option
   - Show posts get special styling/badge on community list
   - Separate tab/filter: `/community?type=show`
 
-- [ ] **3.3** Cross-linking
+- [x] **3.3** Cross-linking
   - On `/news/[slug]` page, add "Discuss on Community" link if community post exists
   - On `/community/post/[id]` for auto posts, add "Original article" link
   - Blog posts: add "Discuss this post" link at bottom
 
-- [ ] **3.4** Tag bridge
+- [x] **3.4** Tag bridge
   - Reuse the 14 AI/ML category tags from news pipeline for community posts
   - Users can select tags when submitting
   - Filter posts by tag on community page

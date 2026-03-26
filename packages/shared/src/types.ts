@@ -145,6 +145,7 @@ export interface CommunityPost {
   content: string | null;
   score: number;
   comment_count: number;
+  tags: string;
   is_auto: boolean;
   source_article_id: string | null;
   created_at: string;

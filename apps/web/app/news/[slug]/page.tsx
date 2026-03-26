@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { fetchNewsArticle } from "app/lib/news";
+import { fetchPostIdByArticle } from "app/lib/community";
 import { metaData } from "app/config";
 import { Tag, Typography } from "antd";
+import { ChatDots } from "react-bootstrap-icons";
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -51,6 +53,9 @@ export default async function NewsArticlePage(
   if (!article) {
     notFound();
   }
+
+  // Look up community post for cross-linking
+  const communityPostId = await fetchPostIdByArticle(article.id);
 
   const publishedDate = article.published_at
     ? new Date(article.published_at).toLocaleDateString("en-US", {
@@ -168,6 +173,18 @@ export default async function NewsArticlePage(
           >
             Read Original Article ↗
           </a>
+        </div>
+      )}
+
+      {communityPostId && (
+        <div className="mt-6 text-center">
+          <Link
+            href={`/community/post/${communityPostId}`}
+            className="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+          >
+            <ChatDots className="w-4 h-4" />
+            Discuss on Community
+          </Link>
         </div>
       )}
     </section>

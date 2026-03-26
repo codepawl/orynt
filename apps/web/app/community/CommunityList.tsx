@@ -115,6 +115,19 @@ export function CommunityList({
                   {post.comment_count} comment{post.comment_count !== 1 ? "s" : ""}
                 </Link>
               </div>
+              {post.tags && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {post.tags.split(",").map((t) => t.trim()).filter(Boolean).map((tag) => (
+                    <Link
+                      key={tag}
+                      href={`/community?tag=${encodeURIComponent(tag)}`}
+                      className="px-1.5 py-0.5 text-[10px] bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 rounded no-underline hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                    >
+                      {tag}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           </li>
         ))}

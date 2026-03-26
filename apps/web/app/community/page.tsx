@@ -3,7 +3,7 @@ import { fetchPosts } from "app/lib/community";
 import { CommunityList } from "./CommunityList";
 
 interface Props {
-  searchParams: Promise<{ sort?: string; type?: string; page?: string }>;
+  searchParams: Promise<{ sort?: string; type?: string; tag?: string; page?: string }>;
 }
 
 export const metadata = {
@@ -15,9 +15,10 @@ export default async function CommunityPage({ searchParams }: Props) {
   const params = await searchParams;
   const sort = params.sort || "ranked";
   const type = params.type;
+  const tag = params.tag;
   const page = Number(params.page) || 1;
 
-  const data = await fetchPosts(page, sort, type);
+  const data = await fetchPosts(page, sort, type, tag);
 
   return (
     <div className="max-w-3xl mx-auto w-full">
@@ -60,6 +61,21 @@ export default async function CommunityPage({ searchParams }: Props) {
           );
         })}
       </div>
+
+      {tag && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-sm text-neutral-500">Filtering by tag:</span>
+          <span className="px-2 py-0.5 text-xs font-medium bg-neutral-200 dark:bg-neutral-700 rounded">
+            {tag}
+          </span>
+          <Link
+            href={`/community?sort=${sort}`}
+            className="text-xs text-neutral-400 hover:text-neutral-600 no-underline"
+          >
+            clear
+          </Link>
+        </div>
+      )}
 
       {data && data.posts.length > 0 ? (
         <CommunityList

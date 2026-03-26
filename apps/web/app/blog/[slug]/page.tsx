@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { CustomMDX } from "app/components/ui/mdx";
 import { getBlogPosts } from "app/lib/posts";
 import { estimateReadingTimeMinutes } from "app/lib/utils";
 import { metaData } from "app/config";
 import { BlogPostHeader } from "./BlogPostHeader";
+import { ChatDots } from "react-bootstrap-icons";
 
 export async function generateStaticParams() {
   const posts = getBlogPosts();
@@ -101,6 +103,15 @@ export default async function Blog(props) {
       <article className="prose prose-quoteless prose-neutral dark:prose-invert max-w-none">
         <CustomMDX source={post.content} />
       </article>
+      <div className="mt-8 pt-6 border-t border-neutral-200 dark:border-neutral-700 text-center">
+        <Link
+          href={`/community/submit?type=link&title=${encodeURIComponent(post.metadata.title)}&url=${encodeURIComponent(`${metaData.baseUrl}/blog/${post.slug}`)}`}
+          className="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+        >
+          <ChatDots className="w-4 h-4" />
+          Discuss this post on Community
+        </Link>
+      </div>
     </section>
   );
 }
