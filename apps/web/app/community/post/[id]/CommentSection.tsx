@@ -1,22 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
-import { Button, Input, message } from "antd";
-import {
-  CaretUpFill,
-  CaretDownFill,
-  ChatDots,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Flag,
-} from "react-bootstrap-icons";
 import { createClient } from "app/lib/supabase/client";
 import { createComment, vote, flagContent } from "app/lib/community";
 import type { CommunityComment } from "@codepawl/shared";
 
-const { TextArea } = Input;
 const MAX_VISUAL_DEPTH = 5;
 
 interface CommentNode extends CommunityComment {
@@ -56,6 +45,13 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+async function getSession() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  return session;
+}
+
 function CommentItem({
   comment,
   depth,
@@ -77,13 +73,14 @@ function CommentItem({
   const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
   const indent = visualDepth * 24;
 
+  useEffect(() => {
+    const saved = localStorage.getItem(`vote:comment:${comment.id}`);
+    if (saved) setUserVote(Number(saved));
+  }, [comment.id]);
+
   const handleVote = async (value: number) => {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      message.info("Sign in to vote");
-      return;
-    }
+    const session = await getSession();
+    if (!session) return;
     const newValue = userVote === value ? 0 : value;
     try {
       const result = await vote(session.access_token, {
@@ -93,8 +90,13 @@ function CommentItem({
       });
       setScore(result.score);
       setUserVote(result.user_vote);
+      if (result.user_vote !== 0) {
+        localStorage.setItem(`vote:comment:${comment.id}`, String(result.user_vote));
+      } else {
+        localStorage.removeItem(`vote:comment:${comment.id}`);
+      }
     } catch {
-      message.error("Vote failed");
+      // silently fail
     }
   };
 
@@ -102,12 +104,8 @@ function CommentItem({
     if (!replyText.trim()) return;
     setSubmitting(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        message.info("Sign in to reply");
-        return;
-      }
+      const session = await getSession();
+      if (!session) return;
       const newComment = await createComment(session.access_token, postId, {
         content: replyText.trim(),
         parent_id: comment.id,
@@ -115,45 +113,36 @@ function CommentItem({
       onReply(newComment);
       setReplyText("");
       setShowReply(false);
-      message.success("Reply posted");
     } catch {
-      message.error("Failed to post reply");
+      // silently fail
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleFlag = async () => {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      message.info("Sign in to flag");
-      return;
-    }
+    const session = await getSession();
+    if (!session) return;
     try {
       await flagContent(session.access_token, {
         target_id: comment.id,
         target_type: "comment",
       });
-      message.success("Flagged for review");
     } catch {
-      message.error("Already flagged");
+      // silently fail
     }
   };
 
   return (
     <div style={{ marginLeft: indent }}>
       <div className="py-2 border-l-2 border-neutral-200 dark:border-neutral-700 pl-3 mb-1">
+        {/* Header */}
         <div className="flex items-center gap-2 text-xs text-neutral-500 mb-1">
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="border-none bg-transparent cursor-pointer p-0 text-neutral-400"
+            className="border-none bg-transparent cursor-pointer p-0 text-neutral-400 text-xs"
           >
-            {collapsed ? (
-              <ChevronRight className="w-3 h-3" />
-            ) : (
-              <ChevronDown className="w-3 h-3" />
-            )}
+            {collapsed ? "[+]" : "[-]"}
           </button>
           <Link
             href={`/profile/${comment.author.username}`}
@@ -161,84 +150,84 @@ function CommentItem({
           >
             {comment.author.username}
           </Link>
-          <span className="flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            {timeAgo(comment.created_at)}
-          </span>
+          <span suppressHydrationWarning>{timeAgo(comment.created_at)}</span>
           <span className="flex items-center gap-1">
             <button
               onClick={() => handleVote(1)}
-              className={`border-none bg-transparent cursor-pointer p-0 ${
-                userVote === 1 ? "text-orange-500" : "text-neutral-400 hover:text-orange-500"
+              className={`border-none bg-transparent cursor-pointer p-0 text-xs ${
+                userVote === 1 ? "text-amber-500" : "text-neutral-400 hover:text-amber-500"
               }`}
             >
-              <CaretUpFill className="w-3 h-3" />
+              ▲
             </button>
             <span>{score}</span>
             <button
               onClick={() => handleVote(-1)}
-              className={`border-none bg-transparent cursor-pointer p-0 ${
+              className={`border-none bg-transparent cursor-pointer p-0 text-xs ${
                 userVote === -1 ? "text-blue-500" : "text-neutral-400 hover:text-blue-500"
               }`}
             >
-              <CaretDownFill className="w-3 h-3" />
+              ▼
             </button>
           </span>
         </div>
 
         {!collapsed && (
           <>
-            <div className="text-sm whitespace-pre-wrap mb-1">
+            {/* Content */}
+            <div className="text-sm whitespace-pre-wrap mb-1 text-neutral-800 dark:text-neutral-200">
               {comment.content}
             </div>
+
+            {/* Actions */}
             <div className="flex gap-3 text-xs text-neutral-400">
               <button
                 onClick={() => setShowReply(!showReply)}
-                className="flex items-center gap-1 border-none bg-transparent cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300 text-xs text-neutral-400"
+                className="border-none bg-transparent cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300 text-xs text-neutral-400"
               >
-                <ChatDots className="w-3 h-3" />
                 reply
               </button>
               <button
                 onClick={handleFlag}
-                className="flex items-center gap-1 border-none bg-transparent cursor-pointer hover:text-red-500 text-xs text-neutral-400"
+                className="border-none bg-transparent cursor-pointer hover:text-red-500 text-xs text-neutral-400"
               >
-                <Flag className="w-3 h-3" />
                 flag
               </button>
             </div>
 
+            {/* Reply form */}
             {showReply && (
               <div className="mt-2 space-y-2">
-                <TextArea
+                <textarea
                   rows={3}
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
                   placeholder="Write a reply..."
                   maxLength={10000}
+                  className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 focus:border-transparent resize-y"
                 />
                 <div className="flex gap-2">
-                  <Button
-                    size="small"
-                    type="primary"
-                    loading={submitting}
+                  <button
                     onClick={handleReply}
+                    disabled={submitting}
+                    className="px-3 py-1 text-xs font-medium rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-80 disabled:opacity-50 cursor-pointer border-none"
                   >
-                    Reply
-                  </Button>
-                  <Button
-                    size="small"
+                    {submitting ? "..." : "Reply"}
+                  </button>
+                  <button
                     onClick={() => {
                       setShowReply(false);
                       setReplyText("");
                     }}
+                    className="px-3 py-1 text-xs font-medium rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer bg-transparent"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </div>
             )}
 
+            {/* Children */}
             {comment.children.map((child) => (
               <CommentItem
                 key={child.id}
@@ -278,20 +267,15 @@ export function CommentSection({ postId, initialComments }: Props) {
     if (!newComment.trim()) return;
     setSubmitting(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        message.info("Sign in to comment");
-        return;
-      }
+      const session = await getSession();
+      if (!session) return;
       const comment = await createComment(session.access_token, postId, {
         content: newComment.trim(),
       });
       handleAddComment(comment);
       setNewComment("");
-      message.success("Comment posted");
     } catch {
-      message.error("Failed to post comment");
+      // silently fail
     } finally {
       setSubmitting(false);
     }
@@ -299,27 +283,30 @@ export function CommentSection({ postId, initialComments }: Props) {
 
   return (
     <div>
-      <h2 className="text-lg font-bold mb-4">
+      <h2 className="text-lg font-bold mb-4 text-neutral-900 dark:text-neutral-100">
         {comments.length} Comment{comments.length !== 1 ? "s" : ""}
       </h2>
 
+      {/* Top-level comment form */}
       <div className="mb-6 space-y-2">
-        <TextArea
+        <textarea
           rows={4}
           value={newComment}
           onChange={(e) => setNewComment(e.target.value)}
           placeholder="Add a comment..."
           maxLength={10000}
+          className="w-full px-3 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 focus:border-transparent resize-y"
         />
-        <Button
-          type="primary"
-          loading={submitting}
+        <button
           onClick={handleSubmitTopLevel}
+          disabled={submitting}
+          className="px-4 py-2 text-sm font-medium rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-80 disabled:opacity-50 cursor-pointer border-none"
         >
-          Comment
-        </Button>
+          {submitting ? "Posting..." : "Comment"}
+        </button>
       </div>
 
+      {/* Thread */}
       <div>
         {tree.map((comment) => (
           <CommentItem
