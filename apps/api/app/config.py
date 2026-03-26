@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     admin_api_key: str = ""
     supabase_url: str = ""
     supabase_service_key: str = ""
+    supabase_jwt_secret: str = ""
     rss_collect_interval_minutes: int = 60
 
-    model_config = {"env_prefix": "CODEPAWL_"}
+    model_config = {"env_prefix": "CODEPAWL_", "env_file": ".env"}

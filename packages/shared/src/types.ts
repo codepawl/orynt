@@ -125,6 +125,52 @@ export interface Profile {
   created_at: string;
 }
 
+// --- Community ---
+
+export type PostType = "link" | "text" | "show";
+
+export interface AuthorInfo {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+export interface CommunityPost {
+  id: string;
+  author: AuthorInfo;
+  type: PostType;
+  title: string;
+  url: string | null;
+  content: string | null;
+  score: number;
+  comment_count: number;
+  is_auto: boolean;
+  source_article_id: string | null;
+  created_at: string;
+  updated_at: string;
+  rank: number;
+  user_vote: number;
+}
+
+export interface CommunityComment {
+  id: string;
+  post_id: string;
+  parent_id: string | null;
+  author: AuthorInfo;
+  content: string;
+  score: number;
+  created_at: string;
+  user_vote: number;
+}
+
+export interface CommunityPostList {
+  posts: CommunityPost[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+
 // --- Fetch result (admin) ---
 
 export interface FetchResult {

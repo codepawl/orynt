@@ -4,6 +4,10 @@ export type { Category } from "./constants";
 export type {
   Article,
   ArticleStatus,
+  AuthorInfo,
+  CommunityComment,
+  CommunityPost,
+  CommunityPostList,
   DashboardResponse,
   DashboardStats,
   Feed,
@@ -11,6 +15,7 @@ export type {
   NewsArticle,
   NewsPaginatedResponse,
   PaginatedResponse,
+  PostType,
   Profile,
   Role,
   Tag,

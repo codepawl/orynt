@@ -7,6 +7,7 @@ import {
   HouseDoor,
   FileEarmarkText,
   Rss,
+  ShieldExclamation,
   BoxArrowRight,
 } from "react-bootstrap-icons";
 import { createClient } from "app/lib/supabase/client";
@@ -19,6 +20,7 @@ const menuItems = [
   { key: "/admin", icon: <HouseDoor />, label: "Dashboard" },
   { key: "/admin/articles", icon: <FileEarmarkText />, label: "Articles" },
   { key: "/admin/feeds", icon: <Rss />, label: "Feeds" },
+  { key: "/admin/moderation", icon: <ShieldExclamation />, label: "Moderation" },
 ];
 
 export default function AdminLayout({

@@ -170,7 +170,7 @@ push:  PR to staging, include test screenshots/recording
 
 ### Tasks
 
-- [ ] **2.1** Database schema
+- [x] **2.1** Database schema
   ```sql
   create table posts (
     id uuid default gen_random_uuid() primary key,
@@ -218,13 +218,13 @@ push:  PR to staging, include test screenshots/recording
   -- Public read, authenticated write policies for each
   ```
 
-- [ ] **2.2** Ranking algorithm
+- [x] **2.2** Ranking algorithm
   - Implement HN-style ranking: `score = (upvotes - 1) / pow(age_hours + 2, 1.8)`
   - Recalculate via Supabase database function or edge function on a timer
   - Alternatively: compute on read with a materialized view refreshed every 60s
   - Start simple, optimize later
 
-- [ ] **2.3** API routes (FastAPI)
+- [x] **2.3** API routes (FastAPI)
   - `GET /api/community/posts` (paginated, sorted by rank or new)
   - `GET /api/community/posts/{id}` (post detail + comments tree)
   - `POST /api/community/posts` (auth required)
@@ -232,7 +232,7 @@ push:  PR to staging, include test screenshots/recording
   - `POST /api/community/vote` (auth required, body: target_id, target_type, value)
   - Auth: verify Supabase JWT from Authorization header
 
-- [ ] **2.4** Frontend pages
+- [x] **2.4** Frontend pages
   - `/community` - post list (ranked/new tabs), submit button
   - `/community/submit` - post form (title, url or content, type selector)
   - `/community/post/[id]` - post detail + threaded comments
@@ -240,12 +240,12 @@ push:  PR to staging, include test screenshots/recording
   - Comment form (inline, with reply button on each comment)
   - User link on posts/comments goes to `/profile/[username]`
 
-- [ ] **2.5** Comment threading
+- [x] **2.5** Comment threading
   - Fetch flat comment list, build tree client-side (simple for MVP)
   - Max nesting depth: 5 levels visually, then flatten
   - Collapse/expand for deep threads
 
-- [ ] **2.6** Basic moderation
+- [x] **2.6** Basic moderation
   - Flag button on posts/comments (store in `flags` table)
   - Admin view: `/admin/moderation` - list flagged content
   - Admin actions: remove post/comment, warn user
