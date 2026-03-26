@@ -8,7 +8,7 @@ function NavigationLoadingBar() {
   const pathname = usePathname();
   const [loading, setLoading] = useState(false);
   const prevPathname = useRef(pathname);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Hide loading when pathname changes (navigation completed)
   useEffect(() => {
