@@ -17,6 +17,12 @@ export function ProtectedRoute({ children, requiredRole }: Props) {
 
   useEffect(() => {
     const check = async () => {
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        // Supabase not configured — allow access (dev mode)
+        setAuthorized(true);
+        setLoading(false);
+        return;
+      }
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
 
