@@ -14,6 +14,12 @@ export function UserMenu() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Skip auth if Supabase is not configured
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      setLoading(false);
+      return;
+    }
+
     const supabase = createClient();
 
     supabase.auth.getUser().then(({ data: { user } }) => {
