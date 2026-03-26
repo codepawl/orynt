@@ -103,6 +103,20 @@ export async function createPost(
   return res.json();
 }
 
+export async function deletePost(
+  token: string,
+  postId: string
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/community/posts/${postId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed" }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+}
+
 export async function createComment(
   token: string,
   postId: string,

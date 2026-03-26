@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { message } from "antd";
 import {
   CaretUpFill,
@@ -10,9 +11,10 @@ import {
   Flag,
   Link45deg,
   Newspaper,
+  Trash,
 } from "react-bootstrap-icons";
 import { createClient } from "app/lib/supabase/client";
-import { vote, flagContent } from "app/lib/community";
+import { vote, flagContent, deletePost } from "app/lib/community";
 import type { CommunityPost } from "@codepawl/shared";
 
 function timeAgo(dateStr: string): string {
@@ -29,8 +31,32 @@ function timeAgo(dateStr: string): string {
 }
 
 export function PostDetail({ post }: { post: CommunityPost }) {
+  const router = useRouter();
   const [score, setScore] = useState(post.score);
   const [userVote, setUserVote] = useState(post.user_vote);
+  const [isAuthor, setIsAuthor] = useState(false);
+
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user && user.id === post.author.id) setIsAuthor(true);
+    });
+  }, [post.author.id]);
+
+  const handleDelete = async () => {
+    if (!confirm("Delete this post? This cannot be undone.")) return;
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    try {
+      await deletePost(session.access_token, post.id);
+      message.success("Post deleted");
+      router.push("/community");
+    } catch {
+      message.error("Failed to delete post");
+    }
+  };
 
   const handleVote = async (value: number) => {
     const supabase = createClient();
@@ -121,12 +147,18 @@ export function PostDetail({ post }: { post: CommunityPost }) {
             )}
           </h1>
 
-          {post.type === "link" && post.url && (
-            <p className="text-xs text-neutral-400 flex items-center gap-1 mb-2">
-              <Link45deg className="w-3 h-3" />
-              {new URL(post.url).hostname.replace("www.", "")}
-            </p>
-          )}
+          {post.type === "link" && post.url && (() => {
+            try {
+              return (
+                <p className="text-xs text-neutral-400 flex items-center gap-1 mb-2">
+                  <Link45deg className="w-3 h-3" />
+                  {new URL(post.url).hostname.replace("www.", "")}
+                </p>
+              );
+            } catch {
+              return null;
+            }
+          })()}
 
           {post.content && (
             <div className="prose prose-sm dark:prose-invert max-w-none mb-3 whitespace-pre-wrap">
@@ -162,6 +194,15 @@ export function PostDetail({ post }: { post: CommunityPost }) {
               <Flag className="w-3 h-3" />
               flag
             </button>
+            {isAuthor && (
+              <button
+                onClick={handleDelete}
+                className="flex items-center gap-1 text-neutral-400 hover:text-red-500 transition-colors border-none bg-transparent cursor-pointer text-xs"
+              >
+                <Trash className="w-3 h-3" />
+                delete
+              </button>
+            )}
           </div>
         </div>
       </div>

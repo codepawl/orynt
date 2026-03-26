@@ -49,10 +49,16 @@ export default function SubmitPage() {
         return;
       }
 
+      // Auto-prepend https:// if missing
+      let normalizedUrl = url.trim();
+      if (normalizedUrl && !normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
+        normalizedUrl = "https://" + normalizedUrl;
+      }
+
       const post = await createPost(session.access_token, {
         type,
         title: title.trim(),
-        url: type === "link" ? url.trim() : undefined,
+        url: type === "link" ? normalizedUrl : undefined,
         content: type !== "link" ? content.trim() : undefined,
         tags: selectedTags.join(", "),
       });
