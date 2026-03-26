@@ -1,4 +1,3 @@
-import React from "react";
 import type { Metadata } from "next";
 import { getBlogPostsMetadata } from "app/lib/posts";
 import { metaData, socialLinks } from "app/config";
