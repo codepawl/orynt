@@ -8,6 +8,7 @@ function NavigationLoadingBar() {
   const pathname = usePathname();
   const [loading, setLoading] = useState(false);
   const prevPathname = useRef(pathname);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Hide loading when pathname changes (navigation completed)
   useEffect(() => {
@@ -27,10 +28,17 @@ function NavigationLoadingBar() {
       if (!href || href.startsWith("http") || href.startsWith("#") || href.startsWith("mailto:")) return;
       if (href === pathname) return;
       setLoading(true);
+
+      // Safety timeout: hide bar after 5s max to prevent stuck state
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setLoading(false), 5000);
     };
 
     document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
+    return () => {
+      document.removeEventListener("click", handleClick);
+      clearTimeout(timeoutRef.current);
+    };
   }, [pathname]);
 
   return (

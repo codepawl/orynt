@@ -69,33 +69,32 @@ export default async function CommunityPage({ searchParams }: Props) {
         })}
       </div>
 
-      {/* Tag filter — horizontal scrollable pills */}
-      {tag ? (
-        <div className="mb-4 flex items-center gap-2">
-          <span className="text-sm text-neutral-500">Filtering:</span>
-          <span className="px-2 py-0.5 text-xs font-medium bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-full">
-            {tag}
-          </span>
+      {/* Tag filter — wrapping pill grid */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        <Link
+          href={`/community?sort=${sort}`}
+          className={`px-2.5 py-1 text-xs font-medium rounded-full no-underline transition-colors ${
+            !tag
+              ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
+              : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+          }`}
+        >
+          All
+        </Link>
+        {CATEGORIES.filter((c) => c !== "general").map((cat) => (
           <Link
-            href={`/community?sort=${sort}`}
-            className="text-xs text-neutral-400 hover:text-neutral-600 no-underline"
+            key={cat}
+            href={`/community?tag=${encodeURIComponent(cat)}&sort=${sort}`}
+            className={`px-2.5 py-1 text-xs font-medium rounded-full no-underline transition-colors ${
+              tag === cat
+                ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
+                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+            }`}
           >
-            × clear
+            {cat}
           </Link>
-        </div>
-      ) : (
-        <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 scrollbar-none">
-          {CATEGORIES.filter((c) => c !== "general").map((cat) => (
-            <Link
-              key={cat}
-              href={`/community?tag=${encodeURIComponent(cat)}&sort=${sort}`}
-              className="px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors no-underline"
-            >
-              {cat}
-            </Link>
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* Post list */}
       {data && data.posts.length > 0 ? (

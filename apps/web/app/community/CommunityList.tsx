@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
@@ -32,6 +32,11 @@ function VoteButton({ post }: { post: CommunityPost }) {
   const [score, setScore] = useState(post.score);
   const [voted, setVoted] = useState(false);
 
+  useEffect(() => {
+    const saved = localStorage.getItem(`vote:post:${post.id}`);
+    if (saved === "1") setVoted(true);
+  }, [post.id]);
+
   const handleVote = async () => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
     const supabase = createClient();
@@ -48,6 +53,11 @@ function VoteButton({ post }: { post: CommunityPost }) {
       });
       setScore(result.score);
       setVoted(newValue === 1);
+      if (newValue === 1) {
+        localStorage.setItem(`vote:post:${post.id}`, "1");
+      } else {
+        localStorage.removeItem(`vote:post:${post.id}`);
+      }
     } catch {
       // silently fail
     }
@@ -143,7 +153,7 @@ export function CommunityList({
                     {post.author.username}
                   </Link>
                 </span>
-                <span>{timeAgo(post.created_at)}</span>
+                <span suppressHydrationWarning>{timeAgo(post.created_at)}</span>
                 <Link
                   href={`/community/post/${post.id}`}
                   className="hover:underline no-underline text-inherit"

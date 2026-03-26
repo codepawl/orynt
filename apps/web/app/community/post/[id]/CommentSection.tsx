@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "app/lib/supabase/client";
 import { createComment, vote, flagContent } from "app/lib/community";
@@ -73,6 +73,11 @@ function CommentItem({
   const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
   const indent = visualDepth * 24;
 
+  useEffect(() => {
+    const saved = localStorage.getItem(`vote:comment:${comment.id}`);
+    if (saved) setUserVote(Number(saved));
+  }, [comment.id]);
+
   const handleVote = async (value: number) => {
     const session = await getSession();
     if (!session) return;
@@ -85,6 +90,11 @@ function CommentItem({
       });
       setScore(result.score);
       setUserVote(result.user_vote);
+      if (result.user_vote !== 0) {
+        localStorage.setItem(`vote:comment:${comment.id}`, String(result.user_vote));
+      } else {
+        localStorage.removeItem(`vote:comment:${comment.id}`);
+      }
     } catch {
       // silently fail
     }
@@ -140,7 +150,7 @@ function CommentItem({
           >
             {comment.author.username}
           </Link>
-          <span>{timeAgo(comment.created_at)}</span>
+          <span suppressHydrationWarning>{timeAgo(comment.created_at)}</span>
           <span className="flex items-center gap-1">
             <button
               onClick={() => handleVote(1)}

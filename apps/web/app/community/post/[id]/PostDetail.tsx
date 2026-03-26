@@ -35,12 +35,16 @@ export function PostDetail({ post }: { post: CommunityPost }) {
   const [isAuthor, setIsAuthor] = useState(false);
 
   useEffect(() => {
+    // Restore vote state from localStorage
+    const saved = localStorage.getItem(`vote:post:${post.id}`);
+    if (saved) setUserVote(Number(saved));
+
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user && user.id === post.author.id) setIsAuthor(true);
     });
-  }, [post.author.id]);
+  }, [post.author.id, post.id]);
 
   const getSession = async () => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
@@ -73,6 +77,11 @@ export function PostDetail({ post }: { post: CommunityPost }) {
       });
       setScore(result.score);
       setUserVote(result.user_vote);
+      if (result.user_vote !== 0) {
+        localStorage.setItem(`vote:post:${post.id}`, String(result.user_vote));
+      } else {
+        localStorage.removeItem(`vote:post:${post.id}`);
+      }
     } catch {
       // silently fail
     }
@@ -180,7 +189,7 @@ export function PostDetail({ post }: { post: CommunityPost }) {
             >
               {post.author.username}
             </Link>
-            <span>{timeAgo(post.created_at)}</span>
+            <span suppressHydrationWarning>{timeAgo(post.created_at)}</span>
             <button
               onClick={handleFlag}
               className="text-neutral-400 hover:text-red-500 transition-colors border-none bg-transparent cursor-pointer text-xs"

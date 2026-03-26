@@ -30,7 +30,7 @@ export async function fetchPosts(
     if (tag) params.set("tag", tag);
 
     const res = await fetch(`${API_URL}/api/community/posts?${params}`, {
-      next: { revalidate: 60 },
+      cache: "no-store",
     });
     if (!res.ok) return null;
     return res.json();
@@ -42,7 +42,7 @@ export async function fetchPosts(
 export async function fetchPost(id: string): Promise<CommunityPost | null> {
   try {
     const res = await fetch(`${API_URL}/api/community/posts/${id}`, {
-      next: { revalidate: 60 },
+      cache: "no-store",
     });
     if (!res.ok) return null;
     return res.json();
@@ -57,7 +57,7 @@ export async function fetchComments(
   try {
     const res = await fetch(
       `${API_URL}/api/community/posts/${postId}/comments`,
-      { next: { revalidate: 30 } }
+      { cache: "no-store" }
     );
     if (!res.ok) return null;
     return res.json();
