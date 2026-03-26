@@ -116,7 +116,7 @@ function CommentItem({
       setReplyText("");
       setShowReply(false);
       message.success("Reply posted");
-    } catch (err) {
+    } catch {
       message.error("Failed to post reply");
     } finally {
       setSubmitting(false);

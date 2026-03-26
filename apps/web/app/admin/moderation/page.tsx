@@ -3,10 +3,8 @@
 import { useEffect, useState } from "react";
 import { Button, Card, Table, Tag, Typography, message, Modal } from "antd";
 import { createClient } from "app/lib/supabase/client";
-import { getBackendApiUrl } from "@codepawl/shared";
 
 const { Title } = Typography;
-const API_URL = getBackendApiUrl();
 
 interface FlagItem {
   id: string;

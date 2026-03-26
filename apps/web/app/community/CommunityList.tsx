@@ -60,7 +60,7 @@ export function CommunityList({
   return (
     <div>
       <ul className="space-y-1">
-        {posts.map((post, i) => (
+        {posts.map((post) => (
           <li
             key={post.id}
             className="flex items-start gap-3 py-3 px-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"

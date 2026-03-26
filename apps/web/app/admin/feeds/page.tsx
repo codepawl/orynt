@@ -9,7 +9,7 @@ import { Plus, Trash, ArrowRepeat, PlayCircle } from "react-bootstrap-icons";
 import { getFeeds, createFeed, updateFeed, deleteFeed, fetchFeed } from "../lib/api";
 import type { Feed } from "../lib/types";
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 export default function FeedsPage() {
   const [feeds, setFeeds] = useState<Feed[]>([]);

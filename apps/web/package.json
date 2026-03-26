@@ -10,7 +10,7 @@
     "lockfile:check": "bun install --frozen-lockfile",
     "lockfile:update": "bun install",
     "typecheck": "tsc --noEmit",
-    "lint": "next lint",
+    "lint": "eslint app/",
     "analyze-bundle": "node scripts/analyze-bundle.js",
     "analyze": "ANALYZE=true bun run build"
   },
