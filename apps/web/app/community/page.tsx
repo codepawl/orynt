@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { fetchPosts } from "app/lib/community";
 import { CommunityList } from "./CommunityList";
+import { CATEGORIES } from "@codepawl/shared";
 
 interface Props {
   searchParams: Promise<{ sort?: string; type?: string; tag?: string; page?: string }>;
@@ -10,6 +11,12 @@ export const metadata = {
   title: "Community",
   description: "AI/ML community discussions on CodePawl",
 };
+
+const tabs = [
+  { label: "Ranked", value: "ranked" },
+  { label: "New", value: "new" },
+  { label: "Show CodePawl", value: "show" },
+];
 
 export default async function CommunityPage({ searchParams }: Props) {
   const params = await searchParams;
@@ -22,22 +29,22 @@ export default async function CommunityPage({ searchParams }: Props) {
 
   return (
     <div className="max-w-3xl mx-auto w-full">
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Community</h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
+          Community
+        </h1>
         <Link
           href="/community/submit"
-          className="px-4 py-2 text-sm font-medium rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-80 transition-opacity no-underline"
+          className="px-3 py-1.5 text-sm font-medium rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors no-underline"
         >
           Submit
         </Link>
       </div>
 
-      <div className="flex gap-2 mb-4">
-        {[
-          { label: "Ranked", value: "ranked" },
-          { label: "New", value: "new" },
-          { label: "Show", value: "show" },
-        ].map((tab) => {
+      {/* Tabs — plain text with underline indicator */}
+      <div className="flex gap-6 mb-4 border-b border-neutral-200 dark:border-neutral-800">
+        {tabs.map((tab) => {
           const isActive =
             tab.value === "show"
               ? type === "show"
@@ -50,10 +57,10 @@ export default async function CommunityPage({ searchParams }: Props) {
             <Link
               key={tab.value}
               href={href}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md no-underline transition-colors ${
+              className={`pb-2 text-sm font-medium no-underline transition-colors border-b-2 -mb-px ${
                 isActive
-                  ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
-                  : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  ? "border-neutral-900 dark:border-neutral-100 text-neutral-900 dark:text-neutral-100"
+                  : "border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
               }`}
             >
               {tab.label}
@@ -62,21 +69,35 @@ export default async function CommunityPage({ searchParams }: Props) {
         })}
       </div>
 
-      {tag && (
+      {/* Tag filter — horizontal scrollable pills */}
+      {tag ? (
         <div className="mb-4 flex items-center gap-2">
-          <span className="text-sm text-neutral-500">Filtering by tag:</span>
-          <span className="px-2 py-0.5 text-xs font-medium bg-neutral-200 dark:bg-neutral-700 rounded">
+          <span className="text-sm text-neutral-500">Filtering:</span>
+          <span className="px-2 py-0.5 text-xs font-medium bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-full">
             {tag}
           </span>
           <Link
             href={`/community?sort=${sort}`}
             className="text-xs text-neutral-400 hover:text-neutral-600 no-underline"
           >
-            clear
+            × clear
           </Link>
+        </div>
+      ) : (
+        <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 scrollbar-none">
+          {CATEGORIES.filter((c) => c !== "general").map((cat) => (
+            <Link
+              key={cat}
+              href={`/community?tag=${encodeURIComponent(cat)}&sort=${sort}`}
+              className="px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors no-underline"
+            >
+              {cat}
+            </Link>
+          ))}
         </div>
       )}
 
+      {/* Post list */}
       {data && data.posts.length > 0 ? (
         <CommunityList
           posts={data.posts}
