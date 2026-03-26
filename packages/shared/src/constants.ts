@@ -2,6 +2,9 @@
  * Shared constants for CodePawl.
  */
 
+// User roles
+export const ROLES = ["user", "admin"] as const;
+
 // Article status values
 export const ARTICLE_STATUSES = [
   "draft",

@@ -110,6 +110,21 @@ export interface NewsPaginatedResponse {
   total_pages: number;
 }
 
+// --- Auth / User ---
+
+export type Role = "user" | "admin";
+
+export interface Profile {
+  id: string;
+  username: string;
+  display_name: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  role: Role;
+  karma: number;
+  created_at: string;
+}
+
 // --- Fetch result (admin) ---
 
 export interface FetchResult {

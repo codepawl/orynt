@@ -80,13 +80,13 @@ push:  PR to staging with checklist of what changed
 
 ### Tasks
 
-- [ ] **1.1** Set up Supabase Auth
+- [x] **1.1** Set up Supabase Auth
   - Enable GitHub OAuth provider in Supabase dashboard
   - Install `@supabase/ssr` in apps/web
   - Create Supabase client utilities (browser client + server client)
   - Add auth middleware in Next.js (protect /admin, /community routes)
 
-- [ ] **1.2** Database schema (Supabase SQL migrations)
+- [x] **1.2** Database schema (Supabase SQL migrations)
   ```sql
   -- User profiles (extends Supabase auth.users)
   create table profiles (
@@ -126,19 +126,19 @@ push:  PR to staging with checklist of what changed
     on profiles for update using (auth.uid() = id);
   ```
 
-- [ ] **1.3** Auth UI
+- [x] **1.3** Auth UI
   - Login page at `/login` with "Sign in with GitHub" button
   - Auth callback handler at `/auth/callback`
   - User dropdown in navbar (avatar, username, logout)
   - Profile page at `/profile/[username]`
   - Protected route wrapper component
 
-- [ ] **1.4** Update admin auth
+- [x] **1.4** Update admin auth
   - Admin role check: add `role` column to profiles (default 'user', can be 'admin')
   - `/admin` routes check both session AND role='admin'
   - Keep API key auth for backend automation endpoints (backward compat)
 
-- [ ] **1.5** Add shared auth types to `@codepawl/shared`
+- [x] **1.5** Add shared auth types to `@codepawl/shared`
   - `User`, `Profile` types
   - Role enum
 

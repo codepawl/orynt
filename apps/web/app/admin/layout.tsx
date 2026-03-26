@@ -9,7 +9,8 @@ import {
   Rss,
   BoxArrowRight,
 } from "react-bootstrap-icons";
-import { logout } from "./lib/api";
+import { createClient } from "app/lib/supabase/client";
+import { ProtectedRoute } from "app/components/ui/ProtectedRoute";
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
@@ -28,14 +29,15 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
 
-  // Don't wrap login page in admin layout
+  // Don't wrap login page in admin layout or protection
   if (pathname === "/admin/login") {
     return <>{children}</>;
   }
 
   const handleLogout = async () => {
-    await logout();
-    router.push("/admin/login");
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
   };
 
   // Find active key (exact match or starts with)
@@ -47,44 +49,46 @@ export default function AdminLayout({
     )?.key || "/admin";
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
-      <Sider
-        width={220}
-        style={{ background: "inherit" }}
-        breakpoint="lg"
-        collapsedWidth={0}
-      >
-        <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--ant-color-border)" }}>
-          <Link href="/" style={{ textDecoration: "none" }}>
-            <Text strong style={{ fontSize: 16 }}>
-              CodePawl Admin
-            </Text>
-          </Link>
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[activeKey]}
-          style={{ border: "none", background: "transparent" }}
-          items={menuItems.map((item) => ({
-            ...item,
-            label: <Link href={item.key}>{item.label}</Link>,
-          }))}
-        />
-        <div style={{ padding: "16px 24px", position: "absolute", bottom: 0, width: "100%" }}>
-          <Button
-            type="text"
-            icon={<BoxArrowRight />}
-            onClick={handleLogout}
-            block
-            style={{ textAlign: "left" }}
-          >
-            Logout
-          </Button>
-        </div>
-      </Sider>
-      <Content style={{ padding: 24 }}>
-        {children}
-      </Content>
-    </Layout>
+    <ProtectedRoute requiredRole="admin">
+      <Layout style={{ minHeight: "100vh" }}>
+        <Sider
+          width={220}
+          style={{ background: "inherit" }}
+          breakpoint="lg"
+          collapsedWidth={0}
+        >
+          <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--ant-color-border)" }}>
+            <Link href="/" style={{ textDecoration: "none" }}>
+              <Text strong style={{ fontSize: 16 }}>
+                CodePawl Admin
+              </Text>
+            </Link>
+          </div>
+          <Menu
+            mode="inline"
+            selectedKeys={[activeKey]}
+            style={{ border: "none", background: "transparent" }}
+            items={menuItems.map((item) => ({
+              ...item,
+              label: <Link href={item.key}>{item.label}</Link>,
+            }))}
+          />
+          <div style={{ padding: "16px 24px", position: "absolute", bottom: 0, width: "100%" }}>
+            <Button
+              type="text"
+              icon={<BoxArrowRight />}
+              onClick={handleLogout}
+              block
+              style={{ textAlign: "left" }}
+            >
+              Logout
+            </Button>
+          </div>
+        </Sider>
+        <Content style={{ padding: 24 }}>
+          {children}
+        </Content>
+      </Layout>
+    </ProtectedRoute>
   );
 }
