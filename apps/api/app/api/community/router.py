@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.api.community.auth import get_current_user
 from app.api.community.models import (
@@ -193,12 +193,12 @@ async def create_post(
     )
 
 
-@router.delete("/posts/{post_id}", status_code=204)
+@router.delete("/posts/{post_id}")
 async def delete_post(
     post_id: str,
     request: Request,
     user_id: str = Depends(get_current_user),
-) -> None:
+):
     db = _get_db(request)
 
     result = await db.from_("posts").select("author_id").eq("id", post_id).single().execute()
@@ -208,6 +208,7 @@ async def delete_post(
         raise HTTPException(403, "You can only delete your own posts")
 
     await db.from_("posts").delete().eq("id", post_id).execute()
+    return Response(status_code=204)
 
 
 # ── Comments ─────────────────────────────────────────────────────────
