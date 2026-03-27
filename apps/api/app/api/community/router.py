@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.api.community.auth import get_current_user
+from app.api.community.notifications import create_notification
 from app.api.community.models import (
     AuthorInfo,
     CommentCreate,
@@ -276,6 +277,39 @@ async def create_comment(
         "id, username, display_name, avatar_url"
     ).eq("id", user_id).single().execute()
 
+    commenter_name = profile.data.get("username", "Someone") if profile.data else "Someone"
+
+    # Notify: if replying to a comment, notify the parent comment author
+    if data.parent_id:
+        parent_comment = await db.from_("comments").select("author_id").eq(
+            "id", data.parent_id
+        ).single().execute()
+        if parent_comment.data:
+            await create_notification(
+                db,
+                user_id=parent_comment.data["author_id"],
+                type="comment_reply",
+                actor_id=user_id,
+                message=f"{commenter_name} replied to your comment",
+                post_id=post_id,
+                comment_id=row["id"],
+            )
+    else:
+        # Top-level comment: notify the post author
+        post_data = await db.from_("posts").select("author_id").eq(
+            "id", post_id
+        ).single().execute()
+        if post_data.data:
+            await create_notification(
+                db,
+                user_id=post_data.data["author_id"],
+                type="post_comment",
+                actor_id=user_id,
+                message=f"{commenter_name} commented on your post",
+                post_id=post_id,
+                comment_id=row["id"],
+            )
+
     return CommentResponse(
         id=row["id"],
         post_id=row["post_id"],
@@ -296,6 +330,21 @@ async def vote(
     user_id: str = Depends(get_current_user),
 ) -> dict:
     db = _get_db(request)
+
+    # Karma thresholds: downvote requires 50+, flag checked elsewhere
+    if data.value == -1:
+        profile_result = await db.from_("profiles").select("karma").eq("id", user_id).single().execute()
+        user_karma = (profile_result.data or {}).get("karma", 0)
+        if user_karma < 50:
+            raise HTTPException(403, "You need at least 50 karma to downvote")
+
+    # Fetch previous vote (for karma delta calculation)
+    old_vote_result = await db.from_("votes").select("value").match({
+        "user_id": user_id,
+        "target_id": data.target_id,
+        "target_type": data.target_type,
+    }).maybe_single().execute()
+    old_value = (old_vote_result.data or {}).get("value", 0) if old_vote_result.data else 0
 
     if data.value == 0:
         # Remove vote
@@ -324,6 +373,20 @@ async def vote(
     target_table = "posts" if data.target_type == "post" else "comments"
     await db.from_(target_table).update({"score": new_score}).eq("id", data.target_id).execute()
 
+    # Update karma on the target author's profile
+    karma_delta = data.value - old_value  # e.g. 0->1 = +1, 1->-1 = -2, 1->0 = -1
+    if karma_delta != 0:
+        # Find the author of the target post/comment
+        target_result = await db.from_(target_table).select("author_id").eq("id", data.target_id).single().execute()
+        if target_result.data:
+            author_id = target_result.data["author_id"]
+            # Don't let users give themselves karma
+            if author_id != user_id:
+                await db.rpc("increment_karma", {
+                    "user_id_input": author_id,
+                    "delta": karma_delta,
+                }).execute()
+
     return {"score": new_score, "user_vote": data.value}
 
 
@@ -336,6 +399,12 @@ async def flag_content(
     user_id: str = Depends(get_current_user),
 ) -> dict:
     db = _get_db(request)
+
+    # Karma threshold: flagging requires 100+
+    profile_result = await db.from_("profiles").select("karma").eq("id", user_id).single().execute()
+    user_karma = (profile_result.data or {}).get("karma", 0)
+    if user_karma < 100:
+        raise HTTPException(403, "You need at least 100 karma to flag content")
 
     try:
         await db.from_("flags").insert({

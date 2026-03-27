@@ -8,9 +8,22 @@ import type {
   CommunityPost,
   CommunityPostList,
   CommunityComment,
+  Notification,
 } from "@codepawl/shared";
 
-const API_URL = getBackendApiUrl();
+/**
+ * Server-side calls use BACKEND_API_URL (internal).
+ * Client-side calls use NEXT_PUBLIC_BACKEND_API_URL (browser-accessible).
+ */
+function getApiUrl(): string {
+  if (typeof window !== "undefined") {
+    // Client-side: must use the public env var
+    return process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000";
+  }
+  return getBackendApiUrl();
+}
+
+const API_URL = getApiUrl();
 
 // --- Server-side (ISR) fetchers ---
 
@@ -169,4 +182,65 @@ export async function flagContent(
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("Flag failed");
+}
+
+// --- Notifications ---
+
+export async function fetchNotifications(
+  token: string,
+  limit: number = 20,
+  offset: number = 0
+): Promise<Notification[]> {
+  try {
+    const res = await fetch(
+      `${API_URL}/api/notifications?limit=${limit}&offset=${offset}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchUnreadCount(
+  token: string
+): Promise<number> {
+  try {
+    const res = await fetch(`${API_URL}/api/notifications/unread-count`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return data.count;
+  } catch {
+    return 0;
+  }
+}
+
+export async function markNotificationRead(
+  token: string,
+  notificationId: string
+): Promise<void> {
+  try {
+    await fetch(`${API_URL}/api/notifications/${notificationId}/read`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // silent — non-critical
+  }
+}
+
+export async function markAllNotificationsRead(
+  token: string
+): Promise<void> {
+  try {
+    await fetch(`${API_URL}/api/notifications/read-all`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // silent — non-critical
+  }
 }

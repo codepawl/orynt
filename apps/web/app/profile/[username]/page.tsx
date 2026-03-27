@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { Calendar3, Star } from "react-bootstrap-icons";
+import { Calendar3, Star, ArrowDown, Flag } from "react-bootstrap-icons";
+import { KARMA_THRESHOLDS } from "@codepawl/shared";
 import { createClient } from "app/lib/supabase/server";
 
 interface Props {
@@ -61,6 +62,21 @@ export default async function ProfilePage({ params }: Props) {
               </span>
               <span className="flex items-center gap-1">
                 <Calendar3 /> Joined {joinDate}
+              </span>
+            </div>
+            {/* Karma privilege indicators */}
+            <div className="flex items-center gap-3 mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+              <span className={`flex items-center gap-1 ${profile.karma >= KARMA_THRESHOLDS.DOWNVOTE ? "text-green-600 dark:text-green-400" : ""}`}>
+                <ArrowDown />
+                {profile.karma >= KARMA_THRESHOLDS.DOWNVOTE
+                  ? "Can downvote"
+                  : `${KARMA_THRESHOLDS.DOWNVOTE - profile.karma} karma to downvote`}
+              </span>
+              <span className={`flex items-center gap-1 ${profile.karma >= KARMA_THRESHOLDS.FLAG ? "text-green-600 dark:text-green-400" : ""}`}>
+                <Flag />
+                {profile.karma >= KARMA_THRESHOLDS.FLAG
+                  ? "Can flag"
+                  : `${KARMA_THRESHOLDS.FLAG - profile.karma} karma to flag`}
               </span>
             </div>
           </div>

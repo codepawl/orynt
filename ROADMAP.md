@@ -333,12 +333,12 @@ push:  single PR to staging
 
 ### Tasks (prioritize based on user feedback)
 
-- [ ] **4.1** Notifications
+- [x] **4.1** Notifications
   - Supabase Realtime subscription for comment replies
   - Notification bell in navbar with unread count
   - Notification preferences in profile settings
 
-- [ ] **4.2** Karma system
+- [x] **4.2** Karma system
   - Upvotes on your posts/comments increase your karma
   - Karma thresholds: downvote at 50+, flag at 100+
   - Display karma on profile
@@ -348,12 +348,12 @@ push:  single PR to staging
   - Search bar in navbar
   - `/search?q=` results page
 
-- [ ] **4.4** Frontend testing
+- [x] **4.4** Frontend testing
   - Set up Vitest for component tests
   - Playwright for critical path E2E (login > post > comment > vote)
   - Add to CI pipeline
 
-- [ ] **4.5** Performance
+- [x] **4.5** Performance
   - Audit Three.js bundle size, lazy load or remove 3D blob
   - Add connection pooling for Supabase if needed
   - Redis cache layer in front of hot endpoints if traffic warrants
