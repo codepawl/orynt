@@ -44,3 +44,9 @@ export const CATEGORIES = [
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
+
+// Karma thresholds
+export const KARMA_THRESHOLDS = {
+  DOWNVOTE: 50,
+  FLAG: 100,
+} as const;
