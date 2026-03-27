@@ -53,21 +53,14 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
               className="text-neutral-600 dark:text-neutral-300 mb-7 leading-relaxed"
               style={{ fontSize: "clamp(1.1rem, 1.8vw, 1.35rem)" }}
             >
-              Exploring the depths of AI, data science, and machine learning through{" "}
+              An open community for{" "}
               <Link
-                href="/blog"
+                href="/community"
                 className="font-medium text-neutral-900 dark:text-neutral-100 underline decoration-neutral-400 dark:decoration-neutral-500 underline-offset-4 hover:decoration-neutral-900 dark:hover:decoration-neutral-100 transition-colors"
               >
-                writing
-              </Link>{" "}
-              and{" "}
-              <Link
-                href="/projects"
-                className="font-medium text-neutral-900 dark:text-neutral-100 underline decoration-neutral-400 dark:decoration-neutral-500 underline-offset-4 hover:decoration-neutral-900 dark:hover:decoration-neutral-100 transition-colors"
-              >
-                projects
+                AI builders
               </Link>
-              .
+              , researchers, and curious minds.
             </p>
             <div className="flex items-center gap-3 flex-wrap">
               <Link

@@ -4,7 +4,7 @@ export const metaData = {
   name: "Nguyen Xuan An",
   ogImage: "/opengraph-image.png",
   description:
-    "Explore insights in AI, data analytics, and machine learning with Nguyen Xuan An, a Data Scientist and Machine Learning Engineer.",
+    "An open community for AI builders, researchers, and curious minds.",
   foundedYear: 2026,
 };
 
