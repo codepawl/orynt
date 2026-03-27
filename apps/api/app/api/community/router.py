@@ -344,7 +344,8 @@ async def vote(
         "target_id": data.target_id,
         "target_type": data.target_type,
     }).maybe_single().execute()
-    old_value = (old_vote_result.data or {}).get("value", 0) if old_vote_result.data else 0
+    old_data = getattr(old_vote_result, "data", None)
+    old_value = (old_data or {}).get("value", 0)
 
     if data.value == 0:
         # Remove vote
