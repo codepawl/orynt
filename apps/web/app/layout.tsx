@@ -12,12 +12,7 @@ import { AntdConfigProvider } from "./components/ui/AntdConfigProvider";
 import { NavigationLoading } from "./components/ui/NavigationLoading";
 import { WebVitals } from "./components/ui/WebVitals";
 import { PerformanceMonitor } from "./components/ui/PerformanceMonitor";
-import dynamic from "next/dynamic";
-
-const CookieConsent = dynamic(
-  () => import("./components/ui/CookieConsent").then((m) => ({ default: m.CookieConsent })),
-  { ssr: false }
-);
+import { LazyCookieConsent } from "./components/ui/LazyCookieConsent";
 import { metaData } from "./config";
 
 export const metadata: Metadata = {
@@ -122,7 +117,7 @@ export default function RootLayout({
                 <AnalyticsWrapper />
                 <WebVitals />
                 <PerformanceMonitor />
-                <CookieConsent />
+                <LazyCookieConsent />
               </main>
             </AntdConfigProvider>
           </ThemeProvider>
