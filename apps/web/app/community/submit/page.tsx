@@ -45,6 +45,21 @@ export default function SubmitPage() {
       setError("URL is required for link posts");
       return;
     }
+    if (type === "link") {
+      const testUrl = url.trim().startsWith("http://") || url.trim().startsWith("https://")
+        ? url.trim()
+        : "https://" + url.trim();
+      try {
+        const parsed = new URL(testUrl);
+        if (!parsed.hostname.includes(".")) {
+          setError("Please enter a valid URL (e.g. example.com)");
+          return;
+        }
+      } catch {
+        setError("Please enter a valid URL (e.g. example.com)");
+        return;
+      }
+    }
     if (type !== "link" && !content.trim()) {
       setError("Content is required");
       return;
@@ -63,15 +78,10 @@ export default function SubmitPage() {
         return;
       }
 
-      let normalizedUrl = url.trim();
-      if (normalizedUrl && !normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
-        normalizedUrl = "https://" + normalizedUrl;
-      }
-
       const post = await createPost(session.access_token, {
         type,
         title: title.trim(),
-        url: type === "link" ? normalizedUrl : undefined,
+        url: type === "link" ? url.trim() : undefined,
         content: type !== "link" ? content.trim() : undefined,
         tags: selectedTags.join(", "),
       });
