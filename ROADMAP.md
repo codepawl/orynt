@@ -353,7 +353,7 @@ push:  single PR to staging
   - Playwright for critical path E2E (login > post > comment > vote)
   - Add to CI pipeline
 
-- [ ] **4.5** Performance
+- [x] **4.5** Performance
   - Audit Three.js bundle size, lazy load or remove 3D blob
   - Add connection pooling for Supabase if needed
   - Redis cache layer in front of hot endpoints if traffic warrants
