@@ -24,7 +24,7 @@ test.describe("Critical path — public pages", () => {
 
   test("login page shows sign-in button", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.locator("text=GitHub")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in with GitHub" })).toBeVisible();
   });
 
   test("navigation works between pages", async ({ page }) => {
