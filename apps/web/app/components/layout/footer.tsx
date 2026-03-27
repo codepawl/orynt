@@ -59,6 +59,7 @@ export default function Footer() {
           <Link href="/privacy" className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 text-xs" style={{ textDecoration: "none" }}>Privacy</Link>
           <Link href="/terms" className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 text-xs" style={{ textDecoration: "none" }}>Terms</Link>
           <Link href="/cookies" className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 text-xs" style={{ textDecoration: "none" }}>Cookies</Link>
+          <Link href="/about" className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 text-xs" style={{ textDecoration: "none" }}>About</Link>
         </Space>
         <Text type="secondary" className="text-neutral-600 dark:text-neutral-300">
           &copy; {YEAR} <Link href="/" className="link-animated">{metaData.title}</Link>
