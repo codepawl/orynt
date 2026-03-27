@@ -348,7 +348,7 @@ push:  single PR to staging
   - Search bar in navbar
   - `/search?q=` results page
 
-- [ ] **4.4** Frontend testing
+- [x] **4.4** Frontend testing
   - Set up Vitest for component tests
   - Playwright for critical path E2E (login > post > comment > vote)
   - Add to CI pipeline
