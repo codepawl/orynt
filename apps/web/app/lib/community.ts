@@ -8,6 +8,7 @@ import type {
   CommunityPost,
   CommunityPostList,
   CommunityComment,
+  Notification,
 } from "@codepawl/shared";
 
 const API_URL = getBackendApiUrl();
@@ -169,4 +170,49 @@ export async function flagContent(
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("Flag failed");
+}
+
+// --- Notifications ---
+
+export async function fetchNotifications(
+  token: string,
+  limit: number = 20,
+  offset: number = 0
+): Promise<Notification[]> {
+  const res = await fetch(
+    `${API_URL}/api/notifications?limit=${limit}&offset=${offset}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchUnreadCount(
+  token: string
+): Promise<number> {
+  const res = await fetch(`${API_URL}/api/notifications/unread-count`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.count;
+}
+
+export async function markNotificationRead(
+  token: string,
+  notificationId: string
+): Promise<void> {
+  await fetch(`${API_URL}/api/notifications/${notificationId}/read`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function markAllNotificationsRead(
+  token: string
+): Promise<void> {
+  await fetch(`${API_URL}/api/notifications/read-all`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
 }

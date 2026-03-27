@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.api.community.auth import get_current_user
+from app.api.community.notifications import create_notification
 from app.api.community.models import (
     AuthorInfo,
     CommentCreate,
@@ -275,6 +276,39 @@ async def create_comment(
     profile = await db.from_("profiles").select(
         "id, username, display_name, avatar_url"
     ).eq("id", user_id).single().execute()
+
+    commenter_name = profile.data.get("username", "Someone") if profile.data else "Someone"
+
+    # Notify: if replying to a comment, notify the parent comment author
+    if data.parent_id:
+        parent_comment = await db.from_("comments").select("author_id").eq(
+            "id", data.parent_id
+        ).single().execute()
+        if parent_comment.data:
+            await create_notification(
+                db,
+                user_id=parent_comment.data["author_id"],
+                type="comment_reply",
+                actor_id=user_id,
+                message=f"{commenter_name} replied to your comment",
+                post_id=post_id,
+                comment_id=row["id"],
+            )
+    else:
+        # Top-level comment: notify the post author
+        post_data = await db.from_("posts").select("author_id").eq(
+            "id", post_id
+        ).single().execute()
+        if post_data.data:
+            await create_notification(
+                db,
+                user_id=post_data.data["author_id"],
+                type="post_comment",
+                actor_id=user_id,
+                message=f"{commenter_name} commented on your post",
+                post_id=post_id,
+                comment_id=row["id"],
+            )
 
     return CommentResponse(
         id=row["id"],

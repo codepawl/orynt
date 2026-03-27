@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { ThemeSwitch } from "../ui/theme-switch";
+import { NotificationBell } from "../ui/NotificationBell";
 import { UserMenu } from "../ui/UserMenu";
 import { InlineLogo } from "./InlineLogo";
 import { metaData } from "../../config";
@@ -56,6 +57,7 @@ export function Navbar() {
           <div className="ml-2">
             <ThemeSwitch />
           </div>
+          <NotificationBell />
           <div className="ml-2">
             <UserMenu />
           </div>

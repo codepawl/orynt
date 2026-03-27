@@ -12,6 +12,8 @@ export type {
   DashboardStats,
   Feed,
   FetchResult,
+  Notification,
+  NotificationType,
   NewsArticle,
   NewsPaginatedResponse,
   PaginatedResponse,

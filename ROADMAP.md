@@ -338,7 +338,7 @@ push:  single PR to staging
   - Notification bell in navbar with unread count
   - Notification preferences in profile settings
 
-- [ ] **4.2** Karma system
+- [x] **4.2** Karma system
   - Upvotes on your posts/comments increase your karma
   - Karma thresholds: downvote at 50+, flag at 100+
   - Display karma on profile

@@ -172,6 +172,23 @@ export interface CommunityPostList {
   total_pages: number;
 }
 
+// --- Notifications ---
+
+export type NotificationType = "comment_reply" | "post_comment" | "vote";
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  actor_id: string | null;
+  actor?: AuthorInfo | null;
+  post_id: string | null;
+  comment_id: string | null;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 // --- Fetch result (admin) ---
 
 export interface FetchResult {
