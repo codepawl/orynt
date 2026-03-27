@@ -333,7 +333,7 @@ push:  single PR to staging
 
 ### Tasks (prioritize based on user feedback)
 
-- [ ] **4.1** Notifications
+- [x] **4.1** Notifications
   - Supabase Realtime subscription for comment replies
   - Notification bell in navbar with unread count
   - Notification preferences in profile settings

@@ -40,5 +40,14 @@ jobs:
       - name: Typecheck
         run: cd apps/web && bun run typecheck
 
+      - name: Unit tests
+        run: cd apps/web && bun run test
+
       - name: Build
         run: cd apps/web && bun run build
+
+      - name: Install Playwright browsers
+        run: cd apps/web && bunx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: cd apps/web && bun run test:e2e
