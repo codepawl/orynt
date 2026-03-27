@@ -4,8 +4,7 @@ import { Inter } from "next/font/google";
 import { JetBrains_Mono } from "next/font/google";
 import { Playfair_Display } from "next/font/google";
 import { Navbar } from "./components/layout/nav";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/next";
+import { AnalyticsWrapper } from "./components/ui/AnalyticsWrapper";
 import Footer from "./components/layout/footer";
 import { ThemeProvider } from "./components/ui/theme-switch";
 import AntdRegistry from "./lib/AntdRegistry";
@@ -13,6 +12,7 @@ import { AntdConfigProvider } from "./components/ui/AntdConfigProvider";
 import { NavigationLoading } from "./components/ui/NavigationLoading";
 import { WebVitals } from "./components/ui/WebVitals";
 import { PerformanceMonitor } from "./components/ui/PerformanceMonitor";
+import { LazyCookieConsent } from "./components/ui/LazyCookieConsent";
 import { metaData } from "./config";
 
 export const metadata: Metadata = {
@@ -114,10 +114,10 @@ export default function RootLayout({
                 <Navbar />
                 {children}
                 <Footer />
-                <Analytics />
-                <SpeedInsights />
+                <AnalyticsWrapper />
                 <WebVitals />
                 <PerformanceMonitor />
+                <LazyCookieConsent />
               </main>
             </AntdConfigProvider>
           </ThemeProvider>

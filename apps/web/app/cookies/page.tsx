@@ -40,6 +40,34 @@ export default function CookiePolicy() {
               <td>Stores your light/dark mode preference</td>
               <td>1 year</td>
             </tr>
+            <tr>
+              <td><code>codepawl-consent</code></td>
+              <td>Records your cookie consent choice (accepted/declined)</td>
+              <td>1 year</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Authentication Cookies</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Cookie</th>
+              <th>Purpose</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>sb-*-auth-token</code></td>
+              <td>Supabase authentication session (set when you sign in with GitHub)</td>
+              <td>Session / 1 week</td>
+            </tr>
+            <tr>
+              <td><code>admin_session</code></td>
+              <td>Admin dashboard session (httpOnly)</td>
+              <td>24 hours</td>
+            </tr>
           </tbody>
         </table>
 
@@ -48,6 +76,7 @@ export default function CookiePolicy() {
           <strong>Vercel Analytics</strong> and <strong>Vercel Speed Insights</strong> are used to measure
           site performance and usage patterns. These services use privacy-focused, cookieless analytics that
           do not track individual users across sites.
+          If you decline cookies via our consent banner, these analytics scripts are not loaded.
         </p>
 
         <h2>Third-Party Cookies</h2>
