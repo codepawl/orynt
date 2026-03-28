@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Optional
 
@@ -19,6 +20,8 @@ from app.api.community.models import (
     PostResponse,
     VoteRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/community")
 
@@ -344,7 +347,8 @@ async def vote(
         "target_id": data.target_id,
         "target_type": data.target_type,
     }).maybe_single().execute()
-    old_value = (old_vote_result.data or {}).get("value", 0) if old_vote_result.data else 0
+    old_data = getattr(old_vote_result, "data", None)
+    old_value = (old_data or {}).get("value", 0)
 
     if data.value == 0:
         # Remove vote
@@ -373,19 +377,20 @@ async def vote(
     target_table = "posts" if data.target_type == "post" else "comments"
     await db.from_(target_table).update({"score": new_score}).eq("id", data.target_id).execute()
 
-    # Update karma on the target author's profile
+    # Update karma on the target author's profile (non-fatal)
     karma_delta = data.value - old_value  # e.g. 0->1 = +1, 1->-1 = -2, 1->0 = -1
     if karma_delta != 0:
-        # Find the author of the target post/comment
-        target_result = await db.from_(target_table).select("author_id").eq("id", data.target_id).single().execute()
-        if target_result.data:
-            author_id = target_result.data["author_id"]
-            # Don't let users give themselves karma
-            if author_id != user_id:
-                await db.rpc("increment_karma", {
-                    "user_id_input": author_id,
-                    "delta": karma_delta,
-                }).execute()
+        try:
+            target_result = await db.from_(target_table).select("author_id").eq("id", data.target_id).single().execute()
+            if target_result.data:
+                author_id = target_result.data["author_id"]
+                if author_id != user_id:
+                    await db.rpc("increment_karma", {
+                        "user_id_input": author_id,
+                        "delta": karma_delta,
+                    }).execute()
+        except Exception:
+            logger.warning("Karma update failed (RPC may not exist yet)", exc_info=True)
 
     return {"score": new_score, "user_vote": data.value}
 

@@ -24,12 +24,15 @@ class PostCreate(BaseModel):
         v = v.strip()
         if not v:
             return None
-        # Auto-prepend https:// if no scheme
+        # Auto-prepend https:// if no scheme (once only)
         if not v.startswith(("http://", "https://")):
             v = "https://" + v
         parsed = urlparse(v)
         if not parsed.hostname or "." not in parsed.hostname:
-            raise ValueError("Invalid URL — must be a valid web address (e.g. example.com)")
+            raise ValueError(
+                "Invalid URL — must be a valid web address with a domain "
+                "(e.g. example.com or https://example.com)"
+            )
         return v
 
 
