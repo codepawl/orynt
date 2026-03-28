@@ -33,6 +33,8 @@ export function PostDetail({ post }: { post: CommunityPost }) {
   const [score, setScore] = useState(post.score);
   const [userVote, setUserVote] = useState(post.user_vote);
   const [isAuthor, setIsAuthor] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [voteError, setVoteError] = useState("");
 
   useEffect(() => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
@@ -54,9 +56,19 @@ export function PostDetail({ post }: { post: CommunityPost }) {
       }
     });
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user && user.id === post.author.id) setIsAuthor(true);
+      if (user) {
+        setUserId(user.id);
+        if (user.id === post.author.id) setIsAuthor(true);
+      }
     });
   }, [post.author.id, post.id]);
+
+  // Auto-dismiss vote error
+  useEffect(() => {
+    if (!voteError) return;
+    const t = setTimeout(() => setVoteError(""), 3000);
+    return () => clearTimeout(t);
+  }, [voteError]);
 
   const getSession = async () => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
@@ -79,8 +91,21 @@ export function PostDetail({ post }: { post: CommunityPost }) {
 
   const handleVote = async (value: number) => {
     const session = await getSession();
-    if (!session) return;
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${post.id}`);
+      return;
+    }
+
+    // Prevent self-vote
+    if (userId === post.author.id) return;
+
+    // Optimistic update
+    const prevVote = userVote;
+    const prevScore = score;
     const newValue = userVote === value ? 0 : value;
+    setUserVote(newValue);
+    setScore(prev => prev - prevVote + newValue);
+
     try {
       const result = await vote(session.access_token, {
         target_id: post.id,
@@ -95,13 +120,19 @@ export function PostDetail({ post }: { post: CommunityPost }) {
         localStorage.removeItem(`vote:post:${post.id}`);
       }
     } catch {
-      // silently fail
+      // Revert optimistic update
+      setUserVote(prevVote);
+      setScore(prevScore);
+      setVoteError("Vote failed");
     }
   };
 
   const handleFlag = async () => {
     const session = await getSession();
-    if (!session) return;
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${post.id}`);
+      return;
+    }
     try {
       await flagContent(session.access_token, {
         target_id: post.id,
@@ -112,6 +143,8 @@ export function PostDetail({ post }: { post: CommunityPost }) {
     }
   };
 
+  const isSelfPost = userId === post.author.id;
+
   return (
     <div className="mb-8">
       <div className="flex gap-3">
@@ -119,9 +152,15 @@ export function PostDetail({ post }: { post: CommunityPost }) {
         <div className="flex flex-col items-center gap-0.5 pt-1">
           <button
             onClick={() => handleVote(1)}
-            className={`p-1 rounded transition-colors border-none bg-transparent cursor-pointer ${
+            disabled={isSelfPost}
+            className={`p-1 rounded transition-colors border-none bg-transparent ${
+              isSelfPost
+                ? "cursor-not-allowed opacity-30"
+                : "cursor-pointer"
+            } ${
               userVote === 1 ? "text-amber-500" : "text-neutral-400 hover:text-amber-500"
             }`}
+            title={isSelfPost ? "You can't vote on your own post" : "Upvote"}
           >
             <svg viewBox="0 0 12 8" className="w-4 h-3 fill-current">
               <path d="M6 0L12 8H0z" />
@@ -132,14 +171,23 @@ export function PostDetail({ post }: { post: CommunityPost }) {
           </span>
           <button
             onClick={() => handleVote(-1)}
-            className={`p-1 rounded transition-colors border-none bg-transparent cursor-pointer ${
+            disabled={isSelfPost}
+            className={`p-1 rounded transition-colors border-none bg-transparent ${
+              isSelfPost
+                ? "cursor-not-allowed opacity-30"
+                : "cursor-pointer"
+            } ${
               userVote === -1 ? "text-blue-500" : "text-neutral-400 hover:text-blue-500"
             }`}
+            title={isSelfPost ? "You can't vote on your own post" : "Downvote"}
           >
             <svg viewBox="0 0 12 8" className="w-4 h-3 fill-current rotate-180">
               <path d="M6 0L12 8H0z" />
             </svg>
           </button>
+          {voteError && (
+            <span className="text-[10px] text-red-500 mt-0.5">{voteError}</span>
+          )}
         </div>
 
         <div className="flex-1">

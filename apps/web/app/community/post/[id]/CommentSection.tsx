@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useCallback, useEffect, createContext, useContext } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
-import { createComment, vote, flagContent, fetchMyVotes } from "app/lib/community";
+import { createComment, vote, flagContent } from "app/lib/community";
 import type { CommunityComment } from "@codepawl/shared";
 
-/** Context to pass down fetched comment vote states */
-const CommentVoteContext = createContext<Record<string, number>>({});
-
 const MAX_VISUAL_DEPTH = 5;
+const COMMENT_COOLDOWN_SECONDS = 30;
 
 interface CommentNode extends CommunityComment {
   children: CommentNode[];
@@ -55,43 +54,87 @@ async function getSession() {
   return session;
 }
 
+/** Shared cooldown state across all comment forms on the page */
+function useCommentCooldown() {
+  const [cooldown, setCooldown] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startCooldown = useCallback(() => {
+    setCooldown(COMMENT_COOLDOWN_SECONDS);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCooldown(prev => {
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  return { cooldown, startCooldown };
+}
+
 function CommentItem({
   comment,
   depth,
   postId,
   onReply,
+  cooldown,
+  startCooldown,
 }: {
   comment: CommentNode;
   depth: number;
   postId: string;
   onReply: (comment: CommunityComment) => void;
+  cooldown: number;
+  startCooldown: () => void;
 }) {
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [showReply, setShowReply] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [score, setScore] = useState(comment.score);
   const [userVote, setUserVote] = useState(comment.user_vote);
+  const [voteError, setVoteError] = useState("");
 
   const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
   const indent = visualDepth * 24;
 
-  const serverVotes = useContext(CommentVoteContext);
-
   useEffect(() => {
-    // Prefer server-fetched vote, fall back to localStorage
-    if (serverVotes[comment.id] !== undefined) {
-      setUserVote(serverVotes[comment.id]);
-    } else {
-      const saved = localStorage.getItem(`vote:comment:${comment.id}`);
-      if (saved) setUserVote(Number(saved));
-    }
-  }, [comment.id, serverVotes]);
+    const saved = localStorage.getItem(`vote:comment:${comment.id}`);
+    if (saved) setUserVote(Number(saved));
+  }, [comment.id]);
+
+  // Auto-dismiss vote error
+  useEffect(() => {
+    if (!voteError) return;
+    const t = setTimeout(() => setVoteError(""), 3000);
+    return () => clearTimeout(t);
+  }, [voteError]);
 
   const handleVote = async (value: number) => {
     const session = await getSession();
-    if (!session) return;
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${postId}`);
+      return;
+    }
+
+    // Optimistic update
+    const prevVote = userVote;
+    const prevScore = score;
     const newValue = userVote === value ? 0 : value;
+    setUserVote(newValue);
+    setScore(prev => prev - prevVote + newValue);
+
     try {
       const result = await vote(session.access_token, {
         target_id: comment.id,
@@ -106,16 +149,22 @@ function CommentItem({
         localStorage.removeItem(`vote:comment:${comment.id}`);
       }
     } catch {
-      // silently fail
+      // Revert optimistic update
+      setUserVote(prevVote);
+      setScore(prevScore);
+      setVoteError("Vote failed");
     }
   };
 
   const handleReply = async () => {
-    if (!replyText.trim()) return;
+    if (!replyText.trim() || cooldown > 0) return;
+    const session = await getSession();
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${postId}`);
+      return;
+    }
     setSubmitting(true);
     try {
-      const session = await getSession();
-      if (!session) return;
       const newComment = await createComment(session.access_token, postId, {
         content: replyText.trim(),
         parent_id: comment.id,
@@ -123,6 +172,7 @@ function CommentItem({
       onReply(newComment);
       setReplyText("");
       setShowReply(false);
+      startCooldown();
     } catch {
       // silently fail
     } finally {
@@ -130,9 +180,21 @@ function CommentItem({
     }
   };
 
+  const handleClickReply = async () => {
+    const session = await getSession();
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${postId}`);
+      return;
+    }
+    setShowReply(!showReply);
+  };
+
   const handleFlag = async () => {
     const session = await getSession();
-    if (!session) return;
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${postId}`);
+      return;
+    }
     try {
       await flagContent(session.access_token, {
         target_id: comment.id,
@@ -179,6 +241,9 @@ function CommentItem({
             >
               ▼
             </button>
+            {voteError && (
+              <span className="text-[10px] text-red-500 ml-1">{voteError}</span>
+            )}
           </span>
         </div>
 
@@ -192,7 +257,7 @@ function CommentItem({
             {/* Actions */}
             <div className="flex gap-3 text-xs text-neutral-400">
               <button
-                onClick={() => setShowReply(!showReply)}
+                onClick={handleClickReply}
                 className="border-none bg-transparent cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300 text-xs text-neutral-400"
               >
                 reply
@@ -216,13 +281,13 @@ function CommentItem({
                   maxLength={10000}
                   className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 dark:focus:ring-neutral-100 focus:border-transparent resize-y"
                 />
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={handleReply}
-                    disabled={submitting}
-                    className="px-3 py-1 text-xs font-medium rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-80 disabled:opacity-50 cursor-pointer border-none"
+                    disabled={submitting || !replyText.trim() || cooldown > 0}
+                    className="px-3 py-1 text-xs font-medium rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer border-none"
                   >
-                    {submitting ? "..." : "Reply"}
+                    {submitting ? "..." : cooldown > 0 ? `Wait ${cooldown}s` : "Reply"}
                   </button>
                   <button
                     onClick={() => {
@@ -245,6 +310,8 @@ function CommentItem({
                 depth={depth + 1}
                 postId={postId}
                 onReply={onReply}
+                cooldown={cooldown}
+                startCooldown={startCooldown}
               />
             ))}
           </>
@@ -260,24 +327,13 @@ interface Props {
 }
 
 export function CommentSection({ postId, initialComments }: Props) {
+  const router = useRouter();
   const [comments, setComments] = useState(initialComments);
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [myVotes, setMyVotes] = useState<Record<string, number>>({});
+  const { cooldown, startCooldown } = useCommentCooldown();
 
   const tree = buildTree(comments);
-
-  // Fetch user's comment votes on mount
-  useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
-    const supabase = createClient();
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session || !comments.length) return;
-      const ids = comments.map((c) => c.id);
-      const votes = await fetchMyVotes(session.access_token, "comment", ids);
-      setMyVotes(votes);
-    });
-  }, [comments]);
 
   const handleAddComment = useCallback(
     (comment: CommunityComment) => {
@@ -287,16 +343,20 @@ export function CommentSection({ postId, initialComments }: Props) {
   );
 
   const handleSubmitTopLevel = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || cooldown > 0) return;
+    const session = await getSession();
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${postId}`);
+      return;
+    }
     setSubmitting(true);
     try {
-      const session = await getSession();
-      if (!session) return;
       const comment = await createComment(session.access_token, postId, {
         content: newComment.trim(),
       });
       handleAddComment(comment);
       setNewComment("");
+      startCooldown();
     } catch {
       // silently fail
     } finally {
@@ -322,15 +382,14 @@ export function CommentSection({ postId, initialComments }: Props) {
         />
         <button
           onClick={handleSubmitTopLevel}
-          disabled={submitting}
-          className="px-4 py-2 text-sm font-medium rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-80 disabled:opacity-50 cursor-pointer border-none"
+          disabled={submitting || !newComment.trim() || cooldown > 0}
+          className="px-4 py-2 text-sm font-medium rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer border-none"
         >
-          {submitting ? "Posting..." : "Comment"}
+          {submitting ? "Posting..." : cooldown > 0 ? `Wait ${cooldown}s` : "Comment"}
         </button>
       </div>
 
       {/* Thread */}
-      <CommentVoteContext.Provider value={myVotes}>
       <div>
         {tree.map((comment) => (
           <CommentItem
@@ -339,10 +398,11 @@ export function CommentSection({ postId, initialComments }: Props) {
             depth={0}
             postId={postId}
             onReply={handleAddComment}
+            cooldown={cooldown}
+            startCooldown={startCooldown}
           />
         ))}
       </div>
-      </CommentVoteContext.Provider>
     </div>
   );
 }

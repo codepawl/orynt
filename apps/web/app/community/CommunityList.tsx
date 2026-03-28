@@ -1,14 +1,11 @@
 "use client";
 
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
-import { vote, fetchMyVotes } from "app/lib/community";
+import { vote } from "app/lib/community";
 import type { CommunityPost } from "@codepawl/shared";
-
-/** Context to pass down fetched vote states to VoteButton children */
-const VoteContext = createContext<Record<string, number>>({});
 
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor(
@@ -32,19 +29,22 @@ function getDomain(url: string): string {
 }
 
 function VoteButton({ post }: { post: CommunityPost }) {
-  const myVotes = useContext(VoteContext);
+  const router = useRouter();
   const [score, setScore] = useState(post.score);
   const [voted, setVoted] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    // Prefer server-fetched vote state, fall back to localStorage
-    if (myVotes[post.id] === 1) {
-      setVoted(true);
-    } else if (myVotes[post.id] === 0 || myVotes[post.id] === undefined) {
-      const saved = localStorage.getItem(`vote:post:${post.id}`);
-      if (saved === "1") setVoted(true);
-    }
-  }, [post.id, myVotes]);
+    const saved = localStorage.getItem(`vote:post:${post.id}`);
+    if (saved === "1") setVoted(true);
+  }, [post.id]);
+
+  // Auto-dismiss error
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(""), 3000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   const handleVote = async () => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
@@ -52,8 +52,18 @@ function VoteButton({ post }: { post: CommunityPost }) {
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!session) {
+      router.push(`/login?redirect=/community`);
+      return;
+    }
+
+    // Optimistic update
+    const prevVoted = voted;
+    const prevScore = score;
     const newValue = voted ? 0 : 1;
+    setVoted(newValue === 1);
+    setScore(prev => prev + (newValue === 1 ? 1 : -1));
+
     try {
       const result = await vote(session.access_token, {
         target_id: post.id,
@@ -68,24 +78,32 @@ function VoteButton({ post }: { post: CommunityPost }) {
         localStorage.removeItem(`vote:post:${post.id}`);
       }
     } catch {
-      // silently fail
+      // Revert optimistic update
+      setVoted(prevVoted);
+      setScore(prevScore);
+      setError("Vote failed");
     }
   };
 
   return (
-    <button
-      onClick={handleVote}
-      className={`flex flex-col items-center min-w-[2rem] pt-1 border-none bg-transparent cursor-pointer ${
-        voted
-          ? "text-amber-500"
-          : "text-neutral-400 hover:text-amber-500"
-      } transition-colors`}
-    >
-      <svg viewBox="0 0 12 8" className="w-3 h-2 fill-current">
-        <path d="M6 0L12 8H0z" />
-      </svg>
-      <span className="text-xs font-medium mt-0.5">{score}</span>
-    </button>
+    <div className="flex flex-col items-center min-w-[2rem] pt-1">
+      <button
+        onClick={handleVote}
+        className={`flex flex-col items-center border-none bg-transparent cursor-pointer ${
+          voted
+            ? "text-amber-500"
+            : "text-neutral-400 hover:text-amber-500"
+        } transition-colors`}
+      >
+        <svg viewBox="0 0 12 8" className="w-3 h-2 fill-current">
+          <path d="M6 0L12 8H0z" />
+        </svg>
+        <span className="text-xs font-medium mt-0.5">{score}</span>
+      </button>
+      {error && (
+        <span className="text-[10px] text-red-500 mt-0.5">{error}</span>
+      )}
+    </div>
   );
 }
 
@@ -107,18 +125,6 @@ export function CommunityList({
   type,
 }: Props) {
   const router = useRouter();
-  const [myVotes, setMyVotes] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
-    const supabase = createClient();
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return;
-      const ids = posts.map((p) => p.id);
-      const votes = await fetchMyVotes(session.access_token, "post", ids);
-      setMyVotes(votes);
-    });
-  }, [posts]);
 
   const handlePageChange = (newPage: number) => {
     const params = new URLSearchParams({ page: String(newPage), sort });
@@ -127,7 +133,6 @@ export function CommunityList({
   };
 
   return (
-    <VoteContext.Provider value={myVotes}>
     <div>
       <ol className="divide-y divide-neutral-100 dark:divide-neutral-800">
         {posts.map((post, i) => (
@@ -216,6 +221,5 @@ export function CommunityList({
         </div>
       )}
     </div>
-    </VoteContext.Provider>
   );
 }

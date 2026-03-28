@@ -172,6 +172,7 @@ All tables use Row Level Security (RLS).
 - Do not skip testing in the work cycle
 - Do not work on features outside the current roadmap phase
 - Do not list products that don't have code (TeamClaw, Lognis, Yeastbook, OpenClaw are NOT products yet)
+- **Merge before moving on.** Before starting any new branch, check for unmerged feature/fix branches (`git branch --list "fix/*" "feat/*"`). Verify each passes lint + typecheck + pytest. If clean, create PR and squash merge to staging. If broken, report and stop. Always start new work from latest staging.
 
 ### Backend Constraints
 - Admin automation endpoints use API key auth (httpOnly cookie after Phase 0)
