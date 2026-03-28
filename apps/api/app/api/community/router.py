@@ -395,6 +395,35 @@ async def vote(
     return {"score": new_score, "user_vote": data.value}
 
 
+@router.get("/votes/mine")
+async def get_my_votes(
+    request: Request,
+    target_type: str = "post",
+    target_ids: str = "",
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Return the current user's votes for given target IDs.
+
+    Query params:
+        target_type: "post" or "comment"
+        target_ids: comma-separated UUIDs
+    Returns:
+        {"votes": {"<target_id>": <value>, ...}}
+    """
+    db = _get_db(request)
+
+    ids = [tid.strip() for tid in target_ids.split(",") if tid.strip()]
+    if not ids or len(ids) > 100:
+        return {"votes": {}}
+
+    result = await db.from_("votes").select("target_id, value").eq(
+        "user_id", user_id
+    ).eq("target_type", target_type).in_("target_id", ids).execute()
+
+    votes = {row["target_id"]: row["value"] for row in result.data}
+    return {"votes": votes}
+
+
 # ── Flags ────────────────────────────────────────────────────────────
 
 @router.post("/flag", status_code=201)

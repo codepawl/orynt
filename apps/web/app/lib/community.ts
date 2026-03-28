@@ -169,6 +169,28 @@ export async function vote(
   return res.json();
 }
 
+export async function fetchMyVotes(
+  token: string,
+  targetType: string,
+  targetIds: string[]
+): Promise<Record<string, number>> {
+  if (!targetIds.length) return {};
+  try {
+    const params = new URLSearchParams({
+      target_type: targetType,
+      target_ids: targetIds.join(","),
+    });
+    const res = await fetch(`${API_URL}/api/community/votes/mine?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data.votes || {};
+  } catch {
+    return {};
+  }
+}
+
 export async function flagContent(
   token: string,
   data: { target_id: string; target_type: string; reason?: string }

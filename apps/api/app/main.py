@@ -30,13 +30,13 @@ async def lifespan(app: FastAPI):
 
     # Initialize automation (Supabase + scheduler) if configured
     scheduler = None
-    if settings.supabase_url and settings.supabase_service_key:
+    if settings.supabase_url and settings.supabase_secret_key:
         try:
             from supabase import acreate_client
             from app.automation.services.supabase_client import AutomationDB
             from app.automation.scheduler import create_scheduler
 
-            supabase_client = await acreate_client(settings.supabase_url, settings.supabase_service_key)
+            supabase_client = await acreate_client(settings.supabase_url, settings.supabase_secret_key)
             app.state.supabase = supabase_client
             app.state.automation_db = AutomationDB(supabase_client)
 

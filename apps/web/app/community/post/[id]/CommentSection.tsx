@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, createContext, useContext } from "react";
 import Link from "next/link";
 import { createClient } from "app/lib/supabase/client";
-import { createComment, vote, flagContent } from "app/lib/community";
+import { createComment, vote, flagContent, fetchMyVotes } from "app/lib/community";
 import type { CommunityComment } from "@codepawl/shared";
+
+/** Context to pass down fetched comment vote states */
+const CommentVoteContext = createContext<Record<string, number>>({});
 
 const MAX_VISUAL_DEPTH = 5;
 
@@ -73,10 +76,17 @@ function CommentItem({
   const visualDepth = Math.min(depth, MAX_VISUAL_DEPTH);
   const indent = visualDepth * 24;
 
+  const serverVotes = useContext(CommentVoteContext);
+
   useEffect(() => {
-    const saved = localStorage.getItem(`vote:comment:${comment.id}`);
-    if (saved) setUserVote(Number(saved));
-  }, [comment.id]);
+    // Prefer server-fetched vote, fall back to localStorage
+    if (serverVotes[comment.id] !== undefined) {
+      setUserVote(serverVotes[comment.id]);
+    } else {
+      const saved = localStorage.getItem(`vote:comment:${comment.id}`);
+      if (saved) setUserVote(Number(saved));
+    }
+  }, [comment.id, serverVotes]);
 
   const handleVote = async (value: number) => {
     const session = await getSession();
@@ -253,8 +263,21 @@ export function CommentSection({ postId, initialComments }: Props) {
   const [comments, setComments] = useState(initialComments);
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [myVotes, setMyVotes] = useState<Record<string, number>>({});
 
   const tree = buildTree(comments);
+
+  // Fetch user's comment votes on mount
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const supabase = createClient();
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session || !comments.length) return;
+      const ids = comments.map((c) => c.id);
+      const votes = await fetchMyVotes(session.access_token, "comment", ids);
+      setMyVotes(votes);
+    });
+  }, [comments]);
 
   const handleAddComment = useCallback(
     (comment: CommunityComment) => {
@@ -307,6 +330,7 @@ export function CommentSection({ postId, initialComments }: Props) {
       </div>
 
       {/* Thread */}
+      <CommentVoteContext.Provider value={myVotes}>
       <div>
         {tree.map((comment) => (
           <CommentItem
@@ -318,6 +342,7 @@ export function CommentSection({ postId, initialComments }: Props) {
           />
         ))}
       </div>
+      </CommentVoteContext.Provider>
     </div>
   );
 }

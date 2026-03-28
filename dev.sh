@@ -22,8 +22,9 @@ cd apps/api
 if [ ! -d ".venv" ]; then
     echo "Creating Python venv via uv..."
     uv venv .venv
-    uv pip install --python .venv/bin/python -q -r requirements.txt
 fi
+echo "Syncing Python dependencies..."
+uv pip install --python .venv/bin/python -q -r requirements.txt
 setsid .venv/bin/uvicorn app.main:app --reload --port 8000 &
 PID_API=$!
 cd ../..

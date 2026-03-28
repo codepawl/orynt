@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # Automation settings
     admin_api_key: str = ""
     supabase_url: str = ""
-    supabase_service_key: str = ""
+    supabase_secret_key: str = ""
     supabase_jwt_secret: str = ""
     rss_collect_interval_minutes: int = 60
 

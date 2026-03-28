@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
-import { vote, flagContent, deletePost } from "app/lib/community";
+import { vote, flagContent, deletePost, fetchMyVotes } from "app/lib/community";
 import type { CommunityPost } from "@codepawl/shared";
 
 function timeAgo(dateStr: string): string {
@@ -35,12 +35,24 @@ export function PostDetail({ post }: { post: CommunityPost }) {
   const [isAuthor, setIsAuthor] = useState(false);
 
   useEffect(() => {
-    // Restore vote state from localStorage
-    const saved = localStorage.getItem(`vote:post:${post.id}`);
-    if (saved) setUserVote(Number(saved));
-
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
     const supabase = createClient();
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) {
+        // Not logged in — fall back to localStorage
+        const saved = localStorage.getItem(`vote:post:${post.id}`);
+        if (saved) setUserVote(Number(saved));
+        return;
+      }
+      // Fetch real vote state from server
+      const votes = await fetchMyVotes(session.access_token, "post", [post.id]);
+      if (votes[post.id] !== undefined) {
+        setUserVote(votes[post.id]);
+      } else {
+        // No vote on server — clear stale localStorage
+        localStorage.removeItem(`vote:post:${post.id}`);
+      }
+    });
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user && user.id === post.author.id) setIsAuthor(true);
     });

@@ -188,7 +188,7 @@ All tables use Row Level Security (RLS).
 
 - **Frontend:** Vercel, root directory `apps/web`. Uses Vercel Analytics + Speed Insights.
 - **Backend:** Koyeb (free tier), Docker at `apps/api/`.
-- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `SUPABASE_URL`, `SUPABASE_KEY`
+- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_ADMIN_API_KEY`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`
 - **Env vars (frontend):** `BACKEND_API_URL` (server-only, points to Koyeb endpoint)
 
 ## Pages

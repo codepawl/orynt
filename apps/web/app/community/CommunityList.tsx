@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, createContext, useContext } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
-import { vote } from "app/lib/community";
+import { vote, fetchMyVotes } from "app/lib/community";
 import type { CommunityPost } from "@codepawl/shared";
+
+/** Context to pass down fetched vote states to VoteButton children */
+const VoteContext = createContext<Record<string, number>>({});
 
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor(
@@ -29,13 +32,19 @@ function getDomain(url: string): string {
 }
 
 function VoteButton({ post }: { post: CommunityPost }) {
+  const myVotes = useContext(VoteContext);
   const [score, setScore] = useState(post.score);
   const [voted, setVoted] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(`vote:post:${post.id}`);
-    if (saved === "1") setVoted(true);
-  }, [post.id]);
+    // Prefer server-fetched vote state, fall back to localStorage
+    if (myVotes[post.id] === 1) {
+      setVoted(true);
+    } else if (myVotes[post.id] === 0 || myVotes[post.id] === undefined) {
+      const saved = localStorage.getItem(`vote:post:${post.id}`);
+      if (saved === "1") setVoted(true);
+    }
+  }, [post.id, myVotes]);
 
   const handleVote = async () => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
@@ -98,6 +107,18 @@ export function CommunityList({
   type,
 }: Props) {
   const router = useRouter();
+  const [myVotes, setMyVotes] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const supabase = createClient();
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) return;
+      const ids = posts.map((p) => p.id);
+      const votes = await fetchMyVotes(session.access_token, "post", ids);
+      setMyVotes(votes);
+    });
+  }, [posts]);
 
   const handlePageChange = (newPage: number) => {
     const params = new URLSearchParams({ page: String(newPage), sort });
@@ -106,6 +127,7 @@ export function CommunityList({
   };
 
   return (
+    <VoteContext.Provider value={myVotes}>
     <div>
       <ol className="divide-y divide-neutral-100 dark:divide-neutral-800">
         {posts.map((post, i) => (
@@ -194,5 +216,6 @@ export function CommunityList({
         </div>
       )}
     </div>
+    </VoteContext.Provider>
   );
 }
