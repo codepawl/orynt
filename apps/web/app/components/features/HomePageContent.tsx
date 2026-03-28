@@ -53,7 +53,14 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
               className="text-neutral-600 dark:text-neutral-300 mb-7 leading-relaxed"
               style={{ fontSize: "clamp(1.1rem, 1.8vw, 1.35rem)" }}
             >
-              An open community for AI builders, researchers, and curious minds.
+              An open community for{" "}
+              <Link
+                href="/community"
+                className="font-medium text-neutral-900 dark:text-neutral-100 underline decoration-neutral-400 dark:decoration-neutral-500 underline-offset-4 hover:decoration-neutral-900 dark:hover:decoration-neutral-100 transition-colors"
+              >
+                AI builders
+              </Link>
+              , researchers, and curious minds.
             </p>
             <div className="flex items-center gap-3 flex-wrap">
               <Link
@@ -63,10 +70,10 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 Read Blog
               </Link>
               <Link
-                href="/community"
+                href="/about"
                 className="inline-flex items-center justify-center px-6 py-2.5 rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100 text-sm font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors no-underline min-w-[140px]"
               >
-                Community
+                About
               </Link>
             </div>
           </div>
