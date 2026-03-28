@@ -28,7 +28,7 @@ class PostCreate(BaseModel):
         if not v.startswith(("http://", "https://")):
             v = "https://" + v
         parsed = urlparse(v)
-        if not parsed.hostname:
+        if not parsed.hostname or "." not in parsed.hostname:
             raise ValueError("Invalid URL — must be a valid web address (e.g. example.com)")
         return v
 
