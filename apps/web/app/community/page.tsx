@@ -2,6 +2,7 @@ import Link from "next/link";
 import { fetchPosts } from "app/lib/community";
 import { CommunityList } from "./CommunityList";
 import { CATEGORIES } from "@codepawl/shared";
+import { getProjectSlugs } from "app/projects/project-data";
 
 interface Props {
   searchParams: Promise<{ sort?: string; type?: string; tag?: string; page?: string }>;
@@ -25,6 +26,7 @@ export default async function CommunityPage({ searchParams }: Props) {
   const tag = params.tag;
   const page = Number(params.page) || 1;
 
+  const projectSlugs = new Set(getProjectSlugs());
   const data = await fetchPosts(page, sort, type, tag);
 
   return (
@@ -81,19 +83,25 @@ export default async function CommunityPage({ searchParams }: Props) {
         >
           All
         </Link>
-        {CATEGORIES.filter((c) => c !== "general").map((cat) => (
-          <Link
-            key={cat}
-            href={`/community?tag=${encodeURIComponent(cat)}&sort=${sort}`}
-            className={`px-2.5 py-1 text-xs font-medium rounded-full no-underline transition-colors ${
-              tag === cat
-                ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
-                : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
-            }`}
-          >
-            {cat}
-          </Link>
-        ))}
+        {CATEGORIES.filter((c) => c !== "general").map((cat) => {
+          const isProjectTag = projectSlugs.has(cat);
+          const href = isProjectTag
+            ? `/projects/${cat}`
+            : `/community?tag=${encodeURIComponent(cat)}&sort=${sort}`;
+          return (
+            <Link
+              key={cat}
+              href={href}
+              className={`px-2.5 py-1 text-xs font-medium rounded-full no-underline transition-colors ${
+                tag === cat
+                  ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
+                  : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+              }`}
+            >
+              {cat}
+            </Link>
+          );
+        })}
       </div>
 
       {/* Post list */}

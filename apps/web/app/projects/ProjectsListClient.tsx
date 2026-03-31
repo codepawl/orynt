@@ -15,9 +15,13 @@ export function ProjectsListClient({ projects }: ProjectsListClientProps) {
   const [, startTransition] = useTransition();
   const [view, setView] = useState<"grid" | "list">("grid");
 
-  const handleClick = (url: string) => {
+  const handleClick = (url: string, external: boolean) => {
     startTransition(() => {
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (external) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      } else {
+        window.location.href = url;
+      }
     });
   };
 
@@ -57,9 +61,8 @@ export function ProjectsListClient({ projects }: ProjectsListClientProps) {
                 title={project.title}
                 description={project.description}
                 year={project.year}
-                href={project.url}
-                onClick={() => handleClick(project.url)}
-                external={true}
+                href={`/projects/${project.slug}`}
+                onClick={() => handleClick(`/projects/${project.slug}`, false)}
               />
               {project.stats && (
                 <div className="flex items-center gap-3 mt-1.5 px-2 text-xs text-neutral-500 dark:text-neutral-400">
@@ -89,6 +92,16 @@ export function ProjectsListClient({ projects }: ProjectsListClientProps) {
                       {project.stats.forks}
                     </span>
                   )}
+                  <span className="ml-auto text-neutral-400 dark:text-neutral-500">
+                    View details &rarr;
+                  </span>
+                </div>
+              )}
+              {!project.stats && (
+                <div className="flex items-center mt-1.5 px-2 text-xs">
+                  <span className="ml-auto text-neutral-400 dark:text-neutral-500">
+                    View details &rarr;
+                  </span>
                 </div>
               )}
             </div>
