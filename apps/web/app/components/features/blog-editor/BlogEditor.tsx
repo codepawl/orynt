@@ -38,6 +38,7 @@ export function BlogEditor({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         // Disable default code block in favour of lowlight version
