@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { Calendar3, Star, ArrowDown, Flag } from "react-bootstrap-icons";
 import { KARMA_THRESHOLDS } from "@codepawl/shared";
 import { createClient } from "app/lib/supabase/server";
@@ -18,15 +19,16 @@ export default async function ProfilePage({ params }: Props) {
   const { username } = await params;
   const supabase = await createClient();
 
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("username", username)
-    .single();
+  const [{ data: profile, error }, { data: { user } }] = await Promise.all([
+    supabase.from("profiles").select("*").eq("username", username).single(),
+    supabase.auth.getUser(),
+  ]);
 
   if (error || !profile) {
     notFound();
   }
+
+  const isOwnProfile = user?.id === profile.id;
 
   const joinDate = new Date(profile.created_at).toLocaleDateString("en-US", {
     year: "numeric",
@@ -49,9 +51,19 @@ export default async function ProfilePage({ params }: Props) {
             </div>
           )}
           <div className="flex-1">
-            <h2 className="text-xl font-bold mb-0">
-              {profile.display_name || profile.username}
-            </h2>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-xl font-bold mb-0">
+                {profile.display_name || profile.username}
+              </h2>
+              {isOwnProfile && (
+                <Link
+                  href="/settings"
+                  className="text-xs px-2.5 py-1 rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors no-underline"
+                >
+                  Edit profile →
+                </Link>
+              )}
+            </div>
             <p className="text-sm text-neutral-500">@{profile.username}</p>
             {profile.bio && (
               <p className="mt-3 text-neutral-700 dark:text-neutral-300">{profile.bio}</p>

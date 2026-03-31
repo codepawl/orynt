@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PersonCircle, BoxArrowRight, PersonBadge, ShieldLock } from "react-bootstrap-icons";
+import { PersonCircle, BoxArrowRight, PersonBadge, ShieldLock, GearFill } from "react-bootstrap-icons";
 import { createClient } from "app/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
@@ -93,7 +93,8 @@ export function UserMenu() {
   const handleLogout = async () => {
     setOpen(false);
     const supabase = createClient();
-    await supabase.auth.signOut();
+    await supabase.auth.signOut().catch(() => {});
+    router.push("/");
     router.refresh();
   };
 
@@ -123,6 +124,14 @@ export function UserMenu() {
           >
             <PersonBadge size={14} />
             Profile
+          </Link>
+          <Link
+            href="/settings"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors no-underline"
+          >
+            <GearFill size={14} />
+            Settings
           </Link>
           {isAdmin && (
             <>
