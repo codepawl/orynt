@@ -178,6 +178,23 @@ All tables use Row Level Security (RLS).
 - **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`
 - **Env vars (frontend):** `BACKEND_API_URL` (server-only, points to Koyeb endpoint)
 
+### Supabase Dashboard Configuration
+
+**Redirect URLs** (Settings → Auth → URL Configuration — must be added):
+- `http://localhost:3000/auth/callback`
+- `http://localhost:3000/auth/confirm`
+- `http://localhost:3000/reset-password`
+- `https://codepawl.com/auth/callback`
+- `https://codepawl.com/auth/confirm`
+- `https://codepawl.com/reset-password`
+
+**Email Templates** (Auth → Email Templates — must be updated for PKCE):
+All confirmation links must use the token_hash format:
+```
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=TYPE&next={{ .RedirectTo }}
+```
+Where `TYPE` is one of: `signup` | `invite` | `magiclink` | `recovery` | `email_change`
+
 ## Pages
 
 | Route | Description |
@@ -189,8 +206,13 @@ All tables use Row Level Security (RLS).
 | `/community` | Post listing (ranked/new) |
 | `/community/submit` | Submit post form |
 | `/community/post/[id]` | Post detail + comments |
-| `/login` | GitHub OAuth login |
-| `/auth/callback` | OAuth callback handler |
+| `/login` | GitHub OAuth + email/password sign-in |
+| `/signup` | Email/password sign-up |
+| `/forgot-password` | Request password reset email |
+| `/reset-password` | Set new password (after recovery email) |
+| `/settings` | User settings: profile, email, password, account |
+| `/auth/callback` | OAuth code exchange handler |
+| `/auth/confirm` | Token-hash confirm handler (email verification, recovery, email change) |
 | `/profile/[username]` | User profile |
 | `/admin` | Admin dashboard (auth required) |
 | `/admin/blog` | Blog post management |
