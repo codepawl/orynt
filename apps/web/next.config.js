@@ -19,7 +19,7 @@ const nextConfig = {
   },
   serverExternalPackages: ["next-mdx-remote"],
   experimental: {
-    optimizePackageImports: ["antd", "react-bootstrap-icons"],
+    optimizePackageImports: ["react-bootstrap-icons"],
   },
   async rewrites() {
     return [

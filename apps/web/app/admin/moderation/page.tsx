@@ -34,32 +34,63 @@ export default function ModerationPage() {
 
       if (error) throw error;
 
+      // Collect post and comment IDs to batch-fetch
+      const postIds = (data || [])
+        .filter((f) => f.target_type === "post")
+        .map((f) => f.target_id);
+      const commentIds = (data || [])
+        .filter((f) => f.target_type === "comment")
+        .map((f) => f.target_id);
+
+      const [postsResult, commentsResult] = await Promise.all([
+        postIds.length > 0
+          ? supabase
+              .from("posts")
+              .select("id, title, author:profiles!author_id(username)")
+              .in("id", postIds)
+          : { data: [] },
+        commentIds.length > 0
+          ? supabase
+              .from("comments")
+              .select("id, content, author:profiles!author_id(username)")
+              .in("id", commentIds)
+          : { data: [] },
+      ]);
+
+      const postMap = new Map<string, { title: string; author_username?: string }>();
+      for (const p of postsResult.data || []) {
+        const authorData = Array.isArray(p.author) ? p.author[0] : p.author;
+        const author = authorData as { username?: string } | null;
+        postMap.set(p.id, { title: p.title, author_username: author?.username });
+      }
+
+      const commentMap = new Map<string, { content: string; author_username?: string }>();
+      for (const c of commentsResult.data || []) {
+        const authorData = Array.isArray(c.author) ? c.author[0] : c.author;
+        const author = authorData as { username?: string } | null;
+        commentMap.set(c.id, {
+          content: c.content?.substring(0, 100),
+          author_username: author?.username,
+        });
+      }
+
       const enriched: FlagItem[] = [];
       for (const flag of data || []) {
-        const reporter = flag.reporter as unknown as { username: string } | null;
+        const reporterData = Array.isArray(flag.reporter) ? flag.reporter[0] : flag.reporter;
+        const reporter = reporterData as { username?: string } | null;
         const item: FlagItem = { ...flag, reporter_username: reporter?.username };
 
         if (flag.target_type === "post") {
-          const { data: post } = await supabase
-            .from("posts")
-            .select("title, author:profiles!author_id(username)")
-            .eq("id", flag.target_id)
-            .single();
-          if (post) {
-            item.target_title = post.title;
-            const author = post.author as unknown as { username: string } | null;
-            item.target_author = author?.username;
+          const p = postMap.get(flag.target_id);
+          if (p) {
+            item.target_title = p.title;
+            item.target_author = p.author_username;
           }
         } else {
-          const { data: comment } = await supabase
-            .from("comments")
-            .select("content, author:profiles!author_id(username)")
-            .eq("id", flag.target_id)
-            .single();
-          if (comment) {
-            item.target_content = comment.content?.substring(0, 100);
-            const author = comment.author as unknown as { username: string } | null;
-            item.target_author = author?.username;
+          const c = commentMap.get(flag.target_id);
+          if (c) {
+            item.target_content = c.content;
+            item.target_author = c.author_username;
           }
         }
         enriched.push(item);

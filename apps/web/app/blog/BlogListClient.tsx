@@ -4,55 +4,18 @@ import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Grid3x3GapFill, ListUl } from "react-bootstrap-icons";
 import { ContentCard } from "../components/ui/ContentCard";
-
-interface BlogPost {
-  slug: string;
-  metadata: {
-    title: string;
-    publishedAt: string;
-    summary?: string;
-    image?: string;
-  };
-}
+import type { BlogPost } from "@codepawl/shared";
 
 interface BlogListClientProps {
   posts: BlogPost[];
 }
 
-function formatDate(date: string, includeRelative = false) {
-  const currentDate = new Date();
-  if (!date.includes("T")) {
-    date = `${date}T00:00:00`;
-  }
-  const targetDate = new Date(date);
-
-  const yearsAgo = currentDate.getFullYear() - targetDate.getFullYear();
-  const monthsAgo = currentDate.getMonth() - targetDate.getMonth();
-  const daysAgo = currentDate.getDate() - targetDate.getDate();
-
-  let formattedDate = "";
-
-  if (yearsAgo > 0) {
-    formattedDate = `${yearsAgo}y ago`;
-  } else if (monthsAgo > 0) {
-    formattedDate = `${monthsAgo}mo ago`;
-  } else if (daysAgo > 0) {
-    formattedDate = `${daysAgo}d ago`;
-  } else {
-    formattedDate = "Today";
-  }
-
-  const fullDate = targetDate.toLocaleString("en-us", {
+function formatDate(date: string): string {
+  return new Date(date).toLocaleString("en-us", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
-
-  if (!includeRelative) {
-    return fullDate;
-  }
-
-  return `${fullDate} (${formattedDate})`;
 }
 
 export function BlogListClient({ posts }: BlogListClientProps) {
@@ -95,6 +58,12 @@ export function BlogListClient({ posts }: BlogListClientProps) {
         </div>
       </div>
 
+      {posts.length === 0 && (
+        <p className="text-neutral-500 dark:text-neutral-400 text-sm py-8 text-center">
+          No posts yet. Check back soon.
+        </p>
+      )}
+
       <AnimatePresence mode="wait">
         <motion.div
           key={view}
@@ -107,11 +76,11 @@ export function BlogListClient({ posts }: BlogListClientProps) {
           {posts.map((post) => (
             <ContentCard
               key={post.slug}
-              title={post.metadata.title}
-              description={post.metadata.summary}
-              date={formatDate(post.metadata.publishedAt, false)}
+              title={post.title}
+              description={post.summary ?? undefined}
+              date={post.published_at ? formatDate(post.published_at) : undefined}
               href={`/blog/${post.slug}`}
-              image={post.metadata.image}
+              image={post.cover_image_url ?? undefined}
             />
           ))}
         </motion.div>

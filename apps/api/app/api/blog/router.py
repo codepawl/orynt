@@ -276,6 +276,44 @@ async def update_status(
     return _build_post(result.data)
 
 
+@router.get("/admin/posts")
+async def admin_list_posts(
+    request: Request,
+    page: int = 1,
+    per_page: int = 20,
+    status: Optional[str] = None,
+    user_id: str = Depends(get_current_user),
+) -> BlogPostListResponse:
+    """Admin-only: list all posts across all authors, optionally filtered by status."""
+    db = _get_db(request)
+
+    role = await _get_user_role(db, user_id)
+    if role != "admin":
+        raise HTTPException(403, "Admin role required")
+
+    query = db.from_("blog_posts").select(
+        "*, author:profiles!author_id(id, username, display_name, avatar_url)",
+        count="exact",
+    ).order("updated_at", desc=True)
+
+    if status:
+        query = query.eq("status", status)
+
+    offset = (page - 1) * per_page
+    query = query.range(offset, offset + per_page - 1)
+
+    result = await query.execute()
+    total = result.count or 0
+    posts = [_build_post(row) for row in (result.data or [])]
+
+    return BlogPostListResponse(
+        posts=posts,
+        total=total,
+        page=page,
+        total_pages=math.ceil(total / per_page) if per_page else 1,
+    )
+
+
 @router.post("/upload-image")
 async def upload_image(
     request: Request,

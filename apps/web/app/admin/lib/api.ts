@@ -23,11 +23,18 @@ async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T
   const url = `${API_BASE}/api/automation${path}`;
   const token = await getToken();
 
+  if (!token) {
+    if (typeof window !== "undefined") {
+      window.location.href = "/login?redirect=/admin";
+    }
+    throw new Error("Not authenticated");
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> || {}),
+    Authorization: `Bearer ${token}`,
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const response = await fetch(url, { ...options, headers });
 
@@ -49,9 +56,10 @@ async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T
 
 // Dashboard
 export const getDashboard = async (): Promise<DashboardResponse> => {
+  // Fetch token once; both requests share it
   const [stats, recent] = await Promise.all([
     adminFetch<DashboardResponse["stats"]>("/stats"),
-    adminFetch<DashboardResponse["recent"]>("/recent?limit=10"),
+    adminFetch<DashboardResponse["recent"]>("/recent?limit=10").catch(() => [] as DashboardResponse["recent"]),
   ]);
   return { stats, recent };
 };

@@ -4,26 +4,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { formatDate } from "app/lib/utils";
 import { AnimatedLogo } from "./AnimatedLogo";
-
-interface BlogPost {
-  slug: string;
-  metadata: {
-    title: string;
-    publishedAt: string;
-    summary: string;
-    tags: string;
-    image?: string;
-  };
-}
+import type { BlogPost } from "@codepawl/shared";
 
 interface HomePageProps {
   recentBlogs: BlogPost[];
-}
-
-function estimateReadingTime(tags: string): string {
-  // Rough estimate based on typical post length
-  const tagCount = tags ? tags.split(",").length : 0;
-  return `${Math.max(3, tagCount + 2)} min read`;
 }
 
 export function HomePageContent({ recentBlogs }: HomePageProps) {
@@ -96,14 +80,14 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
         <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-800">
           {recentBlogs.map((post) => {
             const initials =
-              post.metadata.title
+              post.title
                 .split(/\s+/)
                 .filter(Boolean)
                 .slice(0, 2)
                 .map((w) => w[0]?.toUpperCase())
                 .join("") || "BL";
 
-            const firstTag = post.metadata.tags
+            const firstTag = post.tags
               ?.split(",")
               .map((t) => t.trim())
               .filter(Boolean)[0];
@@ -115,10 +99,10 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 className="flex items-center gap-4 px-4 py-4 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors no-underline group"
               >
                 <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-neutral-100 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center">
-                  {post.metadata.image ? (
+                  {post.cover_image_url ? (
                     <Image
-                      src={post.metadata.image}
-                      alt={post.metadata.title}
+                      src={post.cover_image_url}
+                      alt={post.title}
                       fill
                       sizes="48px"
                       className="object-cover"
@@ -131,20 +115,22 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors">
-                    {post.metadata.title}
+                    {post.title}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                      {formatDate(post.metadata.publishedAt, false)}
+                      {formatDate(post.published_at ?? post.created_at, false)}
                     </span>
                     {firstTag && (
                       <span className="px-1.5 py-0.5 text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 rounded-full">
                         {firstTag}
                       </span>
                     )}
-                    <span className="text-xs text-neutral-400 dark:text-neutral-500">
-                      {estimateReadingTime(post.metadata.tags)}
-                    </span>
+                    {post.reading_time_minutes && (
+                      <span className="text-xs text-neutral-400 dark:text-neutral-500">
+                        {post.reading_time_minutes} min read
+                      </span>
+                    )}
                   </div>
                 </div>
               </Link>

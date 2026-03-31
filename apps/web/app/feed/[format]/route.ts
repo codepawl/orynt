@@ -1,5 +1,5 @@
 import { Feed } from "feed";
-import { getBlogPosts } from "app/lib/posts";
+import { fetchBlogPosts } from "app/lib/blog";
 import { fetchNews } from "app/lib/news";
 import { metaData } from "app/config";
 import { NextResponse } from "next/server";
@@ -49,36 +49,39 @@ export async function GET(_: Request, props: { params: Promise<{ format: string 
     },
   });
 
-  const allPosts = await getBlogPosts();
+  const blogData = await fetchBlogPosts(1);
+  const allPosts = blogData?.posts ?? [];
 
   allPosts.forEach((post) => {
     const postUrl = `${BaseUrl}blog/${post.slug}`;
-    const categories = post.metadata.tags
-      ? post.metadata.tags.split(",").map((tag) => tag.trim())
+    const categories = post.tags
+      ? post.tags.split(",").map((tag) => tag.trim())
       : [];
-    
-    const postImage = post.metadata.image
-      ? `${BaseUrl}${post.metadata.image.startsWith("/") ? post.metadata.image.slice(1) : post.metadata.image}`
+
+    const postImage = post.cover_image_url
+      ? post.cover_image_url
       : `${BaseUrl}${metaData.ogImage.startsWith("/") ? metaData.ogImage.slice(1) : metaData.ogImage}`;
-    
-    const publishedDate = new Date(post.metadata.publishedAt);
+
+    const publishedDate = post.published_at
+      ? new Date(post.published_at)
+      : new Date(post.created_at);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const feedItem: any = {
-      title: post.metadata.title,
+      title: post.title,
       id: postUrl,
       link: postUrl,
-      description: post.metadata.summary,
-      content: post.metadata.summary,
+      description: post.summary ?? "",
+      content: post.summary ?? "",
       author: [
         {
-          name: metaData.name,
+          name: post.author.display_name ?? post.author.username,
           email: "nxan2911@gmail.com",
         },
       ],
       date: publishedDate,
       published: publishedDate,
-      updated: publishedDate,
+      updated: new Date(post.updated_at),
       image: postImage,
     };
 

@@ -9,7 +9,7 @@ import {
 } from "../project-data";
 import { fetchProjectStats, mergeProjectData } from "app/lib/projects";
 import { fetchPosts } from "app/lib/community";
-import { getBlogPostsMetadata } from "app/lib/posts";
+import { fetchBlogPosts } from "app/lib/blog";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -45,10 +45,10 @@ export default async function ProjectHubPage({ params }: Props) {
   if (!project) notFound();
 
   // Fetch live stats, community posts, and blog posts in parallel
-  const [statsMap, communityData, blogPosts] = await Promise.all([
+  const [statsMap, communityData, blogData] = await Promise.all([
     fetchProjectStats(),
     fetchPosts(1, "new", undefined, slug).catch(() => null),
-    Promise.resolve(getBlogPostsMetadata()),
+    fetchBlogPosts(1).catch(() => null),
   ]);
 
   const enriched = mergeProjectData([project], statsMap);
@@ -58,8 +58,8 @@ export default async function ProjectHubPage({ params }: Props) {
   // Filter blog posts by tag matching project title (case-insensitive)
   const titleLower = project.title.toLowerCase();
   const slugLower = slug.toLowerCase();
-  const relatedBlogPosts = blogPosts.filter((post) => {
-    const tags = post.metadata.tags?.toLowerCase() ?? "";
+  const relatedBlogPosts = (blogData?.posts ?? []).filter((post) => {
+    const tags = post.tags?.toLowerCase() ?? "";
     return tags.includes(titleLower) || tags.includes(slugLower);
   });
 
@@ -244,10 +244,10 @@ export default async function ProjectHubPage({ params }: Props) {
                   className="flex items-baseline gap-2 group no-underline"
                 >
                   <span className="text-sm text-neutral-900 dark:text-neutral-100 group-hover:underline">
-                    {post.metadata.title}
+                    {post.title}
                   </span>
                   <span className="text-xs text-neutral-400 dark:text-neutral-500 whitespace-nowrap">
-                    {post.metadata.publishedAt}
+                    {post.published_at ?? post.created_at}
                   </span>
                 </Link>
               </li>

@@ -14,17 +14,18 @@ function getApiUrl(): string {
 
 const API_URL = getApiUrl();
 
-// --- Public (ISR) ---
+// --- Public (ISR, server-side) ---
 
 export async function fetchBlogPosts(
   page: number = 1,
-  tag?: string
+  tag?: string,
+  revalidate = 600
 ): Promise<BlogPostList | null> {
   try {
     const params = new URLSearchParams({ page: String(page), per_page: "20" });
     if (tag) params.set("tag", tag);
     const res = await fetch(`${API_URL}/api/blog/posts?${params}`, {
-      cache: "no-store",
+      next: { revalidate },
     });
     if (!res.ok) return null;
     return res.json();
@@ -33,10 +34,13 @@ export async function fetchBlogPosts(
   }
 }
 
-export async function fetchBlogPost(slug: string): Promise<BlogPost | null> {
+export async function fetchBlogPost(
+  slug: string,
+  revalidate = 600
+): Promise<BlogPost | null> {
   try {
     const res = await fetch(`${API_URL}/api/blog/posts/${slug}`, {
-      cache: "no-store",
+      next: { revalidate },
     });
     if (!res.ok) return null;
     return res.json();
@@ -132,6 +136,28 @@ export async function updateBlogPostStatus(
     throw new Error(err.detail || `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+export async function fetchAllBlogPosts(
+  token: string,
+  status?: string,
+  page: number = 1
+): Promise<BlogPostList | null> {
+  try {
+    const params = new URLSearchParams({ page: String(page), per_page: "20" });
+    if (status) params.set("status", status);
+    const apiUrl = typeof window !== "undefined"
+      ? process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000"
+      : getBackendApiUrl();
+    const res = await fetch(`${apiUrl}/api/blog/admin/posts?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function uploadBlogImage(

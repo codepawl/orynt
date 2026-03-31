@@ -7,30 +7,84 @@ import {
   Rss,
   CheckCircle,
   ExclamationTriangle,
+  JournalText,
+  ChatLeft,
+  People,
+  Flag,
 } from "react-bootstrap-icons";
 import { getDashboard, triggerCollectAll } from "./lib/api";
+import { createClient } from "app/lib/supabase/client";
 import type { Article, DashboardStats } from "./lib/types";
 import { toast } from "./components/Toast";
 import { StatusBadge } from "./components/StatusBadge";
 
+interface BlogStats {
+  total: number;
+  pending_review: number;
+}
+
+interface CommunityStats {
+  total_posts: number;
+  total_comments: number;
+  flagged: number;
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recent, setRecent] = useState<Article[]>([]);
+  const [blogStats, setBlogStats] = useState<BlogStats | null>(null);
+  const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [collecting, setCollecting] = useState(false);
 
-  const loadData = () => {
-    getDashboard()
-      .then((data) => {
-        setStats(data.stats);
-        setRecent(data.recent);
-      })
-      .catch((err) => toast(err.message, "error"))
-      .finally(() => setLoading(false));
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const supabase = createClient();
+
+      const [dashResult, blogRes, blogReviewRes, postsRes, commentsRes, flagsRes] =
+        await Promise.allSettled([
+          getDashboard(),
+          supabase.from("blog_posts").select("id", { count: "exact", head: true }),
+          supabase
+            .from("blog_posts")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "review"),
+          supabase.from("posts").select("id", { count: "exact", head: true }),
+          supabase.from("comments").select("id", { count: "exact", head: true }),
+          supabase
+            .from("flags")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "pending"),
+        ]);
+
+      if (dashResult.status === "fulfilled") {
+        setStats(dashResult.value.stats);
+        setRecent(dashResult.value.recent);
+      } else {
+        toast(dashResult.reason?.message ?? "Failed to load news stats", "error");
+      }
+
+      setBlogStats({
+        total: blogRes.status === "fulfilled" ? (blogRes.value.count ?? 0) : 0,
+        pending_review:
+          blogReviewRes.status === "fulfilled" ? (blogReviewRes.value.count ?? 0) : 0,
+      });
+
+      setCommunityStats({
+        total_posts: postsRes.status === "fulfilled" ? (postsRes.value.count ?? 0) : 0,
+        total_comments:
+          commentsRes.status === "fulfilled" ? (commentsRes.value.count ?? 0) : 0,
+        flagged: flagsRes.status === "fulfilled" ? (flagsRes.value.count ?? 0) : 0,
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCollect = async () => {
@@ -41,8 +95,8 @@ export default function AdminDashboard() {
         `Collected ${result.new_articles} new articles from ${result.feeds_processed} feeds`
       );
       loadData();
-    } catch (err: any) {
-      toast(err.message, "error");
+    } catch (err: unknown) {
+      toast((err as Error).message, "error");
     } finally {
       setCollecting(false);
     }
@@ -71,17 +125,88 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+      {/* Content stats */}
+      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 mb-2">
+        Content
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <StatCard
-          title="Total Articles"
+          title="Blog Posts"
+          value={blogStats?.total ?? 0}
+          icon={<JournalText size={16} />}
+        />
+        <StatCard
+          title="Pending Review"
+          value={blogStats?.pending_review ?? 0}
+          icon={<ExclamationTriangle size={16} />}
+          valueClass={(blogStats?.pending_review ?? 0) > 0 ? "text-yellow-500" : ""}
+          href="/admin/blog"
+        />
+        <StatCard
+          title="News Articles"
           value={stats?.total_articles ?? 0}
           icon={<FileEarmarkText size={16} />}
         />
         <StatCard
-          title="Pending Review"
-          value={(stats?.draft_count ?? 0) + (stats?.review_count ?? 0)}
+          title="Published News"
+          value={stats?.published_count ?? 0}
+          icon={<CheckCircle size={16} />}
+          valueClass="text-green-500"
+        />
+      </div>
+
+      {/* Community stats */}
+      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 mb-2">
+        Community
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          title="Total Posts"
+          value={communityStats?.total_posts ?? 0}
+          icon={<People size={16} />}
+          href="/admin/community"
+        />
+        <StatCard
+          title="Total Comments"
+          value={communityStats?.total_comments ?? 0}
+          icon={<ChatLeft size={16} />}
+        />
+        <StatCard
+          title="Flagged Items"
+          value={communityStats?.flagged ?? 0}
+          icon={<Flag size={16} />}
+          valueClass={(communityStats?.flagged ?? 0) > 0 ? "text-orange-500" : ""}
+          href="/admin/moderation"
+        />
+        <StatCard
+          title="Active Feeds"
+          value={stats?.active_feeds ?? 0}
+          icon={<Rss size={16} />}
+          href="/admin/feeds"
+        />
+      </div>
+
+      {/* News pipeline stats */}
+      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 mb-2">
+        News Pipeline
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <StatCard
+          title="Draft"
+          value={stats?.draft_count ?? 0}
+          icon={<FileEarmarkText size={16} />}
+        />
+        <StatCard
+          title="In Review"
+          value={stats?.review_count ?? 0}
           icon={<ExclamationTriangle size={16} />}
-          valueClass="text-yellow-500"
+          valueClass={(stats?.review_count ?? 0) > 0 ? "text-yellow-500" : ""}
+          href="/admin/articles"
+        />
+        <StatCard
+          title="Rejected"
+          value={stats?.rejected_count ?? 0}
+          icon={<Flag size={16} />}
         />
         <StatCard
           title="Published"
@@ -89,15 +214,10 @@ export default function AdminDashboard() {
           icon={<CheckCircle size={16} />}
           valueClass="text-green-500"
         />
-        <StatCard
-          title="Active Feeds"
-          value={stats?.active_feeds ?? 0}
-          icon={<Rss size={16} />}
-        />
       </div>
 
       <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
-        Recent Articles
+        Recent News Articles
       </h2>
       <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden">
         <table className="w-full text-sm">
@@ -161,14 +281,16 @@ function StatCard({
   value,
   icon,
   valueClass = "",
+  href,
 }: {
   title: string;
   value: number;
   icon: React.ReactNode;
   valueClass?: string;
+  href?: string;
 }) {
-  return (
-    <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4">
+  const inner = (
+    <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 h-full">
       <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400 text-xs mb-2">
         {icon}
         {title}
@@ -182,4 +304,13 @@ function StatCard({
       </div>
     </div>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="no-underline hover:opacity-80 transition-opacity">
+        {inner}
+      </Link>
+    );
+  }
+  return inner;
 }

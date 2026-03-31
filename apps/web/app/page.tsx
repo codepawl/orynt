@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
-import { getBlogPostsMetadata } from "app/lib/posts";
 import { metaData, socialLinks } from "app/config";
+import { fetchBlogPosts } from "app/lib/blog";
 import { HomePageContent } from "app/components/features/HomePageContent";
+
+export const revalidate = 600;
 
 export const metadata: Metadata = {
   title: metaData.title,
@@ -25,19 +27,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Page() {
-  const allBlogs = getBlogPostsMetadata();
-  const recentBlogs = allBlogs
-    .sort((a, b) => {
-      if (
-        new Date(a.metadata.publishedAt) >
-        new Date(b.metadata.publishedAt)
-      ) {
-        return -1;
-      }
-      return 1;
-    })
-    .slice(0, 3); // Top 3 posts
+export default async function Page() {
+  const data = await fetchBlogPosts(1);
+  const recentBlogs = (data?.posts ?? []).slice(0, 3);
 
   return (
     <>
@@ -62,9 +54,7 @@ export default function Page() {
           }),
         }}
       />
-      <HomePageContent 
-          recentBlogs={recentBlogs}
-      />
+      <HomePageContent recentBlogs={recentBlogs} />
     </>
   );
 }
