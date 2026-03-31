@@ -78,6 +78,15 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
           </Link>
         </div>
         <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-800">
+          {recentBlogs.length === 0 && (
+            <p className="px-4 py-8 text-sm text-neutral-400 dark:text-neutral-500 text-center">
+              No posts yet.{" "}
+              <Link href="/blog" className="underline">
+                Check back soon
+              </Link>
+              .
+            </p>
+          )}
           {recentBlogs.map((post) => {
             const initials =
               post.title
