@@ -112,6 +112,9 @@ export default function WritePage() {
   const validate = () => {
     if (!title.trim()) { setError("Title is required"); return false; }
     if (!content || content === "<p></p>") { setError("Content is required"); return false; }
+    if (coverUrl.trim()) {
+      try { new URL(coverUrl.trim()); } catch { setError("Cover image URL must be a valid URL (e.g. https://…)"); return false; }
+    }
     return true;
   };
 

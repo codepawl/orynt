@@ -184,9 +184,13 @@ async def create_post(
         "reading_time_minutes": reading_time,
     }
 
-    result = await db.from_("blog_posts").insert(row).select(
+    insert_result = await db.from_("blog_posts").insert(row).execute()
+    if not insert_result.data:
+        raise HTTPException(500, "Failed to create post")
+    new_id = insert_result.data[0]["id"]
+    result = await db.from_("blog_posts").select(
         "*, author:profiles!author_id(id, username, display_name, avatar_url)"
-    ).single().execute()
+    ).eq("id", new_id).single().execute()
 
     if not result.data:
         raise HTTPException(500, "Failed to create post")
@@ -231,9 +235,10 @@ async def update_post(
     if not updates:
         raise HTTPException(422, "No fields to update")
 
-    result = await db.from_("blog_posts").update(updates).eq("id", post_id).select(
+    await db.from_("blog_posts").update(updates).eq("id", post_id).execute()
+    result = await db.from_("blog_posts").select(
         "*, author:profiles!author_id(id, username, display_name, avatar_url)"
-    ).single().execute()
+    ).eq("id", post_id).single().execute()
 
     if not result.data:
         raise HTTPException(500, "Failed to update post")
@@ -267,9 +272,10 @@ async def update_status(
     if body.status == "published":
         updates["published_at"] = datetime.now(timezone.utc).isoformat()
 
-    result = await db.from_("blog_posts").update(updates).eq("id", post_id).select(
+    await db.from_("blog_posts").update(updates).eq("id", post_id).execute()
+    result = await db.from_("blog_posts").select(
         "*, author:profiles!author_id(id, username, display_name, avatar_url)"
-    ).single().execute()
+    ).eq("id", post_id).single().execute()
 
     if not result.data:
         raise HTTPException(500, "Failed to update status")

@@ -72,8 +72,9 @@ const nextConfig = {
 
 module.exports = withSentryConfig(withBundleAnalyzer(nextConfig), {
   silent: true,
-  disableLogger: true,
   hideSourceMaps: true,
-  automaticVercelMonitors: false,
   telemetry: false,
+  webpack: {
+    treeshake: { removeDebugLogging: true },
+  },
 });

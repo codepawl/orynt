@@ -50,6 +50,7 @@ if settings.sentry_dsn:
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
         traces_sample_rate=0.1,
+        send_default_pii=True,
         environment="production",
     )
 

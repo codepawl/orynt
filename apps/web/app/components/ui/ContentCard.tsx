@@ -32,6 +32,12 @@ export function ContentCard({
   const descriptionRef = useRef<HTMLDivElement>(null);
   const [isTruncated, setIsTruncated] = useState(false);
 
+  // Only use the image if it's a valid absolute URL or root-relative path
+  const validImage =
+    image && (image.startsWith("http://") || image.startsWith("https://") || image.startsWith("/"))
+      ? image
+      : undefined;
+
   const displayInitials =
     initials ||
     title
@@ -68,9 +74,9 @@ export function ContentCard({
           className="relative w-32 h-32 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center"
           aria-hidden="true"
         >
-          {image ? (
+          {validImage ? (
             <Image
-              src={image}
+              src={validImage}
               alt={title}
               fill
               sizes="(min-width: 1024px) 128px, 33vw"

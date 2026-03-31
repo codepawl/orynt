@@ -43,6 +43,8 @@ export function BlogEditor({
       StarterKit.configure({
         // Disable default code block in favour of lowlight version
         codeBlock: false,
+        // Disable built-in link if present — we use @tiptap/extension-link directly
+        link: false,
       }),
       Image.configure({ inline: false, allowBase64: false }),
       Link.configure({ openOnClick: false, autolink: true }),
