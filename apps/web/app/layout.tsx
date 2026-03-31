@@ -61,6 +61,7 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-jetbrains-mono",
   display: "swap",
+  preload: false,
 });
 
 const playfairDisplay = Playfair_Display({
@@ -68,6 +69,7 @@ const playfairDisplay = Playfair_Display({
   variable: "--font-playfair",
   display: "swap",
   weight: ["400", "600", "700"],
+  preload: false,
 });
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
