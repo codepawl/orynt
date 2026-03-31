@@ -12,6 +12,11 @@ CodePawl is an AI/ML community platform with a blog and community forum, built w
 
 What does NOT exist yet: search, community seeding.
 
+> ⚠️ **Supabase Dashboard TODO:** Update email templates to use token_hash URLs for PKCE flow.
+> All templates (signup, invite, magiclink, recovery, email_change) must use:
+> `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=TYPE&next={{ .RedirectTo }}`
+> Also add `/auth/confirm` and `/reset-password` to Redirect URLs in Auth settings.
+
 ---
 
 ## Phase 0: Technical Debt Cleanup ✅
