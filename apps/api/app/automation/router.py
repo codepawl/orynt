@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.automation.dependencies import verify_admin_key
 from app.automation.models import (
+    ArticleCreate,
     ArticleStatusUpdate,
     ArticleUpdate,
     BulkStatusUpdate,
@@ -102,6 +103,18 @@ async def fetch_single_feed(feed_id: str, request: Request) -> dict:
 
 
 # Articles
+@admin_router.post("/articles", status_code=201)
+async def create_article(data: ArticleCreate, request: Request) -> dict:
+    db = _get_db(request)
+    row = {
+        "original_title": data.original_title,
+        "original_url": data.original_url,
+        "tags": data.tags or "",
+        "status": data.status,
+    }
+    return await db.create_article(row)
+
+
 @admin_router.get("/articles")
 async def list_articles(
     request: Request,

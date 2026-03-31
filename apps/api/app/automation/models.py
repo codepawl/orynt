@@ -34,6 +34,13 @@ class FeedResponse(BaseModel):
 
 # --- Article models (admin) ---
 
+class ArticleCreate(BaseModel):
+    original_title: str
+    original_url: str
+    tags: str | None = None
+    status: str = Field("draft", pattern=r"^(draft|review|published|rejected|archived)$")
+
+
 class ArticleUpdate(BaseModel):
     title: str | None = None
     slug: str | None = None

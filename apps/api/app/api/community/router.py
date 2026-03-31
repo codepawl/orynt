@@ -208,11 +208,58 @@ async def delete_post(
     result = await db.from_("posts").select("author_id").eq("id", post_id).single().execute()
     if not result.data:
         raise HTTPException(404, "Post not found")
-    if result.data["author_id"] != user_id:
+
+    role_result = await db.from_("profiles").select("role").eq("id", user_id).single().execute()
+    role = (role_result.data or {}).get("role", "user")
+    if result.data["author_id"] != user_id and role != "admin":
         raise HTTPException(403, "You can only delete your own posts")
 
     await db.from_("posts").delete().eq("id", post_id).execute()
     return Response(status_code=204)
+
+
+@router.delete("/comments/{comment_id}")
+async def delete_comment(
+    comment_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    db = _get_db(request)
+
+    result = await db.from_("comments").select("author_id").eq("id", comment_id).single().execute()
+    if not result.data:
+        raise HTTPException(404, "Comment not found")
+
+    role_result = await db.from_("profiles").select("role").eq("id", user_id).single().execute()
+    role = (role_result.data or {}).get("role", "user")
+    if result.data["author_id"] != user_id and role != "admin":
+        raise HTTPException(403, "You can only delete your own comments")
+
+    await db.from_("comments").delete().eq("id", comment_id).execute()
+    return Response(status_code=204)
+
+
+@router.patch("/users/{target_user_id}/ban")
+async def ban_user(
+    target_user_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    db = _get_db(request)
+
+    role_result = await db.from_("profiles").select("role").eq("id", user_id).single().execute()
+    role = (role_result.data or {}).get("role", "user")
+    if role != "admin":
+        raise HTTPException(403, "Admin role required")
+
+    target = await db.from_("profiles").select("id, role").eq("id", target_user_id).maybe_single().execute()
+    if not getattr(target, "data", None):
+        raise HTTPException(404, "User not found")
+    if target.data.get("role") == "admin":
+        raise HTTPException(403, "Cannot ban another admin")
+
+    await db.from_("profiles").update({"role": "banned"}).eq("id", target_user_id).execute()
+    return {"ok": True}
 
 
 # ── Comments ─────────────────────────────────────────────────────────

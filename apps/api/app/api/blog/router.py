@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, File
 
 from app.api.community.auth import get_current_user
 from app.api.blog.models import (
@@ -302,6 +302,28 @@ async def _auto_share_blog_post(db, post: "BlogPostResponse") -> None:
         logger.info("Auto-shared blog post %s to community", post.slug)
     except Exception:
         logger.exception("Failed to auto-share blog post %s", post.slug)
+
+
+@router.delete("/posts/{post_id}", status_code=204)
+async def delete_post(
+    request: Request,
+    post_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    db = _get_db(request)
+
+    existing = await db.from_("blog_posts").select("author_id").eq("id", post_id).maybe_single().execute()
+    existing_data = getattr(existing, "data", None)
+    if not existing_data:
+        raise HTTPException(404, "Post not found")
+
+    role = await _get_user_role(db, user_id)
+    is_owner = existing_data["author_id"] == user_id
+    if not is_owner and role != "admin":
+        raise HTTPException(403, "Not authorized to delete this post")
+
+    await db.from_("blog_posts").delete().eq("id", post_id).execute()
+    return Response(status_code=204)
 
 
 @router.get("/admin/posts")

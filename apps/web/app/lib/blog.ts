@@ -160,6 +160,20 @@ export async function fetchAllBlogPosts(
   }
 }
 
+export async function deleteBlogPost(token: string, postId: string): Promise<void> {
+  const apiUrl = typeof window !== "undefined"
+    ? process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000"
+    : getBackendApiUrl();
+  const res = await fetch(`${apiUrl}/api/blog/posts/${postId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({ detail: "Failed" }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+}
+
 export async function uploadBlogImage(
   token: string,
   file: File
