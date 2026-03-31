@@ -11,11 +11,9 @@ class Settings(BaseSettings):
         "http://localhost:3000",
     ]
 
-    # Automation settings
     admin_api_key: str = ""
     supabase_url: str = ""
     supabase_secret_key: str = ""
     supabase_jwt_secret: str = ""
-    rss_collect_interval_minutes: int = 60
 
-    model_config = {"env_prefix": "CODEPAWL_", "env_file": ".env"}
+    model_config = {"env_prefix": "CODEPAWL_", "env_file": ".env", "extra": "ignore"}

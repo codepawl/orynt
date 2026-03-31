@@ -29,30 +29,8 @@ async def lifespan(app: FastAPI):
     app.state.github_service = GitHubService(settings)
     app.state.projects_store = {}
 
-    # Initialize automation (Supabase + scheduler) if configured
-    scheduler = None
-    if settings.supabase_url and settings.supabase_secret_key:
-        try:
-            from supabase import acreate_client
-            from app.automation.services.supabase_client import AutomationDB
-            from app.automation.scheduler import create_scheduler
-
-            supabase_client = await acreate_client(settings.supabase_url, settings.supabase_secret_key)
-            app.state.supabase = supabase_client
-            app.state.automation_db = AutomationDB(supabase_client)
-
-            scheduler = create_scheduler(app)
-            app.state.scheduler = scheduler
-            scheduler.start()
-            logger.info("Automation scheduler started")
-        except Exception:
-            logger.exception("Failed to initialize automation — continuing without it")
-
     yield
 
-    # Shutdown
-    if scheduler:
-        scheduler.shutdown(wait=False)
     app.state.cache.clear()
     app.state.projects_store.clear()
 
@@ -85,14 +63,6 @@ app.include_router(projects_router)
 app.include_router(blog_router)
 app.include_router(community_router)
 app.include_router(notifications_router)
-
-# Automation routers
-try:
-    from app.automation.router import admin_router, news_router
-    app.include_router(admin_router)
-    app.include_router(news_router)
-except ImportError:
-    pass
 
 
 @app.get("/health")

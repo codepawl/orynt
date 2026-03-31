@@ -10,7 +10,7 @@ If a task is blocked, document the blocker in ROADMAP.md and move to the next un
 
 ## Project Overview
 
-CodePawl is an open-source AI/ML community platform. Currently a content site (blog + automated news aggregation), being evolved into a community platform with user accounts, posts, comments, and voting.
+CodePawl is an open-source AI/ML community platform with a blog and discussion forum.
 
 **Live:** https://codepawl.com
 **Founded:** 2026
@@ -78,13 +78,9 @@ Commit message format:
 
 - `main` — production (auto-deploys to Vercel)
 - `staging` — integration testing
-- Phase branches created from staging:
-  - `fix/tech-debt` (Phase 0)
-  - `feat/user-auth` (Phase 1)
-  - `feat/community` (Phase 2)
-  - `feat/news-integration` (Phase 3)
+- Feature/fix branches created from staging: `fix/*`, `feat/*`
 
-Flow: phase branch > PR to staging > staging > PR to main
+Flow: feature branch > PR to staging > staging > PR to main
 
 ## Architecture
 
@@ -104,7 +100,6 @@ Flow: phase branch > PR to staging > staging > PR to main
 
 **Content systems:**
 - Blog: MDX files in `apps/web/content/`. Frontmatter: `title`, `publishedAt`, `summary`, `tags`, `image`. Parsed by `app/lib/posts.ts`.
-- News: DB-driven via FastAPI + Supabase. ISR with graceful fallback.
 - Projects: Hybrid ISR, live GitHub stats with 1h revalidation, falls back to static data in `project-data.tsx`.
 
 **MDX rendering** (`app/components/ui/mdx.tsx`):
@@ -123,32 +118,25 @@ Flow: phase branch > PR to staging > staging > PR to main
 - **Framework:** FastAPI 0.115, async, Python 3.12
 - **DB:** Supabase (PostgreSQL) via PostgREST client. No ORM.
 - **Cache:** TTLCache (in-memory, 1h) for GitHub stats
-- **Scheduling:** APScheduler (AsyncIOScheduler) for news collection every 60min
 
 **API routes:**
 - `GET /projects` — live GitHub stats
 - `GET /stats/{owner}/{repo}` — single repo stats
 - `POST /webhook` — GitHub webhook handler
 - `GET /health` — health check
-- `GET/POST/PUT/DELETE /api/automation/*` — news pipeline admin (feeds, articles, tags)
-- `GET /api/news/*` — public news endpoints
-
-**News automation pipeline:** RSS collection (13 AI/ML sources) > simhash dedup > keyword extraction (14 categories) > SEO generation > publish. Articles flow: draft > review > published.
+- `GET/POST/PUT/DELETE /api/blog/*` — blog management
+- `GET/POST/PUT/DELETE /api/community/*` — community posts, comments, votes
 
 ### Shared Package (packages/shared)
 
-Should contain (being built out in Phase 0):
-- TypeScript types shared between frontend admin and backend models (`Article`, `Feed`, `Tag`, `Profile`, etc.)
+Contains:
+- TypeScript types shared between frontend and backend (`Profile`, `BlogPost`, etc.)
 - Status enums and constants
 - API URL config getter
 
 ### Database (Supabase)
 
-Current tables: `feeds`, `articles`, `tags`, `article_tags`
-
-Upcoming (per roadmap):
-- `profiles` (extends auth.users)
-- `posts`, `comments`, `votes` (community, Phase 2)
+Current tables: `profiles`, `blog_posts`, `posts`, `comments`, `votes`, `flags`, `notifications`
 
 All tables use Row Level Security (RLS).
 
@@ -175,21 +163,19 @@ All tables use Row Level Security (RLS).
 - **Merge before moving on.** Before starting any new branch, check for unmerged feature/fix branches (`git branch --list "fix/*" "feat/*"`). Verify each passes lint + typecheck + pytest. If clean, create PR and squash merge to staging. If broken, report and stop. Always start new work from latest staging.
 
 ### Backend Constraints
-- Admin automation endpoints use API key auth (httpOnly cookie after Phase 0)
-- Public endpoints need rate limiting (after Phase 0)
 - Supabase credentials may not be configured in all environments. Always handle gracefully with 503 fallback.
 - Python deps pinned in `requirements.txt`
 
 ### Frontend Constraints
 - Next.js 16 canary, be aware of potential breaking changes
 - `next-mdx-remote` v6 breaks in Turbopack dev mode (production build works fine)
-- Public pages (/, /blog, /news, /projects, /about) must never require auth
+- Public pages (/, /blog, /projects, /about) must never require auth
 
 ## Deployment
 
 - **Frontend:** Vercel, root directory `apps/web`. Uses Vercel Analytics + Speed Insights.
 - **Backend:** Koyeb (free tier), Docker at `apps/api/`.
-- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_ADMIN_API_KEY`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`
+- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`
 - **Env vars (frontend):** `BACKEND_API_URL` (server-only, points to Koyeb endpoint)
 
 ## Pages
@@ -199,17 +185,16 @@ All tables use Row Level Security (RLS).
 | `/` | Homepage, animated logo, recent blog posts |
 | `/about` | Org info + expandable team card |
 | `/blog`, `/blog/[slug]` | Blog listing + MDX posts |
-| `/news`, `/news/[slug]` | News articles (DB-driven, ISR) |
 | `/projects` | Project showcase, live GitHub stats |
-| `/admin` | Feed/article management (auth required) |
-| `/privacy`, `/terms`, `/cookies` | Legal pages |
-| 404 | Interactive dino runner game |
-
-Upcoming (per roadmap):
-| `/login` | GitHub OAuth login |
-| `/auth/callback` | OAuth callback handler |
-| `/profile/[username]` | User profile |
 | `/community` | Post listing (ranked/new) |
 | `/community/submit` | Submit post form |
 | `/community/post/[id]` | Post detail + comments |
+| `/login` | GitHub OAuth login |
+| `/auth/callback` | OAuth callback handler |
+| `/profile/[username]` | User profile |
+| `/admin` | Admin dashboard (auth required) |
+| `/admin/blog` | Blog post management |
+| `/admin/community` | Community post/comment management |
 | `/admin/moderation` | Flagged content review |
+| `/privacy`, `/terms`, `/cookies` | Legal pages |
+| 404 | Interactive dino runner game |

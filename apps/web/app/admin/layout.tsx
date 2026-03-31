@@ -5,11 +5,8 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import {
   HouseDoor,
-  FileEarmarkText,
-  Rss,
-  ShieldExclamation,
-  BoxArrowRight,
   JournalText,
+  BoxArrowRight,
   People,
   ChevronDown,
   ChevronRight,
@@ -37,16 +34,7 @@ type NavItem = NavLink | NavGroup;
 
 const NAV: NavItem[] = [
   { type: "link", href: "/admin", icon: HouseDoor, label: "Dashboard" },
-  {
-    type: "group",
-    label: "Content",
-    icon: FileEarmarkText,
-    prefixes: ["/admin/blog", "/admin/articles"],
-    children: [
-      { href: "/admin/blog", label: "Blog Posts" },
-      { href: "/admin/articles", label: "News Articles" },
-    ],
-  },
+  { type: "link", href: "/admin/blog", icon: JournalText, label: "Blog Posts" },
   {
     type: "group",
     label: "Community",
@@ -57,7 +45,6 @@ const NAV: NavItem[] = [
       { href: "/admin/moderation", label: "Moderation" },
     ],
   },
-  { type: "link", href: "/admin/feeds", icon: Rss, label: "Feeds" },
 ];
 
 const LINK_CLS = (active: boolean) =>
@@ -78,7 +65,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router = useRouter();
 
-  // Auto-expand groups when current path is inside them
   const defaultOpen = (group: NavGroup) =>
     group.prefixes.some((p) => pathname.startsWith(p));
 
@@ -90,7 +76,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return init;
   });
 
-  // Keep groups open when navigating into them
   useEffect(() => {
     setOpenGroups((prev) => {
       const next = { ...prev };
@@ -142,7 +127,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 );
               }
 
-              // group
               const isOpen = openGroups[item.label] ?? false;
               const groupActive = item.prefixes.some((p) => pathname.startsWith(p));
 

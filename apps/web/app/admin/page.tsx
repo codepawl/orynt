@@ -3,20 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  FileEarmarkText,
-  Rss,
-  CheckCircle,
   ExclamationTriangle,
   JournalText,
   ChatLeft,
   People,
   Flag,
 } from "react-bootstrap-icons";
-import { getDashboard, triggerCollectAll } from "./lib/api";
 import { createClient } from "app/lib/supabase/client";
-import type { Article, DashboardStats } from "./lib/types";
 import { toast } from "./components/Toast";
-import { StatusBadge } from "./components/StatusBadge";
 
 interface BlogStats {
   total: number;
@@ -30,21 +24,17 @@ interface CommunityStats {
 }
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [recent, setRecent] = useState<Article[]>([]);
   const [blogStats, setBlogStats] = useState<BlogStats | null>(null);
   const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [collecting, setCollecting] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const supabase = createClient();
 
-      const [dashResult, blogRes, blogReviewRes, postsRes, commentsRes, flagsRes] =
+      const [blogRes, blogReviewRes, postsRes, commentsRes, flagsRes] =
         await Promise.allSettled([
-          getDashboard(),
           supabase.from("blog_posts").select("id", { count: "exact", head: true }),
           supabase
             .from("blog_posts")
@@ -58,13 +48,6 @@ export default function AdminDashboard() {
             .eq("status", "pending"),
         ]);
 
-      if (dashResult.status === "fulfilled") {
-        setStats(dashResult.value.stats);
-        setRecent(dashResult.value.recent);
-      } else {
-        toast(dashResult.reason?.message ?? "Failed to load news stats", "error");
-      }
-
       setBlogStats({
         total: blogRes.status === "fulfilled" ? (blogRes.value.count ?? 0) : 0,
         pending_review:
@@ -77,6 +60,8 @@ export default function AdminDashboard() {
           commentsRes.status === "fulfilled" ? (commentsRes.value.count ?? 0) : 0,
         flagged: flagsRes.status === "fulfilled" ? (flagsRes.value.count ?? 0) : 0,
       });
+    } catch (err: unknown) {
+      toast((err as Error).message ?? "Failed to load dashboard", "error");
     } finally {
       setLoading(false);
     }
@@ -84,23 +69,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleCollect = async () => {
-    setCollecting(true);
-    try {
-      const result = await triggerCollectAll();
-      toast(
-        `Collected ${result.new_articles} new articles from ${result.feeds_processed} feeds`
-      );
-      loadData();
-    } catch (err: unknown) {
-      toast((err as Error).message, "error");
-    } finally {
-      setCollecting(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -116,24 +85,17 @@ export default function AdminDashboard() {
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
           Dashboard
         </h1>
-        <button
-          onClick={handleCollect}
-          disabled={collecting}
-          className="px-4 py-2 text-sm font-medium bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg hover:bg-neutral-700 dark:hover:bg-neutral-300 disabled:opacity-50 transition-colors"
-        >
-          {collecting ? "Collecting…" : "Collect Now"}
-        </button>
       </div>
 
-      {/* Content stats */}
       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 mb-2">
-        Content
+        Blog
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <StatCard
           title="Blog Posts"
           value={blogStats?.total ?? 0}
           icon={<JournalText size={16} />}
+          href="/admin/blog"
         />
         <StatCard
           title="Pending Review"
@@ -142,20 +104,8 @@ export default function AdminDashboard() {
           valueClass={(blogStats?.pending_review ?? 0) > 0 ? "text-yellow-500" : ""}
           href="/admin/blog"
         />
-        <StatCard
-          title="News Articles"
-          value={stats?.total_articles ?? 0}
-          icon={<FileEarmarkText size={16} />}
-        />
-        <StatCard
-          title="Published News"
-          value={stats?.published_count ?? 0}
-          icon={<CheckCircle size={16} />}
-          valueClass="text-green-500"
-        />
       </div>
 
-      {/* Community stats */}
       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 mb-2">
         Community
       </p>
@@ -178,99 +128,6 @@ export default function AdminDashboard() {
           valueClass={(communityStats?.flagged ?? 0) > 0 ? "text-orange-500" : ""}
           href="/admin/moderation"
         />
-        <StatCard
-          title="Active Feeds"
-          value={stats?.active_feeds ?? 0}
-          icon={<Rss size={16} />}
-          href="/admin/feeds"
-        />
-      </div>
-
-      {/* News pipeline stats */}
-      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 mb-2">
-        News Pipeline
-      </p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          title="Draft"
-          value={stats?.draft_count ?? 0}
-          icon={<FileEarmarkText size={16} />}
-        />
-        <StatCard
-          title="In Review"
-          value={stats?.review_count ?? 0}
-          icon={<ExclamationTriangle size={16} />}
-          valueClass={(stats?.review_count ?? 0) > 0 ? "text-yellow-500" : ""}
-          href="/admin/articles"
-        />
-        <StatCard
-          title="Rejected"
-          value={stats?.rejected_count ?? 0}
-          icon={<Flag size={16} />}
-        />
-        <StatCard
-          title="Published"
-          value={stats?.published_count ?? 0}
-          icon={<CheckCircle size={16} />}
-          valueClass="text-green-500"
-        />
-      </div>
-
-      <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
-        Recent News Articles
-      </h2>
-      <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 dark:bg-neutral-900">
-            <tr>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                Title
-              </th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-24">
-                Status
-              </th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                Tags
-              </th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-28">
-                Created
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {recent.map((a) => (
-              <tr key={a.id} className="bg-white dark:bg-neutral-950">
-                <td className="px-4 py-2.5 max-w-0">
-                  <Link
-                    href={`/admin/articles/${a.id}`}
-                    className="text-neutral-900 dark:text-neutral-100 hover:underline truncate block"
-                  >
-                    {a.title || a.original_title}
-                  </Link>
-                </td>
-                <td className="px-4 py-2.5">
-                  <StatusBadge status={a.status} />
-                </td>
-                <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400 truncate max-w-[200px]">
-                  {a.tags || "—"}
-                </td>
-                <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400">
-                  {new Date(a.created_at).toLocaleDateString()}
-                </td>
-              </tr>
-            ))}
-            {recent.length === 0 && (
-              <tr>
-                <td
-                  colSpan={4}
-                  className="px-4 py-8 text-center text-neutral-400 dark:text-neutral-500"
-                >
-                  No articles yet
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
       </div>
     </div>
   );
