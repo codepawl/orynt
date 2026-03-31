@@ -577,6 +577,28 @@ async def get_me(
     return profile
 
 
+@router.patch("/me")
+async def update_me(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Update the authenticated user's own profile (display_name, bio, avatar_url)."""
+    db = _get_db(request)
+    body = await request.json()
+    allowed = {"display_name", "bio", "avatar_url"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(422, "No valid fields to update")
+    await db.from_("profiles").update(updates).eq("id", user_id).execute()
+    result = await db.from_("profiles").select(
+        "id, username, display_name, avatar_url, role, karma, bio"
+    ).eq("id", user_id).maybe_single().execute()
+    profile = getattr(result, "data", None)
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    return profile
+
+
 # ── Cross-linking ────────────────────────────────────────────────────
 
 @router.get("/by-article/{article_id}")
