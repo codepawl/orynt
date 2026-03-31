@@ -29,6 +29,14 @@ async def lifespan(app: FastAPI):
     app.state.github_service = GitHubService(settings)
     app.state.projects_store = {}
 
+    if settings.supabase_url and settings.supabase_secret_key:
+        try:
+            from supabase import acreate_client
+            app.state.supabase = await acreate_client(settings.supabase_url, settings.supabase_secret_key)
+            logger.info("Supabase client initialized")
+        except Exception:
+            logger.exception("Failed to initialize Supabase — blog/community endpoints will return 503")
+
     yield
 
     app.state.cache.clear()
