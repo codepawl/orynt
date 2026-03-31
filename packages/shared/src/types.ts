@@ -189,6 +189,34 @@ export interface Notification {
   created_at: string;
 }
 
+// --- Blog ---
+
+export type BlogPostStatus = "draft" | "review" | "published";
+
+export interface BlogPost {
+  id: string;
+  author: AuthorInfo;
+  title: string;
+  slug: string;
+  content: string;
+  content_markdown: string | null;
+  summary: string | null;
+  cover_image_url: string | null;
+  tags: string;
+  status: BlogPostStatus;
+  reading_time_minutes: number | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlogPostList {
+  posts: BlogPost[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+
 // --- Fetch result (admin) ---
 
 export interface FetchResult {

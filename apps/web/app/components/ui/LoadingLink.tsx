@@ -2,7 +2,6 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { Spin } from "antd";
 
 interface LoadingLinkProps {
   href: string;
@@ -33,8 +32,8 @@ export function LoadingLink({ href, children, className, style, onClick }: Loadi
       aria-busy={isPending}
     >
       {isPending ? (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Spin size="small" />
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin opacity-60" />
           {children}
         </span>
       ) : (

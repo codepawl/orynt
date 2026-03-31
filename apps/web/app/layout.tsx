@@ -7,8 +7,6 @@ import { Navbar } from "./components/layout/nav";
 import { AnalyticsWrapper } from "./components/ui/AnalyticsWrapper";
 import Footer from "./components/layout/footer";
 import { ThemeProvider } from "./components/ui/theme-switch";
-import AntdRegistry from "./lib/AntdRegistry";
-import { AntdConfigProvider } from "./components/ui/AntdConfigProvider";
 import { NavigationLoading } from "./components/ui/NavigationLoading";
 import { WebVitals } from "./components/ui/WebVitals";
 import { PerformanceMonitor } from "./components/ui/PerformanceMonitor";
@@ -103,14 +101,12 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased flex flex-col items-center justify-center mx-auto mt-2 lg:mt-8 mb-20 lg:mb-40 bg-white dark:bg-[#141414] text-neutral-900 dark:text-neutral-100">
-        <AntdRegistry>
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
             enableSystem
             disableTransitionOnChange
           >
-            <AntdConfigProvider>
               <NavigationLoading />
               <main className="flex-auto min-w-0 mt-2 md:mt-6 flex flex-col px-4 sm:px-6 md:px-8 w-full mx-auto">
                 <Navbar />
@@ -121,9 +117,7 @@ export default function RootLayout({
                 <PerformanceMonitor />
                 <LazyCookieConsent />
               </main>
-            </AntdConfigProvider>
           </ThemeProvider>
-        </AntdRegistry>
       </body>
     </html>
   );

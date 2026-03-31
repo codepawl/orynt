@@ -8,6 +8,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from app.api.blog.router import router as blog_router
 from app.api.community.router import router as community_router
 from app.api.community.notifications import router as notifications_router
 from app.api.projects import router as projects_router
@@ -81,6 +82,7 @@ app.include_router(stats_router)
 app.include_router(webhook_router)
 app.include_router(projects_router)
 
+app.include_router(blog_router)
 app.include_router(community_router)
 app.include_router(notifications_router)
 

@@ -41,7 +41,6 @@ export default async function NewsTagPage(
       </p>
       <NewsListClient
         initialArticles={newsData?.articles || []}
-        initialTotal={newsData?.total || 0}
         initialTotalPages={newsData?.total_pages || 0}
         tags={tags || []}
         activeTag={decodedTag}

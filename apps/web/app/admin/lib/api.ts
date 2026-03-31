@@ -8,45 +8,32 @@ import type {
 } from "./types";
 
 import { getBackendApiUrl } from "@codepawl/shared";
+import { createClient } from "app/lib/supabase/client";
 
 const API_BASE = getBackendApiUrl();
 
-/**
- * Log in via the backend /api/auth/login endpoint.
- * Sets an httpOnly cookie — no key stored in localStorage.
- */
-export async function loginWithKey(key: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ key }),
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: "Login failed" }));
-    throw new Error(err.error || `HTTP ${response.status}`);
-  }
-}
-
-export async function logout(): Promise<void> {
-  await fetch(`${API_BASE}/api/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-  }).catch(() => {});
+async function getToken(): Promise<string | null> {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
 }
 
 async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}/api/automation${path}`;
+  const token = await getToken();
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> || {}),
   };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const response = await fetch(url, { ...options, headers, credentials: "include" });
+  const response = await fetch(url, { ...options, headers });
 
   if (response.status === 401) {
     if (typeof window !== "undefined") {
-      window.location.href = "/admin/login";
+      window.location.href = "/login?redirect=/admin";
     }
     throw new Error("Unauthorized");
   }

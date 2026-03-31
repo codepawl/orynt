@@ -948,3 +948,36 @@ button {
   contain: layout style;
 }
 
+/* Tiptap editor — placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Tiptap — lowlight code blocks */
+.tiptap pre {
+  background: #1e1e1e;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.tiptap pre code {
+  background: none;
+  font-size: 0.875rem;
+  font-family: var(--font-jetbrains-mono), monospace;
+  color: #d4d4d4;
+}
+
+/* Tiptap — image styling */
+.tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  display: block;
+  margin: 1rem auto;
+}
+

@@ -2,25 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Table, Tag, Button, Input, Select, Space, Typography, message, Popconfirm,
-} from "antd";
 import { Trash, ArrowRepeat } from "react-bootstrap-icons";
-import {
-  getArticles, bulkChangeStatus, deleteArticle,
-} from "../lib/api";
+import { getArticles, bulkChangeStatus, deleteArticle } from "../lib/api";
 import type { Article, PaginatedResponse } from "../lib/types";
-
-const { Title } = Typography;
-const { Search } = Input;
-
-const STATUS_COLORS: Record<string, string> = {
-  draft: "default",
-  review: "processing",
-  published: "success",
-  rejected: "error",
-  archived: "warning",
-};
+import { toast } from "../components/Toast";
+import { StatusBadge } from "../components/StatusBadge";
 
 const STATUS_OPTIONS = [
   { label: "All", value: "" },
@@ -34,11 +20,16 @@ const STATUS_OPTIONS = [
 export default function ArticlesPage() {
   const router = useRouter();
   const [data, setData] = useState<PaginatedResponse<Article>>({
-    items: [], total: 0, page: 1, page_size: 20, total_pages: 0,
+    items: [],
+    total: 0,
+    page: 1,
+    page_size: 20,
+    total_pages: 0,
   });
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
@@ -48,7 +39,7 @@ export default function ArticlesPage() {
       const result = await getArticles({ status, search, page, page_size: 20 });
       setData(result);
     } catch (err: any) {
-      message.error(err.message);
+      toast(err.message, "error");
     } finally {
       setLoading(false);
     }
@@ -62,126 +53,226 @@ export default function ArticlesPage() {
     if (selectedIds.length === 0) return;
     try {
       await bulkChangeStatus(selectedIds, newStatus);
-      message.success(`Updated ${selectedIds.length} articles`);
+      toast(`Updated ${selectedIds.length} articles`);
       setSelectedIds([]);
       fetchData();
     } catch (err: any) {
-      message.error(err.message);
+      toast(err.message, "error");
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this article?")) return;
     try {
       await deleteArticle(id);
-      message.success("Deleted");
+      toast("Deleted");
       fetchData();
     } catch (err: any) {
-      message.error(err.message);
+      toast(err.message, "error");
     }
   };
 
-  const columns = [
-    {
-      title: "Title",
-      dataIndex: "title",
-      key: "title",
-      render: (title: string, record: Article) => (
-        <a onClick={() => router.push(`/admin/articles/${record.id}`)}>
-          {title || record.original_title}
-        </a>
-      ),
-      ellipsis: true,
-    },
-    {
-      title: "Status",
-      dataIndex: "status",
-      key: "status",
-      width: 100,
-      render: (s: string) => <Tag color={STATUS_COLORS[s]}>{s}</Tag>,
-    },
-    {
-      title: "Tags",
-      dataIndex: "tags",
-      key: "tags",
-      width: 200,
-      ellipsis: true,
-      render: (tags: string) =>
-        tags ? tags.split(",").slice(0, 3).map((t) => (
-          <Tag key={t.trim()} style={{ marginBottom: 2 }}>{t.trim()}</Tag>
-        )) : "—",
-    },
-    {
-      title: "Created",
-      dataIndex: "created_at",
-      key: "created_at",
-      width: 120,
-      render: (d: string) => new Date(d).toLocaleDateString(),
-    },
-    {
-      title: "",
-      key: "actions",
-      width: 50,
-      render: (_: unknown, record: Article) => (
-        <Popconfirm title="Delete this article?" onConfirm={() => handleDelete(record.id)}>
-          <Button type="text" size="small" danger icon={<Trash />} />
-        </Popconfirm>
-      ),
-    },
-  ];
+  const allSelected =
+    data.items.length > 0 && data.items.every((a) => selectedIds.includes(a.id));
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? [] : data.items.map((a) => a.id));
+  };
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
 
   return (
     <div>
-      <div className="flex justify-between items-center" style={{ marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>Articles</Title>
-        <Button icon={<ArrowRepeat />} onClick={fetchData} loading={loading}>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+          Articles
+        </h1>
+        <button
+          onClick={fetchData}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50 transition-colors"
+        >
+          <ArrowRepeat size={14} className={loading ? "animate-spin" : ""} />
           Refresh
-        </Button>
+        </button>
       </div>
 
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Select
+      <div className="flex flex-wrap gap-2 mb-4">
+        <select
           value={status}
-          onChange={(v) => { setStatus(v); setPage(1); }}
-          options={STATUS_OPTIONS}
-          style={{ width: 130 }}
-          placeholder="Status"
-        />
-        <Search
-          placeholder="Search articles..."
-          onSearch={(v) => { setSearch(v); setPage(1); }}
-          allowClear
-          style={{ width: 250 }}
-        />
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(1);
+          }}
+          className="px-3 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+        >
+          {STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSearch(searchInput);
+            setPage(1);
+          }}
+          className="flex gap-1"
+        >
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search articles…"
+            className="px-3 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 w-56"
+          />
+          <button
+            type="submit"
+            className="px-3 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+          >
+            Search
+          </button>
+        </form>
         {selectedIds.length > 0 && (
           <>
-            <Button onClick={() => handleBulkStatus("review")} type="primary" ghost>
+            <button
+              onClick={() => handleBulkStatus("review")}
+              className="px-3 py-1.5 text-sm border border-blue-500 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            >
               Move to Review ({selectedIds.length})
-            </Button>
-            <Button onClick={() => handleBulkStatus("rejected")} danger ghost>
+            </button>
+            <button
+              onClick={() => handleBulkStatus("rejected")}
+              className="px-3 py-1.5 text-sm border border-red-500 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            >
               Reject ({selectedIds.length})
-            </Button>
+            </button>
           </>
         )}
-      </Space>
+      </div>
 
-      <Table
-        dataSource={data.items}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        size="small"
-        rowSelection={{
-          selectedRowKeys: selectedIds,
-          onChange: (keys) => setSelectedIds(keys as string[]),
-        }}
-        pagination={{
-          current: data.page,
-          total: data.total,
-          pageSize: data.page_size,
-          onChange: (p) => setPage(p),
-          showSizeChanger: false,
-        }}
-      />
+      <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden">
+        {loading && (
+          <div className="flex justify-center py-8">
+            <div className="w-5 h-5 border-2 border-neutral-300 border-t-neutral-900 dark:border-neutral-700 dark:border-t-neutral-100 rounded-full animate-spin" />
+          </div>
+        )}
+        {!loading && (
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 dark:bg-neutral-900">
+              <tr>
+                <th className="px-4 py-2.5 w-8">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    className="rounded"
+                  />
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                  Title
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-24">
+                  Status
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-48">
+                  Tags
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-28">
+                  Created
+                </th>
+                <th className="px-4 py-2.5 w-10" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              {data.items.map((a) => (
+                <tr
+                  key={a.id}
+                  className="bg-white dark:bg-neutral-950 hover:bg-neutral-50 dark:hover:bg-neutral-900"
+                >
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(a.id)}
+                      onChange={() => toggleOne(a.id)}
+                      className="rounded"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5 max-w-0">
+                    <button
+                      onClick={() => router.push(`/admin/articles/${a.id}`)}
+                      className="text-neutral-900 dark:text-neutral-100 hover:underline truncate block text-left w-full"
+                    >
+                      {a.title || a.original_title}
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <StatusBadge status={a.status} />
+                  </td>
+                  <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400 truncate">
+                    {a.tags
+                      ? a.tags
+                          .split(",")
+                          .slice(0, 3)
+                          .map((t) => t.trim())
+                          .join(", ")
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400">
+                    {new Date(a.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <button
+                      onClick={() => handleDelete(a.id)}
+                      className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
+                      title="Delete"
+                    >
+                      <Trash size={13} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {data.items.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-neutral-400 dark:text-neutral-500"
+                  >
+                    No articles found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {data.total_pages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            {data.total} total · page {data.page} of {data.total_pages}
+          </span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-3 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 transition-colors"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(data.total_pages, p + 1))}
+              disabled={page >= data.total_pages}
+              className="px-3 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40 transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

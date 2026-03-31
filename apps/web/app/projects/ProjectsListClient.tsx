@@ -2,7 +2,6 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Segmented } from "antd";
 import { Grid3x3GapFill, ListUl, StarFill, Diagram2 } from "react-bootstrap-icons";
 import { ContentCard } from "../components/ui/ContentCard";
 import type { EnrichedProject } from "./project-data";
@@ -34,16 +33,32 @@ export function ProjectsListClient({ projects }: ProjectsListClientProps) {
   return (
     <div className="w-full">
       <div className="flex justify-end mb-4">
-        <Segmented<"grid" | "list">
-          size="small"
-          value={view}
-          onChange={(val) => setView(val)}
-          className="segmented-square"
-          options={[
-            { label: <Grid3x3GapFill size={16} />, value: "grid" },
-            { label: <ListUl size={16} />, value: "list" },
-          ]}
-        />
+        <div className="inline-flex rounded-md border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setView("grid")}
+            className={`px-2.5 py-1.5 transition-colors ${
+              view === "grid"
+                ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
+                : "bg-white dark:bg-neutral-900 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+            }`}
+            aria-label="Grid view"
+          >
+            <Grid3x3GapFill size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className={`px-2.5 py-1.5 border-l border-neutral-200 dark:border-neutral-700 transition-colors ${
+              view === "list"
+                ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
+                : "bg-white dark:bg-neutral-900 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+            }`}
+            aria-label="List view"
+          >
+            <ListUl size={16} />
+          </button>
+        </div>
       </div>
 
       <AnimatePresence mode="wait">

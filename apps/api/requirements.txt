@@ -8,3 +8,4 @@ apscheduler==3.10.4
 simhash==2.1.2
 python-slugify==8.0.4
 slowapi==0.1.9
+python-multipart==0.0.20

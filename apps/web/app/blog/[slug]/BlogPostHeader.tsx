@@ -1,10 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Typography, Flex } from "antd";
 import { formatDate } from "app/lib/utils";
-
-const { Title, Text } = Typography;
 
 interface BlogPostHeaderProps {
   title: string;
@@ -26,25 +23,20 @@ export function BlogPostHeader({
         <span className="mr-2">←</span>
         <span>Back to Blog</span>
       </Link>
-      <Title
-        level={1}
-        className="text-neutral-900 dark:text-neutral-100"
-        style={{ marginBottom: 12, fontWeight: 500 }}
+      <h1
+        className="text-neutral-900 dark:text-neutral-100 font-medium"
+        style={{ marginBottom: 12 }}
       >
         {title}
-      </Title>
-      <Flex justify="space-between" align="center" style={{ marginTop: 8, marginBottom: 32 }}>
-        <Text
-          type="secondary"
-          className="text-neutral-600 dark:text-neutral-400"
-          style={{ fontSize: 14 }}
-        >
+      </h1>
+      <div className="flex justify-between items-center mt-2 mb-8">
+        <span className="text-sm text-neutral-600 dark:text-neutral-400">
           {formatDate(publishedAt)}
           {typeof readingTimeMinutes === "number" && (
             <span aria-hidden="true">{` · ${readingTimeMinutes} min read`}</span>
           )}
-        </Text>
-      </Flex>
+        </span>
+      </div>
     </>
   );
 }

@@ -4,10 +4,7 @@ import Link from "next/link";
 import { fetchNewsArticle } from "app/lib/news";
 import { fetchPostIdByArticle } from "app/lib/community";
 import { metaData } from "app/config";
-import { Tag, Typography } from "antd";
 import { ChatDots } from "react-bootstrap-icons";
-
-const { Title, Text, Paragraph } = Typography;
 
 export const revalidate = 300;
 
@@ -104,23 +101,22 @@ export default async function NewsArticlePage(
         </Link>
       </div>
 
-      <Title
-        level={1}
+      <h1
         className="text-neutral-900 dark:text-neutral-100"
         style={{ marginBottom: 12 }}
       >
         {article.title}
-      </Title>
+      </h1>
 
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         {publishedDate && (
-          <Text type="secondary" style={{ fontSize: 14 }}>
+          <span className="text-sm text-neutral-500 dark:text-neutral-400">
             {publishedDate}
-          </Text>
+          </span>
         )}
         {article.canonical_url && (
           <>
-            <Text type="secondary">·</Text>
+            <span className="text-neutral-400 dark:text-neutral-500">·</span>
             <a
               href={article.canonical_url}
               target="_blank"
@@ -134,10 +130,14 @@ export default async function NewsArticlePage(
       </div>
 
       {tags.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
+        <div className="flex flex-wrap gap-1.5 mb-6">
           {tags.map((tag) => (
-            <Link key={tag} href={`/news/tags/${tag}`}>
-              <Tag style={{ cursor: "pointer" }}>{tag}</Tag>
+            <Link
+              key={tag}
+              href={`/news/tags/${tag}`}
+              className="px-2 py-0.5 rounded text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors no-underline"
+            >
+              {tag}
             </Link>
           ))}
         </div>
@@ -145,12 +145,12 @@ export default async function NewsArticlePage(
 
       {article.summary && (
         <div className="prose prose-neutral dark:prose-invert max-w-none mb-8">
-          <Paragraph
+          <p
             className="text-neutral-700 dark:text-neutral-300"
             style={{ fontSize: 16, lineHeight: 1.7 }}
           >
             {article.summary}
-          </Paragraph>
+          </p>
         </div>
       )}
 
@@ -159,12 +159,9 @@ export default async function NewsArticlePage(
           className="border border-neutral-200 dark:border-neutral-700 rounded-lg p-6 text-center"
           style={{ marginTop: 32 }}
         >
-          <Text
-            type="secondary"
-            style={{ display: "block", marginBottom: 12 }}
-          >
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">
             Read the full article at the original source
-          </Text>
+          </p>
           <a
             href={article.canonical_url}
             target="_blank"

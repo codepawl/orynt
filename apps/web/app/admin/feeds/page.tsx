@@ -1,22 +1,38 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Table, Button, Tag, Modal, Form, Input, Select, Switch, Space,
-  Typography, message, Popconfirm,
-} from "antd";
 import { Plus, Trash, ArrowRepeat, PlayCircle } from "react-bootstrap-icons";
 import { getFeeds, createFeed, updateFeed, deleteFeed, fetchFeed } from "../lib/api";
 import type { Feed } from "../lib/types";
+import { toast } from "../components/Toast";
 
-const { Title } = Typography;
+const CATEGORY_OPTIONS = [
+  { label: "General", value: "general" },
+  { label: "Research", value: "research" },
+  { label: "Tools", value: "tools" },
+  { label: "Industry", value: "industry" },
+  { label: "Tutorials", value: "tutorials" },
+  { label: "Hardware", value: "hardware" },
+];
+
+interface FeedForm {
+  name: string;
+  url: string;
+  category: string;
+}
 
 export default function FeedsPage() {
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
   const [fetchingId, setFetchingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FeedForm>({
+    name: "",
+    url: "",
+    category: "general",
+  });
+  const [errors, setErrors] = useState<Partial<FeedForm>>({});
 
   const loadFeeds = async () => {
     setLoading(true);
@@ -24,7 +40,7 @@ export default function FeedsPage() {
       const data = await getFeeds();
       setFeeds(data);
     } catch (err: any) {
-      message.error(err.message);
+      toast(err.message, "error");
     } finally {
       setLoading(false);
     }
@@ -34,36 +50,57 @@ export default function FeedsPage() {
     loadFeeds();
   }, []);
 
+  const validateForm = (): boolean => {
+    const errs: Partial<FeedForm> = {};
+    if (!form.name.trim()) errs.name = "Required";
+    if (!form.url.trim()) {
+      errs.url = "Required";
+    } else {
+      try {
+        new URL(form.url);
+      } catch {
+        errs.url = "Must be a valid URL";
+      }
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleAdd = async () => {
+    if (!validateForm()) return;
+    setSubmitting(true);
     try {
-      const values = await form.validateFields();
-      await createFeed(values);
-      message.success("Feed added");
-      form.resetFields();
+      await createFeed(form);
+      toast("Feed added");
+      setForm({ name: "", url: "", category: "general" });
+      setErrors({});
       setModalOpen(false);
       loadFeeds();
     } catch (err: any) {
-      if (err.message) message.error(err.message);
+      toast(err.message, "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleToggle = async (feed: Feed) => {
     try {
       await updateFeed(feed.id, { is_active: !feed.is_active });
-      message.success(feed.is_active ? "Deactivated" : "Activated");
+      toast(feed.is_active ? "Deactivated" : "Activated");
       loadFeeds();
     } catch (err: any) {
-      message.error(err.message);
+      toast(err.message, "error");
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this feed?")) return;
     try {
       await deleteFeed(id);
-      message.success("Deleted");
+      toast("Deleted");
       loadFeeds();
     } catch (err: any) {
-      message.error(err.message);
+      toast(err.message, "error");
     }
   };
 
@@ -71,123 +108,231 @@ export default function FeedsPage() {
     setFetchingId(feed.id);
     try {
       const result = await fetchFeed(feed.id);
-      message.success(
-        `${result.feed}: ${result.new_articles} new, ${result.skipped_duplicates} skipped`
-      );
+      toast(`${result.feed}: ${result.new_articles} new, ${result.skipped_duplicates} skipped`);
       loadFeeds();
     } catch (err: any) {
-      message.error(err.message);
+      toast(err.message, "error");
     } finally {
       setFetchingId(null);
     }
   };
 
-  const columns = [
-    {
-      title: "Name",
-      dataIndex: "name",
-      key: "name",
-    },
-    {
-      title: "Category",
-      dataIndex: "category",
-      key: "category",
-      width: 120,
-      render: (c: string) => <Tag>{c}</Tag>,
-    },
-    {
-      title: "Active",
-      dataIndex: "is_active",
-      key: "is_active",
-      width: 80,
-      render: (active: boolean, record: Feed) => (
-        <Switch size="small" checked={active} onChange={() => handleToggle(record)} />
-      ),
-    },
-    {
-      title: "Last Fetched",
-      dataIndex: "last_fetched_at",
-      key: "last_fetched_at",
-      width: 140,
-      render: (d: string | null) => d ? new Date(d).toLocaleString() : "Never",
-    },
-    {
-      title: "Errors",
-      dataIndex: "error_count",
-      key: "error_count",
-      width: 80,
-      render: (count: number) =>
-        count > 0 ? <Tag color="error">{count}</Tag> : <Tag color="success">0</Tag>,
-    },
-    {
-      title: "",
-      key: "actions",
-      width: 120,
-      render: (_: unknown, record: Feed) => (
-        <Space>
-          <Button
-            type="text"
-            size="small"
-            icon={<PlayCircle />}
-            loading={fetchingId === record.id}
-            onClick={() => handleFetch(record)}
-          />
-          <Popconfirm title="Delete this feed?" onConfirm={() => handleDelete(record.id)}>
-            <Button type="text" size="small" danger icon={<Trash />} />
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
+  const closeModal = () => {
+    setModalOpen(false);
+    setForm({ name: "", url: "", category: "general" });
+    setErrors({});
+  };
+
+  const inputClass =
+    "w-full px-3 py-2 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:focus:ring-neutral-600";
+  const labelClass = "block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1";
 
   return (
     <div>
-      <div className="flex justify-between items-center" style={{ marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>Feeds</Title>
-        <Space>
-          <Button icon={<ArrowRepeat />} onClick={loadFeeds} loading={loading}>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Feeds</h1>
+        <div className="flex gap-2">
+          <button
+            onClick={loadFeeds}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50 transition-colors"
+          >
+            <ArrowRepeat size={14} className={loading ? "animate-spin" : ""} />
             Refresh
-          </Button>
-          <Button type="primary" icon={<Plus />} onClick={() => setModalOpen(true)}>
+          </button>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg hover:bg-neutral-700 dark:hover:bg-neutral-300 transition-colors"
+          >
+            <Plus size={14} />
             Add Feed
-          </Button>
-        </Space>
+          </button>
+        </div>
       </div>
 
-      <Table
-        dataSource={feeds}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        size="small"
-      />
+      <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <div className="w-5 h-5 border-2 border-neutral-300 border-t-neutral-900 dark:border-neutral-700 dark:border-t-neutral-100 rounded-full animate-spin" />
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 dark:bg-neutral-900">
+              <tr>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                  Name
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-28">
+                  Category
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-16">
+                  Active
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-36">
+                  Last Fetched
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-16">
+                  Errors
+                </th>
+                <th className="px-4 py-2.5 w-20" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              {feeds.map((feed) => (
+                <tr
+                  key={feed.id}
+                  className="bg-white dark:bg-neutral-950 hover:bg-neutral-50 dark:hover:bg-neutral-900"
+                >
+                  <td className="px-4 py-2.5 text-neutral-900 dark:text-neutral-100">
+                    {feed.name}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className="px-1.5 py-0.5 rounded text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400">
+                      {feed.category}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <button
+                      role="switch"
+                      aria-checked={feed.is_active}
+                      onClick={() => handleToggle(feed)}
+                      className={`relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors ${
+                        feed.is_active
+                          ? "bg-green-500"
+                          : "bg-neutral-300 dark:bg-neutral-600"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform mt-0.5 ${
+                          feed.is_active ? "translate-x-3.5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400">
+                    {feed.last_fetched_at
+                      ? new Date(feed.last_fetched_at).toLocaleString()
+                      : "Never"}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                        feed.error_count > 0
+                          ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400"
+                          : "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400"
+                      }`}
+                    >
+                      {feed.error_count}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleFetch(feed)}
+                        disabled={fetchingId === feed.id}
+                        className="p-1 text-neutral-400 hover:text-blue-500 disabled:opacity-40 transition-colors"
+                        title="Fetch now"
+                      >
+                        <PlayCircle
+                          size={14}
+                          className={fetchingId === feed.id ? "animate-spin" : ""}
+                        />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(feed.id)}
+                        className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash size={13} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {feeds.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-neutral-400 dark:text-neutral-500"
+                  >
+                    No feeds configured
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
 
-      <Modal
-        title="Add RSS Feed"
-        open={modalOpen}
-        onOk={handleAdd}
-        onCancel={() => { setModalOpen(false); form.resetFields(); }}
-        okText="Add"
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-            <Input placeholder="e.g. HuggingFace Blog" />
-          </Form.Item>
-          <Form.Item name="url" label="RSS URL" rules={[{ required: true, type: "url" }]}>
-            <Input placeholder="https://example.com/feed.xml" />
-          </Form.Item>
-          <Form.Item name="category" label="Category" initialValue="general">
-            <Select options={[
-              { label: "General", value: "general" },
-              { label: "Research", value: "research" },
-              { label: "Tools", value: "tools" },
-              { label: "Industry", value: "industry" },
-              { label: "Tutorials", value: "tutorials" },
-              { label: "Hardware", value: "hardware" },
-            ]} />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {/* Add Feed Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={closeModal}
+          />
+          <div className="relative bg-white dark:bg-neutral-900 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-4">
+              Add RSS Feed
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className={labelClass}>Name</label>
+                <input
+                  className={`${inputClass} ${errors.name ? "border-red-400" : ""}`}
+                  placeholder="e.g. HuggingFace Blog"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                />
+                {errors.name && (
+                  <p className="mt-1 text-xs text-red-500">{errors.name}</p>
+                )}
+              </div>
+              <div>
+                <label className={labelClass}>RSS URL</label>
+                <input
+                  className={`${inputClass} ${errors.url ? "border-red-400" : ""}`}
+                  placeholder="https://example.com/feed.xml"
+                  value={form.url}
+                  onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                />
+                {errors.url && (
+                  <p className="mt-1 text-xs text-red-500">{errors.url}</p>
+                )}
+              </div>
+              <div>
+                <label className={labelClass}>Category</label>
+                <select
+                  className={inputClass}
+                  value={form.category}
+                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                >
+                  {CATEGORY_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={closeModal}
+                className="px-4 py-2 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAdd}
+                disabled={submitting}
+                className="px-4 py-2 text-sm font-medium bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg hover:bg-neutral-700 dark:hover:bg-neutral-300 disabled:opacity-50 transition-colors"
+              >
+                {submitting ? "Adding…" : "Add"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

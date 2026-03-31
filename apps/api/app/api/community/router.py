@@ -453,6 +453,25 @@ async def flag_content(
     return {"ok": True}
 
 
+# ── Current user ─────────────────────────────────────────────────────
+
+@router.get("/me")
+async def get_me(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Return the authenticated user's profile (id, username, role)."""
+    db = _get_db(request)
+    result = await db.from_("profiles").select(
+        "id, username, display_name, avatar_url, role, karma"
+    ).eq("id", user_id).maybe_single().execute()
+
+    profile = getattr(result, "data", None)
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    return profile
+
+
 # ── Cross-linking ────────────────────────────────────────────────────
 
 @router.get("/by-article/{article_id}")
