@@ -11,6 +11,7 @@ import { NavigationLoading } from "./components/ui/NavigationLoading";
 import { WebVitals } from "./components/ui/WebVitals";
 import { PerformanceMonitor } from "./components/ui/PerformanceMonitor";
 import { LazyCookieConsent } from "./components/ui/LazyCookieConsent";
+import { EmailVerificationBanner } from "./components/ui/EmailVerificationBanner";
 import { metaData } from "./config";
 
 export const metadata: Metadata = {
@@ -107,6 +108,7 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
+              <EmailVerificationBanner />
               <NavigationLoading />
               <main className="flex-auto min-w-0 mt-2 md:mt-6 flex flex-col px-4 sm:px-6 md:px-8 w-full mx-auto">
                 <Navbar />
