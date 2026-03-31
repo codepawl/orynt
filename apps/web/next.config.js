@@ -1,6 +1,7 @@
 const withBundleAnalyzer = require("@next/bundle-analyzer")({ // eslint-disable-line @typescript-eslint/no-require-imports
   enabled: process.env.ANALYZE === "true",
 });
+const { withSentryConfig } = require("@sentry/nextjs"); // eslint-disable-line @typescript-eslint/no-require-imports
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -69,4 +70,10 @@ const nextConfig = {
   },
 };
 
-module.exports = withBundleAnalyzer(nextConfig);
+module.exports = withSentryConfig(withBundleAnalyzer(nextConfig), {
+  silent: true,
+  disableLogger: true,
+  hideSourceMaps: true,
+  automaticVercelMonitors: false,
+  telemetry: false,
+});

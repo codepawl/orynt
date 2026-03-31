@@ -45,6 +45,14 @@ async def lifespan(app: FastAPI):
 
 settings = Settings()
 
+if settings.sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        traces_sample_rate=0.1,
+        environment="production",
+    )
+
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 app = FastAPI(

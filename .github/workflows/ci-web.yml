@@ -51,3 +51,6 @@ jobs:
 
       - name: E2E tests
         run: cd apps/web && bun run test:e2e
+        env:
+          # Sentry is optional in CI — set NEXT_PUBLIC_SENTRY_DSN in repo secrets to enable
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}

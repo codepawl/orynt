@@ -15,5 +15,6 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_secret_key: str = ""
     supabase_jwt_secret: str = ""
+    sentry_dsn: str = ""
 
     model_config = {"env_prefix": "CODEPAWL_", "env_file": ".env", "extra": "ignore"}
