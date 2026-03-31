@@ -1,6 +1,5 @@
 import { Feed } from "feed";
 import { fetchBlogPosts } from "app/lib/blog";
-import { fetchNews } from "app/lib/news";
 import { metaData } from "app/config";
 import { NextResponse } from "next/server";
 
@@ -94,41 +93,6 @@ export async function GET(_: Request, props: { params: Promise<{ format: string 
 
     feed.addItem(feedItem);
   });
-
-  // Add published news articles
-  try {
-    const newsData = await fetchNews(1);
-    if (newsData) {
-      for (const article of newsData.articles) {
-        const newsUrl = `${BaseUrl}news/${article.slug}`;
-        const categories = article.tags
-          ? article.tags.split(",").map((tag: string) => tag.trim())
-          : [];
-
-        const newsItem: any = {
-          title: article.title,
-          id: newsUrl,
-          link: newsUrl,
-          description: article.summary || "",
-          content: article.summary || "",
-          author: [{ name: metaData.name }],
-          date: article.published_at ? new Date(article.published_at) : new Date(),
-          published: article.published_at ? new Date(article.published_at) : new Date(),
-        };
-
-        if (categories.length > 0) {
-          newsItem.category = categories.map((tag: string) => ({
-            name: tag,
-            term: tag,
-          }));
-        }
-
-        feed.addItem(newsItem);
-      }
-    }
-  } catch {
-    // Graceful fallback — skip news articles in feed
-  }
 
   const responseMap: Record<string, { content: string; contentType: string }> =
     {

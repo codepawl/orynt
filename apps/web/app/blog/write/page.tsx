@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { CATEGORIES } from "@codepawl/shared";
 import { createClient } from "app/lib/supabase/client";
@@ -19,6 +19,7 @@ const AUTOSAVE_KEY = "blog-write-draft";
 
 export default function WritePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [token, setToken] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
@@ -64,6 +65,22 @@ export default function WritePage() {
     } catch {
       // ignore malformed
     }
+  }, []);
+
+  // Pre-fill from ?title=&url=&tags= query params (e.g. from admin articles shortcut)
+  useEffect(() => {
+    const qTitle = searchParams.get("title");
+    const qUrl = searchParams.get("url");
+    const qTags = searchParams.get("tags");
+    if (qTitle) setTitle(qTitle);
+    if (qTags) {
+      const parsed = qTags.split(",").map((t) => t.trim()).filter(Boolean);
+      setTags(parsed);
+    }
+    if (qUrl) {
+      setContentMarkdown((prev) => prev || `Source: ${qUrl}\n\n`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Autosave to localStorage every 30s

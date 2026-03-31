@@ -224,16 +224,6 @@ export function PostDetail({ post }: { post: CommunityPost }) {
             </div>
           )}
 
-          {/* Auto-post banner */}
-          {post.is_auto && post.source_article_id && (
-            <div className="mb-3 px-3 py-2 bg-neutral-50 dark:bg-neutral-800/50 rounded-md text-xs text-neutral-500 flex items-center gap-2">
-              Auto-posted from news pipeline —{" "}
-              <Link href="/news" className="underline text-inherit">
-                View original on News
-              </Link>
-            </div>
-          )}
-
           {/* Metadata */}
           <div className="flex items-center gap-3 text-xs text-neutral-500">
             {post.author.avatar_url && (

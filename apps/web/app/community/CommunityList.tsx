@@ -157,11 +157,6 @@ export function CommunityList({
                     ? { target: "_blank", rel: "noopener" }
                     : {})}
                 >
-                  {post.is_auto && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 mr-1.5 text-[10px] font-medium rounded bg-neutral-200 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 align-middle">
-                      News
-                    </span>
-                  )}
                   {post.type === "show" && (
                     <span className="text-amber-600 dark:text-amber-400 mr-1">
                       Show CP:

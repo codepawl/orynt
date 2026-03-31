@@ -273,7 +273,35 @@ async def update_status(
 
     if not result.data:
         raise HTTPException(500, "Failed to update status")
-    return _build_post(result.data)
+
+    post = _build_post(result.data)
+
+    if body.status == "published":
+        await _auto_share_blog_post(db, post)
+
+    return post
+
+
+async def _auto_share_blog_post(db, post: "BlogPostResponse") -> None:
+    """Create a community link post for a newly published blog post (non-fatal)."""
+    try:
+        url = f"/blog/{post.slug}"
+        existing = await db.from_("posts").select("id").eq("url", url).maybe_single().execute()
+        if getattr(existing, "data", None):
+            return
+
+        post_data = {
+            "author_id": post.author.id,
+            "type": "link",
+            "title": post.title,
+            "url": url,
+            "tags": post.tags or "",
+            "is_auto": True,
+        }
+        await db.from_("posts").insert(post_data).execute()
+        logger.info("Auto-shared blog post %s to community", post.slug)
+    except Exception:
+        logger.exception("Failed to auto-share blog post %s", post.slug)
 
 
 @router.get("/admin/posts")

@@ -21,6 +21,20 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["react-bootstrap-icons"],
   },
+  async redirects() {
+    return [
+      {
+        source: "/news",
+        destination: "/blog",
+        permanent: true,
+      },
+      {
+        source: "/news/:path*",
+        destination: "/blog",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

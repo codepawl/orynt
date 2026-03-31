@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Trash, ArrowRepeat } from "react-bootstrap-icons";
+import { Trash, ArrowRepeat, PencilSquare } from "react-bootstrap-icons";
 import { getArticles, bulkChangeStatus, deleteArticle } from "../lib/api";
 import type { Article, PaginatedResponse } from "../lib/types";
 import { toast } from "../components/Toast";
@@ -225,13 +225,28 @@ export default function ArticlesPage() {
                     {new Date(a.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-2.5">
-                    <button
-                      onClick={() => handleDelete(a.id)}
-                      className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
-                      title="Delete"
-                    >
-                      <Trash size={13} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          const params = new URLSearchParams();
+                          if (a.title || a.original_title) params.set("title", (a.title || a.original_title)!);
+                          if (a.original_url) params.set("url", a.original_url);
+                          if (a.tags) params.set("tags", a.tags);
+                          router.push(`/blog/write?${params.toString()}`);
+                        }}
+                        className="p-1 text-neutral-400 hover:text-blue-500 transition-colors"
+                        title="Write blog post"
+                      >
+                        <PencilSquare size={13} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(a.id)}
+                        className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash size={13} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
