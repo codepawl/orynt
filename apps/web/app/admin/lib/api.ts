@@ -41,3 +41,14 @@ export const adminDeleteComment = (commentId: string) =>
   communityFetch<void>(`/comments/${commentId}`, { method: "DELETE" });
 export const adminBanUser = (userId: string) =>
   communityFetch<{ ok: boolean }>(`/users/${userId}/ban`, { method: "PATCH" });
+
+// Tags
+export const getTagStats = () =>
+  communityFetch<{ name: string; count: number }[]>("/tags/stats");
+export const deleteTag = (name: string) =>
+  communityFetch<{ ok: boolean }>(`/tags/${encodeURIComponent(name)}`, { method: "DELETE" });
+export const mergeTags = (fromTag: string, toTag: string) =>
+  communityFetch<{ ok: boolean }>("/tags/merge", {
+    method: "POST",
+    body: JSON.stringify({ from_tag: fromTag, to_tag: toTag }),
+  });

@@ -4,15 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
 import { createPost } from "app/lib/community";
-import { CATEGORIES } from "@codepawl/shared";
+import { TagInput } from "../TagInput";
 
 const postTypes = [
   { value: "link" as const, label: "Link" },
   { value: "text" as const, label: "Text" },
   { value: "show" as const, label: "Show CodePawl" },
 ];
-
-const tagOptions = CATEGORIES.filter((c) => c !== "general");
 
 export default function SubmitPage() {
   const router = useRouter();
@@ -23,16 +21,6 @@ export default function SubmitPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag)
-        ? prev.filter((t) => t !== tag)
-        : prev.length < 6
-          ? [...prev, tag]
-          : prev
-    );
-  };
 
   const handleSubmit = async () => {
     setError("");
@@ -175,30 +163,8 @@ export default function SubmitPage() {
           </div>
         )}
 
-        {/* Tags — clickable pill grid */}
-        <div>
-          <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">
-            Tags <span className="font-normal text-neutral-400">(optional, max 6)</span>
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {tagOptions.map((tag) => {
-              const selected = selectedTags.includes(tag);
-              return (
-                <button
-                  key={tag}
-                  onClick={() => toggleTag(tag)}
-                  className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors cursor-pointer ${
-                    selected
-                      ? "bg-amber-500 text-white border-amber-500"
-                      : "bg-transparent text-neutral-500 dark:text-neutral-400 border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                  }`}
-                >
-                  {tag}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* Tags — autocomplete input */}
+        <TagInput value={selectedTags} onChange={setSelectedTags} />
 
         {/* Error */}
         {error && (

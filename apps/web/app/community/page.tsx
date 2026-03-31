@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { fetchPosts } from "app/lib/community";
+import { fetchPosts, fetchTagStats } from "app/lib/community";
 import { CommunityList } from "./CommunityList";
-import { CATEGORIES } from "@codepawl/shared";
+import { TagFilterBar } from "./TagFilterBar";
 import { getProjectSlugs } from "app/projects/project-data";
 
 interface Props {
@@ -27,7 +27,12 @@ export default async function CommunityPage({ searchParams }: Props) {
   const page = Number(params.page) || 1;
 
   const projectSlugs = new Set(getProjectSlugs());
-  const data = await fetchPosts(page, sort, type, tag);
+  const [data, tagStats] = await Promise.all([
+    fetchPosts(page, sort, type, tag),
+    fetchTagStats(),
+  ]);
+  const allTags = tagStats.map((s) => s.name);
+  const topTags = allTags.slice(0, 8);
 
   return (
     <div className="max-w-3xl mx-auto w-full">
@@ -71,38 +76,14 @@ export default async function CommunityPage({ searchParams }: Props) {
         })}
       </div>
 
-      {/* Tag filter — wrapping pill grid */}
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        <Link
-          href={`/community?sort=${sort}`}
-          className={`px-2.5 py-1 text-xs font-medium rounded-full no-underline transition-colors ${
-            !tag
-              ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
-              : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
-          }`}
-        >
-          All
-        </Link>
-        {CATEGORIES.filter((c) => c !== "general").map((cat) => {
-          const isProjectTag = projectSlugs.has(cat);
-          const href = isProjectTag
-            ? `/projects/${cat}`
-            : `/community?tag=${encodeURIComponent(cat)}&sort=${sort}`;
-          return (
-            <Link
-              key={cat}
-              href={href}
-              className={`px-2.5 py-1 text-xs font-medium rounded-full no-underline transition-colors ${
-                tag === cat
-                  ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
-                  : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700"
-              }`}
-            >
-              {cat}
-            </Link>
-          );
-        })}
-      </div>
+      {/* Tag filter bar */}
+      <TagFilterBar
+        topTags={topTags}
+        allTags={allTags}
+        activeTag={tag}
+        sort={sort}
+        projectSlugs={projectSlugs}
+      />
 
       {/* Post list */}
       {data && data.posts.length > 0 ? (

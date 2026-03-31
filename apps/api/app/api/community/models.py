@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from urllib.parse import urlparse
@@ -15,6 +16,21 @@ class PostCreate(BaseModel):
     url: str | None = None
     content: str | None = None
     tags: str = ""
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: str) -> str:
+        if not v or not v.strip():
+            return ""
+        tags = [t.strip() for t in v.split(",") if t.strip()]
+        if len(tags) > 3:
+            raise ValueError("Maximum 3 tags allowed")
+        for tag in tags:
+            if not re.match(r"^[a-z0-9][a-z0-9-]{0,24}$", tag):
+                raise ValueError(
+                    f"Invalid tag '{tag}': use lowercase letters, numbers, hyphens, max 25 chars"
+                )
+        return ", ".join(tags)
 
     @field_validator("url")
     @classmethod
@@ -104,3 +120,8 @@ class FlagResponse(BaseModel):
     reason: str | None = None
     status: str
     created_at: datetime
+
+
+class TagMerge(BaseModel):
+    from_tag: str
+    to_tag: str

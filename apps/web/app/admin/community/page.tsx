@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Trash, Ban } from "react-bootstrap-icons";
 import { createClient } from "app/lib/supabase/client";
-import { adminDeletePost, adminDeleteComment, adminBanUser } from "../lib/api";
+import { adminDeletePost, adminDeleteComment, adminBanUser, getTagStats, deleteTag, mergeTags } from "../lib/api";
 import { toast } from "../components/Toast";
 import { ConfirmModal } from "../components/ConfirmModal";
 
@@ -47,7 +47,14 @@ const TYPE_BADGE: Record<string, string> = {
   show: "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400",
 };
 
-type Tab = "posts" | "comments";
+interface TagStat {
+  name: string;
+  count: number;
+}
+
+const TAG_RE = /^[a-z0-9][a-z0-9-]{0,24}$/;
+
+type Tab = "posts" | "comments" | "tags";
 
 export default function AdminCommunityPage() {
   const [tab, setTab] = useState<Tab>("posts");
@@ -55,9 +62,13 @@ export default function AdminCommunityPage() {
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [stats, setStats] = useState<CommunityStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tags, setTags] = useState<TagStat[]>([]);
   const [confirmDeletePost, setConfirmDeletePost] = useState<string | null>(null);
   const [confirmDeleteComment, setConfirmDeleteComment] = useState<string | null>(null);
   const [confirmBan, setConfirmBan] = useState<{ userId: string; username: string } | null>(null);
+  const [confirmDeleteTag, setConfirmDeleteTag] = useState<string | null>(null);
+  const [mergeFrom, setMergeFrom] = useState<string | null>(null);
+  const [mergeTo, setMergeTo] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -105,6 +116,7 @@ export default function AdminCommunityPage() {
           return { ...c, author_username: (a as { username?: string } | null)?.username };
         })
       );
+      getTagStats().then(setTags).catch(() => {});
     } catch {
       toast("Failed to load community data", "error");
     } finally {
@@ -147,6 +159,34 @@ export default function AdminCommunityPage() {
     }
   };
 
+  const handleDeleteTag = async (name: string) => {
+    try {
+      await deleteTag(name);
+      toast(`Tag "${name}" removed from all posts`);
+      setConfirmDeleteTag(null);
+      getTagStats().then(setTags).catch(() => {});
+    } catch (err: unknown) {
+      toast((err as Error).message, "error");
+    }
+  };
+
+  const handleMergeTag = async (from: string) => {
+    const to = mergeTo.trim().toLowerCase();
+    if (!TAG_RE.test(to)) {
+      toast("Invalid target tag name", "error");
+      return;
+    }
+    try {
+      await mergeTags(from, to);
+      toast(`Merged "${from}" → "${to}"`);
+      setMergeFrom(null);
+      setMergeTo("");
+      getTagStats().then(setTags).catch(() => {});
+    } catch (err: unknown) {
+      toast((err as Error).message, "error");
+    }
+  };
+
   return (
     <div>
       {confirmDeletePost && (
@@ -172,6 +212,14 @@ export default function AdminCommunityPage() {
           confirmLabel="Ban User"
           onConfirm={() => handleBan(confirmBan.userId)}
           onCancel={() => setConfirmBan(null)}
+        />
+      )}
+      {confirmDeleteTag && (
+        <ConfirmModal
+          title={`Delete tag "${confirmDeleteTag}"?`}
+          message="This will remove the tag from all posts. Posts will not be deleted."
+          onConfirm={() => handleDeleteTag(confirmDeleteTag)}
+          onCancel={() => setConfirmDeleteTag(null)}
         />
       )}
 
@@ -204,7 +252,7 @@ export default function AdminCommunityPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-4">
-        {(["posts", "comments"] as Tab[]).map((t) => (
+        {(["posts", "comments", "tags"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -282,6 +330,79 @@ export default function AdminCommunityPage() {
                         <Trash size={13} />
                       </button>
                     </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Tags table */}
+      {tab === "tags" && (
+        <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900">
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">Tag</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 w-20">Count</th>
+                <th className="px-4 py-2.5 w-48" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              {loading ? (
+                <tr><td colSpan={3} className="px-4 py-8 text-center text-neutral-400 dark:text-neutral-500">Loading…</td></tr>
+              ) : tags.length === 0 ? (
+                <tr><td colSpan={3} className="px-4 py-8 text-center text-neutral-400 dark:text-neutral-500">No tags yet.</td></tr>
+              ) : tags.map((tag) => (
+                <tr key={tag.name} className="hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors">
+                  <td className="px-4 py-2.5 font-medium text-neutral-900 dark:text-neutral-100">{tag.name}</td>
+                  <td className="px-4 py-2.5 text-neutral-500 dark:text-neutral-400">{tag.count}</td>
+                  <td className="px-4 py-2.5">
+                    {mergeFrom === tag.name ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={mergeTo}
+                          onChange={(e) => setMergeTo(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleMergeTag(tag.name);
+                            if (e.key === "Escape") { setMergeFrom(null); setMergeTo(""); }
+                          }}
+                          placeholder="target tag"
+                          autoFocus
+                          className="px-2 py-1 text-xs border border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 w-28 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                        />
+                        <button
+                          onClick={() => handleMergeTag(tag.name)}
+                          className="px-2 py-1 text-xs bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded hover:opacity-80 transition-opacity"
+                        >
+                          Merge
+                        </button>
+                        <button
+                          onClick={() => { setMergeFrom(null); setMergeTo(""); }}
+                          className="px-2 py-1 text-xs border border-neutral-200 dark:border-neutral-700 rounded text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <button
+                          onClick={() => { setMergeFrom(tag.name); setMergeTo(""); }}
+                          className="px-2 py-1 text-xs border border-neutral-200 dark:border-neutral-700 rounded text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                        >
+                          Merge
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteTag(tag.name)}
+                          className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
+                          title="Delete tag"
+                        >
+                          <Trash size={13} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

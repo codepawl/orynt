@@ -118,7 +118,6 @@ interface Props {
 
 export function CommunityList({
   posts,
-  total,
   page,
   totalPages,
   sort,
@@ -170,7 +169,7 @@ export function CommunityList({
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400 flex-wrap">
                 <span>{post.score} point{post.score !== 1 ? "s" : ""}</span>
                 <span>by{" "}
                   <Link
@@ -188,6 +187,29 @@ export function CommunityList({
                   {post.comment_count} comment{post.comment_count !== 1 ? "s" : ""}
                 </Link>
               </div>
+              {post.tags && (() => {
+                const tags = post.tags.split(",").map((t) => t.trim()).filter(Boolean);
+                const visible = tags.slice(0, 2);
+                const overflow = tags.length - 2;
+                return (
+                  <div className="flex items-center gap-1 mt-1">
+                    {visible.map((tag) => (
+                      <Link
+                        key={tag}
+                        href={`/community?tag=${encodeURIComponent(tag)}&sort=ranked`}
+                        className="px-2 py-0.5 text-[11px] bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 rounded-full no-underline hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                      >
+                        {tag}
+                      </Link>
+                    ))}
+                    {overflow > 0 && (
+                      <span className="px-2 py-0.5 text-[11px] bg-neutral-100 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-500 rounded-full">
+                        +{overflow}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </li>
         ))}

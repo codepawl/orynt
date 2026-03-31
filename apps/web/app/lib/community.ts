@@ -95,6 +95,16 @@ export async function fetchPostIdByArticle(
   }
 }
 
+export async function fetchTagStats(): Promise<{ name: string; count: number }[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/community/tags/stats`, { cache: "no-store" });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
 // --- Client-side (auth-required) actions ---
 
 export async function createPost(

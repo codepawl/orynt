@@ -18,6 +18,7 @@ from app.api.community.models import (
     PostCreate,
     PostListResponse,
     PostResponse,
+    TagMerge,
     VoteRequest,
 )
 
@@ -216,6 +217,63 @@ async def delete_post(
 
     await db.from_("posts").delete().eq("id", post_id).execute()
     return Response(status_code=204)
+
+
+# ── Tags ─────────────────────────────────────────────────────────────
+
+@router.get("/tags/stats")
+async def get_tag_stats(request: Request) -> list[dict]:
+    """Return all tags with usage counts, sorted by count descending."""
+    db = _get_db(request)
+    result = await db.from_("posts").select("tags").neq("tags", "").execute()
+    counts: dict[str, int] = {}
+    for row in (result.data or []):
+        for tag in row["tags"].split(","):
+            t = tag.strip()
+            if t:
+                counts[t] = counts.get(t, 0) + 1
+    return sorted(
+        [{"name": k, "count": v} for k, v in counts.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+
+
+@router.delete("/tags/{tag_name}")
+async def delete_tag(
+    tag_name: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Remove a tag from all posts (admin only)."""
+    db = _get_db(request)
+    role_res = await db.from_("profiles").select("role").eq("id", user_id).single().execute()
+    if (role_res.data or {}).get("role") != "admin":
+        raise HTTPException(403, "Admin role required")
+    result = await db.from_("posts").select("id, tags").ilike("tags", f"%{tag_name}%").execute()
+    for row in (result.data or []):
+        tags = [t.strip() for t in row["tags"].split(",") if t.strip() and t.strip() != tag_name]
+        await db.from_("posts").update({"tags": ", ".join(tags)}).eq("id", row["id"]).execute()
+    return {"ok": True}
+
+
+@router.post("/tags/merge")
+async def merge_tags(
+    data: TagMerge,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Replace all occurrences of from_tag with to_tag across all posts (admin only)."""
+    db = _get_db(request)
+    role_res = await db.from_("profiles").select("role").eq("id", user_id).single().execute()
+    if (role_res.data or {}).get("role") != "admin":
+        raise HTTPException(403, "Admin role required")
+    result = await db.from_("posts").select("id, tags").ilike("tags", f"%{data.from_tag}%").execute()
+    for row in (result.data or []):
+        tags = [t.strip() for t in row["tags"].split(",") if t.strip()]
+        tags = list(dict.fromkeys([data.to_tag if t == data.from_tag else t for t in tags]))
+        await db.from_("posts").update({"tags": ", ".join(tags)}).eq("id", row["id"]).execute()
+    return {"ok": True}
 
 
 @router.delete("/comments/{comment_id}")
