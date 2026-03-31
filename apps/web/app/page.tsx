@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { metaData, socialLinks } from "app/config";
+import { metaData, founderLinks } from "app/config";
 import { fetchBlogPosts } from "app/lib/blog";
 import { HomePageContent } from "app/components/features/HomePageContent";
 
@@ -45,10 +45,9 @@ export default async function Page() {
             description: metaData.description,
             url: metaData.baseUrl,
             sameAs: [
-              socialLinks.github,
-              socialLinks.linkedin,
-              socialLinks.kaggle,
-              socialLinks.youtube,
+              founderLinks.github,
+              founderLinks.linkedin,
+              founderLinks.kaggle,
             ],
             image: `${metaData.baseUrl}/profile.png`,
           }),

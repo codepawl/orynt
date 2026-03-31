@@ -9,9 +9,16 @@ export const metaData = {
 };
 
 export const socialLinks = {
+  github: "https://github.com/codepawl",
+  twitter: "https://x.com/codepawl",
+  discord: "https://discord.gg/7fydHgK6kA",
+  devto: "https://dev.to/codepawl",
+  email: "mailto:hello@codepawl.com",
+};
+
+// Founder's personal profiles — used in About team card only
+export const founderLinks = {
   github: "https://github.com/nxank4",
   linkedin: "https://www.linkedin.com/in/nxank4/",
   kaggle: "https://www.kaggle.com/anmatngu",
-  email: "mailto:nxan2911@gmail.com",
-  youtube: "https://www.youtube.com/@coresenyt",
 };

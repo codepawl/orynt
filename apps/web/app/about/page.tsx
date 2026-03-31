@@ -6,12 +6,11 @@ import {
   Github,
   Linkedin,
   EnvelopeFill,
-  Youtube,
   CodeSlash,
   CalendarEvent,
   ChevronDown,
 } from "react-bootstrap-icons";
-import { socialLinks, metaData } from "../config";
+import { socialLinks, founderLinks, metaData } from "../config";
 import type { Icon } from "react-bootstrap-icons";
 import { InlineLogo } from "../components/layout/InlineLogo";
 
@@ -118,12 +117,22 @@ export default function About() {
             {metaData.title}
           </h1>
           <p
-            style={{ fontSize: 16, lineHeight: 1.8, marginBottom: 16 }}
+            style={{ fontSize: 16, lineHeight: 1.8, marginBottom: 12 }}
             className="text-neutral-700 dark:text-neutral-300"
           >
-            An open-source community building tools and resources for AI, machine learning, and data science.
-            We create educational content, develop open-source libraries, and share practical insights to make
-            advanced technical topics more accessible.
+            CodePawl is an open-source AI/ML community platform — a place for builders, researchers, and curious minds
+            to share ideas, discuss papers, and collaborate on projects.
+          </p>
+          <p
+            style={{ fontSize: 15, lineHeight: 1.8, marginBottom: 16 }}
+            className="text-neutral-600 dark:text-neutral-400"
+          >
+            Post links, start discussions, or share what you&apos;re building. Join us on{" "}
+            <a href={socialLinks.discord} target="_blank" rel="noopener noreferrer" className="underline">Discord</a>
+            , follow along on{" "}
+            <a href={socialLinks.twitter} target="_blank" rel="noopener noreferrer" className="underline">X</a>
+            , or reach us at{" "}
+            <a href={socialLinks.email} className="underline">hello@codepawl.com</a>.
           </p>
           <div className="flex items-center gap-1.5 mb-4">
             <CalendarEvent size={14} className="text-neutral-500 dark:text-neutral-400" />
@@ -133,8 +142,6 @@ export default function About() {
           </div>
           <div className="flex items-center gap-6 flex-wrap">
             <SocialLink href={socialLinks.github} icon={Github} label="GitHub" />
-            <SocialLink href={socialLinks.youtube} icon={Youtube} label="YouTube" />
-            <SocialLink href={socialLinks.linkedin} icon={Linkedin} label="LinkedIn" />
             <SocialLink href={socialLinks.email} icon={EnvelopeFill} label="Email" />
           </div>
         </div>
@@ -184,13 +191,13 @@ export default function About() {
                 </span>
                 <div className="flex items-center gap-5 flex-wrap mt-3">
                   <span onClick={(e) => e.stopPropagation()}>
-                    <SocialLink href={socialLinks.github} icon={Github} label="GitHub" />
+                    <SocialLink href={founderLinks.github} icon={Github} label="GitHub" />
                   </span>
                   <span onClick={(e) => e.stopPropagation()}>
-                    <SocialLink href={socialLinks.linkedin} icon={Linkedin} label="LinkedIn" />
+                    <SocialLink href={founderLinks.linkedin} icon={Linkedin} label="LinkedIn" />
                   </span>
                   <span onClick={(e) => e.stopPropagation()}>
-                    <SocialLink href={socialLinks.kaggle} icon={CodeSlash} label="Kaggle" />
+                    <SocialLink href={founderLinks.kaggle} icon={CodeSlash} label="Kaggle" />
                   </span>
                 </div>
               </div>
