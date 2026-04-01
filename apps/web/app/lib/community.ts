@@ -43,7 +43,7 @@ export async function fetchPosts(
     if (tag) params.set("tag", tag);
 
     const res = await fetch(`${API_URL}/api/community/posts?${params}`, {
-      cache: "no-store",
+      next: { revalidate: 60 },
     });
     if (!res.ok) return null;
     return res.json();
@@ -97,7 +97,7 @@ export async function fetchPostIdByArticle(
 
 export async function fetchTagStats(): Promise<{ name: string; count: number }[]> {
   try {
-    const res = await fetch(`${API_URL}/api/community/tags/stats`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}/api/community/tags/stats`, { next: { revalidate: 3600 } });
     if (!res.ok) return [];
     return res.json();
   } catch {
