@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
 import { createPost } from "app/lib/community";
 import { TagInput } from "../TagInput";
@@ -34,6 +34,7 @@ function validateUrl(raw: string): string | null {
 
 export default function SubmitPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [type, setType] = useState<"link" | "text" | "show">("link");
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
@@ -46,6 +47,15 @@ export default function SubmitPage() {
   // URL preview state
   const [urlPreview, setUrlPreview] = useState<{ valid: boolean; error?: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Pre-fill tags from ?tags= query param (e.g. from project hub "Start a discussion")
+  useEffect(() => {
+    const tagsParam = searchParams.get("tags");
+    if (tagsParam) {
+      setSelectedTags(tagsParam.split(",").map((t) => t.trim()).filter(Boolean));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUrlBlur = async () => {
     if (type !== "link" || !url.trim()) {
