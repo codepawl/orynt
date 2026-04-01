@@ -15,7 +15,7 @@ CodePawl is an open-source AI/ML community platform with a blog and discussion f
 **Live:** https://codepawl.com
 **Founded:** 2026
 **Founder:** An
-**Stack:** Bun monorepo, Next.js 16 (App Router), FastAPI, Supabase (PostgreSQL + Auth), Tailwind + Ant Design
+**Stack:** Bun monorepo, Next.js 16 (App Router), FastAPI, Supabase (PostgreSQL + Auth), Tailwind + Ant Design, Sentry (error monitoring)
 
 ## Monorepo Structure
 
@@ -94,49 +94,69 @@ Flow: feature branch > PR to staging > staging > PR to main
 - **3D:** Three.js + @react-three/fiber (homepage blob only, may be removed for performance)
 
 **Component locations:**
-- `app/components/features/` — domain-specific (animated logo, dino game, homepage, social embeds)
+- `app/components/features/` — domain-specific (animated logo, dino game, homepage, blog editor)
+- `app/components/features/blog-editor/` — Tiptap rich text + markdown editor
 - `app/components/layout/` — nav, footer, inline logo
-- `app/components/ui/` — reusable (MDX renderer, theme switch, content card, RepoCard)
+- `app/components/ui/` — reusable (ContentCard, ShareButtons, ReadingProgressBar, EmailVerificationBanner, UserMenu, NotificationBell, ProtectedRoute, theme switch, cookie consent)
 
 **Content systems:**
-- Blog: MDX files in `apps/web/content/`. Frontmatter: `title`, `publishedAt`, `summary`, `tags`, `image`. Parsed by `app/lib/posts.ts`.
-- Projects: Hybrid ISR, live GitHub stats with 1h revalidation, falls back to static data in `project-data.tsx`.
-
-**MDX rendering** (`app/components/ui/mdx.tsx`):
-- Code blocks: `rehype-pretty-code` (shiki), dual themes (`github-light` / `one-dark-pro`)
-- Math: KaTeX via `remark-math` + `rehype-katex`
-- Custom components: `RepoCard`, `StaticTweet`, `YouTube`, `Callout`, auto-anchor headings
+- Blog: API-driven via Supabase `blog_posts` table. CRUD through FastAPI. Tiptap rich text editor at `/blog/write` and `/blog/edit/[id]`. Image uploads to Supabase Storage `blog-images` bucket. Auto-shares published posts to community as link posts.
+- Projects: Hybrid ISR — static curated data in `project-data.tsx` enriched with live GitHub stats (1h revalidation). Org repos fetched from `GET /projects/org`. Hub pages with README section parsing.
 
 **Navigation:** Plain Next.js `Link` + `motion.div layoutId="nav-active"` for sliding underline. `NavigationLoading.tsx` shows a top loading bar on internal navigation.
 
 **Feed generation:** `app/feed/[format]/route.ts` generates RSS/Atom/JSON. Aliased via rewrites in `next.config.js`.
 
-**Site config:** `app/config.ts` (metadata, social links, `foundedYear: 2026`)
+**Error monitoring:** `@sentry/nextjs` — client, server, and edge configs in `sentry.*.config.ts`. `global-error.tsx` and `error.tsx` capture exceptions.
+
+**Site config:** `app/config.ts` (metadata, `socialLinks` for org, `founderLinks` for personal, `foundedYear: 2026`)
 
 ### Backend (apps/api)
 
 - **Framework:** FastAPI 0.115, async, Python 3.12
 - **DB:** Supabase (PostgreSQL) via PostgREST client. No ORM.
-- **Cache:** TTLCache (in-memory, 1h) for GitHub stats
+- **Cache:** TTLCache (in-memory, 1h) for GitHub stats, org repos, README data
+- **Error monitoring:** `sentry-sdk[fastapi]`
 
 **API routes:**
-- `GET /projects` — live GitHub stats
-- `GET /stats/{owner}/{repo}` — single repo stats
-- `POST /webhook` — GitHub webhook handler
 - `GET /health` — health check
-- `GET/POST/PUT/DELETE /api/blog/*` — blog management
-- `GET/POST/PUT/DELETE /api/community/*` — community posts, comments, votes
+- `GET /projects` — live GitHub stats for tracked repos
+- `GET /projects/org` — all public repos from codepawl GitHub org
+- `GET /projects/{owner}/{repo}/readme` — fetch + parse README sections
+- `POST /webhook` — GitHub webhook handler
+- **Blog** (`/api/blog`):
+  - `GET /posts`, `GET /posts/{slug}` — public listing + detail
+  - `GET /my-posts` — authenticated user's drafts + posts
+  - `GET /admin/posts` — admin: all posts across authors
+  - `POST /posts`, `PUT /posts/{post_id}`, `DELETE /posts/{post_id}` — CRUD
+  - `PATCH /posts/{post_id}/status` — publish/draft/review (admin-only publish)
+  - `POST /upload-image` — Supabase Storage upload
+- **Community** (`/api/community`):
+  - `GET /posts`, `GET /posts/{post_id}`, `POST /posts`, `DELETE /posts/{post_id}` — CRUD
+  - `GET /posts/trending` — top posts by score from last N days
+  - `GET /posts/{post_id}/comments`, `POST /posts/{post_id}/comments`, `DELETE /comments/{comment_id}` — comments
+  - `POST /vote`, `GET /votes/mine` — voting
+  - `POST /flag` — flag content
+  - `GET /tags/stats`, `DELETE /tags/{tag_name}`, `POST /tags/merge` — tag management
+  - `GET /me`, `PATCH /me` — user profile (read + update)
+  - `PATCH /users/{user_id}/ban` — admin ban
+  - `GET /url-preview` — HEAD-check URL validity
+- **Notifications** (`/api/notifications`):
+  - `GET /`, `GET /unread-count`, `POST /{id}/read`, `POST /read-all`
+- **Auth** (in `main.py`):
+  - `POST /api/auth/login`, `POST /api/auth/logout` — admin session cookie
 
 ### Shared Package (packages/shared)
 
 Contains:
-- TypeScript types shared between frontend and backend (`Profile`, `BlogPost`, etc.)
-- Status enums and constants
+- TypeScript types shared between frontend and backend (`Profile`, `BlogPost`, `CommunityPost`, `TopComment`, etc.)
+- Status enums, `CATEGORIES`, `KARMA_THRESHOLDS` constants
 - API URL config getter
 
 ### Database (Supabase)
 
-Current tables: `profiles`, `blog_posts`, `posts`, `comments`, `votes`, `flags`, `notifications`
+Tables: `profiles`, `blog_posts`, `posts`, `comments`, `votes`, `flags`, `notifications`
+Storage: `blog-images` bucket (for blog post cover images and inline images)
 
 All tables use Row Level Security (RLS).
 
@@ -156,7 +176,7 @@ All tables use Row Level Security (RLS).
 - Do not use `framer-motion`, use `motion/react`
 - Do not use `lucide-react`, use `react-bootstrap-icons`
 - Do not use `npm`/`yarn`/`pnpm`
-- Do not connect frontend directly to Supabase DB (go through FastAPI)
+- Do not connect frontend directly to Supabase DB for data (go through FastAPI). Exception: Supabase Auth is used directly on the client for login/signup/session management.
 - Do not skip testing in the work cycle
 - Do not work on features outside the current roadmap phase
 - Do not list products that don't have code (TeamClaw, Lognis, Yeastbook, OpenClaw are NOT products yet)
@@ -175,8 +195,8 @@ All tables use Row Level Security (RLS).
 
 - **Frontend:** Vercel, root directory `apps/web`. Uses Vercel Analytics + Speed Insights.
 - **Backend:** Koyeb (free tier), Docker at `apps/api/`.
-- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`
-- **Env vars (frontend):** `BACKEND_API_URL` (server-only, points to Koyeb endpoint)
+- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`, `CODEPAWL_ADMIN_API_KEY`, `CODEPAWL_SENTRY_DSN`
+- **Env vars (frontend):** `BACKEND_API_URL` (server-only), `NEXT_PUBLIC_BACKEND_API_URL` (client-side), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SENTRY_DSN`
 
 ### Supabase Dashboard Configuration
 
@@ -201,7 +221,10 @@ Where `TYPE` is one of: `signup` | `invite` | `magiclink` | `recovery` | `email_
 |-------|-------------|
 | `/` | Homepage, animated logo, recent blog posts |
 | `/about` | Org info + expandable team card |
-| `/blog`, `/blog/[slug]` | Blog listing + MDX posts |
+| `/blog`, `/blog/[slug]` | Blog listing + post detail (API-driven) |
+| `/blog/write` | Blog post editor (Tiptap, auth required) |
+| `/blog/edit/[id]` | Edit existing blog post |
+| `/blog/drafts` | User's draft posts |
 | `/projects` | Project showcase, live GitHub stats, org repos |
 | `/projects/[slug]` | Project hub page with tabs (overview, install, API, benchmarks, community) |
 | `/community` | Post listing (ranked/new) |
