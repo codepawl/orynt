@@ -44,11 +44,20 @@ class PostCreate(BaseModel):
         if not v.startswith(("http://", "https://")):
             v = "https://" + v
         parsed = urlparse(v)
+        # Reject non-http(s) schemes
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("Only http and https URLs are allowed")
         if not parsed.hostname or "." not in parsed.hostname:
             raise ValueError(
                 "Invalid URL — must be a valid web address with a domain "
                 "(e.g. example.com or https://example.com)"
             )
+        # Reject private/local addresses
+        host = parsed.hostname.lower()
+        if host in ("localhost", "127.0.0.1", "0.0.0.0") or host.endswith(".local"):
+            raise ValueError("Private or local URLs are not allowed")
+        if host.startswith(("192.168.", "10.", "172.16.")):
+            raise ValueError("Private or local URLs are not allowed")
         return v
 
 
