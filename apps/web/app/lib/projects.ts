@@ -120,9 +120,16 @@ export async function fetchOrgRepos(): Promise<OrgRepo[]> {
   const apiUrl = process.env.BACKEND_API_URL;
   if (!apiUrl) return [];
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const res = await fetch(`${apiUrl}/projects/org`, {
       next: { revalidate: 3600 },
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+
     if (!res.ok) return [];
     return res.json();
   } catch {
@@ -145,9 +152,16 @@ export async function fetchReadme(owner: string, repo: string): Promise<ReadmeDa
   const apiUrl = process.env.BACKEND_API_URL;
   if (!apiUrl) return null;
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const res = await fetch(`${apiUrl}/projects/${owner}/${repo}/readme`, {
       next: { revalidate: 3600 },
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+
     if (!res.ok) return null;
     return res.json();
   } catch {
