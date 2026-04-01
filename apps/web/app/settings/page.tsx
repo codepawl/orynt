@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { AvatarUpload } from "./AvatarUpload";
+import { useProfile } from "app/components/ui/ProfileContext";
 
 const API_URL =
   typeof window !== "undefined"
@@ -24,6 +25,7 @@ interface Profile {
 export default function SettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { updateProfile } = useProfile();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [token, setToken] = useState("");
@@ -112,8 +114,16 @@ export default function SettingsPage() {
           avatar_url: avatarUrl.trim() || null,
         }),
       });
-      if (!res.ok) throw new Error("Failed to update profile");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || "Failed to update profile");
+      }
       setProfileMsg("Profile updated.");
+      updateProfile({
+        display_name: displayName.trim() || null,
+        bio: bio.trim() || null,
+        avatar_url: avatarUrl.trim() || null,
+      });
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Failed to update profile");
     } finally {
@@ -217,8 +227,14 @@ export default function SettingsPage() {
             currentUrl={avatarUrl || null}
             username={profile?.username ?? ""}
             token={token}
-            onUploaded={(url) => setAvatarUrl(url)}
-            onRemoved={() => setAvatarUrl("")}
+            onUploaded={(url) => {
+              setAvatarUrl(url);
+              updateProfile({ avatar_url: url });
+            }}
+            onRemoved={() => {
+              setAvatarUrl("");
+              updateProfile({ avatar_url: null });
+            }}
           />
           {profileError && <p className="text-sm text-red-500">{profileError}</p>}
           {profileMsg && <p className="text-sm text-green-600 dark:text-green-400">{profileMsg}</p>}
