@@ -287,6 +287,13 @@ async def delete_post(
 @router.get("/tags/stats")
 async def get_tag_stats(request: Request) -> list[dict]:
     """Return all tags with usage counts, sorted by count descending."""
+    cache = getattr(request.app.state, "cache", None)
+    cache_key = "community:tag_stats"
+    if cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
     db = _get_db(request)
     result = await db.from_("posts").select("tags").neq("tags", "").execute()
     counts: dict[str, int] = {}
@@ -295,11 +302,16 @@ async def get_tag_stats(request: Request) -> list[dict]:
             t = tag.strip()
             if t:
                 counts[t] = counts.get(t, 0) + 1
-    return sorted(
+    stats = sorted(
         [{"name": k, "count": v} for k, v in counts.items()],
         key=lambda x: x["count"],
         reverse=True,
     )
+
+    if cache:
+        cache.set(cache_key, stats)
+
+    return stats
 
 
 @router.delete("/tags/{tag_name}")
