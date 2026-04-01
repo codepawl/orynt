@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { AvatarUpload } from "./AvatarUpload";
 
 const API_URL =
   typeof window !== "undefined"
@@ -25,6 +26,7 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [token, setToken] = useState("");
   const [loading, setLoading] = useState(true);
 
   // Profile section
@@ -60,6 +62,7 @@ export default function SettingsPage() {
         return;
       }
       setUser(session.user);
+      setToken(session.access_token);
       try {
         const res = await fetch(`${API_URL}/api/community/me`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
@@ -210,17 +213,13 @@ export default function SettingsPage() {
             />
             <p className="text-xs text-neutral-400 mt-1 text-right">{bio.length}/300</p>
           </div>
-          <div>
-            <label className={labelClass}>Avatar URL</label>
-            <input
-              type="url"
-              value={avatarUrl}
-              onChange={(e) => setAvatarUrl(e.target.value)}
-              placeholder="https://…"
-              className={inputClass}
-            />
-            <p className="text-xs text-neutral-400 mt-1">Paste a public image URL (e.g. from GitHub or Gravatar).</p>
-          </div>
+          <AvatarUpload
+            currentUrl={avatarUrl || null}
+            username={profile?.username ?? ""}
+            token={token}
+            onUploaded={(url) => setAvatarUrl(url)}
+            onRemoved={() => setAvatarUrl("")}
+          />
           {profileError && <p className="text-sm text-red-500">{profileError}</p>}
           {profileMsg && <p className="text-sm text-green-600 dark:text-green-400">{profileMsg}</p>}
           <button onClick={handleProfileSave} disabled={profileSaving} className={primaryBtn}>
