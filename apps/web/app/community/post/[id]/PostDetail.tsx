@@ -28,6 +28,11 @@ function getDomain(url: string): string {
   }
 }
 
+function isValidHref(url: string | undefined | null): boolean {
+  if (!url) return false;
+  return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/");
+}
+
 export function PostDetail({ post }: { post: CommunityPost }) {
   const router = useRouter();
   const [score, setScore] = useState(post.score);
@@ -196,9 +201,9 @@ export function PostDetail({ post }: { post: CommunityPost }) {
             {post.type === "show" && (
               <span className="text-amber-600 dark:text-amber-400 mr-1">Show CP:</span>
             )}
-            {post.type === "link" && post.url ? (
+            {post.type === "link" && isValidHref(post.url) ? (
               <a
-                href={post.url}
+                href={post.url!}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-inherit no-underline hover:underline"
@@ -211,9 +216,9 @@ export function PostDetail({ post }: { post: CommunityPost }) {
           </h1>
 
           {/* Domain */}
-          {post.type === "link" && post.url && getDomain(post.url) && (
+          {post.type === "link" && post.url && (
             <p className="text-xs text-neutral-400 mb-2">
-              ({getDomain(post.url)})
+              ({getDomain(post.url) || "link"})
             </p>
           )}
 

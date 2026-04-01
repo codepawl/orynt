@@ -28,6 +28,11 @@ function getDomain(url: string): string {
   }
 }
 
+function isValidHref(url: string | undefined | null): boolean {
+  if (!url) return false;
+  return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/");
+}
+
 function VoteButton({ post }: { post: CommunityPost }) {
   const router = useRouter();
   const [score, setScore] = useState(post.score);
@@ -147,13 +152,13 @@ export function CommunityList({
               <div className="flex items-baseline gap-2 flex-wrap">
                 <Link
                   href={
-                    post.type === "link" && post.url
-                      ? post.url
+                    post.type === "link" && isValidHref(post.url)
+                      ? post.url!
                       : `/community/post/${post.id}`
                   }
                   className="text-sm font-medium text-neutral-900 dark:text-neutral-100 no-underline hover:underline"
-                  {...(post.type === "link"
-                    ? { target: "_blank", rel: "noopener" }
+                  {...(post.type === "link" && isValidHref(post.url)
+                    ? { target: "_blank", rel: "noopener noreferrer" }
                     : {})}
                 >
                   {post.type === "show" && (
@@ -163,9 +168,9 @@ export function CommunityList({
                   )}
                   {post.title}
                 </Link>
-                {post.type === "link" && post.url && getDomain(post.url) && (
+                {post.type === "link" && post.url && (
                   <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
-                    ({getDomain(post.url)})
+                    ({getDomain(post.url) || "link"})
                   </span>
                 )}
               </div>
