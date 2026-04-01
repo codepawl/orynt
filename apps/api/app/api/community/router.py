@@ -630,7 +630,7 @@ async def get_me(
     """Return the authenticated user's profile (id, username, role)."""
     db = _get_db(request)
     result = await db.from_("profiles").select(
-        "id, username, display_name, avatar_url, role, karma"
+        "id, username, display_name, bio, avatar_url, role, karma"
     ).eq("id", user_id).maybe_single().execute()
 
     profile = getattr(result, "data", None)
@@ -651,6 +651,17 @@ async def update_me(
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(422, "No valid fields to update")
+
+    # Validate field lengths
+    if "display_name" in updates and updates["display_name"]:
+        updates["display_name"] = updates["display_name"].strip()
+        if len(updates["display_name"]) > 50:
+            raise HTTPException(422, "Display name must be 50 characters or fewer")
+    if "bio" in updates and updates["bio"]:
+        updates["bio"] = updates["bio"].strip()
+        if len(updates["bio"]) > 300:
+            raise HTTPException(422, "Bio must be 300 characters or fewer")
+
     await db.from_("profiles").update(updates).eq("id", user_id).execute()
     result = await db.from_("profiles").select(
         "id, username, display_name, avatar_url, role, karma, bio"

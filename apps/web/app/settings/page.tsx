@@ -184,6 +184,7 @@ export default function SettingsPage() {
               disabled
               className={`${inputClass} opacity-50 cursor-not-allowed`}
             />
+            <p className="text-xs text-neutral-400 mt-1">Username cannot be changed.</p>
           </div>
           <div>
             <label className={labelClass}>Display name</label>
@@ -192,9 +193,10 @@ export default function SettingsPage() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Your name"
-              maxLength={100}
+              maxLength={50}
               className={inputClass}
             />
+            <p className="text-xs text-neutral-400 mt-1 text-right">{displayName.length}/50</p>
           </div>
           <div>
             <label className={labelClass}>Bio</label>
@@ -206,6 +208,7 @@ export default function SettingsPage() {
               rows={3}
               className={`${inputClass} resize-none`}
             />
+            <p className="text-xs text-neutral-400 mt-1 text-right">{bio.length}/300</p>
           </div>
           <div>
             <label className={labelClass}>Avatar URL</label>
