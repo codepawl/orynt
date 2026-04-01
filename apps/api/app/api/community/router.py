@@ -19,6 +19,7 @@ from app.api.community.models import (
     PostListResponse,
     PostResponse,
     TagMerge,
+    TopComment,
     VoteRequest,
 )
 
@@ -110,6 +111,32 @@ async def list_posts(
     # Re-sort by rank if ranked view
     if sort == "ranked":
         posts.sort(key=lambda p: p.rank, reverse=True)
+
+    # Batch-fetch top comment for each post (non-fatal)
+    post_ids = [p.id for p in posts if p.comment_count > 0]
+    if post_ids:
+        try:
+            comments_result = await db.from_("comments").select(
+                "post_id, content, score, author:profiles!author_id(username, avatar_url)"
+            ).in_("post_id", post_ids).order("score", desc=True).execute()
+            # Group by post_id, take first (highest score) per post
+            top_by_post: dict[str, TopComment] = {}
+            for c in (comments_result.data or []):
+                pid = c["post_id"]
+                if pid not in top_by_post:
+                    author = c.get("author") or {}
+                    if isinstance(author, list):
+                        author = author[0] if author else {}
+                    top_by_post[pid] = TopComment(
+                        username=author.get("username", ""),
+                        avatar_url=author.get("avatar_url"),
+                        content=c["content"][:120],
+                    )
+            for p in posts:
+                if p.id in top_by_post:
+                    p.top_comment = top_by_post[p.id]
+        except Exception:
+            logger.debug("Failed to fetch top comments, skipping", exc_info=True)
 
     return PostListResponse(
         posts=posts,

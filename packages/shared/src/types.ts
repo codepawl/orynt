@@ -136,6 +136,12 @@ export interface AuthorInfo {
   avatar_url: string | null;
 }
 
+export interface TopComment {
+  username: string;
+  avatar_url: string | null;
+  content: string;
+}
+
 export interface CommunityPost {
   id: string;
   author: AuthorInfo;
@@ -152,6 +158,7 @@ export interface CommunityPost {
   updated_at: string;
   rank: number;
   user_vote: number;
+  top_comment?: TopComment | null;
 }
 
 export interface CommunityComment {
