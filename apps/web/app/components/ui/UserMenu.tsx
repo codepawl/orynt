@@ -6,19 +6,15 @@ import { useRouter } from "next/navigation";
 import { PersonCircle, BoxArrowRight, PersonBadge, ShieldLock, GearFill } from "react-bootstrap-icons";
 import { createClient } from "app/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
-
-const API_URL =
-  typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000"
-    : "";
+import { useProfile } from "./ProfileContext";
 
 export function UserMenu() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { profile } = useProfile();
 
   useEffect(() => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
@@ -31,32 +27,12 @@ export function UserMenu() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoading(false);
-      if (session?.access_token) {
-        fetch(`${API_URL}/api/community/me`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((profile) => {
-            if (profile?.role === "admin") setIsAdmin(true);
-          })
-          .catch(() => {});
-      }
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (!session) {
-        setIsAdmin(false);
-        return;
-      }
-      fetch(`${API_URL}/api/community/me`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((profile) => setIsAdmin(profile?.role === "admin"))
-        .catch(() => {});
     });
 
     return () => subscription.unsubscribe();
@@ -86,9 +62,11 @@ export function UserMenu() {
     );
   }
 
+  // Prefer profile data from context, fall back to OAuth metadata
   const username =
-    user.user_metadata?.user_name || user.user_metadata?.preferred_username || "user";
-  const avatarUrl = user.user_metadata?.avatar_url;
+    profile?.username || user.user_metadata?.user_name || user.user_metadata?.preferred_username || "user";
+  const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url;
+  const isAdmin = profile?.role === "admin";
 
   const handleLogout = async () => {
     setOpen(false);

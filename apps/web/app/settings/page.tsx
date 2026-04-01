@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { AvatarUpload } from "./AvatarUpload";
+import { useProfile } from "app/components/ui/ProfileContext";
 
 const API_URL =
   typeof window !== "undefined"
@@ -23,8 +25,10 @@ interface Profile {
 export default function SettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { updateProfile } = useProfile();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [token, setToken] = useState("");
   const [loading, setLoading] = useState(true);
 
   // Profile section
@@ -60,6 +64,7 @@ export default function SettingsPage() {
         return;
       }
       setUser(session.user);
+      setToken(session.access_token);
       try {
         const res = await fetch(`${API_URL}/api/community/me`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
@@ -109,8 +114,16 @@ export default function SettingsPage() {
           avatar_url: avatarUrl.trim() || null,
         }),
       });
-      if (!res.ok) throw new Error("Failed to update profile");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || "Failed to update profile");
+      }
       setProfileMsg("Profile updated.");
+      updateProfile({
+        display_name: displayName.trim() || null,
+        bio: bio.trim() || null,
+        avatar_url: avatarUrl.trim() || null,
+      });
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Failed to update profile");
     } finally {
@@ -184,6 +197,7 @@ export default function SettingsPage() {
               disabled
               className={`${inputClass} opacity-50 cursor-not-allowed`}
             />
+            <p className="text-xs text-neutral-400 mt-1">Username cannot be changed.</p>
           </div>
           <div>
             <label className={labelClass}>Display name</label>
@@ -192,9 +206,10 @@ export default function SettingsPage() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Your name"
-              maxLength={100}
+              maxLength={50}
               className={inputClass}
             />
+            <p className="text-xs text-neutral-400 mt-1 text-right">{displayName.length}/50</p>
           </div>
           <div>
             <label className={labelClass}>Bio</label>
@@ -206,18 +221,21 @@ export default function SettingsPage() {
               rows={3}
               className={`${inputClass} resize-none`}
             />
+            <p className="text-xs text-neutral-400 mt-1 text-right">{bio.length}/300</p>
           </div>
-          <div>
-            <label className={labelClass}>Avatar URL</label>
-            <input
-              type="url"
-              value={avatarUrl}
-              onChange={(e) => setAvatarUrl(e.target.value)}
-              placeholder="https://…"
-              className={inputClass}
-            />
-            <p className="text-xs text-neutral-400 mt-1">Paste a public image URL (e.g. from GitHub or Gravatar).</p>
-          </div>
+          <AvatarUpload
+            currentUrl={avatarUrl || null}
+            username={profile?.username ?? ""}
+            token={token}
+            onUploaded={(url) => {
+              setAvatarUrl(url);
+              updateProfile({ avatar_url: url });
+            }}
+            onRemoved={() => {
+              setAvatarUrl("");
+              updateProfile({ avatar_url: null });
+            }}
+          />
           {profileError && <p className="text-sm text-red-500">{profileError}</p>}
           {profileMsg && <p className="text-sm text-green-600 dark:text-green-400">{profileMsg}</p>}
           <button onClick={handleProfileSave} disabled={profileSaving} className={primaryBtn}>

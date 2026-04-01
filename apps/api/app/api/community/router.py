@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import math
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 
 from app.api.community.auth import get_current_user
 from app.api.community.notifications import create_notification
@@ -630,7 +631,7 @@ async def get_me(
     """Return the authenticated user's profile (id, username, role)."""
     db = _get_db(request)
     result = await db.from_("profiles").select(
-        "id, username, display_name, avatar_url, role, karma"
+        "id, username, display_name, bio, avatar_url, role, karma"
     ).eq("id", user_id).maybe_single().execute()
 
     profile = getattr(result, "data", None)
@@ -651,6 +652,17 @@ async def update_me(
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(422, "No valid fields to update")
+
+    # Validate field lengths
+    if "display_name" in updates and updates["display_name"]:
+        updates["display_name"] = updates["display_name"].strip()
+        if len(updates["display_name"]) > 50:
+            raise HTTPException(422, "Display name must be 50 characters or fewer")
+    if "bio" in updates and updates["bio"]:
+        updates["bio"] = updates["bio"].strip()
+        if len(updates["bio"]) > 300:
+            raise HTTPException(422, "Bio must be 300 characters or fewer")
+
     await db.from_("profiles").update(updates).eq("id", user_id).execute()
     result = await db.from_("profiles").select(
         "id, username, display_name, avatar_url, role, karma, bio"
@@ -659,6 +671,93 @@ async def update_me(
     if not profile:
         raise HTTPException(404, "Profile not found")
     return profile
+
+
+# ── Avatar upload ───────────────────────────────────────────────────
+
+_ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_MAX_AVATAR_BYTES = 2 * 1024 * 1024  # 2 MB
+
+
+@router.post("/upload-avatar")
+async def upload_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Upload an avatar image to Supabase Storage and update the profile."""
+    db = _get_db(request)
+
+    if file.content_type not in _ALLOWED_AVATAR_TYPES:
+        raise HTTPException(
+            400,
+            f"Unsupported image type: {file.content_type}. Allowed: jpg, png, gif, webp",
+        )
+
+    data = await file.read()
+    if len(data) > _MAX_AVATAR_BYTES:
+        raise HTTPException(400, "Image exceeds 2 MB limit")
+
+    ext = file.content_type.split("/")[-1]
+    if ext == "jpeg":
+        ext = "jpg"
+
+    timestamp = int(datetime.now(timezone.utc).timestamp())
+    path = f"{user_id}/{timestamp}.{ext}"
+
+    # Delete old avatar files for this user
+    try:
+        existing = db.storage.from_("avatars").list(user_id)
+        if existing:
+            old_paths = [f"{user_id}/{f['name']}" for f in existing]
+            if old_paths:
+                db.storage.from_("avatars").remove(old_paths)
+    except Exception:
+        logger.warning("Failed to clean old avatars", exc_info=True)
+
+    # Upload new avatar
+    try:
+        db.storage.from_("avatars").upload(
+            path,
+            data,
+            {"content-type": file.content_type, "upsert": "false"},
+        )
+    except Exception as e:
+        logger.error("Avatar upload failed: %s", e)
+        raise HTTPException(500, "Avatar upload failed")
+
+    public_url = db.storage.from_("avatars").get_public_url(path)
+
+    # Update profile with new avatar URL
+    await db.from_("profiles").update({"avatar_url": public_url}).eq(
+        "id", user_id
+    ).execute()
+
+    return {"url": public_url}
+
+
+@router.delete("/avatar")
+async def delete_avatar(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Remove the user's avatar from storage and clear the profile URL."""
+    db = _get_db(request)
+
+    # Remove all files in user's avatar folder
+    try:
+        existing = db.storage.from_("avatars").list(user_id)
+        if existing:
+            old_paths = [f"{user_id}/{f['name']}" for f in existing]
+            db.storage.from_("avatars").remove(old_paths)
+    except Exception:
+        logger.warning("Failed to remove avatar files", exc_info=True)
+
+    # Clear avatar_url in profile
+    await db.from_("profiles").update({"avatar_url": None}).eq(
+        "id", user_id
+    ).execute()
+    return {"ok": True}
 
 
 # ── URL preview ──────────────────────────────────────────────────────
