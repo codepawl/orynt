@@ -32,6 +32,24 @@ export interface EnrichedProject extends Project {
 
 export const projects: Project[] = [
   {
+    title: "TurboQuant Torch",
+    year: 2026,
+    description:
+      "Lightning-fast quantization toolkit for PyTorch models. Supports INT8, INT4, and mixed-precision quantization with minimal accuracy loss.",
+    url: "https://github.com/codepawl/turboquant-torch",
+    slug: "turboquant-torch",
+    quickStart: {
+      install: "pip install turboquant-torch",
+      example: `from turboquant import quantize
+
+model = YourModel()
+quantized = quantize(model, precision="int8")
+quantized.save("model_int8.pt")`,
+    },
+    docsUrl: null,
+    packageUrl: "https://pypi.org/project/turboquant-torch/",
+  },
+  {
     title: "Loclean",
     year: 2025,
     description:
