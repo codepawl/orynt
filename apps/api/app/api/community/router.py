@@ -599,6 +599,35 @@ async def update_me(
     return profile
 
 
+# ── URL preview ──────────────────────────────────────────────────────
+
+@router.get("/url-preview")
+async def url_preview(url: str) -> dict:
+    """Lightweight HEAD check for a URL — returns {valid, error?}."""
+    import httpx
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return {"valid": False, "error": "Only http/https URLs are supported"}
+    hostname = (parsed.hostname or "").lower()
+    if hostname in ("localhost", "127.0.0.1", "0.0.0.0") or hostname.startswith("192.168.") or hostname.startswith("10.") or hostname.endswith(".local"):
+        return {"valid": False, "error": "Private/local URLs are not allowed"}
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=5.0) as client:
+            resp = await client.head(url, headers={"User-Agent": "CodePawl Link Checker/1.0"})
+            if resp.status_code < 400:
+                return {"valid": True}
+            return {"valid": False, "error": f"Page returned status {resp.status_code}"}
+    except httpx.TimeoutException:
+        return {"valid": False, "error": "Could not reach URL (timeout)"}
+    except httpx.ConnectError:
+        return {"valid": False, "error": "Could not reach URL"}
+    except Exception:
+        return {"valid": False, "error": "Could not verify URL"}
+
+
 # ── Cross-linking ────────────────────────────────────────────────────
 
 @router.get("/by-article/{article_id}")
