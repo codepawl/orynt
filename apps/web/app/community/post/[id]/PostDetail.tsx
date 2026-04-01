@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "app/lib/supabase/client";
 import { vote, flagContent, deletePost, fetchMyVotes } from "app/lib/community";
+import { ShareButtons } from "app/components/ui/ShareButtons";
 import type { CommunityPost } from "@codepawl/shared";
 
 function timeAgo(dateStr: string): string {
@@ -259,6 +260,11 @@ export function PostDetail({ post }: { post: CommunityPost }) {
                 delete
               </button>
             )}
+          </div>
+
+          {/* Share buttons */}
+          <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+            <ShareButtons url={`/community/post/${post.id}`} title={post.title} />
           </div>
         </div>
       </div>

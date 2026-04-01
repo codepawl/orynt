@@ -215,6 +215,21 @@ export function CommunityList({
                   </div>
                 );
               })()}
+              {/* Top comment preview */}
+              {post.top_comment && (
+                <Link
+                  href={`/community/post/${post.id}`}
+                  className="flex items-start gap-1.5 mt-1.5 no-underline"
+                >
+                  {post.top_comment.avatar_url && (
+                    <img src={post.top_comment.avatar_url} alt="" className="w-4 h-4 rounded-full mt-0.5 flex-shrink-0" />
+                  )}
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
+                    <span className="font-medium">{post.top_comment.username}</span>{" "}
+                    {post.top_comment.content}
+                  </span>
+                </Link>
+              )}
             </div>
           </li>
         ))}

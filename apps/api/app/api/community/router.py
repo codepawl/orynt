@@ -19,6 +19,7 @@ from app.api.community.models import (
     PostListResponse,
     PostResponse,
     TagMerge,
+    TopComment,
     VoteRequest,
 )
 
@@ -111,12 +112,73 @@ async def list_posts(
     if sort == "ranked":
         posts.sort(key=lambda p: p.rank, reverse=True)
 
+    # Batch-fetch top comment for each post (non-fatal)
+    post_ids = [p.id for p in posts if p.comment_count > 0]
+    if post_ids:
+        try:
+            comments_result = await db.from_("comments").select(
+                "post_id, content, score, author:profiles!author_id(username, avatar_url)"
+            ).in_("post_id", post_ids).order("score", desc=True).execute()
+            # Group by post_id, take first (highest score) per post
+            top_by_post: dict[str, TopComment] = {}
+            for c in (comments_result.data or []):
+                pid = c["post_id"]
+                if pid not in top_by_post:
+                    author = c.get("author") or {}
+                    if isinstance(author, list):
+                        author = author[0] if author else {}
+                    top_by_post[pid] = TopComment(
+                        username=author.get("username", ""),
+                        avatar_url=author.get("avatar_url"),
+                        content=c["content"][:120],
+                    )
+            for p in posts:
+                if p.id in top_by_post:
+                    p.top_comment = top_by_post[p.id]
+        except Exception:
+            logger.debug("Failed to fetch top comments, skipping", exc_info=True)
+
     return PostListResponse(
         posts=posts,
         total=total,
         page=page,
         total_pages=math.ceil(total / per_page) if total > 0 else 0,
     )
+
+
+@router.get("/posts/trending")
+async def trending_posts(
+    request: Request,
+    days: int = 7,
+    limit: int = 5,
+) -> list[PostResponse]:
+    """Top posts by score from the last N days."""
+    from datetime import datetime, timezone, timedelta
+    db = _get_db(request)
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    result = await db.from_("posts").select(
+        "*, author:profiles!author_id(id, username, display_name, avatar_url)"
+    ).gte("created_at", since).order("score", desc=True).limit(limit).execute()
+
+    posts = []
+    for row in (result.data or []):
+        author_data = row.pop("author", None) or {}
+        posts.append(PostResponse(
+            id=row["id"],
+            author=_build_author(author_data),
+            type=row["type"],
+            title=row["title"],
+            url=row.get("url"),
+            content=row.get("content"),
+            score=row.get("score", 0),
+            comment_count=row.get("comment_count", 0),
+            tags=row.get("tags", ""),
+            is_auto=row.get("is_auto", False),
+            source_article_id=row.get("source_article_id"),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        ))
+    return posts
 
 
 @router.get("/posts/{post_id}")

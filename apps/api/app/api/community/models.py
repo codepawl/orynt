@@ -85,6 +85,12 @@ class AuthorInfo(BaseModel):
     avatar_url: str | None = None
 
 
+class TopComment(BaseModel):
+    username: str
+    avatar_url: str | None = None
+    content: str
+
+
 class PostResponse(BaseModel):
     id: str
     author: AuthorInfo
@@ -101,6 +107,7 @@ class PostResponse(BaseModel):
     updated_at: datetime
     rank: float = 0.0
     user_vote: int = 0  # 1, -1, or 0 for current viewer
+    top_comment: TopComment | None = None
 
 
 class CommentResponse(BaseModel):

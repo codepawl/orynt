@@ -105,6 +105,20 @@ export async function fetchTagStats(): Promise<{ name: string; count: number }[]
   }
 }
 
+export async function fetchTrending(days = 7, limit = 5): Promise<CommunityPost[]> {
+  try {
+    const res = await fetch(
+      `${API_URL}/api/community/posts/trending?days=${days}&limit=${limit}`,
+      { next: { revalidate: 300 } }
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+
 // --- Client-side (auth-required) actions ---
 
 export async function createPost(

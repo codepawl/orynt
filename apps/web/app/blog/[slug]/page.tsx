@@ -4,6 +4,8 @@ import Link from "next/link";
 import { fetchBlogPost } from "app/lib/blog";
 import { metaData } from "app/config";
 import { BlogPostHeader } from "./BlogPostHeader";
+import { ReadingProgressBar } from "app/components/ui/ReadingProgressBar";
+import { ShareButtons } from "app/components/ui/ShareButtons";
 import { ChatDots } from "react-bootstrap-icons";
 
 export const revalidate = 600;
@@ -84,18 +86,22 @@ export default async function BlogPostPage(
         publishedAt={post.published_at ?? post.created_at}
         readingTimeMinutes={post.reading_time_minutes ?? undefined}
       />
+      <ReadingProgressBar />
       <article
         className="prose prose-quoteless prose-neutral dark:prose-invert max-w-none"
         dangerouslySetInnerHTML={{ __html: post.content }}
       />
-      <div className="mt-8 pt-6 border-t border-neutral-200 dark:border-neutral-700 text-center">
-        <Link
-          href={`/community/submit?type=link&title=${encodeURIComponent(post.title)}&url=${encodeURIComponent(`${metaData.baseUrl}/blog/${post.slug}`)}`}
-          className="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
-        >
-          <ChatDots className="w-4 h-4" />
-          Discuss this post on Community
-        </Link>
+      <div className="mt-8 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+        <ShareButtons url={`/blog/${post.slug}`} title={post.title} />
+        <div className="mt-4 text-center">
+          <Link
+            href={`/community/submit?type=link&title=${encodeURIComponent(post.title)}&url=${encodeURIComponent(`${metaData.baseUrl}/blog/${post.slug}`)}`}
+            className="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+          >
+            <ChatDots className="w-4 h-4" />
+            Discuss this post on Community
+          </Link>
+        </div>
       </div>
     </section>
   );
