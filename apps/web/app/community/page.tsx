@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { fetchPosts, fetchTagStats } from "app/lib/community";
+import { fetchPosts, fetchTagStats, fetchTrending } from "app/lib/community";
 import { CommunityList } from "./CommunityList";
 import { TagFilterBar } from "./TagFilterBar";
+import { TrendingSidebar } from "./TrendingSidebar";
 import { getProjectSlugs } from "app/projects/project-data";
 
 interface Props {
@@ -27,15 +28,17 @@ export default async function CommunityPage({ searchParams }: Props) {
   const page = Number(params.page) || 1;
 
   const projectSlugs = new Set(getProjectSlugs());
-  const [data, tagStats] = await Promise.all([
+  const [data, tagStats, trending] = await Promise.all([
     fetchPosts(page, sort, type, tag),
     fetchTagStats(),
+    fetchTrending(),
   ]);
   const allTags = tagStats.map((s) => s.name);
   const topTags = allTags.slice(0, 8);
 
   return (
-    <div className="max-w-3xl mx-auto w-full">
+    <div className="max-w-5xl mx-auto w-full flex gap-8">
+    <div className="flex-1 min-w-0 max-w-3xl">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
@@ -104,6 +107,15 @@ export default async function CommunityPage({ searchParams }: Props) {
           !
         </p>
       )}
+    </div>
+
+    <TrendingSidebar
+      trending={trending}
+      topTags={topTags}
+      activeTag={tag}
+      sort={sort}
+      projectSlugs={projectSlugs}
+    />
     </div>
   );
 }

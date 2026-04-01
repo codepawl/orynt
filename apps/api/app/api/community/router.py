@@ -119,6 +119,41 @@ async def list_posts(
     )
 
 
+@router.get("/posts/trending")
+async def trending_posts(
+    request: Request,
+    days: int = 7,
+    limit: int = 5,
+) -> list[PostResponse]:
+    """Top posts by score from the last N days."""
+    from datetime import datetime, timezone, timedelta
+    db = _get_db(request)
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    result = await db.from_("posts").select(
+        "*, author:profiles!author_id(id, username, display_name, avatar_url)"
+    ).gte("created_at", since).order("score", desc=True).limit(limit).execute()
+
+    posts = []
+    for row in (result.data or []):
+        author_data = row.pop("author", None) or {}
+        posts.append(PostResponse(
+            id=row["id"],
+            author=_build_author(author_data),
+            type=row["type"],
+            title=row["title"],
+            url=row.get("url"),
+            content=row.get("content"),
+            score=row.get("score", 0),
+            comment_count=row.get("comment_count", 0),
+            tags=row.get("tags", ""),
+            is_auto=row.get("is_auto", False),
+            source_article_id=row.get("source_article_id"),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        ))
+    return posts
+
+
 @router.get("/posts/{post_id}")
 async def get_post(post_id: str, request: Request) -> PostResponse:
     db = _get_db(request)
