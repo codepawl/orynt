@@ -30,6 +30,14 @@ export default async function ProfilePage({ params }: Props) {
 
   const isOwnProfile = user?.id === profile.id;
 
+  // Fetch recent posts by this user
+  const { data: recentPosts } = await supabase
+    .from("posts")
+    .select("id, title, created_at, vote_count")
+    .eq("author_id", profile.id)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
   const joinDate = new Date(profile.created_at).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -43,10 +51,10 @@ export default async function ProfilePage({ params }: Props) {
             <img
               src={profile.avatar_url}
               alt={profile.username}
-              className="w-16 h-16 rounded-full"
+              className="w-32 h-32 rounded-full object-cover"
             />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-2xl font-bold text-neutral-500">
+            <div className="w-32 h-32 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-5xl font-bold text-neutral-500">
               {profile.username[0]?.toUpperCase()}
             </div>
           )}
@@ -94,6 +102,33 @@ export default async function ProfilePage({ params }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Recent posts */}
+      {recentPosts && recentPosts.length > 0 && (
+        <div className="mt-6 rounded-lg border border-neutral-200 dark:border-neutral-700 p-6">
+          <h3 className="text-lg font-semibold mb-4">Recent posts</h3>
+          <ul className="space-y-3">
+            {recentPosts.map((post) => (
+              <li key={post.id}>
+                <Link
+                  href={`/community/post/${post.id}`}
+                  className="flex items-center justify-between gap-4 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-md px-3 py-2 -mx-3 transition-colors no-underline"
+                >
+                  <span className="text-neutral-900 dark:text-neutral-100 truncate">
+                    {post.title}
+                  </span>
+                  <span className="text-xs text-neutral-400 shrink-0">
+                    {new Date(post.created_at).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
