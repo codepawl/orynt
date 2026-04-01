@@ -3,33 +3,66 @@ import type { Metadata } from "next";
 import { projects } from "./project-data";
 import { metaData } from "app/config";
 import { ProjectsListClient } from "./ProjectsListClient";
-import { fetchProjectStats, mergeProjectData } from "app/lib/projects";
+import { fetchProjectStats, fetchOrgRepos, mergeProjectData } from "app/lib/projects";
+import type { EnrichedProject } from "./project-data";
 
 export const metadata: Metadata = {
   title: "Projects",
-  description: "Explore machine learning projects, data science applications, and AI solutions developed by Nguyen Xuan An. From research to production implementations.",
+  description: "Explore AI/ML projects and tools built by the CodePawl community.",
   alternates: {
     canonical: `${metaData.baseUrl}projects`,
   },
   openGraph: {
     title: "Projects | CodePawl",
-    description: "Explore machine learning projects, data science applications, and AI solutions developed by Nguyen Xuan An.",
+    description: "Explore AI/ML projects and tools built by the CodePawl community.",
     url: `${metaData.baseUrl}projects`,
-    images: [`${metaData.baseUrl}/og?title=${encodeURIComponent("Projects | CodePawl")}`],
     siteName: metaData.name,
     locale: "en_US",
     type: "website",
   },
-  twitter: {
-    card: "summary_large_image",
-    title: "Projects | CodePawl",
-    description: "Explore machine learning projects, data science applications, and AI solutions developed by Nguyen Xuan An.",
-  },
 };
 
 export default async function Projects() {
-  const statsMap = await fetchProjectStats();
-  const enrichedProjects = mergeProjectData(projects, statsMap);
+  const [statsMap, orgRepos] = await Promise.all([
+    fetchProjectStats(),
+    fetchOrgRepos(),
+  ]);
+
+  // Start with static curated projects enriched with live stats
+  const enrichedStatic = mergeProjectData(projects, statsMap);
+  const staticSlugs = new Set(projects.map((p) => p.slug));
+
+  // Add org repos that aren't already in static data
+  const orgProjects: EnrichedProject[] = orgRepos
+    .filter((r) => !staticSlugs.has(r.name) && r.name !== "codepawl") // skip the org meta-repo
+    .map((r) => ({
+      title: r.name,
+      year: r.created_at ? new Date(r.created_at).getFullYear() : new Date().getFullYear(),
+      description: r.description || `${r.name} — a CodePawl project`,
+      url: `https://github.com/${r.full_name}`,
+      slug: r.name,
+      quickStart: { install: "", example: "" },
+      docsUrl: r.homepage || null,
+      packageUrl: null,
+      stats: {
+        stars: r.stars,
+        forks: r.forks,
+        language: r.language,
+        lastCommitDate: r.updated_at,
+        lastCommitMessage: null,
+        latestRelease: null,
+        latestReleaseDate: null,
+        openIssues: 0,
+      },
+      isLive: true,
+    }));
+
+  // Combine and sort by stars desc
+  const allProjects = [...enrichedStatic, ...orgProjects].sort((a, b) => {
+    const aStars = a.stats?.stars ?? 0;
+    const bStars = b.stats?.stars ?? 0;
+    return bStars - aStars;
+  });
 
   return (
     <>
@@ -41,12 +74,12 @@ export default async function Projects() {
             "@context": "https://schema.org",
             "@type": "CollectionPage",
             name: "Projects | CodePawl",
-            description: "Explore machine learning projects, data science applications, and AI solutions.",
+            description: "Explore AI/ML projects and tools built by the CodePawl community.",
             url: `${metaData.baseUrl}projects`,
             mainEntity: {
               "@type": "ItemList",
-              numberOfItems: projects.length,
-              itemListElement: projects.map((project, index) => ({
+              numberOfItems: allProjects.length,
+              itemListElement: allProjects.map((project, index) => ({
                 "@type": "ListItem",
                 position: index + 1,
                 item: {
@@ -63,7 +96,7 @@ export default async function Projects() {
         <h1 className="mb-8 text-2xl font-medium tracking-tight text-neutral-900 dark:text-neutral-100">
           Projects
         </h1>
-        <ProjectsListClient projects={enrichedProjects} />
+        <ProjectsListClient projects={allProjects} />
       </section>
     </>
   );
