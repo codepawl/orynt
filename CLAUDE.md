@@ -202,7 +202,8 @@ Where `TYPE` is one of: `signup` | `invite` | `magiclink` | `recovery` | `email_
 | `/` | Homepage, animated logo, recent blog posts |
 | `/about` | Org info + expandable team card |
 | `/blog`, `/blog/[slug]` | Blog listing + MDX posts |
-| `/projects` | Project showcase, live GitHub stats |
+| `/projects` | Project showcase, live GitHub stats, org repos |
+| `/projects/[slug]` | Project hub page with tabs (overview, install, API, benchmarks, community) |
 | `/community` | Post listing (ranked/new) |
 | `/community/submit` | Submit post form |
 | `/community/post/[id]` | Post detail + comments |
