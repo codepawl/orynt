@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { projects } from "./project-data";
 import { metaData } from "app/config";
 import { ProjectsListClient } from "./ProjectsListClient";
-import { fetchProjectStats, fetchOrgRepos, mergeProjectData } from "app/lib/projects";
+import { fetchProjectStats, fetchOrgRepos } from "app/lib/projects";
 import type { EnrichedProject } from "./project-data";
 
 export const metadata: Metadata = {
@@ -28,37 +28,53 @@ export default async function Projects() {
     fetchOrgRepos(),
   ]);
 
-  // Start with static curated projects enriched with live stats
-  const enrichedStatic = mergeProjectData(projects, statsMap);
-  const staticSlugs = new Set(projects.map((p) => p.slug));
+  // Build a lookup of static project data by slug (fallback only)
+  const staticBySlug = new Map(projects.map((p) => [p.slug, p]));
 
-  // Add org repos that aren't already in static data
-  const orgProjects: EnrichedProject[] = orgRepos
-    .filter((r) => !staticSlugs.has(r.name) && r.name !== "codepawl") // skip the org meta-repo
-    .map((r) => ({
-      title: r.name,
-      year: r.created_at ? new Date(r.created_at).getFullYear() : new Date().getFullYear(),
-      description: r.description || `${r.name} — a CodePawl project`,
-      url: `https://github.com/${r.full_name}`,
-      slug: r.name,
-      quickStart: { install: "", example: "" },
-      docsUrl: r.homepage || null,
-      packageUrl: null,
-      stats: {
-        stars: r.stars,
-        forks: r.forks,
-        language: r.language,
-        lastCommitDate: r.updated_at,
-        lastCommitMessage: null,
-        latestRelease: null,
-        latestReleaseDate: null,
-        openIssues: 0,
-      },
-      isLive: true,
+  let allProjects: EnrichedProject[];
+
+  if (orgRepos.length > 0) {
+    // Primary: build from live org repos, use GitHub descriptions
+    allProjects = orgRepos
+      .filter((r) => r.name !== ".github" && (r.description || r.language))
+      .map((r) => {
+        const staticFallback = staticBySlug.get(r.name);
+        const statsKey = `codepawl/${r.name}`.toLowerCase();
+        const stats = statsMap?.get(statsKey);
+
+        return {
+          title: r.name,
+          year: r.created_at ? new Date(r.created_at).getFullYear() : new Date().getFullYear(),
+          description: r.description || staticFallback?.description || `${r.name} — a CodePawl project`,
+          url: `https://github.com/${r.full_name}`,
+          slug: r.name,
+          quickStart: staticFallback?.quickStart || { install: "", example: "" },
+          docsUrl: r.homepage || staticFallback?.docsUrl || null,
+          packageUrl: staticFallback?.packageUrl || null,
+          stats: stats || {
+            stars: r.stars,
+            forks: r.forks,
+            language: r.language,
+            lastCommitDate: r.updated_at,
+            lastCommitMessage: null,
+            latestRelease: null,
+            latestReleaseDate: null,
+            openIssues: 0,
+          },
+          isLive: true,
+        };
+      });
+  } else {
+    // Fallback: use static data when API is unavailable
+    allProjects = projects.map((project) => ({
+      ...project,
+      stats: undefined,
+      isLive: false,
     }));
+  }
 
-  // Combine and sort by stars desc
-  const allProjects = [...enrichedStatic, ...orgProjects].sort((a, b) => {
+  // Sort by stars desc
+  allProjects.sort((a, b) => {
     const aStars = a.stats?.stars ?? 0;
     const bStars = b.stats?.stars ?? 0;
     return bStars - aStars;
