@@ -99,13 +99,19 @@ export default async function CommunityPage({ searchParams }: Props) {
           type={type}
         />
       ) : (
-        <p className="text-neutral-500 text-center py-12">
-          No posts yet. Be the first to{" "}
-          <Link href="/community/submit" className="underline">
-            submit something
-          </Link>
-          !
-        </p>
+        <div className="text-center py-16">
+          <svg className="mx-auto mb-3 w-10 h-10 text-neutral-300 dark:text-neutral-600" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M5 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm4 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
+            <path d="M2.165 15.803l.02-.004c1.83-.363 2.948-.842 3.468-1.105A9 9 0 0 0 8 15c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7c0 1.76.743 3.37 1.97 4.6a10.4 10.4 0 0 1-.524 2.318l-.003.011a11 11 0 0 1-.244.637c-.079.186.074.394.273.362a22 22 0 0 0 .693-.125z"/>
+          </svg>
+          <p className="text-neutral-500 dark:text-neutral-400 text-sm">
+            No posts yet. Be the first to{" "}
+            <Link href="/community/submit" className="underline">
+              submit something
+            </Link>
+            !
+          </p>
+        </div>
       )}
     </div>
 

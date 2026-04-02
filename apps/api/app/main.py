@@ -11,6 +11,7 @@ from slowapi.util import get_remote_address
 from app.api.blog.router import router as blog_router
 from app.api.community.router import router as community_router
 from app.api.papers.router import router as papers_router
+from app.api.wiki.router import router as wiki_router
 from app.api.community.notifications import router as notifications_router
 from app.api.projects import router as projects_router
 from app.api.routes import router as stats_router
@@ -82,6 +83,7 @@ app.include_router(blog_router)
 app.include_router(community_router)
 app.include_router(notifications_router)
 app.include_router(papers_router)
+app.include_router(wiki_router)
 
 
 @app.get("/health")

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { CommunityPost } from "@codepawl/shared";
+import { MarkdownRenderer } from "app/components/ui/MarkdownRenderer";
 
 interface TabDef {
   key: string;
@@ -16,40 +17,9 @@ interface Props {
   communityPosts: CommunityPost[];
   relatedBlogPosts: { slug: string; title: string; date: string }[];
   slug: string;
-}
-
-function MarkdownSection({ content }: { content: string }) {
-  // Render markdown as pre-formatted text with basic formatting
-  // Split code blocks and render them specially
-  const parts = content.split(/(```[\s\S]*?```)/g);
-  return (
-    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
-      {parts.map((part, i) => {
-        if (part.startsWith("```")) {
-          const lines = part.split("\n");
-          const lang = lines[0].replace("```", "").trim();
-          const code = lines.slice(1, -1).join("\n");
-          return (
-            <div key={i} className="relative group">
-              {lang && (
-                <span className="absolute top-2 right-2 text-[10px] text-neutral-500 dark:text-neutral-400 font-mono">
-                  {lang}
-                </span>
-              )}
-              <pre className="bg-neutral-900 dark:bg-neutral-800 rounded-lg p-4 overflow-x-auto">
-                <code className="text-sm font-mono text-neutral-100">{code}</code>
-              </pre>
-            </div>
-          );
-        }
-        return (
-          <div key={i} className="whitespace-pre-wrap text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed">
-            {part}
-          </div>
-        );
-      })}
-    </div>
-  );
+  repoOwner?: string;
+  repoName?: string;
+  defaultBranch?: string;
 }
 
 export function ProjectHubTabs({
@@ -59,7 +29,13 @@ export function ProjectHubTabs({
   communityPosts,
   relatedBlogPosts,
   slug,
+  repoOwner,
+  repoName,
+  defaultBranch,
 }: Props) {
+  const repoInfo = repoOwner && repoName
+    ? { owner: repoOwner, name: repoName, defaultBranch: defaultBranch || "main" }
+    : undefined;
   const tabs: TabDef[] = [
     { key: "overview", label: "Overview" },
     { key: "installation", label: "Installation" },
@@ -73,7 +49,7 @@ export function ProjectHubTabs({
   return (
     <div>
       {/* Tab bar */}
-      <div className="flex gap-6 mb-6 border-b border-neutral-200 dark:border-neutral-800 overflow-x-auto">
+      <div className="flex gap-6 mb-6 border-b border-neutral-200 dark:border-neutral-800 overflow-x-auto overflow-y-hidden">
         {tabs.map((tab) => (
           <button
             key={tab.key}
@@ -96,19 +72,19 @@ export function ProjectHubTabs({
           {sections.features && (
             <div>
               <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Key features</h3>
-              <MarkdownSection content={sections.features} />
+              <MarkdownRenderer repo={repoInfo} content={sections.features} />
             </div>
           )}
           {!sections.features && sections.usage && (
             <div>
               <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Usage</h3>
-              <MarkdownSection content={sections.usage} />
+              <MarkdownRenderer repo={repoInfo} content={sections.usage} />
             </div>
           )}
           {sections.citation && (
             <div className="mt-8">
               <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Citation</h3>
-              <MarkdownSection content={sections.citation} />
+              <MarkdownRenderer repo={repoInfo} content={sections.citation} />
             </div>
           )}
           {!sections.features && !sections.usage && (
@@ -136,20 +112,22 @@ export function ProjectHubTabs({
 
       {active === "installation" && (
         <div className="space-y-6">
-          {/* Always show install command prominently */}
-          <div>
-            <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
-              Install
-            </p>
-            <pre className="bg-neutral-900 dark:bg-neutral-800 rounded-lg p-4 overflow-x-auto">
-              <code className="text-sm font-mono text-neutral-100">{installCommand}</code>
-            </pre>
-          </div>
-          {sections.installation && <MarkdownSection content={sections.installation} />}
+          {sections.installation ? (
+            <MarkdownRenderer repo={repoInfo} content={sections.installation} />
+          ) : installCommand && (
+            <div>
+              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-1.5 uppercase tracking-wide">
+                Install
+              </p>
+              <pre className="bg-neutral-900 dark:bg-neutral-800 rounded-lg p-4 overflow-x-auto">
+                <code className="text-sm font-mono text-neutral-100">{installCommand}</code>
+              </pre>
+            </div>
+          )}
           {sections.requirements && (
             <div>
               <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Requirements</h3>
-              <MarkdownSection content={sections.requirements} />
+              <MarkdownRenderer repo={repoInfo} content={sections.requirements} />
             </div>
           )}
           {!sections.installation && !sections.requirements && (
@@ -168,9 +146,9 @@ export function ProjectHubTabs({
       {active === "api" && (
         <div>
           {sections.api_reference ? (
-            <MarkdownSection content={sections.api_reference} />
+            <MarkdownRenderer repo={repoInfo} content={sections.api_reference} />
           ) : sections.usage ? (
-            <MarkdownSection content={sections.usage} />
+            <MarkdownRenderer repo={repoInfo} content={sections.usage} />
           ) : (
             <p className="text-sm text-neutral-500 dark:text-neutral-400">
               No API documentation available in README. Check the{" "}
@@ -186,7 +164,7 @@ export function ProjectHubTabs({
       {active === "benchmarks" && (
         <div>
           {sections.benchmarks ? (
-            <MarkdownSection content={sections.benchmarks} />
+            <MarkdownRenderer repo={repoInfo} content={sections.benchmarks} />
           ) : (
             <p className="text-sm text-neutral-500 dark:text-neutral-400">
               No benchmarks available yet.

@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { StarFill, Diagram2, BoxArrowUpRight } from "react-bootstrap-icons";
+import { StarFill, Diagram2, BoxArrowUpRight, ArrowLeft } from "react-bootstrap-icons";
 import { metaData } from "app/config";
 import { getProjectBySlug } from "../project-data";
 import type { Project, ApiProjectStats } from "../project-data";
 import { fetchProjectStats, fetchOrgRepos, fetchReadme } from "app/lib/projects";
 import { fetchPosts } from "app/lib/community";
 import { fetchBlogPosts } from "app/lib/blog";
+import { fetchWikiPages } from "app/lib/wiki";
 import { ProjectHubTabs } from "./ProjectHubTabs";
 
 interface Props {
@@ -90,12 +91,13 @@ export default async function ProjectHubPage({ params }: Props) {
 
   const { project, owner, repo } = resolved;
 
-  // Fetch live stats, community posts, blog posts, and README in parallel
-  const [statsMap, communityData, blogData, readme] = await Promise.all([
+  // Fetch live stats, community posts, blog posts, README, and wiki pages in parallel
+  const [statsMap, communityData, blogData, readme, wikiPages] = await Promise.all([
     fetchProjectStats(),
     fetchPosts(1, "new", undefined, slug).catch(() => null),
     fetchBlogPosts(1).catch(() => null),
     fetchReadme(owner, repo),
+    fetchWikiPages(slug),
   ]);
 
   // Get stats from statsMap if available
@@ -125,19 +127,14 @@ export default async function ProjectHubPage({ params }: Props) {
 
   return (
     <section className="max-w-3xl mx-auto w-full">
-      {/* Breadcrumb */}
-      <nav className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
-        <Link
-          href="/projects"
-          className="hover:text-neutral-700 dark:hover:text-neutral-300 no-underline"
-        >
-          Projects
-        </Link>
-        <span className="mx-2">/</span>
-        <span className="text-neutral-900 dark:text-neutral-100">
-          {project.title}
-        </span>
-      </nav>
+      {/* Back link */}
+      <Link
+        href="/projects"
+        className="inline-flex items-center gap-1.5 mb-6 text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 no-underline transition-colors"
+      >
+        <ArrowLeft size={14} />
+        Back to projects
+      </Link>
 
       {/* Hero */}
       <div className="mb-6">
@@ -215,6 +212,12 @@ export default async function ProjectHubPage({ params }: Props) {
             <BoxArrowUpRight size={12} />
           </a>
         )}
+        <Link
+          href={`/projects/${slug}/wiki`}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors no-underline"
+        >
+          Docs{wikiPages.length > 0 ? ` (${wikiPages.length})` : ""}
+        </Link>
       </div>
 
       {/* Tabbed content */}
@@ -225,6 +228,8 @@ export default async function ProjectHubPage({ params }: Props) {
         communityPosts={communityPosts}
         relatedBlogPosts={relatedBlogPosts}
         slug={slug}
+        repoOwner={owner}
+        repoName={repo}
       />
 
       {/* JSON-LD */}

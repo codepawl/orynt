@@ -279,6 +279,31 @@ export interface ArxivMetadata {
   year: number | null;
 }
 
+// --- Wiki ---
+
+export interface WikiPageSummary {
+  id: string;
+  slug: string;
+  title: string;
+  parent_id: string | null;
+  sort_order: number;
+}
+
+export interface WikiPage {
+  id: string;
+  project_slug: string;
+  slug: string;
+  title: string;
+  content: string;
+  content_format: string;
+  parent_id: string | null;
+  sort_order: number;
+  author: AuthorInfo | null;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // --- Fetch result (admin) ---
 
 export interface FetchResult {

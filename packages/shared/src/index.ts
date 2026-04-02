@@ -31,4 +31,6 @@ export type {
   Tag,
   TopComment,
   VerificationStatus,
+  WikiPage,
+  WikiPageSummary,
 } from "./types";
