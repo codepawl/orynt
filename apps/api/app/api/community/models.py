@@ -68,13 +68,13 @@ class CommentCreate(BaseModel):
 
 class VoteRequest(BaseModel):
     target_id: str
-    target_type: str = Field(..., pattern=r"^(post|comment)$")
+    target_type: str = Field(..., pattern=r"^(post|comment|reproduction)$")
     value: int = Field(..., ge=-1, le=1)
 
 
 class FlagCreate(BaseModel):
     target_id: str
-    target_type: str = Field(..., pattern=r"^(post|comment)$")
+    target_type: str = Field(..., pattern=r"^(post|comment|reproduction)$")
     reason: str | None = None
 
 

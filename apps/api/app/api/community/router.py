@@ -554,7 +554,7 @@ async def vote(
     new_score = sum(v["value"] for v in score_result.data)
 
     # Update score on the target table
-    target_table = "posts" if data.target_type == "post" else "comments"
+    target_table = {"post": "posts", "comment": "comments", "reproduction": "reproductions"}[data.target_type]
     await db.from_(target_table).update({"score": new_score}).eq("id", data.target_id).execute()
 
     # Update karma on the target author's profile (non-fatal)
