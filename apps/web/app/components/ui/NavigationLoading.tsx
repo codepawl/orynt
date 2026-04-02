@@ -48,18 +48,18 @@ function NavigationLoadingBar() {
           initial={{ scaleX: 0 }}
           animate={{ scaleX: 0.7 }}
           exit={{ scaleX: 1, opacity: 0 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
+          transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
           style={{
             position: "fixed",
             top: 0,
             left: 0,
             right: 0,
-            height: 2,
+            height: 3,
             zIndex: 9999,
             transformOrigin: "left",
             pointerEvents: "none",
           }}
-          className="bg-neutral-900 dark:bg-neutral-100"
+          className="bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
         />
       )}
     </AnimatePresence>

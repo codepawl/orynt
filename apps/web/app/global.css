@@ -892,6 +892,45 @@ button {
   position: relative;
 }
 
+/* Skeleton shimmer animation */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #e5e5e5 0%,
+    #f5f5f5 40%,
+    #e5e5e5 80%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+:is(.dark) .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #262626 0%,
+    #404040 40%,
+    #262626 80%
+  );
+  background-size: 800px 100%;
+}
+
+/* Staggered fade-in for skeleton items */
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.stagger-fade-in {
+  opacity: 0;
+  animation: staggerIn 0.4s ease-out forwards;
+  animation-delay: calc(var(--stagger-index, 0) * 80ms);
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *,
