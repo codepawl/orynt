@@ -14,6 +14,15 @@ function getApiUrl(): string {
 
 const API_URL = getApiUrl();
 
+/** Server-side fetch with 8s abort timeout to prevent hanging when backend is down. */
+function fetchWithTimeout(url: string, options: RequestInit & { next?: { revalidate: number } } = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
+    clearTimeout(timeoutId),
+  );
+}
+
 // --- Server-side (ISR) fetchers ---
 
 export async function fetchPapers(
@@ -31,7 +40,7 @@ export async function fetchPapers(
     if (year) params.set("year", String(year));
     if (q) params.set("q", q);
 
-    const res = await fetch(`${API_URL}/api/papers?${params}`, {
+    const res = await fetchWithTimeout(`${API_URL}/api/papers?${params}`, {
       next: { revalidate: 60 },
     });
     if (!res.ok) return null;
@@ -43,7 +52,7 @@ export async function fetchPapers(
 
 export async function fetchPaper(id: string): Promise<Paper | null> {
   try {
-    const res = await fetch(`${API_URL}/api/papers/${id}`, {
+    const res = await fetchWithTimeout(`${API_URL}/api/papers/${id}`, {
       next: { revalidate: 60 },
     });
     if (!res.ok) return null;
@@ -55,7 +64,7 @@ export async function fetchPaper(id: string): Promise<Paper | null> {
 
 export async function fetchReproductions(paperId: string): Promise<Reproduction[]> {
   try {
-    const res = await fetch(`${API_URL}/api/papers/${paperId}/reproductions`, {
+    const res = await fetchWithTimeout(`${API_URL}/api/papers/${paperId}/reproductions`, {
       next: { revalidate: 60 },
     });
     if (!res.ok) return [];
@@ -67,7 +76,7 @@ export async function fetchReproductions(paperId: string): Promise<Reproduction[
 
 export async function fetchRecentlyVerified(limit: number = 3): Promise<Paper[]> {
   try {
-    const res = await fetch(`${API_URL}/api/papers/recently-verified?limit=${limit}`, {
+    const res = await fetchWithTimeout(`${API_URL}/api/papers/recently-verified?limit=${limit}`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return [];
