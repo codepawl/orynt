@@ -3,11 +3,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { StarFill, Diagram2, BoxArrowUpRight } from "react-bootstrap-icons";
 import { metaData } from "app/config";
-import {
-  getProjectBySlug,
-  getProjectSlugs,
-} from "../project-data";
-import { fetchProjectStats, fetchReadme, mergeProjectData } from "app/lib/projects";
+import { getProjectBySlug } from "../project-data";
+import type { Project, ApiProjectStats } from "../project-data";
+import { fetchProjectStats, fetchOrgRepos, fetchReadme } from "app/lib/projects";
 import { fetchPosts } from "app/lib/community";
 import { fetchBlogPosts } from "app/lib/blog";
 import { ProjectHubTabs } from "./ProjectHubTabs";
@@ -16,28 +14,44 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export async function generateStaticParams() {
-  return getProjectSlugs().map((slug) => ({ slug }));
-}
+/** Resolve a project by slug — try static data first, then org repos. */
+async function resolveProject(slug: string): Promise<{
+  project: Project;
+  owner: string;
+  repo: string;
+} | null> {
+  // Try static data first
+  const staticProject = getProjectBySlug(slug);
+  if (staticProject) {
+    const parsed = extractOwnerRepo(staticProject.url);
+    return {
+      project: staticProject,
+      owner: parsed?.owner ?? "codepawl",
+      repo: parsed?.repo ?? slug,
+    };
+  }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug } = await params;
-  const project = getProjectBySlug(slug);
-  if (!project) return {};
+  // Try org repos (for dynamically discovered repos)
+  const orgRepos = await fetchOrgRepos();
+  const orgRepo = orgRepos.find((r) => r.name === slug);
+  if (orgRepo) {
+    return {
+      project: {
+        title: orgRepo.name,
+        year: orgRepo.created_at ? new Date(orgRepo.created_at).getFullYear() : new Date().getFullYear(),
+        description: orgRepo.description || `${orgRepo.name} — a CodePawl project`,
+        url: `https://github.com/${orgRepo.full_name}`,
+        slug: orgRepo.name,
+        quickStart: { install: "", example: "" },
+        docsUrl: orgRepo.homepage || null,
+        packageUrl: null,
+      },
+      owner: "codepawl",
+      repo: orgRepo.name,
+    };
+  }
 
-  return {
-    title: `${project.title} | Projects`,
-    description: project.description,
-    alternates: { canonical: `${metaData.baseUrl}projects/${slug}` },
-    openGraph: {
-      title: `${project.title} | CodePawl Projects`,
-      description: project.description,
-      url: `${metaData.baseUrl}projects/${slug}`,
-      siteName: metaData.name,
-      locale: "en_US",
-      type: "website",
-    },
-  };
+  return null;
 }
 
 function extractOwnerRepo(url: string): { owner: string; repo: string } | null {
@@ -49,24 +63,45 @@ function extractOwnerRepo(url: string): { owner: string; repo: string } | null {
   return null;
 }
 
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const resolved = await resolveProject(slug);
+  if (!resolved) return {};
+
+  return {
+    title: `${resolved.project.title} | Projects`,
+    description: resolved.project.description,
+    alternates: { canonical: `${metaData.baseUrl}projects/${slug}` },
+    openGraph: {
+      title: `${resolved.project.title} | CodePawl Projects`,
+      description: resolved.project.description,
+      url: `${metaData.baseUrl}projects/${slug}`,
+      siteName: metaData.name,
+      locale: "en_US",
+      type: "website",
+    },
+  };
+}
+
 export default async function ProjectHubPage({ params }: Props) {
   const { slug } = await params;
-  const project = getProjectBySlug(slug);
-  if (!project) notFound();
+  const resolved = await resolveProject(slug);
+  if (!resolved) notFound();
 
-  const parsed = extractOwnerRepo(project.url);
+  const { project, owner, repo } = resolved;
 
   // Fetch live stats, community posts, blog posts, and README in parallel
   const [statsMap, communityData, blogData, readme] = await Promise.all([
     fetchProjectStats(),
     fetchPosts(1, "new", undefined, slug).catch(() => null),
     fetchBlogPosts(1).catch(() => null),
-    parsed ? fetchReadme(parsed.owner, parsed.repo) : Promise.resolve(null),
+    fetchReadme(owner, repo),
   ]);
 
-  const enriched = mergeProjectData([project], statsMap);
-  const stats = enriched[0]?.stats;
-  const isLive = enriched[0]?.isLive ?? false;
+  // Get stats from statsMap if available
+  const statsKey = `${owner}/${repo}`.toLowerCase();
+  const stats: ApiProjectStats | undefined = statsMap?.get(statsKey);
+  const isLive = statsMap !== null && statsMap.size > 0 && stats !== undefined;
 
   const titleLower = project.title.toLowerCase();
   const slugLower = slug.toLowerCase();

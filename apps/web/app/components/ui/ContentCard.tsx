@@ -15,6 +15,7 @@ export interface ContentCardProps {
   onClick?: (e: React.MouseEvent) => void;
   external?: boolean;
   className?: string;
+  footer?: React.ReactNode;
 }
 
 export function ContentCard({
@@ -28,6 +29,7 @@ export function ContentCard({
   onClick,
   external = false,
   className = "",
+  footer,
 }: ContentCardProps) {
   const descriptionRef = useRef<HTMLDivElement>(null);
   const [isTruncated, setIsTruncated] = useState(false);
@@ -121,6 +123,7 @@ export function ContentCard({
               </div>
             )}
           </div>
+          {footer && <div className="mt-auto pt-2">{footer}</div>}
         </div>
       </div>
     </div>
