@@ -224,6 +224,61 @@ export interface BlogPostList {
   total_pages: number;
 }
 
+// --- Papers & Reproductions ---
+
+export type VerificationStatus = "unverified" | "verified" | "partially_reproduced" | "disputed";
+export type ReproductionResult = "confirmed" | "partially" | "failed" | "different_findings";
+
+export interface Paper {
+  id: string;
+  title: string;
+  authors: string;
+  arxiv_url: string | null;
+  pdf_url: string | null;
+  venue: string | null;
+  year: number | null;
+  abstract: string | null;
+  tags: string;
+  submitted_by: AuthorInfo | null;
+  verification_status: VerificationStatus;
+  reproduction_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Reproduction {
+  id: string;
+  paper_id: string;
+  author: AuthorInfo;
+  result: ReproductionResult;
+  hardware: string | null;
+  framework: string | null;
+  model_tested: string | null;
+  summary: string;
+  details: string | null;
+  code_url: string | null;
+  paper_claims: Record<string, string>[];
+  actual_results: Record<string, string>[];
+  score: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaperList {
+  papers: Paper[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+
+export interface ArxivMetadata {
+  title: string;
+  authors: string;
+  abstract: string;
+  pdf_url: string;
+  year: number | null;
+}
+
 // --- Fetch result (admin) ---
 
 export interface FetchResult {

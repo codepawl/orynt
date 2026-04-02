@@ -12,6 +12,7 @@ import { metaData } from "../../config";
 const navItems = [
   { href: "/blog", label: "Blog" },
   { href: "/community", label: "Community" },
+  { href: "/papers", label: "Papers" },
   { href: "/projects", label: "Projects" },
 ];
 
