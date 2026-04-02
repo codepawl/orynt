@@ -4,13 +4,15 @@ import Link from "next/link";
 import Image from "next/image";
 import { formatDate } from "app/lib/utils";
 import { AnimatedLogo } from "./AnimatedLogo";
-import type { BlogPost } from "@codepawl/shared";
+import type { BlogPost, Paper } from "@codepawl/shared";
+import { VerificationBadge } from "app/papers/[id]/VerificationBadge";
 
 interface HomePageProps {
   recentBlogs: BlogPost[];
+  recentlyVerified?: Paper[];
 }
 
-export function HomePageContent({ recentBlogs }: HomePageProps) {
+export function HomePageContent({ recentBlogs, recentlyVerified = [] }: HomePageProps) {
   return (
     <section>
       {/* Hero Section */}
@@ -147,6 +149,48 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
           })}
         </div>
       </div>
+      {/* Recently Verified Papers */}
+      {recentlyVerified.length > 0 && (
+        <div className="mb-16">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
+              Recently Verified
+            </h2>
+            <Link
+              href="/papers?status=verified"
+              className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 text-sm no-underline"
+            >
+              View all papers →
+            </Link>
+          </div>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-800">
+            {recentlyVerified.map((paper) => (
+              <Link
+                key={paper.id}
+                href={`/papers/${paper.id}`}
+                className="flex items-center gap-4 px-4 py-4 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors no-underline group"
+              >
+                <div className="flex-shrink-0">
+                  <VerificationBadge status={paper.verification_status} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors">
+                    {paper.title}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                      {paper.authors}
+                    </span>
+                    <span className="text-xs text-neutral-400 shrink-0">
+                      {paper.reproduction_count} reproduction{paper.reproduction_count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

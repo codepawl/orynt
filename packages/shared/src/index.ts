@@ -4,6 +4,7 @@ export type { Category } from "./constants";
 export type {
   Article,
   ArticleStatus,
+  ArxivMetadata,
   AuthorInfo,
   BlogPost,
   BlogPostList,
@@ -20,8 +21,14 @@ export type {
   NewsArticle,
   NewsPaginatedResponse,
   PaginatedResponse,
+  Paper,
+  PaperList,
   PostType,
   Profile,
+  Reproduction,
+  ReproductionResult,
   Role,
   Tag,
+  TopComment,
+  VerificationStatus,
 } from "./types";

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { metaData, founderLinks } from "app/config";
 import { fetchBlogPosts } from "app/lib/blog";
+import { fetchRecentlyVerified } from "app/lib/papers";
 import { HomePageContent } from "app/components/features/HomePageContent";
 
 export const revalidate = 600;
@@ -28,7 +29,10 @@ export const metadata: Metadata = {
 };
 
 export default async function Page() {
-  const data = await fetchBlogPosts(1);
+  const [data, recentlyVerified] = await Promise.all([
+    fetchBlogPosts(1),
+    fetchRecentlyVerified(3),
+  ]);
   const recentBlogs = (data?.posts ?? []).slice(0, 3);
 
   return (
@@ -53,7 +57,7 @@ export default async function Page() {
           }),
         }}
       />
-      <HomePageContent recentBlogs={recentBlogs} />
+      <HomePageContent recentBlogs={recentBlogs} recentlyVerified={recentlyVerified} />
     </>
   );
 }
