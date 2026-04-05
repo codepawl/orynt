@@ -37,8 +37,8 @@ export default async function CommunityPage({ searchParams }: Props) {
   const topTags = allTags.slice(0, 8);
 
   return (
-    <div className="max-w-5xl mx-auto w-full flex gap-8">
-    <div className="flex-1 min-w-0 max-w-3xl">
+    <div className="max-w-5xl mx-auto w-full lg:flex gap-8">
+      <div className="flex-1 min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
@@ -113,15 +113,15 @@ export default async function CommunityPage({ searchParams }: Props) {
           </p>
         </div>
       )}
-    </div>
+      </div>
 
-    <TrendingSidebar
-      trending={trending}
-      topTags={topTags}
-      activeTag={tag}
-      sort={sort}
-      projectSlugs={projectSlugs}
-    />
+      <TrendingSidebar
+        trending={trending}
+        topTags={topTags}
+        activeTag={tag}
+        sort={sort}
+        projectSlugs={projectSlugs}
+      />
     </div>
   );
 }
