@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { metaData, socialLinks } from "../config";
+import { metaData, socialLinks, founderLinks } from "../config";
 
 export const metadata: Metadata = {
   title: "About",
@@ -48,8 +48,8 @@ export default function AboutLayout({
               description: metaData.description,
               sameAs: [
                 socialLinks.github,
-                socialLinks.linkedin,
-                socialLinks.youtube,
+                socialLinks.twitter,
+                socialLinks.devto,
               ],
             },
             {
@@ -61,12 +61,11 @@ export default function AboutLayout({
               url: `${metaData.baseUrl}about`,
               image: `${metaData.baseUrl}/profile.png`,
               sameAs: [
-                socialLinks.github,
-                socialLinks.linkedin,
-                socialLinks.kaggle,
-                socialLinks.youtube,
+                founderLinks.github,
+                founderLinks.linkedin,
+                founderLinks.kaggle,
               ],
-              email: socialLinks.email.replace("mailto:", ""),
+              email: "hello@codepawl.com",
             },
           ]),
         }}

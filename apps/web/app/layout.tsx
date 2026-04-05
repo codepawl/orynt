@@ -4,15 +4,15 @@ import { Inter } from "next/font/google";
 import { JetBrains_Mono } from "next/font/google";
 import { Playfair_Display } from "next/font/google";
 import { Navbar } from "./components/layout/nav";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/next";
+import { AnalyticsWrapper } from "./components/ui/AnalyticsWrapper";
 import Footer from "./components/layout/footer";
 import { ThemeProvider } from "./components/ui/theme-switch";
-import AntdRegistry from "./lib/AntdRegistry";
-import { AntdConfigProvider } from "./components/ui/AntdConfigProvider";
 import { NavigationLoading } from "./components/ui/NavigationLoading";
 import { WebVitals } from "./components/ui/WebVitals";
 import { PerformanceMonitor } from "./components/ui/PerformanceMonitor";
+import { LazyCookieConsent } from "./components/ui/LazyCookieConsent";
+import { EmailVerificationBanner } from "./components/ui/EmailVerificationBanner";
+import { ProfileProvider } from "./components/ui/ProfileContext";
 import { metaData } from "./config";
 
 export const metadata: Metadata = {
@@ -61,6 +61,7 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-jetbrains-mono",
   display: "swap",
+  preload: false,
 });
 
 const playfairDisplay = Playfair_Display({
@@ -68,6 +69,7 @@ const playfairDisplay = Playfair_Display({
   variable: "--font-playfair",
   display: "swap",
   weight: ["400", "600", "700"],
+  preload: false,
 });
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
@@ -101,27 +103,26 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased flex flex-col items-center justify-center mx-auto mt-2 lg:mt-8 mb-20 lg:mb-40 bg-white dark:bg-[#141414] text-neutral-900 dark:text-neutral-100">
-        <AntdRegistry>
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
             enableSystem
             disableTransitionOnChange
           >
-            <AntdConfigProvider>
+            <ProfileProvider>
+              <EmailVerificationBanner />
               <NavigationLoading />
               <main className="flex-auto min-w-0 mt-2 md:mt-6 flex flex-col px-4 sm:px-6 md:px-8 w-full mx-auto">
                 <Navbar />
                 {children}
                 <Footer />
-                <Analytics />
-                <SpeedInsights />
+                <AnalyticsWrapper />
                 <WebVitals />
                 <PerformanceMonitor />
+                <LazyCookieConsent />
               </main>
-            </AntdConfigProvider>
+            </ProfileProvider>
           </ThemeProvider>
-        </AntdRegistry>
       </body>
     </html>
   );

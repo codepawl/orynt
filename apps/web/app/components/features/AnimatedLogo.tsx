@@ -130,6 +130,7 @@ export function AnimatedLogo({ width = 300, height = 300, className }: AnimatedL
           cx="250.432"
           cy="286.955"
           rx="15.8349"
+          initial={{ ry: 15.8349 }}
           animate={{ ry: isBlinking ? 2 : 15.8349 }}
           transition={{ duration: isBlinking ? 0.08 : 0.12, ease: isBlinking ? "easeIn" : "easeOut" }}
           fill={fg}

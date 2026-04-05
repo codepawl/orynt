@@ -2,102 +2,245 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## First Thing Every Session
+
+**Read `ROADMAP.md` before doing any work.** Check which phase is current, which tasks are checked off, and what's next. Do not start work without confirming current state.
+
+If a task is blocked, document the blocker in ROADMAP.md and move to the next unblocked task. Do not create features not listed in the roadmap without explicit approval.
+
 ## Project Overview
 
-CodePawl — an open-source AI/ML community site (blog, portfolio, project showcase). Bun workspaces monorepo with Next.js 16 frontend, Python FastAPI backend, and shared packages. Founded 2026.
+CodePawl is an open-source AI/ML community platform with a blog and discussion forum.
 
-Live: https://codepawl.com/
+**Live:** https://codepawl.com
+**Founded:** 2026
+**Founder:** An
+**Stack:** Bun monorepo, Next.js 16 (App Router), FastAPI, Supabase (PostgreSQL + Auth), Tailwind + Ant Design, Sentry (error monitoring)
 
 ## Monorepo Structure
 
-- `apps/web/` — Next.js frontend (@codepawl/web): App Router, TypeScript, Tailwind CSS, Ant Design, MDX content
-- `apps/api/` — Python FastAPI backend: GitHub stats proxy + webhooks, deployed on Koyeb
-- `packages/shared/` — Shared types and utilities (@codepawl/shared)
+```
+codepawl/
+├── apps/
+│   ├── web/          # Next.js 16 frontend (@codepawl/web)
+│   └── api/          # Python FastAPI backend (Koyeb)
+├── packages/
+│   └── shared/       # @codepawl/shared (shared types, constants, config)
+├── ROADMAP.md        # Development roadmap (source of truth for all work)
+├── CLAUDE.md         # This file
+├── dev.sh            # Start both frontend + API
+└── package.json      # Bun workspaces root
+```
 
 ## Commands
 
 ```bash
-# Root (runs via Bun workspaces --filter)
-bun install              # Install all workspace dependencies
-bun run dev              # Dev server (web)
-bun run build            # Production build (web)
-bun run start            # Production server (web)
-bun run dev:api          # Dev server (api, requires Python venv)
-./dev.sh                 # Start both frontend + API
+# Root (Bun workspaces)
+bun install                # Install all workspace dependencies
+bun run dev                # Dev server (web only)
+bun run build              # Production build (web)
+bun run dev:api            # Dev server (api, requires Python venv)
+./dev.sh                   # Start both frontend + API
 
-# Per-app (from app directory)
-cd apps/web && bun run dev
-cd apps/api && source .venv/bin/activate && uvicorn app.main:app --reload
+# Frontend (apps/web)
+cd apps/web
+bun run dev
+bun run lint               # ESLint
+bun run typecheck          # TypeScript check (tsc --noEmit)
+
+# Backend (apps/api)
+cd apps/api
+source .venv/bin/activate
+uvicorn app.main:app --reload
+ruff check .               # Linting
+pytest                     # Tests
 ```
 
-Always use `bun` instead of `npm`/`yarn`/`pnpm`. Bun auto-loads `.env` files.
+Always use `bun`, never `npm`/`yarn`/`pnpm`. Bun auto-loads `.env` files.
 
-## Architecture
+## Work Cycle
 
-**Content system:** Blog posts are MDX files in `apps/web/content/`. Frontmatter fields: `title`, `publishedAt` (YYYY-MM-DD), `summary`, `tags` (comma-separated), `image` (optional URL or local path). Parsed by `apps/web/app/lib/posts.ts`.
+Every task follows this cycle. Do not skip steps.
 
-**Styling layers:**
-- Tailwind CSS (primary) with class-based dark mode
-- Ant Design components themed via `apps/web/app/components/ui/AntdConfigProvider.tsx`
-- Global CSS in `apps/web/app/global.css` (syntax highlighting, transitions, fonts)
-- next-themes for dark/light mode persistence
+```
+1. build   — implement the change
+2. test    — lint + typecheck + pytest + manual verification
+3. commit  — descriptive message: "type(phase): task - description"
+4. update  — check off task in ROADMAP.md
+```
 
-**Animation & Icons:**
-- `motion` (motion.dev) for all animations — `AnimatePresence`, `motion.div`, `layoutId` for nav indicator
-- `react-bootstrap-icons` for all icons (replaced lucide-react)
-- No `framer-motion` — use `import { motion } from "motion/react"`
-
-**Navigation:**
-- Plain Next.js `Link` components with `motion.div layoutId="nav-active"` for sliding underline
-- No Ant Design Menu, no NavigationContext, no useTransition in nav
-- `NavigationLoading.tsx` detects internal link clicks and shows a top loading bar via motion
-
-**Component organization:**
-- `apps/web/app/components/features/` — domain-specific (animated logo, dino game, homepage, social embeds)
-- `apps/web/app/components/layout/` — nav, footer, inline logo
-- `apps/web/app/components/ui/` — reusable UI (MDX renderer, theme switch, content card, code copy button, RepoCard)
-
-**MDX rendering:** `apps/web/app/components/ui/mdx.tsx` provides custom components:
-- Code blocks: `rehype-pretty-code` (shiki) with dual themes (`github-light` / `one-dark-pro`), file titles, line highlighting
-- Math: KaTeX via `remark-math` + `rehype-katex`
-- Custom: `RepoCard` (live GitHub stats), `StaticTweet`, `YouTube`, `Callout`, headings with auto-anchor links
-- The `Figure`/`Figcaption` components handle rehype-pretty-code's output structure
-
-**Projects page:** Hybrid ISR — fetches live GitHub stats from backend API (`GET /projects`) with 1-hour revalidation and 8s timeout, falls back to static data in `project-data.tsx`.
-
-**Backend API:** FastAPI with:
-- `GET /projects` — returns live GitHub stats for tracked repos
-- `POST /webhook` — receives GitHub webhook events (push, star, release, issues)
-- In-memory store updated by webhooks, cold-start populates from GitHub API
-
-**Feed generation:** `apps/web/app/feed/[format]/route.ts` generates RSS/Atom/JSON feeds. Aliased via rewrites in `apps/web/next.config.js`.
-
-**Site config:** `apps/web/app/config.ts` holds metadata (`foundedYear: 2026`), social links.
-
-**Pages:**
-- `/` — Homepage with animated logo and recent blog posts
-- `/about` — Organization info + expandable team card with CV (click to expand)
-- `/blog` + `/blog/[slug]` — Blog listing and MDX posts
-- `/projects` — Project showcase with live GitHub stats
-- `/privacy`, `/terms`, `/cookies` — Legal pages (linked from footer)
-- 404 — Interactive dino runner game (Canvas 2D, Chrome T-Rex inspired physics)
+Commit message format:
+- Phase 0: `fix(phase0): 0.1 - remove unused packages`
+- Phase 1: `feat(phase1): 1.1 - set up supabase auth`
+- Phase 2: `feat(phase2): 2.3 - community API routes`
 
 ## Branching Strategy
 
-- `main` — production (deployed to Vercel)
+- `main` — production (auto-deploys to Vercel)
 - `staging` — integration testing
-- `feat/*` — feature branches → merge to staging → then to main
+- Feature/fix branches created from staging: `fix/*`, `feat/*`
+
+Flow: feature branch > PR to staging > staging > PR to main
+
+## Architecture
+
+### Frontend (apps/web)
+
+- **Framework:** Next.js 16, App Router, React 19, TypeScript 5.5
+- **Styling:** Tailwind CSS (primary) + Ant Design 6 (themed via `AntdConfigProvider.tsx`) + `global.css`
+- **Dark mode:** next-themes, class-based
+- **Animation:** `motion` (motion.dev). Import as `import { motion } from "motion/react"`. Never use `framer-motion`.
+- **Icons:** `react-bootstrap-icons`. Never use lucide-react.
+- **3D:** Three.js + @react-three/fiber (homepage blob only, may be removed for performance)
+
+**Component locations:**
+- `app/components/features/` — domain-specific (animated logo, dino game, homepage, blog editor)
+- `app/components/features/blog-editor/` — Tiptap rich text + markdown editor
+- `app/components/layout/` — nav, footer, inline logo
+- `app/components/ui/` — reusable (ContentCard, ShareButtons, ReadingProgressBar, EmailVerificationBanner, UserMenu, NotificationBell, ProtectedRoute, theme switch, cookie consent)
+
+**Content systems:**
+- Blog: API-driven via Supabase `blog_posts` table. CRUD through FastAPI. Tiptap rich text editor at `/blog/write` and `/blog/edit/[id]`. Image uploads to Supabase Storage `blog-images` bucket. Auto-shares published posts to community as link posts.
+- Projects: Hybrid ISR — static curated data in `project-data.tsx` enriched with live GitHub stats (1h revalidation). Org repos fetched from `GET /projects/org`. Hub pages with README section parsing.
+
+**Navigation:** Plain Next.js `Link` + `motion.div layoutId="nav-active"` for sliding underline. `NavigationLoading.tsx` shows a top loading bar on internal navigation.
+
+**Feed generation:** `app/feed/[format]/route.ts` generates RSS/Atom/JSON. Aliased via rewrites in `next.config.js`.
+
+**Error monitoring:** `@sentry/nextjs` — client, server, and edge configs in `sentry.*.config.ts`. `global-error.tsx` and `error.tsx` capture exceptions.
+
+**Site config:** `app/config.ts` (metadata, `socialLinks` for org, `founderLinks` for personal, `foundedYear: 2026`)
+
+### Backend (apps/api)
+
+- **Framework:** FastAPI 0.115, async, Python 3.12
+- **DB:** Supabase (PostgreSQL) via PostgREST client. No ORM.
+- **Cache:** TTLCache (in-memory, 1h) for GitHub stats, org repos, README data
+- **Error monitoring:** `sentry-sdk[fastapi]`
+
+**API routes:**
+- `GET /health` — health check
+- `GET /projects` — live GitHub stats for tracked repos
+- `GET /projects/org` — all public repos from codepawl GitHub org
+- `GET /projects/{owner}/{repo}/readme` — fetch + parse README sections
+- `POST /webhook` — GitHub webhook handler
+- **Blog** (`/api/blog`):
+  - `GET /posts`, `GET /posts/{slug}` — public listing + detail
+  - `GET /my-posts` — authenticated user's drafts + posts
+  - `GET /admin/posts` — admin: all posts across authors
+  - `POST /posts`, `PUT /posts/{post_id}`, `DELETE /posts/{post_id}` — CRUD
+  - `PATCH /posts/{post_id}/status` — publish/draft/review (admin-only publish)
+  - `POST /upload-image` — Supabase Storage upload
+- **Community** (`/api/community`):
+  - `GET /posts`, `GET /posts/{post_id}`, `POST /posts`, `DELETE /posts/{post_id}` — CRUD
+  - `GET /posts/trending` — top posts by score from last N days
+  - `GET /posts/{post_id}/comments`, `POST /posts/{post_id}/comments`, `DELETE /comments/{comment_id}` — comments
+  - `POST /vote`, `GET /votes/mine` — voting
+  - `POST /flag` — flag content
+  - `GET /tags/stats`, `DELETE /tags/{tag_name}`, `POST /tags/merge` — tag management
+  - `GET /me`, `PATCH /me` — user profile (read + update)
+  - `PATCH /users/{user_id}/ban` — admin ban
+  - `GET /url-preview` — HEAD-check URL validity
+- **Notifications** (`/api/notifications`):
+  - `GET /`, `GET /unread-count`, `POST /{id}/read`, `POST /read-all`
+- **Auth** (in `main.py`):
+  - `POST /api/auth/login`, `POST /api/auth/logout` — admin session cookie
+
+### Shared Package (packages/shared)
+
+Contains:
+- TypeScript types shared between frontend and backend (`Profile`, `BlogPost`, `CommunityPost`, `TopComment`, etc.)
+- Status enums, `CATEGORIES`, `KARMA_THRESHOLDS` constants
+- API URL config getter
+
+### Database (Supabase)
+
+Tables: `profiles`, `blog_posts`, `posts`, `comments`, `votes`, `flags`, `notifications`
+Storage: `blog-images` bucket (for blog post cover images and inline images)
+
+All tables use Row Level Security (RLS).
+
+## Key Patterns and Rules
+
+### Do
+- Use `motion` for animations, not CSS transitions (except simple hover states)
+- Use `react-bootstrap-icons` for icons
+- ISR with graceful fallback for any backend API calls (never show 500 to users)
+- Use `@codepawl/shared` for any types/constants shared between frontend and backend
+- Add new MDX components in `mdx.tsx` components mapping
+- Commit after each sub-task, not at the end of a phase
+- Run lint + typecheck + pytest before every commit
+
+### Do Not
+- Do not introduce new UI libraries (stick with Tailwind + Ant Design)
+- Do not use `framer-motion`, use `motion/react`
+- Do not use `lucide-react`, use `react-bootstrap-icons`
+- Do not use `npm`/`yarn`/`pnpm`
+- Do not connect frontend directly to Supabase DB for data (go through FastAPI). Exception: Supabase Auth is used directly on the client for login/signup/session management.
+- Do not skip testing in the work cycle
+- Do not work on features outside the current roadmap phase
+- Do not list products that don't have code (TeamClaw, Lognis, Yeastbook, OpenClaw are NOT products yet)
+- **Merge before moving on.** Before starting any new branch, check for unmerged feature/fix branches (`git branch --list "fix/*" "feat/*"`). Verify each passes lint + typecheck + pytest. If clean, create PR and squash merge to staging. If broken, report and stop. Always start new work from latest staging.
+
+### Backend Constraints
+- Supabase credentials may not be configured in all environments. Always handle gracefully with 503 fallback.
+- Python deps pinned in `requirements.txt`
+
+### Frontend Constraints
+- Next.js 16 canary, be aware of potential breaking changes
+- `next-mdx-remote` v6 breaks in Turbopack dev mode (production build works fine)
+- Public pages (/, /blog, /projects, /about) must never require auth
 
 ## Deployment
 
-- **Frontend:** Vercel with root directory set to `apps/web`. Uses Vercel Analytics and Speed Insights.
-- **API:** Koyeb (Free tier) via Dockerfile at `apps/api/`. Env vars: `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`.
-- **Environment:** `BACKEND_API_URL` (server-only) in Vercel for the Koyeb endpoint.
+- **Frontend:** Vercel, root directory `apps/web`. Uses Vercel Analytics + Speed Insights.
+- **Backend:** Koyeb (free tier), Docker at `apps/api/`.
+- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`, `CODEPAWL_ADMIN_API_KEY`, `CODEPAWL_SENTRY_DSN`
+- **Env vars (frontend):** `BACKEND_API_URL` (server-only), `NEXT_PUBLIC_BACKEND_API_URL` (client-side), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SENTRY_DSN`
 
-## Key Patterns
+### Supabase Dashboard Configuration
 
-- Use `motion` for animations, not CSS transitions (except simple hover states)
-- Use `react-bootstrap-icons` for icons, not lucide-react
-- ISR with graceful fallback for any backend API calls (never show 500)
-- `fetchProjectStats()` in `app/lib/projects.ts` is reusable for any component needing GitHub stats
-- MDX components registered in `mdx.tsx` components mapping — add new ones there
+**Redirect URLs** (Settings → Auth → URL Configuration — must be added):
+- `http://localhost:3000/auth/callback`
+- `http://localhost:3000/auth/confirm`
+- `http://localhost:3000/reset-password`
+- `https://codepawl.com/auth/callback`
+- `https://codepawl.com/auth/confirm`
+- `https://codepawl.com/reset-password`
+
+**Email Templates** (Auth → Email Templates — must be updated for PKCE):
+All confirmation links must use the token_hash format:
+```
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=TYPE&next={{ .RedirectTo }}
+```
+Where `TYPE` is one of: `signup` | `invite` | `magiclink` | `recovery` | `email_change`
+
+## Pages
+
+| Route | Description |
+|-------|-------------|
+| `/` | Homepage, animated logo, recent blog posts |
+| `/about` | Org info + expandable team card |
+| `/blog`, `/blog/[slug]` | Blog listing + post detail (API-driven) |
+| `/blog/write` | Blog post editor (Tiptap, auth required) |
+| `/blog/edit/[id]` | Edit existing blog post |
+| `/blog/drafts` | User's draft posts |
+| `/projects` | Project showcase, live GitHub stats, org repos |
+| `/projects/[slug]` | Project hub page with tabs (overview, install, API, benchmarks, community) |
+| `/community` | Post listing (ranked/new) |
+| `/community/submit` | Submit post form |
+| `/community/post/[id]` | Post detail + comments |
+| `/login` | GitHub OAuth + email/password sign-in |
+| `/signup` | Email/password sign-up |
+| `/forgot-password` | Request password reset email |
+| `/reset-password` | Set new password (after recovery email) |
+| `/settings` | User settings: profile, email, password, account |
+| `/auth/callback` | OAuth code exchange handler |
+| `/auth/confirm` | Token-hash confirm handler (email verification, recovery, email change) |
+| `/profile/[username]` | User profile |
+| `/admin` | Admin dashboard (auth required) |
+| `/admin/blog` | Blog post management |
+| `/admin/community` | Community post/comment management |
+| `/admin/moderation` | Flagged content review |
+| `/privacy`, `/terms`, `/cookies` | Legal pages |
+| 404 | Interactive dino runner game |

@@ -1,5 +1,8 @@
 # CodePawl
 
+![CI Web](https://github.com/codepawl/codepawl/actions/workflows/ci-web.yml/badge.svg)
+![CI API](https://github.com/codepawl/codepawl/actions/workflows/ci-api.yml/badge.svg)
+
 A personal blog and portfolio showcasing AI engineering and data science work, featuring in-depth articles, research insights, and project demonstrations.
 
 ## About

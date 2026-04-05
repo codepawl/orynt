@@ -1,34 +1,24 @@
 "use client";
 
-import React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Typography, Card, Flex, Button, Space } from "antd";
 import { formatDate } from "app/lib/utils";
 import { AnimatedLogo } from "./AnimatedLogo";
-
-const { Title, Text, Paragraph } = Typography;
-
-interface BlogPost {
-  slug: string;
-  metadata: {
-    title: string;
-    publishedAt: string;
-    image?: string;
-  };
-}
+import type { BlogPost, Paper } from "@codepawl/shared";
+import { VerificationBadge } from "app/papers/[id]/VerificationBadge";
 
 interface HomePageProps {
   recentBlogs: BlogPost[];
+  recentlyVerified?: Paper[];
 }
 
-export function HomePageContent({ recentBlogs }: HomePageProps) {
+export function HomePageContent({ recentBlogs, recentlyVerified = [] }: HomePageProps) {
   return (
     <section>
       {/* Hero Section */}
-      <div style={{ marginBottom: 64 }}>
-        <div className="flex flex-col md:flex-row items-center gap-8 md:gap-16" style={{ marginBottom: 32 }}>
-          {/* Animated Logo — replaces Three.js blob */}
+      <div className="mb-16">
+        <div className="flex flex-col md:flex-row items-center gap-8 md:gap-16 mb-8">
+          {/* Animated Logo */}
           <div className="flex-shrink-0 order-first md:order-last">
             <AnimatedLogo
               width={220}
@@ -38,161 +28,169 @@ export function HomePageContent({ recentBlogs }: HomePageProps) {
           </div>
 
           {/* Text Content */}
-          <div style={{ flex: 1 }}>
-            <Title
-              level={1}
-              className="text-neutral-900 dark:text-neutral-100"
-              style={{
-                fontSize: "clamp(2.25rem, 5vw, 3.5rem)",
-                marginBottom: 16,
-                fontWeight: 700,
-                letterSpacing: "-0.02em",
-              }}
+          <div className="flex-1">
+            <h1
+              className="text-neutral-900 dark:text-neutral-100 font-bold tracking-tight mb-4"
+              style={{ fontSize: "clamp(2.25rem, 5vw, 3.5rem)" }}
             >
               CodePawl
-            </Title>
-            <Paragraph
-              className="text-neutral-600 dark:text-neutral-300"
-              style={{
-                fontSize: "clamp(1.1rem, 1.8vw, 1.35rem)",
-                marginBottom: 28,
-                lineHeight: 1.7,
-              }}
+            </h1>
+            <p
+              className="text-neutral-600 dark:text-neutral-300 mb-7 leading-relaxed"
+              style={{ fontSize: "clamp(1.1rem, 1.8vw, 1.35rem)" }}
             >
-              Exploring the depths of AI, data science, and machine learning through{" "}
-              <Link href="/blog" className="link-animated font-medium">
-                writing
-              </Link>{" "}
-              and{" "}
-              <Link href="/projects" className="link-animated font-medium">
-                projects
+              An open community for{" "}
+              <Link
+                href="/community"
+                className="font-medium text-neutral-900 dark:text-neutral-100 underline decoration-neutral-400 dark:decoration-neutral-500 underline-offset-4 hover:decoration-neutral-900 dark:hover:decoration-neutral-100 transition-colors"
+              >
+                AI builders
               </Link>
-              .
-            </Paragraph>
-            <Space size="middle" wrap>
-              <Link href="/blog">
-                <Button
-                  type="primary"
-                  size="large"
-                  style={{ minWidth: 140, height: 40 }}
-                >
-                  Read Blog
-                </Button>
+              , researchers, and curious minds.
+            </p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Link
+                href="/blog"
+                className="inline-flex items-center justify-center px-6 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-sm font-medium hover:opacity-80 transition-opacity no-underline min-w-[140px]"
+              >
+                Read Blog
               </Link>
-              <Link href="/about">
-                <Button
-                  type="default"
-                  size="large"
-                  style={{ minWidth: 140, height: 40 }}
-                >
-                  About
-                </Button>
+              <Link
+                href="/about"
+                className="inline-flex items-center justify-center px-6 py-2.5 rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100 text-sm font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors no-underline min-w-[140px]"
+              >
+                About
               </Link>
-            </Space>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Recent Writings */}
-      <div>
+      <div className="mb-16">
         <div className="flex justify-between items-center mb-6">
-          <Title level={2} style={{ margin: 0 }} className="text-neutral-900 dark:text-neutral-100">
+          <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
             Recent Writings
-          </Title>
+          </h2>
           <Link
             href="/blog"
-            className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 text-sm"
+            className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 text-sm no-underline"
           >
             View all →
           </Link>
         </div>
-        <Flex vertical gap="middle" style={{ width: "100%" }}>
+        <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-800">
+          {recentBlogs.length === 0 && (
+            <p className="px-4 py-8 text-sm text-neutral-400 dark:text-neutral-500 text-center">
+              No posts yet.{" "}
+              <Link href="/blog" className="underline">
+                Check back soon
+              </Link>
+              .
+            </p>
+          )}
           {recentBlogs.map((post) => {
             const initials =
-              post.metadata.title
+              post.title
                 .split(/\s+/)
                 .filter(Boolean)
                 .slice(0, 2)
                 .map((w) => w[0]?.toUpperCase())
                 .join("") || "BL";
 
+            const firstTag = post.tags
+              ?.split(",")
+              .map((t) => t.trim())
+              .filter(Boolean)[0];
+
             return (
               <Link
                 key={post.slug}
                 href={`/blog/${post.slug}`}
-                style={{ textDecoration: "none", display: "block" }}
+                className="flex items-center gap-4 px-4 py-4 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors no-underline group"
               >
-              <Card
-                hoverable
-                size="small"
-                style={{
-                  width: "100%",
-                  cursor: "pointer",
-                  backgroundColor: "transparent",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-                className="card-shadow-offset"
-                styles={{
-                  body: {
-                    padding: "16px",
-                    display: "flex",
-                    flexDirection: "row",
-                    gap: "16px",
-                    alignItems: "stretch",
-                    minHeight: "120px",
-                  },
-                }}
-              >
-                <div
-                  className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center"
-                  aria-hidden="true"
-                >
-                  {post.metadata.image ? (
+                <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-neutral-100 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center">
+                  {post.cover_image_url ? (
                     <Image
-                      src={post.metadata.image}
-                      alt={post.metadata.title}
+                      src={post.cover_image_url}
+                      alt={post.title}
                       fill
-                      sizes="(min-width: 640px) 128px, 112px"
+                      sizes="48px"
                       className="object-cover"
                     />
                   ) : (
-                    <span className="text-neutral-700 dark:text-neutral-200 font-semibold text-lg">
+                    <span className="text-neutral-500 dark:text-neutral-400 font-semibold text-xs">
                       {initials}
                     </span>
                   )}
                 </div>
-
-                <Flex
-                  vertical
-                  justify="space-between"
-                  style={{ flex: 1, minWidth: 0 }}
-                  gap="small"
-                >
-                  <Text
-                    strong
-                    style={{ fontSize: 16, lineHeight: 1.4 }}
-                    className="text-neutral-900 dark:text-neutral-100"
-                    ellipsis={{ tooltip: post.metadata.title }}
-                  >
-                    {post.metadata.title}
-                  </Text>
-                  <div style={{ marginTop: "auto" }}>
-                    <Text
-                      type="secondary"
-                      className="text-neutral-600 dark:text-neutral-400"
-                      style={{ fontSize: 14 }}
-                    >
-                      {formatDate(post.metadata.publishedAt, false)}
-                    </Text>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors">
+                    {post.title}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {formatDate(post.published_at ?? post.created_at, false)}
+                    </span>
+                    {firstTag && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 rounded-full">
+                        {firstTag}
+                      </span>
+                    )}
+                    {post.reading_time_minutes && (
+                      <span className="text-xs text-neutral-400 dark:text-neutral-500">
+                        {post.reading_time_minutes} min read
+                      </span>
+                    )}
                   </div>
-                </Flex>
-              </Card>
+                </div>
               </Link>
             );
           })}
-        </Flex>
+        </div>
       </div>
+      {/* Recently Verified Papers */}
+      {recentlyVerified.length > 0 && (
+        <div className="mb-16">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
+              Recently Verified
+            </h2>
+            <Link
+              href="/papers?status=verified"
+              className="text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 text-sm no-underline"
+            >
+              View all papers →
+            </Link>
+          </div>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-800">
+            {recentlyVerified.map((paper) => (
+              <Link
+                key={paper.id}
+                href={`/papers/${paper.id}`}
+                className="flex items-center gap-4 px-4 py-4 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors no-underline group"
+              >
+                <div className="flex-shrink-0">
+                  <VerificationBadge status={paper.verification_status} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-colors">
+                    {paper.title}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                      {paper.authors}
+                    </span>
+                    <span className="text-xs text-neutral-400 shrink-0">
+                      {paper.reproduction_count} reproduction{paper.reproduction_count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

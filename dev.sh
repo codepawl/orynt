@@ -6,7 +6,11 @@
 cleanup() {
     echo ""
     echo "Shutting down..."
-    kill $PID_WEB $PID_API 2>/dev/null
+    # Kill entire process groups (children included)
+    kill -- -$PID_WEB -$PID_API 2>/dev/null
+    # Fallback: kill anything still on the ports
+    lsof -ti :3000 | xargs kill 2>/dev/null
+    lsof -ti :8000 | xargs kill 2>/dev/null
     exit 0
 }
 
@@ -18,15 +22,16 @@ cd apps/api
 if [ ! -d ".venv" ]; then
     echo "Creating Python venv via uv..."
     uv venv .venv
-    uv pip install --python .venv/bin/python -q -r requirements.txt
 fi
-.venv/bin/uvicorn app.main:app --reload --port 8000 &
+echo "Syncing Python dependencies..."
+uv pip install --python .venv/bin/python -q -r requirements.txt
+setsid .venv/bin/uvicorn app.main:app --reload --port 8000 &
 PID_API=$!
 cd ../..
 
 # Frontend (Next.js)
 echo "Starting Frontend on :3000..."
-bun run dev &
+setsid bun run dev &
 PID_WEB=$!
 
 echo ""

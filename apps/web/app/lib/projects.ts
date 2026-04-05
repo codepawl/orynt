@@ -97,3 +97,74 @@ export function mergeProjectData(
     };
   });
 }
+
+
+// ── Org repos ─────────────────────────────────────────────────────
+
+export interface OrgRepo {
+  name: string;
+  full_name: string;
+  description: string | null;
+  language: string | null;
+  stars: number;
+  forks: number;
+  license: string | null;
+  topics: string[];
+  homepage: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  default_branch: string;
+}
+
+export async function fetchOrgRepos(): Promise<OrgRepo[]> {
+  const apiUrl = process.env.BACKEND_API_URL;
+  if (!apiUrl) return [];
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch(`${apiUrl}/projects/org`, {
+      next: { revalidate: 3600 },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+
+// ── README ────────────────────────────────────────────────────────
+
+export interface ReadmeData {
+  full_markdown: string;
+  sections: Record<string, string>;
+  badges: string[];
+  package_url: string | null;
+  docs_url: string | null;
+}
+
+export async function fetchReadme(owner: string, repo: string): Promise<ReadmeData | null> {
+  const apiUrl = process.env.BACKEND_API_URL;
+  if (!apiUrl) return null;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch(`${apiUrl}/projects/${owner}/${repo}/readme`, {
+      next: { revalidate: 3600 },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}

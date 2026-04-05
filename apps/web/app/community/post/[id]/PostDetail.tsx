@@ -1,0 +1,273 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "app/lib/supabase/client";
+import { vote, flagContent, deletePost, fetchMyVotes } from "app/lib/community";
+import { ShareButtons } from "app/components/ui/ShareButtons";
+import type { CommunityPost } from "@codepawl/shared";
+
+function timeAgo(dateStr: string): string {
+  const seconds = Math.floor(
+    (Date.now() - new Date(dateStr).getTime()) / 1000
+  );
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function getDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace("www.", "");
+  } catch {
+    return "";
+  }
+}
+
+function isValidHref(url: string | undefined | null): boolean {
+  if (!url) return false;
+  return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/");
+}
+
+export function PostDetail({ post }: { post: CommunityPost }) {
+  const router = useRouter();
+  const [score, setScore] = useState(post.score);
+  const [userVote, setUserVote] = useState(post.user_vote);
+  const [isAuthor, setIsAuthor] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [voteError, setVoteError] = useState("");
+
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const supabase = createClient();
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) {
+        // Not logged in — fall back to localStorage
+        const saved = localStorage.getItem(`vote:post:${post.id}`);
+        if (saved) setUserVote(Number(saved));
+        return;
+      }
+      // Fetch real vote state from server
+      const votes = await fetchMyVotes(session.access_token, "post", [post.id]);
+      if (votes[post.id] !== undefined) {
+        setUserVote(votes[post.id]);
+      } else {
+        // No vote on server — clear stale localStorage
+        localStorage.removeItem(`vote:post:${post.id}`);
+      }
+    });
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserId(user.id);
+        if (user.id === post.author.id) setIsAuthor(true);
+      }
+    });
+  }, [post.author.id, post.id]);
+
+  // Auto-dismiss vote error
+  useEffect(() => {
+    if (!voteError) return;
+    const t = setTimeout(() => setVoteError(""), 3000);
+    return () => clearTimeout(t);
+  }, [voteError]);
+
+  const getSession = async () => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    return session;
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Delete this post? This cannot be undone.")) return;
+    const session = await getSession();
+    if (!session) return;
+    try {
+      await deletePost(session.access_token, post.id);
+      router.push("/community");
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleVote = async (value: number) => {
+    const session = await getSession();
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${post.id}`);
+      return;
+    }
+
+    // Prevent self-vote
+    if (userId === post.author.id) return;
+
+    // Optimistic update
+    const prevVote = userVote;
+    const prevScore = score;
+    const newValue = userVote === value ? 0 : value;
+    setUserVote(newValue);
+    setScore(prev => prev - prevVote + newValue);
+
+    try {
+      const result = await vote(session.access_token, {
+        target_id: post.id,
+        target_type: "post",
+        value: newValue,
+      });
+      setScore(result.score);
+      setUserVote(result.user_vote);
+      if (result.user_vote !== 0) {
+        localStorage.setItem(`vote:post:${post.id}`, String(result.user_vote));
+      } else {
+        localStorage.removeItem(`vote:post:${post.id}`);
+      }
+    } catch {
+      // Revert optimistic update
+      setUserVote(prevVote);
+      setScore(prevScore);
+      setVoteError("Vote failed");
+    }
+  };
+
+  const handleFlag = async () => {
+    const session = await getSession();
+    if (!session) {
+      router.push(`/login?redirect=/community/post/${post.id}`);
+      return;
+    }
+    try {
+      await flagContent(session.access_token, {
+        target_id: post.id,
+        target_type: "post",
+      });
+    } catch {
+      // silently fail
+    }
+  };
+
+  const isSelfPost = userId === post.author.id;
+
+  return (
+    <div className="mb-8">
+      <div className="flex gap-3">
+        {/* Vote arrows — SVG triangles */}
+        <div className="flex flex-col items-center gap-0.5 pt-1">
+          <button
+            onClick={() => handleVote(1)}
+            disabled={isSelfPost}
+            className={`p-1 rounded transition-colors border-none bg-transparent ${
+              isSelfPost
+                ? "cursor-not-allowed opacity-30"
+                : "cursor-pointer"
+            } ${
+              userVote === 1 ? "text-amber-500" : "text-neutral-400 hover:text-amber-500"
+            }`}
+            title={isSelfPost ? "You can't vote on your own post" : "Upvote"}
+          >
+            <svg viewBox="0 0 12 8" className="w-4 h-3 fill-current">
+              <path d="M6 0L12 8H0z" />
+            </svg>
+          </button>
+          <span className="text-sm font-bold text-neutral-700 dark:text-neutral-300">
+            {score}
+          </span>
+          <button
+            onClick={() => handleVote(-1)}
+            disabled={isSelfPost}
+            className={`p-1 rounded transition-colors border-none bg-transparent ${
+              isSelfPost
+                ? "cursor-not-allowed opacity-30"
+                : "cursor-pointer"
+            } ${
+              userVote === -1 ? "text-blue-500" : "text-neutral-400 hover:text-blue-500"
+            }`}
+            title={isSelfPost ? "You can't vote on your own post" : "Downvote"}
+          >
+            <svg viewBox="0 0 12 8" className="w-4 h-3 fill-current rotate-180">
+              <path d="M6 0L12 8H0z" />
+            </svg>
+          </button>
+          {voteError && (
+            <span className="text-[10px] text-red-500 mt-0.5">{voteError}</span>
+          )}
+        </div>
+
+        <div className="flex-1">
+          {/* Title */}
+          <h1 className="text-xl font-bold mb-1 text-neutral-900 dark:text-neutral-100">
+            {post.type === "show" && (
+              <span className="text-amber-600 dark:text-amber-400 mr-1">Show CP:</span>
+            )}
+            {post.type === "link" && isValidHref(post.url) ? (
+              <a
+                href={post.url!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-inherit no-underline hover:underline"
+              >
+                {post.title}
+              </a>
+            ) : (
+              post.title
+            )}
+          </h1>
+
+          {/* Domain */}
+          {post.type === "link" && post.url && (
+            <p className="text-xs text-neutral-400 mb-2">
+              ({getDomain(post.url) || "link"})
+            </p>
+          )}
+
+          {/* Content */}
+          {post.content && (
+            <div className="prose prose-sm dark:prose-invert max-w-none mb-3 whitespace-pre-wrap">
+              {post.content}
+            </div>
+          )}
+
+          {/* Metadata */}
+          <div className="flex items-center gap-3 text-xs text-neutral-500">
+            {post.author.avatar_url && (
+              <img
+                src={post.author.avatar_url}
+                alt=""
+                className="w-4 h-4 rounded-full"
+              />
+            )}
+            <Link
+              href={`/profile/${post.author.username}`}
+              className="hover:underline no-underline text-inherit"
+            >
+              {post.author.username}
+            </Link>
+            <span suppressHydrationWarning>{timeAgo(post.created_at)}</span>
+            <button
+              onClick={handleFlag}
+              className="text-neutral-400 hover:text-red-500 transition-colors border-none bg-transparent cursor-pointer text-xs"
+            >
+              flag
+            </button>
+            {isAuthor && (
+              <button
+                onClick={handleDelete}
+                className="text-neutral-400 hover:text-red-500 transition-colors border-none bg-transparent cursor-pointer text-xs"
+              >
+                delete
+              </button>
+            )}
+          </div>
+
+          {/* Share buttons */}
+          <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+            <ShareButtons url={`/community/post/${post.id}`} title={post.title} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

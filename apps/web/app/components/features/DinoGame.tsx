@@ -359,7 +359,7 @@ export function DinoGame() {
         ctx.fillStyle = fgMuted;
         ctx.fillText(hiStr + scoreStr, canvasWidth - 16, 24);
         // Redraw current score in fg
-        const hiWidth = ctx.measureText(hiStr).width;
+        ctx.measureText(hiStr);
         ctx.fillStyle = fg;
         ctx.fillText(scoreStr, canvasWidth - 16, 24);
       } else {

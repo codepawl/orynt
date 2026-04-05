@@ -3,9 +3,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Flex, Typography } from "antd";
-
-const { Text } = Typography;
 
 export interface ContentCardProps {
   title: string;
@@ -18,6 +15,7 @@ export interface ContentCardProps {
   onClick?: (e: React.MouseEvent) => void;
   external?: boolean;
   className?: string;
+  footer?: React.ReactNode;
 }
 
 export function ContentCard({
@@ -31,17 +29,26 @@ export function ContentCard({
   onClick,
   external = false,
   className = "",
+  footer,
 }: ContentCardProps) {
   const descriptionRef = useRef<HTMLDivElement>(null);
   const [isTruncated, setIsTruncated] = useState(false);
 
-  const displayInitials = initials ||
+  // Only use the image if it's a valid absolute URL or root-relative path
+  const validImage =
+    image && (image.startsWith("http://") || image.startsWith("https://") || image.startsWith("/"))
+      ? image
+      : undefined;
+
+  const displayInitials =
+    initials ||
     title
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
       .map((w) => w[0]?.toUpperCase())
-      .join("") || "BL";
+      .join("") ||
+    "BL";
 
   useEffect(() => {
     const checkTruncation = () => {
@@ -58,30 +65,20 @@ export function ContentCard({
     return () => window.removeEventListener("resize", checkTruncation);
   }, [description]);
 
-  const thumbClassName = "w-32 h-32";
   const displayDate = date || (year ? String(year) : "");
 
   const cardContent = (
-    <Card
-      hoverable
-      size="small"
-      style={{
-        width: "100%",
-        cursor: "pointer",
-        backgroundColor: "transparent",
-        minHeight: "180px",
-        height: "100%",
-      }}
-      className={`card-shadow-offset ${className}`}
+    <div
+      className={`card-shadow-offset group w-full cursor-pointer rounded-lg border border-neutral-200 dark:border-neutral-800 bg-transparent p-3 transition-shadow hover:shadow-md min-h-[180px] h-full ${className}`}
     >
-      <div className="flex gap-4 items-stretch" style={{ height: "100%", flex: 1 }}>
+      <div className="flex gap-4 items-stretch h-full">
         <div
-          className={`relative ${thumbClassName} rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center`}
+          className="relative w-32 h-32 rounded-lg overflow-hidden bg-neutral-200 dark:bg-neutral-800 flex-shrink-0 flex items-center justify-center"
           aria-hidden="true"
         >
-          {image ? (
+          {validImage ? (
             <Image
-              src={image}
+              src={validImage}
               alt={title}
               fill
               sizes="(min-width: 1024px) 128px, 33vw"
@@ -94,48 +91,25 @@ export function ContentCard({
           )}
         </div>
 
-        <Flex
-          vertical
-          justify="space-between"
-          style={{ width: "100%", minHeight: "128px", flex: 1 }}
-          gap="small"
-        >
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-            <Flex
-              justify="space-between"
-              align="baseline"
-              wrap="wrap"
-              gap="small"
-              style={{ width: "100%" }}
-            >
-              <Text
-                strong
-                className="text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-950 dark:group-hover:text-neutral-50 transition-colors"
-                style={{ fontSize: 16, lineHeight: 1.4 }}
-              >
+        <div className="flex flex-col justify-between w-full min-h-[128px] flex-1 gap-2">
+          <div className="flex-1 flex flex-col gap-2">
+            <div className="flex justify-between items-baseline flex-wrap gap-2 w-full">
+              <span className="font-semibold text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-950 dark:group-hover:text-neutral-50 transition-colors text-base leading-snug">
                 {title}
-              </Text>
+              </span>
               {displayDate && (
-                <Text
-                  type="secondary"
-                  className="text-neutral-600 dark:text-neutral-400 flex-shrink-0"
-                  style={{ fontSize: 14 }}
-                >
+                <span className="text-sm text-neutral-600 dark:text-neutral-400 flex-shrink-0">
                   {displayDate}
-                </Text>
+                </span>
               )}
-            </Flex>
+            </div>
 
             {description && (
-              <div className="relative" style={{ flex: 1, minHeight: "3em" }}>
+              <div className="relative flex-1" style={{ minHeight: "3em" }}>
                 <div
                   ref={descriptionRef}
-                  className="content-card-description text-neutral-700 dark:text-neutral-300"
-                  style={{
-                    fontSize: 14,
-                    lineHeight: 1.5,
-                    paddingRight: isTruncated ? "80px" : "0",
-                  }}
+                  className="content-card-description text-neutral-700 dark:text-neutral-300 text-sm leading-relaxed"
+                  style={{ paddingRight: isTruncated ? "80px" : "0" }}
                 >
                   {description}
                 </div>
@@ -149,9 +123,10 @@ export function ContentCard({
               </div>
             )}
           </div>
-        </Flex>
+          {footer && <div className="mt-auto pt-2">{footer}</div>}
+        </div>
       </div>
-    </Card>
+    </div>
   );
 
   if (external) {
@@ -161,7 +136,7 @@ export function ContentCard({
         target="_blank"
         rel="noopener noreferrer"
         onClick={onClick}
-        style={{ width: "100%", textDecoration: "none", display: "block" }}
+        className="w-full no-underline block"
       >
         {cardContent}
       </a>
@@ -169,11 +144,7 @@ export function ContentCard({
   }
 
   return (
-    <Link
-      href={href}
-      onClick={onClick}
-      style={{ width: "100%", textDecoration: "none", display: "block" }}
-    >
+    <Link href={href} onClick={onClick} className="w-full no-underline block">
       {cardContent}
     </Link>
   );

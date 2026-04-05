@@ -1,5 +1,5 @@
 import { MetadataRoute } from "next";
-import { getBlogPostsMetadata } from "./lib/posts";
+import { fetchBlogPosts } from "./lib/blog";
 import { metaData } from "./config";
 
 const BaseUrl = metaData.baseUrl.endsWith("/")
@@ -7,12 +7,13 @@ const BaseUrl = metaData.baseUrl.endsWith("/")
   : `${metaData.baseUrl}/`;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const blogs = getBlogPostsMetadata().map((post) => ({
+  const blogData = await fetchBlogPosts(1).catch(() => null);
+  const blogs = (blogData?.posts ?? []).map((post) => ({
     url: `${BaseUrl}blog/${post.slug}`,
-    lastModified: post.metadata.publishedAt,
+    lastModified: post.published_at ?? post.updated_at,
   }));
 
-  const routes = ["", "blog", "projects", "profile"].map((route) => ({
+  const routes = ["", "blog", "projects", "about"].map((route) => ({
     url: `${BaseUrl}${route}`,
     lastModified: new Date().toISOString().split("T")[0],
   }));

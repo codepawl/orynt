@@ -2,21 +2,17 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Typography, Avatar, Flex, Space, Divider } from "antd";
 import {
   Github,
   Linkedin,
   EnvelopeFill,
-  Youtube,
   CodeSlash,
   CalendarEvent,
   ChevronDown,
 } from "react-bootstrap-icons";
-import { socialLinks, metaData } from "../config";
+import { socialLinks, founderLinks, metaData } from "../config";
 import type { Icon } from "react-bootstrap-icons";
 import { InlineLogo } from "../components/layout/InlineLogo";
-
-const { Title, Text, Paragraph } = Typography;
 
 function SocialLink({ href, icon: Icon, label }: { href: string; icon: Icon; label: string }) {
   if (!href) return null;
@@ -36,9 +32,9 @@ function SocialLink({ href, icon: Icon, label }: { href: string; icon: Icon; lab
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 48 }}>
-      <Title level={2} style={{ marginTop: 0, marginBottom: 24 }} className="text-neutral-900 dark:text-neutral-100">
+      <h2 style={{ marginTop: 0, marginBottom: 24 }} className="text-neutral-900 dark:text-neutral-100">
         {title}
-      </Title>
+      </h2>
       {children}
     </div>
   );
@@ -59,15 +55,15 @@ function ExperienceItem({
 }) {
   return (
     <div style={{ marginBottom: 32 }}>
-      <Title level={4} style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
+      <h4 style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
         {title}
-      </Title>
-      <Text strong className="text-neutral-800 dark:text-neutral-200">{company}</Text>
-      <Text type="secondary" className="text-neutral-600 dark:text-neutral-400"> &bull; {location}</Text>
+      </h4>
+      <span className="font-semibold text-neutral-800 dark:text-neutral-200">{company}</span>
+      <span className="text-neutral-600 dark:text-neutral-400"> &bull; {location}</span>
       <br />
-      <Text type="secondary" style={{ fontSize: 14 }} className="text-neutral-600 dark:text-neutral-400">
+      <span className="text-sm text-neutral-600 dark:text-neutral-400">
         {period}
-      </Text>
+      </span>
       <ul style={{ marginTop: 12, marginBottom: 0, paddingLeft: 24, listStyleType: "disc" }} className="text-neutral-800 dark:text-neutral-200">
         {items.map((item, index) => (
           <li key={index} style={{ marginBottom: 8, lineHeight: 1.6 }}>
@@ -92,12 +88,12 @@ function ProjectItem({
 }) {
   return (
     <div style={{ marginBottom: 32 }}>
-      <Title level={4} style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
+      <h4 style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
         {title}
-      </Title>
-      <Text type="secondary" style={{ fontSize: 14 }} className="text-neutral-600 dark:text-neutral-400">
+      </h4>
+      <span className="text-sm text-neutral-600 dark:text-neutral-400">
         {location} &bull; {period}
-      </Text>
+      </span>
       <ul style={{ marginTop: 12, marginBottom: 0, paddingLeft: 24, listStyleType: "disc" }} className="text-neutral-800 dark:text-neutral-200">
         {items.map((item, index) => (
           <li key={index} style={{ marginBottom: 8, lineHeight: 1.6 }}>
@@ -115,46 +111,48 @@ export default function About() {
   return (
     <section>
       {/* Organization Section */}
-      <Flex
-        align="center"
-        justify="space-between"
-        wrap="wrap-reverse"
-        style={{ marginBottom: 24 }}
-        gap="large"
-      >
+      <div className="flex items-center justify-between flex-wrap-reverse gap-8 mb-6">
         <div style={{ flex: 1, minWidth: 280 }}>
-          <Title level={1} style={{ marginTop: 0, marginBottom: 12 }} className="text-neutral-900 dark:text-neutral-100">
+          <h1 style={{ marginTop: 0, marginBottom: 12 }} className="text-neutral-900 dark:text-neutral-100">
             {metaData.title}
-          </Title>
-          <Paragraph
-            style={{ fontSize: 16, lineHeight: 1.8, marginBottom: 16 }}
+          </h1>
+          <p
+            style={{ fontSize: 16, lineHeight: 1.8, marginBottom: 12 }}
             className="text-neutral-700 dark:text-neutral-300"
           >
-            An open-source community building tools and resources for AI, machine learning, and data science.
-            We create educational content, develop open-source libraries, and share practical insights to make
-            advanced technical topics more accessible.
-          </Paragraph>
-          <Flex align="center" gap="small" style={{ marginBottom: 16 }}>
+            CodePawl is an open-source AI/ML community platform — a place for builders, researchers, and curious minds
+            to share ideas, discuss papers, and collaborate on projects.
+          </p>
+          <p
+            style={{ fontSize: 15, lineHeight: 1.8, marginBottom: 16 }}
+            className="text-neutral-600 dark:text-neutral-400"
+          >
+            Post links, start discussions, or share what you&apos;re building. Join us on{" "}
+            <a href={socialLinks.discord} target="_blank" rel="noopener noreferrer" className="underline">Discord</a>
+            , follow along on{" "}
+            <a href={socialLinks.twitter} target="_blank" rel="noopener noreferrer" className="underline">X</a>
+            , or reach us at{" "}
+            <a href={socialLinks.email} className="underline">hello@codepawl.com</a>.
+          </p>
+          <div className="flex items-center gap-1.5 mb-4">
             <CalendarEvent size={14} className="text-neutral-500 dark:text-neutral-400" />
-            <Text type="secondary" style={{ fontSize: 14 }} className="text-neutral-500 dark:text-neutral-400">
+            <span className="text-sm text-neutral-500 dark:text-neutral-400">
               Founded 2026
-            </Text>
-          </Flex>
-          <Space size="large" wrap>
+            </span>
+          </div>
+          <div className="flex items-center gap-6 flex-wrap">
             <SocialLink href={socialLinks.github} icon={Github} label="GitHub" />
-            <SocialLink href={socialLinks.youtube} icon={Youtube} label="YouTube" />
-            <SocialLink href={socialLinks.linkedin} icon={Linkedin} label="LinkedIn" />
             <SocialLink href={socialLinks.email} icon={EnvelopeFill} label="Email" />
-          </Space>
+          </div>
         </div>
         <div>
           <div className="w-[100px] h-[100px] rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
             <InlineLogo size={64} />
           </div>
         </div>
-      </Flex>
+      </div>
 
-      <Divider />
+      <hr className="border-neutral-200 dark:border-neutral-800 my-8" />
 
       {/* Team Section */}
       <Section title="Team">
@@ -163,21 +161,21 @@ export default function About() {
           onClick={() => setExpanded((v) => !v)}
         >
           <div className="p-6">
-            <Flex align="center" gap="middle" wrap="wrap">
-              <Avatar
-                size={80}
+            <div className="flex items-center gap-4 flex-wrap">
+              <img
                 src="/profile.jpg"
                 alt={metaData.name}
+                className="w-20 h-20 rounded-full object-cover flex-shrink-0"
               />
               <div style={{ flex: 1, minWidth: 200 }}>
-                <Flex align="center" justify="space-between">
+                <div className="flex items-center justify-between">
                   <div>
-                    <Title level={4} style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
+                    <h4 style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
                       {metaData.name}
-                    </Title>
-                    <Text type="secondary" className="text-neutral-600 dark:text-neutral-300" style={{ display: "block", marginBottom: 8 }}>
+                    </h4>
+                    <span className="block text-neutral-600 dark:text-neutral-300 mb-2">
                       Founder &amp; AI Engineer
-                    </Text>
+                    </span>
                   </div>
                   <motion.span
                     animate={{ rotate: expanded ? 180 : 0 }}
@@ -186,24 +184,24 @@ export default function About() {
                   >
                     <ChevronDown size={20} className="text-neutral-400 dark:text-neutral-500" />
                   </motion.span>
-                </Flex>
-                <Text className="text-neutral-700 dark:text-neutral-300" style={{ fontSize: 14 }}>
+                </div>
+                <span className="text-sm text-neutral-700 dark:text-neutral-300">
                   Data Scientist and Machine Learning Engineer based in Ho Chi Minh City, Vietnam.
                   Building tools that make AI more accessible.
-                </Text>
-                <Space size="middle" wrap style={{ marginTop: 12 }}>
+                </span>
+                <div className="flex items-center gap-5 flex-wrap mt-3">
                   <span onClick={(e) => e.stopPropagation()}>
-                    <SocialLink href={socialLinks.github} icon={Github} label="GitHub" />
+                    <SocialLink href={founderLinks.github} icon={Github} label="GitHub" />
                   </span>
                   <span onClick={(e) => e.stopPropagation()}>
-                    <SocialLink href={socialLinks.linkedin} icon={Linkedin} label="LinkedIn" />
+                    <SocialLink href={founderLinks.linkedin} icon={Linkedin} label="LinkedIn" />
                   </span>
                   <span onClick={(e) => e.stopPropagation()}>
-                    <SocialLink href={socialLinks.kaggle} icon={CodeSlash} label="Kaggle" />
+                    <SocialLink href={founderLinks.kaggle} icon={CodeSlash} label="Kaggle" />
                   </span>
-                </Space>
+                </div>
               </div>
-            </Flex>
+            </div>
           </div>
 
           {/* Collapsible CV content */}
@@ -221,14 +219,14 @@ export default function About() {
 
                 <Section title="Education">
                   <div style={{ marginBottom: 16 }}>
-                    <Title level={4} style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
+                    <h4 style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
                       FPT University Ho Chi Minh City, Vietnam
-                    </Title>
-                    <Text strong className="text-neutral-800 dark:text-neutral-200">B.Sc. in Artificial Intelligence</Text>
+                    </h4>
+                    <span className="font-semibold text-neutral-800 dark:text-neutral-200">B.Sc. in Artificial Intelligence</span>
                     <br />
-                    <Text type="secondary" style={{ fontSize: 14 }} className="text-neutral-600 dark:text-neutral-400">
+                    <span className="text-sm text-neutral-600 dark:text-neutral-400">
                       October 2022 - December 2025
-                    </Text>
+                    </span>
                     <ul style={{ marginTop: 12, marginBottom: 0, paddingLeft: 24, listStyleType: "disc" }} className="text-neutral-800 dark:text-neutral-200">
                       <li style={{ marginBottom: 8, lineHeight: 1.6 }}>
                         Status: Completed all coursework &amp; Capstone. Waiting for official degree conferral (Jan 2026).
@@ -298,12 +296,12 @@ export default function About() {
 
                 <Section title="Honors & Awards">
                   <div style={{ marginBottom: 16 }}>
-                    <Title level={4} style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
+                    <h4 style={{ marginTop: 0, marginBottom: 4 }} className="text-neutral-900 dark:text-neutral-100">
                       Young Psychology Expert 2025 (UEF) - Third Place
-                    </Title>
-                    <Text type="secondary" style={{ fontSize: 14 }} className="text-neutral-600 dark:text-neutral-400">
+                    </h4>
+                    <span className="text-sm text-neutral-600 dark:text-neutral-400">
                       Ho Chi Minh City, Vietnam &bull; March 2025
-                    </Text>
+                    </span>
                     <ul style={{ marginTop: 12, marginBottom: 0, paddingLeft: 24, listStyleType: "disc" }} className="text-neutral-800 dark:text-neutral-200">
                       <li style={{ marginBottom: 8, lineHeight: 1.6 }}>
                         Awarded for the &apos;InnSoul&apos; app concept - an AI-powered platform connecting users with psychologists.
@@ -320,24 +318,24 @@ export default function About() {
 
                 <Section title="Skills">
                   <div className="text-neutral-800 dark:text-neutral-200" style={{ lineHeight: 1.8 }}>
-                    <Paragraph style={{ marginBottom: 12 }}>
-                      <Text strong>Languages:</Text> English (Fluent), Vietnamese (Native).
-                    </Paragraph>
-                    <Paragraph style={{ marginBottom: 12 }}>
-                      <Text strong>Programming:</Text> Python (PyTorch, TensorFlow, Scikit-learn), TypeScript/JavaScript (Next.js, React), R, SQL.
-                    </Paragraph>
-                    <Paragraph style={{ marginBottom: 12 }}>
-                      <Text strong>AI & Deep Learning:</Text> Diffusion Models, LLMs, Reinforcement Learning, Computer Vision, NLP.
-                    </Paragraph>
-                    <Paragraph style={{ marginBottom: 12 }}>
-                      <Text strong>MLOps & Infrastructure:</Text> Docker, Git, Feature Stores, CI/CD for ML, Model Context Protocol (MCP).
-                    </Paragraph>
-                    <Paragraph style={{ marginBottom: 12 }}>
-                      <Text strong>Cloud & Data:</Text> AWS (SageMaker), Google Cloud, FastAPI, RESTful APIs, BigData Pipelines.
-                    </Paragraph>
-                    <Paragraph style={{ marginBottom: 0 }}>
-                      <Text strong>Web Development:</Text> Next.js, RESTful APIs.
-                    </Paragraph>
+                    <p style={{ marginBottom: 12 }}>
+                      <strong>Languages:</strong> English (Fluent), Vietnamese (Native).
+                    </p>
+                    <p style={{ marginBottom: 12 }}>
+                      <strong>Programming:</strong> Python (PyTorch, TensorFlow, Scikit-learn), TypeScript/JavaScript (Next.js, React), R, SQL.
+                    </p>
+                    <p style={{ marginBottom: 12 }}>
+                      <strong>AI &amp; Deep Learning:</strong> Diffusion Models, LLMs, Reinforcement Learning, Computer Vision, NLP.
+                    </p>
+                    <p style={{ marginBottom: 12 }}>
+                      <strong>MLOps &amp; Infrastructure:</strong> Docker, Git, Feature Stores, CI/CD for ML, Model Context Protocol (MCP).
+                    </p>
+                    <p style={{ marginBottom: 12 }}>
+                      <strong>Cloud &amp; Data:</strong> AWS (SageMaker), Google Cloud, FastAPI, RESTful APIs, BigData Pipelines.
+                    </p>
+                    <p style={{ marginBottom: 0 }}>
+                      <strong>Web Development:</strong> Next.js, RESTful APIs.
+                    </p>
                   </div>
                 </Section>
 

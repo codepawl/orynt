@@ -1,0 +1,314 @@
+/**
+ * Shared TypeScript types for CodePawl frontend.
+ * These mirror the API response shapes from FastAPI.
+ */
+
+// --- Article status ---
+
+export type ArticleStatus =
+  | "draft"
+  | "review"
+  | "published"
+  | "rejected"
+  | "archived";
+
+// --- Feed ---
+
+export interface Feed {
+  id: string;
+  name: string;
+  url: string;
+  category: string;
+  is_active: boolean;
+  fetch_interval_minutes: number;
+  last_fetched_at: string | null;
+  error_count: number;
+  created_at: string;
+}
+
+// --- Article (admin, full) ---
+
+export interface Article {
+  id: string;
+  feed_id: string | null;
+  original_url: string;
+  original_title: string;
+  original_summary: string | null;
+  original_author: string | null;
+  original_published_at: string | null;
+  slug: string | null;
+  title: string;
+  summary: string | null;
+  tags: string;
+  image_url: string | null;
+  canonical_url: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  status: ArticleStatus;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// --- News article (public, subset) ---
+
+export interface NewsArticle {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string | null;
+  tags: string;
+  image_url: string | null;
+  canonical_url: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  published_at: string | null;
+  original_url: string;
+  original_title: string;
+  original_author: string | null;
+}
+
+// --- Tag ---
+
+export interface Tag {
+  id: string;
+  name: string;
+  slug: string;
+  article_count: number;
+}
+
+// --- Dashboard ---
+
+export interface DashboardStats {
+  total_articles: number;
+  draft_count: number;
+  review_count: number;
+  published_count: number;
+  rejected_count: number;
+  active_feeds: number;
+}
+
+export interface DashboardResponse {
+  stats: DashboardStats;
+  recent: Article[];
+}
+
+// --- Pagination ---
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface NewsPaginatedResponse {
+  articles: NewsArticle[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+
+// --- Auth / User ---
+
+export type Role = "user" | "admin";
+
+export interface Profile {
+  id: string;
+  username: string;
+  display_name: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  role: Role;
+  karma: number;
+  created_at: string;
+}
+
+// --- Community ---
+
+export type PostType = "link" | "text" | "show";
+
+export interface AuthorInfo {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+export interface TopComment {
+  username: string;
+  avatar_url: string | null;
+  content: string;
+}
+
+export interface CommunityPost {
+  id: string;
+  author: AuthorInfo;
+  type: PostType;
+  title: string;
+  url: string | null;
+  content: string | null;
+  score: number;
+  comment_count: number;
+  tags: string;
+  is_auto: boolean;
+  source_article_id: string | null;
+  created_at: string;
+  updated_at: string;
+  rank: number;
+  user_vote: number;
+  top_comment?: TopComment | null;
+}
+
+export interface CommunityComment {
+  id: string;
+  post_id: string;
+  parent_id: string | null;
+  author: AuthorInfo;
+  content: string;
+  score: number;
+  created_at: string;
+  user_vote: number;
+}
+
+export interface CommunityPostList {
+  posts: CommunityPost[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+
+// --- Notifications ---
+
+export type NotificationType = "comment_reply" | "post_comment" | "vote";
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  actor_id: string | null;
+  actor?: AuthorInfo | null;
+  post_id: string | null;
+  comment_id: string | null;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+// --- Blog ---
+
+export type BlogPostStatus = "draft" | "review" | "published";
+
+export interface BlogPost {
+  id: string;
+  author: AuthorInfo;
+  title: string;
+  slug: string;
+  content: string;
+  content_markdown: string | null;
+  summary: string | null;
+  cover_image_url: string | null;
+  tags: string;
+  status: BlogPostStatus;
+  reading_time_minutes: number | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlogPostList {
+  posts: BlogPost[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+
+// --- Papers & Reproductions ---
+
+export type VerificationStatus = "unverified" | "verified" | "partially_reproduced" | "disputed";
+export type ReproductionResult = "confirmed" | "partially" | "failed" | "different_findings";
+
+export interface Paper {
+  id: string;
+  title: string;
+  authors: string;
+  arxiv_url: string | null;
+  pdf_url: string | null;
+  venue: string | null;
+  year: number | null;
+  abstract: string | null;
+  tags: string;
+  submitted_by: AuthorInfo | null;
+  verification_status: VerificationStatus;
+  reproduction_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Reproduction {
+  id: string;
+  paper_id: string;
+  author: AuthorInfo;
+  result: ReproductionResult;
+  hardware: string | null;
+  framework: string | null;
+  model_tested: string | null;
+  summary: string;
+  details: string | null;
+  code_url: string | null;
+  paper_claims: Record<string, string>[];
+  actual_results: Record<string, string>[];
+  score: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaperList {
+  papers: Paper[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+
+export interface ArxivMetadata {
+  title: string;
+  authors: string;
+  abstract: string;
+  pdf_url: string;
+  year: number | null;
+}
+
+// --- Wiki ---
+
+export interface WikiPageSummary {
+  id: string;
+  slug: string;
+  title: string;
+  parent_id: string | null;
+  sort_order: number;
+}
+
+export interface WikiPage {
+  id: string;
+  project_slug: string;
+  slug: string;
+  title: string;
+  content: string;
+  content_format: string;
+  parent_id: string | null;
+  sort_order: number;
+  author: AuthorInfo | null;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// --- Fetch result (admin) ---
+
+export interface FetchResult {
+  feed: string;
+  new_articles: number;
+  skipped_duplicates: number;
+  errors: string[];
+}

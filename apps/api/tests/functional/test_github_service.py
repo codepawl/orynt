@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from app.services.github import GitHubService, RepoNotFoundError
+from app.services.github import RepoNotFoundError
 from tests.conftest import MOCK_REPO_JSON, MOCK_RELEASE_JSON, MOCK_COMMITS_JSON
 
 BASE = "https://api.github.com"
