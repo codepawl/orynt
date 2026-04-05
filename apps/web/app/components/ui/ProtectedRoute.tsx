@@ -21,8 +21,8 @@ export function ProtectedRoute({ children, requiredRole }: Props) {
   useEffect(() => {
     const check = async () => {
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        // Supabase not configured — allow access in dev
-        setState("authorized");
+        // Supabase not configured — redirect to login
+        router.push(`/login?redirect=${window.location.pathname}`);
         return;
       }
 
