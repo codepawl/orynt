@@ -11,6 +11,8 @@ interface Props {
 }
 
 export function TrendingSidebar({ trending, topTags, activeTag, sort, projectSlugs }: Props) {
+  if (trending.length === 0 && topTags.length === 0) return null;
+
   return (
     <aside className="hidden lg:block w-72 flex-shrink-0">
       <div className="sticky top-20 space-y-6">
