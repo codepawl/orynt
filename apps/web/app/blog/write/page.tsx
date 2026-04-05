@@ -36,7 +36,10 @@ export default function WritePage() {
 
   // Auth check on mount
   useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      router.replace("/login?redirect=/blog/write");
+      return;
+    }
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
