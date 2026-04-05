@@ -232,7 +232,7 @@ export default async function ProjectHubPage({ params }: Props) {
         repoName={repo}
       />
 
-      {/* JSON-LD */}
+      {/* JSON-LD structured data for search engines */}
       <script
         type="application/ld+json"
         suppressHydrationWarning
