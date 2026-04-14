@@ -1,0 +1,289 @@
+---
+title: "@codepawl/shared"
+description: API reference for the shared TypeScript package — types, constants, and utilities.
+---
+
+## Overview
+
+`@codepawl/shared` is the shared TypeScript package used across the CodePawl monorepo. It provides type definitions that mirror FastAPI response shapes, shared constants, and a utility for resolving the backend API URL.
+
+## Installation
+
+The package is a Bun workspace dependency. It's already available in `apps/web`:
+
+```json
+{
+  "dependencies": {
+    "@codepawl/shared": "workspace:*"
+  }
+}
+```
+
+Import from anywhere in the frontend:
+
+```typescript
+import { CATEGORIES, KARMA_THRESHOLDS, getBackendApiUrl } from "@codepawl/shared";
+import type { Profile, CommunityPost, BlogPost } from "@codepawl/shared";
+```
+
+## Utilities
+
+### `getBackendApiUrl()`
+
+Returns the backend API URL based on the current environment:
+
+```typescript
+function getBackendApiUrl(): string
+```
+
+**Resolution order:**
+
+1. `process.env.BACKEND_API_URL` (server-side, not exposed to client)
+2. `process.env.NEXT_PUBLIC_BACKEND_API_URL` (client-side)
+3. `"http://localhost:8000"` (fallback)
+
+## Constants
+
+### `ROLES`
+
+```typescript
+const ROLES = ["user", "admin"] as const;
+```
+
+### `ARTICLE_STATUSES`
+
+```typescript
+const ARTICLE_STATUSES = ["draft", "review", "published", "rejected", "archived"] as const;
+```
+
+### `CATEGORIES`
+
+The 15 AI/ML topic categories used for tagging posts, papers, and challenges:
+
+```typescript
+const CATEGORIES = [
+  "general", "llm", "computer-vision", "nlp", "rag",
+  "mlops", "agents", "training", "open-source", "research",
+  "hardware", "safety", "multimodal", "data", "robotics",
+] as const;
+
+type Category = (typeof CATEGORIES)[number];
+```
+
+### `API_ERROR_CODES`
+
+Standardized error codes returned by the API:
+
+```typescript
+const API_ERROR_CODES = {
+  UNAUTHORIZED: "UNAUTHORIZED",
+  FORBIDDEN: "FORBIDDEN",
+  NOT_FOUND: "NOT_FOUND",
+  VALIDATION_ERROR: "VALIDATION_ERROR",
+  RATE_LIMITED: "RATE_LIMITED",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+} as const;
+```
+
+### `KARMA_THRESHOLDS`
+
+Karma levels required for community privileges:
+
+```typescript
+const KARMA_THRESHOLDS = {
+  DOWNVOTE: 50,   // Required to downvote
+  FLAG: 100,      // Required to flag content
+} as const;
+```
+
+## Types
+
+### Auth & Users
+
+```typescript
+type Role = "user" | "admin";
+
+interface Profile {
+  id: string;
+  username: string;
+  display_name: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  role: Role;
+  karma: number;
+  created_at: string;
+}
+
+interface AuthorInfo {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+```
+
+### Community
+
+```typescript
+type PostType = "link" | "text" | "show";
+
+interface CommunityPost {
+  id: string;
+  author: AuthorInfo;
+  type: PostType;
+  title: string;
+  url: string | null;
+  content: string | null;
+  score: number;
+  comment_count: number;
+  tags: string;
+  is_auto: boolean;
+  source_article_id: string | null;
+  created_at: string;
+  updated_at: string;
+  rank: number;
+  user_vote: number;
+  top_comment?: TopComment | null;
+}
+
+interface CommunityComment {
+  id: string;
+  post_id: string;
+  parent_id: string | null;
+  author: AuthorInfo;
+  content: string;
+  score: number;
+  created_at: string;
+  user_vote: number;
+}
+
+interface CommunityPostList {
+  posts: CommunityPost[];
+  total: number;
+  page: number;
+  total_pages: number;
+}
+```
+
+### Blog
+
+```typescript
+type BlogPostStatus = "draft" | "review" | "published";
+
+interface BlogPost {
+  id: string;
+  author: AuthorInfo;
+  title: string;
+  slug: string;
+  content: string;
+  content_markdown: string | null;
+  summary: string | null;
+  cover_image_url: string | null;
+  tags: string;
+  status: BlogPostStatus;
+  reading_time_minutes: number | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+### Papers
+
+```typescript
+type VerificationStatus = "unverified" | "verified" | "partially_reproduced" | "disputed";
+type ReproductionResult = "confirmed" | "partially" | "failed" | "different_findings";
+
+interface Paper {
+  id: string;
+  title: string;
+  authors: string;
+  arxiv_url: string | null;
+  pdf_url: string | null;
+  venue: string | null;
+  year: number | null;
+  abstract: string | null;
+  tags: string;
+  submitted_by: AuthorInfo | null;
+  verification_status: VerificationStatus;
+  reproduction_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Reproduction {
+  id: string;
+  paper_id: string;
+  author: AuthorInfo;
+  result: ReproductionResult;
+  hardware: string | null;
+  framework: string | null;
+  model_tested: string | null;
+  summary: string;
+  details: string | null;
+  code_url: string | null;
+  paper_claims: Record<string, string>[];
+  actual_results: Record<string, string>[];
+  score: number;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+### Notifications
+
+```typescript
+type NotificationType = "comment_reply" | "post_comment" | "vote";
+
+interface Notification {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  actor_id: string | null;
+  actor?: AuthorInfo | null;
+  post_id: string | null;
+  comment_id: string | null;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+```
+
+### Wiki
+
+```typescript
+interface WikiPageSummary {
+  id: string;
+  slug: string;
+  title: string;
+  parent_id: string | null;
+  sort_order: number;
+}
+
+interface WikiPage {
+  id: string;
+  project_slug: string;
+  slug: string;
+  title: string;
+  content: string;
+  content_format: string;
+  parent_id: string | null;
+  sort_order: number;
+  author: AuthorInfo | null;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+### Pagination
+
+```typescript
+interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+```
