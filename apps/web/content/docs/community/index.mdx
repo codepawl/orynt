@@ -1,0 +1,109 @@
+---
+title: Community Forum
+description: Guide to using the CodePawl community forum — posts, comments, voting, tags, and karma.
+---
+
+## Overview
+
+The CodePawl community forum is a Hacker News-style discussion space for AI/ML topics. Members can submit links, start text discussions, and showcase projects. Content is ranked by a time-decay scoring algorithm, and the karma system rewards quality contributions.
+
+## Post Types
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| **Link** | Share an external URL with the community | A new paper, tool release, or blog post |
+| **Text** | Start a discussion with your own content | Ask a question, share an idea, or start a debate |
+| **Show** | Showcase something you built | Demo a side project or open-source tool |
+
+## Submitting a Post
+
+1. Navigate to [/community/submit](/community/submit)
+2. Choose a post type (Link, Text, or Show CodePawl)
+3. Enter a title (required) and either a URL (for links) or body text
+4. Add tags from the 15 available categories
+5. Submit
+
+Published blog posts are automatically cross-posted to the community as link posts pointing back to the blog article.
+
+## Voting
+
+- **Upvote** any post or comment to increase its score
+- **Downvote** requires at least **50 karma** (`KARMA_THRESHOLDS.DOWNVOTE`)
+- Each user gets one vote per item — click again to remove your vote
+- Votes are tracked per user via the `/api/community/votes/mine` endpoint
+
+## Ranking Algorithm
+
+Posts are ranked using a time-decay formula inspired by Hacker News:
+
+```
+score = (points - 1) / (age_hours + 2) ^ gravity
+```
+
+The `/community` page defaults to the **Ranked** sort, which surfaces high-scoring recent content. Switch to **New** to see posts in chronological order.
+
+## Comments
+
+- Comments support **threading** — reply to any comment to create a nested thread
+- Each comment shows author, timestamp, and score
+- Comments are fetched via `GET /api/community/posts/{post_id}/comments`
+
+## Tags and Categories
+
+Posts can be tagged with any of the 15 AI/ML categories:
+
+```typescript
+const CATEGORIES = [
+  "general", "llm", "computer-vision", "nlp", "rag",
+  "mlops", "agents", "training", "open-source", "research",
+  "hardware", "safety", "multimodal", "data", "robotics",
+] as const;
+```
+
+Filter posts by tag on the community page or view tag statistics via the admin dashboard.
+
+## Karma System
+
+Karma is earned when other users upvote your posts and comments:
+
+- Each upvote on your content adds to your karma
+- Karma is displayed on your [profile page](/profile)
+- Karma unlocks privileges:
+
+| Threshold | Privilege |
+|-----------|-----------|
+| 0 | Post, comment, upvote |
+| 50 | Downvote posts and comments |
+| 100 | Flag inappropriate content |
+
+Karma thresholds are defined in `@codepawl/shared`:
+
+```typescript
+import { KARMA_THRESHOLDS } from "@codepawl/shared";
+
+KARMA_THRESHOLDS.DOWNVOTE  // 50
+KARMA_THRESHOLDS.FLAG      // 100
+```
+
+## Moderation
+
+Content can be flagged by users with 100+ karma. Flagged items appear in the admin moderation queue at `/admin/moderation`. Admins can also ban users via `PATCH /api/community/users/{user_id}/ban`.
+
+## API Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/community/posts` | GET | List posts (params: `page`, `sort`, `type`, `tag`) |
+| `/api/community/posts` | POST | Create a post (auth required) |
+| `/api/community/posts/{id}` | GET | Get post detail |
+| `/api/community/posts/{id}` | DELETE | Delete post (author/admin) |
+| `/api/community/posts/trending` | GET | Top posts by score from last N days |
+| `/api/community/posts/{id}/comments` | GET | List comments for a post |
+| `/api/community/posts/{id}/comments` | POST | Add a comment (auth required) |
+| `/api/community/comments/{id}` | DELETE | Delete comment (author/admin) |
+| `/api/community/vote` | POST | Vote on a post or comment |
+| `/api/community/votes/mine` | GET | Get current user's votes |
+| `/api/community/flag` | POST | Flag content (100+ karma) |
+| `/api/community/tags/stats` | GET | Tag usage statistics |
+| `/api/community/me` | GET | Current user profile |
+| `/api/community/me` | PATCH | Update profile |

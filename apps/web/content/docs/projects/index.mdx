@@ -1,0 +1,105 @@
+---
+title: Projects — OSS Showcase
+description: How the CodePawl project showcase works — GitHub sync, hub pages, and wiki documentation.
+---
+
+## Overview
+
+The Projects page showcases open-source repositories from the [codepawl GitHub org](https://github.com/codepawl). Projects are synced automatically, displaying live statistics and providing dedicated hub pages with documentation.
+
+## How It Works
+
+### GitHub Sync
+
+The backend fetches all public repositories from the `codepawl` GitHub organization via the GitHub API:
+
+```
+GET https://api.github.com/orgs/codepawl/repos?type=public&sort=stars
+```
+
+Results are cached for 1 hour (TTL cache) and served via `GET /projects/org`. The frontend uses ISR with a 1-hour revalidation window.
+
+### Exclusion Rules
+
+Two repositories are automatically filtered out:
+
+- `.github` — the org's special configuration repo
+- `codepawl` — the platform website repo itself
+
+Any repo without both a description **and** a language is also excluded.
+
+### Static Fallback
+
+When the backend API is unavailable, the frontend falls back to curated static data in `project-data.tsx`. This ensures projects always display even if the API is down.
+
+## Project Hub Pages
+
+Each project gets a dedicated hub page at `/projects/{slug}` with:
+
+### Hero Section
+
+- Project name and description
+- Live badges: language, star count (with live indicator), fork count, latest release
+- Links to GitHub, PyPI/npm (if detected), docs, and wiki
+
+### Tabbed Content
+
+Content is organized into five tabs, populated from the project's GitHub README:
+
+| Tab | Source |
+|-----|--------|
+| **Overview** | README content (everything before first `##` heading) |
+| **Installation** | README sections matching: install, getting started, setup, quick start |
+| **API** | README sections matching: api, api reference, reference |
+| **Benchmarks** | README sections matching: benchmark, benchmarks, performance |
+| **Community** | Community forum posts tagged with the project slug |
+
+README sections are parsed by the backend's `_parse_readme_sections()` function, which splits markdown by `##` headings and classifies each section by keyword.
+
+### Wiki Documentation
+
+Each project has a wiki at `/projects/{slug}/wiki` backed by the `wiki_pages` database table. Wikis support:
+
+- Hierarchical pages (parent/child nesting)
+- Sort ordering
+- Markdown content rendered with `MarkdownRenderer`
+- Sidebar navigation with collapsible tree
+- Auth-gated editing
+
+## Live Stats
+
+For tracked repositories (configured via `CODEPAWL_TRACKED_REPOS` env var), the backend fetches detailed stats:
+
+```typescript
+interface ApiProjectStats {
+  stars: number;
+  forks: number;
+  language: string | null;
+  lastCommitDate: string | null;
+  lastCommitMessage: string | null;
+  latestRelease: string | null;
+  latestReleaseDate: string | null;
+  openIssues: number;
+}
+```
+
+## API Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/projects` | GET | Live stats for tracked repos |
+| `/projects/org` | GET | All public repos from codepawl GitHub org |
+| `/projects/{owner}/{repo}/readme` | GET | Fetch and parse README sections |
+| `/api/wiki/{project_slug}` | GET | List wiki pages for a project |
+| `/api/wiki/{project_slug}/{page_slug}` | GET | Get a single wiki page |
+| `/api/wiki/{project_slug}` | POST | Create wiki page (auth required) |
+| `/api/wiki/{project_slug}/{page_slug}` | PUT | Update wiki page (auth required) |
+
+## Adding a Project
+
+To add a project to the showcase:
+
+1. Create a public repository under the [codepawl GitHub org](https://github.com/codepawl)
+2. Add a description and set the primary language
+3. The project will appear on the `/projects` page within 1 hour (cache TTL)
+4. For richer hub pages, structure your README with `##` headings matching the tab keywords
