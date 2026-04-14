@@ -105,11 +105,15 @@ What does NOT exist yet: search, community seeding.
 | CodePawl Web | Active, this repo | Continue building |
 | Blog | Working | Keep posting content |
 | Community Forum | Working | Polish and grow |
-| Loclean | External repo, listed as project | Keep as project card |
+| Loclean | Org repo, listed as project | Keep as project card |
+| TurboQuant Torch | Org repo, listed as project | Keep as project card |
+| OpenPawl | Org repo, listed as project | Keep as project card |
+| Yeastbook | Org repo, listed as project | Keep as project card |
+| Hypedar | Org repo, listed as project | Keep as project card |
+| FeatCat | Org repo, listed as project | Keep as project card |
+| HebbMem | Org repo, listed as project | Keep as project card |
 | TeamClaw | Does not exist | Do NOT list as product until MVP exists |
 | Lognis | Does not exist | Do NOT list as product until MVP exists |
-| Yeastbook | Does not exist | Do NOT list as product until MVP exists |
-| OpenClaw | Does not exist | Do NOT list as product until MVP exists |
 
 ---
 

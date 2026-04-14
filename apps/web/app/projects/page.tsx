@@ -36,7 +36,7 @@ export default async function Projects() {
   if (orgRepos.length > 0) {
     // Primary: build from live org repos, use GitHub descriptions
     allProjects = orgRepos
-      .filter((r) => r.name !== ".github" && (r.description || r.language))
+      .filter((r) => r.name !== ".github" && r.name !== "codepawl" && (r.description || r.language))
       .map((r) => {
         const staticFallback = staticBySlug.get(r.name);
         const statsKey = `codepawl/${r.name}`.toLowerCase();

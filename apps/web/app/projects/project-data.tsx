@@ -35,7 +35,7 @@ export const projects: Project[] = [
     title: "TurboQuant Torch",
     year: 2026,
     description:
-      "Lightning-fast quantization toolkit for PyTorch models. Supports INT8, INT4, and mixed-precision quantization with minimal accuracy loss.",
+      "PyTorch implementation of TurboQuant. Near-optimal vector quantization for KV cache compression and vector search. 3-bit with zero accuracy loss.",
     url: "https://github.com/codepawl/turboquant-torch",
     slug: "turboquant-torch",
     quickStart: {
@@ -53,8 +53,8 @@ quantized.save("model_int8.pt")`,
     title: "Loclean",
     year: 2025,
     description:
-      "The All-in-One Local AI Data Cleaning Library. Privacy-first, zero-cost data cleaning using local small language models (SLMs) like Phi-3, Qwen, and Gemma. No GPU or API keys required.",
-    url: "https://github.com/nxank4/loclean",
+      "An AI Data Cleaning Library. Privacy-first, zero-cost data cleaning using local small language models (SLMs) like Phi-3, Qwen, and Gemma. No GPU or API keys required.",
+    url: "https://github.com/codepawl/loclean",
     slug: "loclean",
     quickStart: {
       install: "pip install loclean",
@@ -64,57 +64,62 @@ cleaner = Cleaner()
 result = cleaner.clean(df, column="address")
 print(result.head())`,
     },
-    docsUrl: "https://github.com/nxank4/loclean#readme",
+    docsUrl: "https://github.com/codepawl/loclean#readme",
     packageUrl: "https://pypi.org/project/loclean/",
   },
   {
-    title: "ChromaFusion",
-    year: 2024,
+    title: "OpenPawl",
+    year: 2026,
     description:
-      "An AI-driven application for recoloring grayscale and faded images, enhancing visual quality with precision and a user-friendly interface.",
-    url: "https://github.com/lunovian/ChromaFusion",
-    slug: "chromafusion",
-    quickStart: {
-      install: `git clone https://github.com/lunovian/ChromaFusion.git
-cd ChromaFusion
-pip install -r requirements.txt`,
-      example: `python main.py --input grayscale.jpg --output colorized.jpg`,
-    },
-    docsUrl: "https://github.com/lunovian/ChromaFusion#readme",
+      "Terminal-native AI workspace. You are the conductor.",
+    url: "https://github.com/codepawl/openpawl",
+    slug: "openpawl",
+    quickStart: { install: "", example: "" },
+    docsUrl: "https://github.com/codepawl/openpawl#readme",
     packageUrl: null,
   },
   {
-    title: "ANAug",
-    year: 2024,
+    title: "Yeastbook",
+    year: 2026,
     description:
-      "A Python-based data augmentation library for specialized domains like medical imaging, improving model robustness and performance in niche applications.",
-    url: "https://github.com/lunovian/an-augment",
-    slug: "anaug",
-    quickStart: {
-      install: "pip install an-augment",
-      example: `from anaug import Augmentor
-
-aug = Augmentor(domain="medical")
-augmented = aug.transform(image)`,
-    },
-    docsUrl: "https://github.com/lunovian/an-augment#readme",
-    packageUrl: "https://pypi.org/project/an-augment/",
+      "Standalone. Polyglot. High-performance.",
+    url: "https://github.com/codepawl/yeastbook",
+    slug: "yeastbook",
+    quickStart: { install: "", example: "" },
+    docsUrl: "https://github.com/codepawl/yeastbook#readme",
+    packageUrl: null,
   },
   {
-    title: "AI Tool for Room Decoration",
-    year: 2023,
+    title: "Hypedar",
+    year: 2026,
     description:
-      "An AI-powered assistant that provides tailored recommendations for furniture, color schemes, and room arrangements based on preferences and layout.",
-    url: "https://github.com/Ekanara/AI-Tool-for-Room-Decoration",
-    slug: "room-decoration",
-    quickStart: {
-      install: `git clone https://github.com/Ekanara/AI-Tool-for-Room-Decoration.git
-cd AI-Tool-for-Room-Decoration
-pip install -r requirements.txt`,
-      example: `python app.py
-# Open http://localhost:5000 in your browser`,
-    },
-    docsUrl: "https://github.com/Ekanara/AI-Tool-for-Room-Decoration#readme",
+      "Catch the wave before everyone else. Build the first implementation.",
+    url: "https://github.com/codepawl/hypedar",
+    slug: "hypedar",
+    quickStart: { install: "", example: "" },
+    docsUrl: "https://github.com/codepawl/hypedar#readme",
+    packageUrl: null,
+  },
+  {
+    title: "FeatCat",
+    year: 2026,
+    description:
+      "AI-Powered Feature Catalog for teams.",
+    url: "https://github.com/codepawl/featcat",
+    slug: "featcat",
+    quickStart: { install: "", example: "" },
+    docsUrl: "https://github.com/codepawl/featcat#readme",
+    packageUrl: null,
+  },
+  {
+    title: "HebbMem",
+    year: 2026,
+    description:
+      "Hebbian memory for AI agents.",
+    url: "https://github.com/codepawl/hebbmem",
+    slug: "hebbmem",
+    quickStart: { install: "", example: "" },
+    docsUrl: "https://github.com/codepawl/hebbmem#readme",
     packageUrl: null,
   },
 ];
