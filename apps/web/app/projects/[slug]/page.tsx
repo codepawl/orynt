@@ -9,6 +9,7 @@ import { fetchProjectStats, fetchOrgRepos, fetchReadme } from "app/lib/projects"
 import { fetchPosts } from "app/lib/community";
 import { fetchBlogPosts } from "app/lib/blog";
 import { fetchWikiPages } from "app/lib/wiki";
+import { fetchDocTree } from "app/lib/github-docs";
 import { ProjectHubTabs } from "./ProjectHubTabs";
 
 interface Props {
@@ -91,13 +92,15 @@ export default async function ProjectHubPage({ params }: Props) {
 
   const { project, owner, repo } = resolved;
 
-  // Fetch live stats, community posts, blog posts, README, and wiki pages in parallel
-  const [statsMap, communityData, blogData, readme, wikiPages] = await Promise.all([
+  // Fetch live stats, community posts, blog posts, README, wiki pages, and doc tree in parallel
+  const repoFullName = `${owner}/${repo}`;
+  const [statsMap, communityData, blogData, readme, wikiPages, docTree] = await Promise.all([
     fetchProjectStats(),
     fetchPosts(1, "new", undefined, slug).catch(() => null),
     fetchBlogPosts(1).catch(() => null),
     fetchReadme(owner, repo),
     fetchWikiPages(slug),
+    fetchDocTree(repoFullName).catch(() => ({ files: [] })),
   ]);
 
   // Get stats from statsMap if available
@@ -212,11 +215,19 @@ export default async function ProjectHubPage({ params }: Props) {
             <BoxArrowUpRight size={12} />
           </a>
         )}
+        {docTree.files.length > 0 && (
+          <Link
+            href={`/projects/${slug}/docs`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors no-underline"
+          >
+            Docs
+          </Link>
+        )}
         <Link
           href={`/projects/${slug}/wiki`}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors no-underline"
         >
-          Docs{wikiPages.length > 0 ? ` (${wikiPages.length})` : ""}
+          Wiki{wikiPages.length > 0 ? ` (${wikiPages.length})` : ""}
         </Link>
       </div>
 
