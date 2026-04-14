@@ -8,6 +8,7 @@ import {
   JournalText,
   BoxArrowRight,
   People,
+  Folder2Open,
   ChevronDown,
   ChevronRight,
 } from "react-bootstrap-icons";
@@ -35,6 +36,7 @@ type NavItem = NavLink | NavGroup;
 const NAV: NavItem[] = [
   { type: "link", href: "/admin", icon: HouseDoor, label: "Dashboard" },
   { type: "link", href: "/admin/blog", icon: JournalText, label: "Blog Posts" },
+  { type: "link", href: "/admin/projects", icon: Folder2Open, label: "Projects" },
   {
     type: "group",
     label: "Community",
