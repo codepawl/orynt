@@ -1,6 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./src/**/*.{astro,html,js,jsx,md,mdx,ts,tsx}"],
+  // Shiki generates `.astro-code` and `.line` at runtime so they never appear
+  // in scanned content. Safelist any custom rules that target them.
+  safelist: ["astro-code", "line"],
   theme: {
     extend: {
       colors: {
