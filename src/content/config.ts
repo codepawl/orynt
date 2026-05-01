@@ -22,15 +22,4 @@ const products = defineCollection({
   }),
 });
 
-const changelog = defineCollection({
-  type: "content",
-  schema: z.object({
-    title: z.string(),
-    description: z.string(),
-    version: z.string(),
-    publishedAt: z.date(),
-    tag: z.enum(["release", "fix", "change", "remove", "security"]),
-  }),
-});
-
-export const collections = { log, products, changelog };
+export const collections = { log, products };
