@@ -20,7 +20,7 @@ const minHeightStyle = minHeight ? `min-height: ${minHeight};` : "";
 ---
 
 <div
-  class="blueprint-card relative flex flex-col overflow-hidden"
+  class="blueprint-card relative flex min-w-0 flex-col overflow-hidden"
   style={minHeightStyle}
 >
   <div class="flex items-center gap-3 border-b border-ink-700 bg-ink-950/40 px-5 py-3">
@@ -33,7 +33,7 @@ const minHeightStyle = minHeight ? `min-height: ${minHeight};` : "";
       {filename}
     </span>
   </div>
-  <div class="no-scrollbar flex-1 overflow-hidden px-5 py-5">
+  <div class="no-scrollbar min-w-0 flex-1 overflow-hidden px-5 py-5">
     <Code
       code={code}
       lang={lang}
