@@ -10,12 +10,17 @@ This repo is NOT the product. The product code lives in a separate repo (codepaw
 
 ## Brand and positioning (LOCKED)
 
-- Studio name: **Codepawl**
-- Product name: **Codepawl Trace**
-- Tagline: "Why did your AI fail? We tell you. In 30 seconds."
-- Subhead: "Codepawl Trace is a failure-explanation layer for AI agent developers. Plug in your traces from Langfuse, LangSmith, OpenTelemetry, or raw SDK logs. Get structured diagnoses, root causes, and the exact fix to apply. Not another dashboard. A debugger that thinks."
+Codepawl is a dev tools studio for engineers shipping AI systems. Trace is the first product. Future products use the same design system, brand, and pricing structure.
 
-Positioning is failure-explanation, not observability. We complement Langfuse/LangSmith, we do not replace them. The mechanical-pawl metaphor stays as visual brand thesis. The phrase "ratchet engineering forward" lives only on `/about` as origin story, never on the homepage.
+- Studio name: **Codepawl**
+- First product: **Codepawl Trace**
+- Studio framing (homepage marker): "Codepawl · dev tools studio for AI builders"
+- Trace tagline (homepage hero, locked): "Why did your AI fail? We tell you. In 30 seconds."
+- Trace subhead (locked): "Codepawl Trace is a failure-explanation layer for AI agent developers. Plug in your traces from Langfuse, LangSmith, OpenTelemetry, or raw SDK logs. Get structured diagnoses, root causes, and the exact fix to apply. Not another dashboard. A debugger that thinks."
+
+Trace's positioning is failure-explanation, not observability. We complement Langfuse/LangSmith, we do not replace them. The mechanical-pawl metaphor stays as visual brand thesis for the whole studio. The phrase "ratchet engineering forward" lives only on `/about` as origin story, never on the homepage.
+
+Future products go under the same Codepawl brand, design system, and self-host-or-cloud pricing pattern. Adding a product is a content collection entry plus optional product page, not a brand exercise.
 
 Do NOT propose new positioning, taglines, or brand pivots without explicit ask.
 
@@ -34,31 +39,48 @@ No React, no Vue, no Svelte islands in v1. No client-side JS on any page. If a f
 
 ```
 .
-├── DESIGN.md                   # visual theme spec, READ FIRST for any UI change
-├── CLAUDE.md                   # this file
+├── DESIGN.md                       # visual theme spec, READ FIRST for any UI change
+├── CLAUDE.md                       # this file
 ├── README.md
 ├── astro.config.mjs
 ├── package.json
 ├── tailwind.config.mjs
-├── public/                     # favicon, og images, static assets
+├── wrangler.toml                   # Cloudflare Pages config
+├── public/                         # favicon, og images, static assets
 └── src/
     ├── content/
-    │   ├── config.ts           # log collection schema
-    │   └── log/                # MDX build log entries
+    │   ├── config.ts               # collection schemas (log, products, changelog)
+    │   ├── log/                    # MDX build log entries
+    │   ├── products/               # MDX product entries (one per product)
+    │   └── changelog/              # MDX product release entries
+    ├── components/
+    │   ├── Header.astro
+    │   ├── Footer.astro
+    │   ├── Em.astro                # italic-word ratchet emphasis
+    │   ├── SectionMarker.astro     # "001 ·" rhythm marker
+    │   ├── CodeBlock.astro         # file-tab signature code block
+    │   ├── ProductCard.astro       # generic; do not hardcode product names
+    │   ├── PricingTier.astro       # generic pricing tier
+    │   ├── IntegrationStrip.astro  # adapters strip (replaces customer logos)
+    │   └── ComparisonTable.astro
     ├── layouts/
-    │   └── Base.astro          # site shell, head, header, footer
+    │   └── Base.astro              # site shell, head, header, footer
     ├── pages/
-    │   ├── index.astro         # homepage
-    │   ├── diagnose.astro      # product page (Codepawl Trace)
+    │   ├── index.astro             # homepage (studio framing + Trace)
+    │   ├── diagnose.astro          # product page (Codepawl Trace)
     │   ├── about.astro
-    │   └── log/
+    │   ├── products/index.astro
+    │   ├── log/
+    │   │   ├── index.astro
+    │   │   └── [...slug].astro
+    │   └── changelog/
     │       ├── index.astro
     │       └── [...slug].astro
     └── styles/
-        └── global.css          # Tailwind base + design tokens
+        └── global.css              # Tailwind base + design tokens
 ```
 
-Pages that should NOT exist: `/community`, `/papers`, `/projects`, `/blog`, `/team`, `/pricing` (pricing lives on homepage and `/diagnose`).
+Pages that should NOT exist: `/community`, `/papers`, `/projects`, `/blog`, `/team`, `/pricing` (pricing lives on homepage and `/diagnose`), `/docs` (lives at docs.codepawl.com).
 
 ## Commands
 
@@ -104,14 +126,19 @@ When writing for `/log`, the voice is honest builder-in-public: first person, sp
 ## Site structure (LOCKED)
 
 ```
-/                    Homepage: hero + how it works + comparison + pricing + CTA
+/                    Homepage: studio framing + Trace hero + how it works + comparison + pricing + CTA
 /diagnose            Product page (deeper Trace explanation)
-/log                 Build log index
+/products            Product index (Trace card + "more coming" placeholder)
+/log                 Build log index (MDX collection)
 /log/[slug]          Individual log post
+/changelog           Changelog index (MDX collection, scoped to product releases)
+/changelog/[slug]    Individual release entry
 /about               Studio bio + origin story
 ```
 
-Header nav order: `Diagnose` · `Log` · `About` · `GitHub` (external).
+Header nav order: `Products` · `Diagnose` · `Log` · `Changelog` · `About` · `GitHub` (external).
+
+Pages that should NOT exist on the marketing site: `/docs` (lives at docs.codepawl.com), `/pricing` (pricing surfaces on `/` and `/diagnose`), `/community`, `/papers`, `/blog`, `/team`, `/projects`.
 
 ## Performance budget
 
@@ -137,12 +164,18 @@ Do not change pricing copy without explicit ask.
 
 ## Hard "do not" list
 
-- Do NOT add testimonials, customer logos, or fake social proof
+- Do NOT add testimonials, customer logos, or fake social proof (zero customers, don't fake)
+- Do NOT add fake production stats (uptime numbers, team counts, p50 latencies) until real telemetry exists
+- Do NOT add a sticky/floating header. Header is static, border-bottom only.
+- Do NOT use blue accents or blue gradients anywhere. The accent is ratchet-orange. Period.
+- Do NOT use purple. Code syntax follows DESIGN.md exactly.
+- Do NOT hardcode product names into reusable components. ProductHero, ProductCard, PricingTier accept props; Trace-specific copy lives in pages or content collection entries.
 - Do NOT add a Discord, Slack, or community section (community comes after the product has users)
 - Do NOT add a "team" or "founders" section beyond the brief bio on `/about`
 - Do NOT add stock illustrations, gradient blobs, or generic SaaS imagery
 - Do NOT add tracking pixels, analytics scripts, or third-party widgets in v1
 - Do NOT add a newsletter popup, exit-intent modal, or any modal-based capture
+- Do NOT add `<form>` elements. The "Notify on launch" CTA links to GitHub for now.
 - Do NOT introduce React, Vue, or Svelte components
 - Do NOT add cookie banners (no tracking means no banner needed)
 - Do NOT push to remote without local review with `bun run dev` and `bun run build`
@@ -177,3 +210,6 @@ The original Codepawl framing was a studio brand with multiple future tools, wit
 
 ### 2026-04: Kill /community, /papers, /projects from old site
 Zero members, zero papers, generic projects. Devs see through fake community instantly. Surfaces come back when there is real content to put on them.
+
+### 2026-04-30: Pivoted positioning from single-product to studio-framing after design output
+Reverses the earlier 2026-04 decision to narrow to a single-product pitch. Trace remains the only shipped product in v1. Routes added: `/products`, `/changelog`. Reusable components (`ProductHero`, `ProductCard`, `PricingTier`) and content collections (`products`, `changelog`) make adding product #2 mechanical when it ships. Rejected design elements: customer logos strip, testimonial quotes, fake production stats (47 teams / 99.97% uptime), sticky nav with backdrop blur, "Open dashboard" / "Sign in" header buttons, blueprint blue accent (`#4D7FB8`), purple in code syntax (`#B89BD8`), the design's cooler ink scale (kept our warm `#070605..`), the design's `#FF6B1A` ratchet (kept our `#FF9500`). Pricing tiers stay locked at Self-host / Hobbyist $19 / Team $49 (rejected the design's Solo $0 / Team $20-seat / Enterprise model).
