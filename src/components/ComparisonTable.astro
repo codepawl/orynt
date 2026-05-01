@@ -1,0 +1,94 @@
+---
+type Cell = "yes" | "no" | "partial";
+
+interface Row {
+  feature: string;
+  langfuse: Cell;
+  trace: Cell;
+  traceNote?: string;
+  langfuseNote?: string;
+}
+
+interface Props {
+  rows: ReadonlyArray<Row>;
+}
+
+const { rows } = Astro.props;
+
+const symbolFor = (cell: Cell): string => {
+  if (cell === "yes") return "✓";
+  if (cell === "partial") return "·";
+  return "—";
+};
+
+const colorFor = (cell: Cell): string => {
+  if (cell === "yes") return "text-ratchet-500";
+  if (cell === "partial") return "text-ink-400";
+  return "text-ink-500";
+};
+---
+
+<div class="overflow-x-auto border-t border-b border-ink-700/60">
+  <table class="w-full border-collapse">
+    <thead>
+      <tr class="border-b border-ink-700/60">
+        <th
+          scope="col"
+          class="py-3 pr-4 text-left font-mono text-[11px] uppercase tracking-technical text-ink-400"
+        >
+          Capability
+        </th>
+        <th
+          scope="col"
+          class="py-3 px-4 text-left font-mono text-[11px] uppercase tracking-technical text-ink-400"
+        >
+          Langfuse / LangSmith
+        </th>
+        <th
+          scope="col"
+          class="py-3 pl-4 text-left font-mono text-[11px] uppercase tracking-technical text-ratchet-500"
+        >
+          Codepawl Trace
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((row, i) => (
+          <tr class:list={[i < rows.length - 1 ? "border-b border-ink-700/60" : ""]}>
+            <th
+              scope="row"
+              class="py-4 pr-4 text-left font-sans text-sm font-normal text-ink-200"
+            >
+              {row.feature}
+            </th>
+            <td class="py-4 px-4">
+              <div class="flex items-baseline gap-3">
+                <span class:list={["font-mono text-base", colorFor(row.langfuse)]}>
+                  {symbolFor(row.langfuse)}
+                </span>
+                {row.langfuseNote && (
+                  <span class="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-400">
+                    {row.langfuseNote}
+                  </span>
+                )}
+              </div>
+            </td>
+            <td class="py-4 pl-4">
+              <div class="flex items-baseline gap-3">
+                <span class:list={["font-mono text-base", colorFor(row.trace)]}>
+                  {symbolFor(row.trace)}
+                </span>
+                {row.traceNote && (
+                  <span class="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-400">
+                    {row.traceNote}
+                  </span>
+                )}
+              </div>
+            </td>
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>

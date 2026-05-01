@@ -1,0 +1,14 @@
+---
+interface Props {
+  number: string;
+  label: string;
+  id?: string;
+}
+
+const { number, label, id } = Astro.props;
+---
+
+<div id={id} class="flex items-baseline gap-4 border-b border-ink-700/60 pb-4 font-mono text-xs uppercase tracking-technical">
+  <span class="text-ratchet-500">{number} ·</span>
+  <span class="text-ink-200">{label}</span>
+</div>

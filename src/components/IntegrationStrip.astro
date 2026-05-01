@@ -1,0 +1,32 @@
+---
+const adapters: ReadonlyArray<string> = [
+  "Langfuse",
+  "LangSmith",
+  "OpenTelemetry",
+  "OpenAI SDK",
+  "Anthropic SDK",
+];
+---
+
+<section class="border-b border-ink-700/60">
+  <div class="mx-auto max-w-container px-6 py-12 lg:px-12">
+    <p class="font-mono text-[10px] uppercase tracking-technical text-ink-500">
+      Adapters
+    </p>
+    <div class="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-sm uppercase tracking-technical text-ink-200">
+      {
+        adapters.map((name, i) => (
+          <>
+            <span>{name}</span>
+            {i < adapters.length - 1 && (
+              <span class="text-ink-500" aria-hidden>·</span>
+            )}
+          </>
+        ))
+      }
+    </div>
+    <p class="mt-5 font-mono text-xs uppercase tracking-[0.1em] text-ink-400">
+      We complement, we don't replace.
+    </p>
+  </div>
+</section>
