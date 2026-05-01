@@ -173,18 +173,27 @@ const fixCode = `result.suggested_fix
   </section>
 
   {/* 003 · Pricing */}
-  <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section xl:px-8">
+  <section id="pricing" class="border-b border-ink-700/60">
+    <div class="mx-auto max-w-container px-6 py-32 lg:px-12 lg:py-40 xl:px-8">
       <SectionMarker number="003" label="Pricing" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Cheap enough to <Em>try</Em>. Open source if you want.
       </h2>
+      <p class="mt-6 max-w-2xl text-lg leading-relaxed text-ink-200">
+        Annual billing saves 17%. No card needed for self-host. Cloud cancels
+        anytime, no quarterly contracts.
+      </p>
       <div class="mt-16 grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8 lg:pt-6">
         <PricingTier
           name="Self-host"
           price="Free"
           context="No limits"
-          features={["Open source", "Run anywhere", "All adapters", "All diagnostics"]}
+          features={[
+            "Open source, MIT license",
+            "Run on your own infra",
+            "All adapters included",
+            "Full diagnose engine",
+          ]}
           ctaLabel="View on GitHub"
           ctaHref="https://github.com/codepawl/trace"
           ctaVariant="secondary"
@@ -195,10 +204,11 @@ const fixCode = `result.suggested_fix
           perUnit="$0.0019 per diagnosis"
           context="Cloud · 1 user"
           features={[
-            "10k diagnoses / month",
-            "Hosted dashboard",
-            "Email support",
-            "All adapters",
+            "10,000 diagnoses per month",
+            "Hosted dashboard, no setup",
+            "Email support, 24h response",
+            "All adapters included",
+            "Cancel anytime",
           ]}
           ctaLabel="Notify on launch"
           ctaHref="/notify"
@@ -211,18 +221,19 @@ const fixCode = `result.suggested_fix
           perUnit="$0.0005 per diagnosis"
           context="Cloud · 5 users"
           features={[
-            "100k diagnoses / month",
-            "Hosted dashboard",
-            "Priority support",
-            "All adapters",
+            "100,000 diagnoses per month",
+            "Hosted dashboard for the team",
+            "Priority support, 4h response",
+            "All adapters included",
+            "Shared workspace, role-based access",
           ]}
           ctaLabel="Notify on launch"
           ctaHref="/notify"
           ctaVariant="secondary"
         />
       </div>
-      <p class="mt-8 font-mono text-xs uppercase tracking-[0.1em] text-ink-500">
-        Annual: 17% off. Cloud launches Q3 2026.
+      <p class="mt-12 font-mono text-xs uppercase tracking-[0.1em] text-ink-500">
+        Cloud launches Q3 2026 · Annual saves 17% on Hobbyist and Team
       </p>
     </div>
   </section>
