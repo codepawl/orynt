@@ -33,26 +33,22 @@ print(result.suggested_fix)
 # "agent.tools[0] schema mismatch"
 `;
 
-const adapterCode = `from codepawl_trace import (
-    adapter,
+const adapterCode = `from codepawl_trace import adapter
+
+trace = adapter.langfuse(
+    api_key="lf_xxx"
 )
-
-trace = adapter.langfuse(id)
 `;
 
-const diagnoseCardCode = `result = diagnose(trace)
-
-result.failure_type
-# "tool_misuse"
-
-result.confidence
-# 0.91
+const diagnoseCardCode = `@trace
+def call_agent(query: str):
+    return diagnose(query)
 `;
 
-const fixCode = `result.suggested_fix
-# agent.tools[0]:
-#   schema mismatch
-#   on \`query\` field
+const fixCode = `result = diagnose(trace)
+
+if result.confidence > 0.85:
+    apply(result.suggested_fix)
 `;
 ---
 

@@ -53,8 +53,11 @@
       "scope": [
         "entity.name.function.decorator",
         "meta.decorator entity.name.function",
+        "meta.function.decorator entity.name.function",
         "punctuation.decorator",
-        "meta.decorator punctuation.definition.decorator"
+        "punctuation.definition.decorator",
+        "meta.decorator punctuation.definition.decorator",
+        "meta.function.decorator punctuation.definition.decorator"
       ],
       "settings": {
         "foreground": "#ff9500",
