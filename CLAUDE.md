@@ -31,7 +31,7 @@ Do NOT propose new positioning, taglines, or brand pivots without explicit ask.
 - **MDX** for `/log` content collection
 - **TypeScript strict mode**, `any` is forbidden anywhere
 - **Bun** for all package management (`bun add`, `bun run`, never `npm install` or `yarn`)
-- **Cloudflare Pages** for hosting (framework: astro, auto-deploy from main via git integration)
+- **Cloudflare Workers** (static-assets binding) for hosting, auto-deploy from main via Workers Builds
 
 No React, no Vue, no Svelte islands in v1. No client-side JS on any page. If a feature requires JS, ask first.
 
@@ -45,7 +45,7 @@ No React, no Vue, no Svelte islands in v1. No client-side JS on any page. If a f
 ├── astro.config.mjs
 ├── package.json
 ├── tailwind.config.mjs
-├── wrangler.toml                   # Cloudflare Pages config
+├── wrangler.jsonc                  # Cloudflare Workers static-assets config
 ├── public/                         # favicon, og images, static assets
 └── src/
     ├── content/
@@ -89,6 +89,10 @@ bun run lint             # if configured, runs eslint or biome
 ```
 
 CLI assumes Linux / WSL2 Ubuntu, not Windows.
+
+## Deploy
+
+Deployed to Cloudflare Workers via static-assets binding. Build: `bun run build`. Deploy: `bunx wrangler deploy`. Auto-deploy on push to main is configured via Workers Builds in the Cloudflare dashboard. Do NOT switch to SSR without an explicit decision-log entry, `output: 'static'` is locked.
 
 ## Design system
 
@@ -210,3 +214,6 @@ Reverses the earlier 2026-04 decision to narrow to a single-product pitch. Trace
 
 ### 2026-05-01: Removed `/changelog` routes and content collection until v0.1 ships
 The empty changelog collection was producing build-time warnings and the index page rendered a "pre-release" placeholder, which signaled emptiness rather than progress. Schema, both pages, header nav item, and notify.astro link removed. Reinstate together with the first real release entry when Trace v0.1 ships; the products collection pattern is the template.
+
+### 2026-05-01: Adopted Cloudflare Workers static-assets deploy over Pages classic
+Cloudflare's unified UI requires both build and deploy commands, pushing new projects toward Workers. Static-assets binding gives identical capability to Pages for our locked `output: 'static'` architecture. Replaced the Pages-style `wrangler.toml` (with `pages_build_output_dir`) with a Workers `wrangler.jsonc` (with `assets.directory`).
