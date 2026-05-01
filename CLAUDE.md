@@ -1,246 +1,179 @@
-# CLAUDE.md
+# CLAUDE.md — Codepawl Landing Page
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is the persistent context for Claude Code when working in this repo. Read it before every task. If anything below conflicts with a one-off prompt, ask before deciding.
 
-## First Thing Every Session
+## What this repo is
 
-**Read `ROADMAP.md` before doing any work.** Check which phase is current, which tasks are checked off, and what's next. Do not start work without confirming current state.
+The marketing landing page for Codepawl, a one-person dev studio. Live domain: codepawl.com. This is the public face of the studio and the primary surface for the flagship product, Codepawl Trace.
 
-If a task is blocked, document the blocker in ROADMAP.md and move to the next unblocked task. Do not create features not listed in the roadmap without explicit approval.
+This repo is NOT the product. The product code lives in a separate repo (codepawl-trace). Do not add product features, dashboards, or app routes here. This is static marketing only.
 
-## Project Overview
+## Brand and positioning (LOCKED)
 
-CodePawl is an open-source AI/ML community platform with a blog and discussion forum.
+- Studio name: **Codepawl**
+- Product name: **Codepawl Trace**
+- Tagline: "Why did your AI fail? We tell you. In 30 seconds."
+- Subhead: "Codepawl Trace is a failure-explanation layer for AI agent developers. Plug in your traces from Langfuse, LangSmith, OpenTelemetry, or raw SDK logs. Get structured diagnoses, root causes, and the exact fix to apply. Not another dashboard. A debugger that thinks."
 
-**Live:** https://codepawl.com
-**Founded:** 2026
-**Founder:** An
-**Stack:** Bun monorepo, Next.js 16 (App Router), FastAPI, Supabase (PostgreSQL + Auth), Tailwind + Ant Design, Sentry (error monitoring)
+Positioning is failure-explanation, not observability. We complement Langfuse/LangSmith, we do not replace them. The mechanical-pawl metaphor stays as visual brand thesis. The phrase "ratchet engineering forward" lives only on `/about` as origin story, never on the homepage.
 
-## Monorepo Structure
+Do NOT propose new positioning, taglines, or brand pivots without explicit ask.
+
+## Stack
+
+- **Astro 5** (static site generator, near-zero JS shipped)
+- **Tailwind CSS 3** (utility classes only, no CSS modules, no styled-components)
+- **MDX** for `/log` content collection
+- **TypeScript strict mode**, `any` is forbidden anywhere
+- **Bun** for all package management (`bun add`, `bun run`, never `npm install` or `yarn`)
+- **Cloudflare Pages** for hosting (framework: astro, auto-deploy from main via git integration)
+
+No React, no Vue, no Svelte islands in v1. No client-side JS on any page. If a feature requires JS, ask first.
+
+## File structure
 
 ```
-codepawl/
-├── apps/
-│   ├── web/          # Next.js 16 frontend (@codepawl/web)
-│   └── api/          # Python FastAPI backend (Koyeb)
-├── packages/
-│   └── shared/       # @codepawl/shared (shared types, constants, config)
-├── ROADMAP.md        # Development roadmap (source of truth for all work)
-├── CLAUDE.md         # This file
-├── dev.sh            # Start both frontend + API
-└── package.json      # Bun workspaces root
+.
+├── DESIGN.md                   # visual theme spec, READ FIRST for any UI change
+├── CLAUDE.md                   # this file
+├── README.md
+├── astro.config.mjs
+├── package.json
+├── tailwind.config.mjs
+├── public/                     # favicon, og images, static assets
+└── src/
+    ├── content/
+    │   ├── config.ts           # log collection schema
+    │   └── log/                # MDX build log entries
+    ├── layouts/
+    │   └── Base.astro          # site shell, head, header, footer
+    ├── pages/
+    │   ├── index.astro         # homepage
+    │   ├── diagnose.astro      # product page (Codepawl Trace)
+    │   ├── about.astro
+    │   └── log/
+    │       ├── index.astro
+    │       └── [...slug].astro
+    └── styles/
+        └── global.css          # Tailwind base + design tokens
 ```
+
+Pages that should NOT exist: `/community`, `/papers`, `/projects`, `/blog`, `/team`, `/pricing` (pricing lives on homepage and `/diagnose`).
 
 ## Commands
 
 ```bash
-# Root (Bun workspaces)
-bun install                # Install all workspace dependencies
-bun run dev                # Dev server (web only)
-bun run build              # Production build (web)
-bun run dev:api            # Dev server (api, requires Python venv)
-./dev.sh                   # Start both frontend + API
-
-# Frontend (apps/web)
-cd apps/web
-bun run dev
-bun run lint               # ESLint
-bun run typecheck          # TypeScript check (tsc --noEmit)
-
-# Backend (apps/api)
-cd apps/api
-source .venv/bin/activate
-uvicorn app.main:app --reload
-ruff check .               # Linting
-pytest                     # Tests
+bun install              # first-time setup
+bun run dev              # local dev server, http://localhost:4321
+bun run build            # production build to dist/
+bun run preview          # preview production build locally
+bun run lint             # if configured, runs eslint or biome
 ```
 
-Always use `bun`, never `npm`/`yarn`/`pnpm`. Bun auto-loads `.env` files.
+CLI assumes Linux / WSL2 Ubuntu, not Windows.
 
-## Work Cycle
+## Design system
 
-Every task follows this cycle. Do not skip steps.
+The single source of truth for visuals is `DESIGN.md`. Read it before any UI change. Key rules pulled forward:
+
+- Dark mode only in v1, no light mode toggle
+- Color palette is locked: ink (neutral) + ratchet-orange accent. No purple, no blue gradients, no new colors.
+- Fonts: **Fraunces** for display headlines, **Inter Tight** for body, **JetBrains Mono** for technical labels and code. No Geist, no Space Grotesk, no Inter Tight Variable substitutions.
+- Section pattern is mandatory: every section has a numbered marker (`001 ·`, `002 ·`) + uppercase mono label + Fraunces headline + body
+- Code blocks use the file-tab signature: `[•] [•] [●]   FILENAME.PY` with the third dot in ratchet-orange
+- Cards use `.blueprint-card` with corner ticks top-left and bottom-right only
+- Buttons are sharp-cornered (radius 0 or 2px), never rounded-full, never gradient
+- No hover lifts, no scale transforms, no scroll-triggered animations
+- Italic emphasis on a single word in headlines is the signature move (e.g. "Why did your *AI* fail?")
+
+If a design choice is not covered in DESIGN.md, ask before inventing.
+
+## Voice and copy rules
+
+- No em dashes (—) or en dashes (–) anywhere. Use commas, periods, or restructure.
+- No certainty words: "extremely", "always", "never", "perfect", "guaranteed", "absolutely"
+- No hedging: "I think maybe", "perhaps", "it might be that"
+- No SaaS-template phrases: "let's dive in", "in today's landscape", "it's worth noting", "unlock the power of", "supercharge your", "join the waitlist", "get started for free"
+- No emoji in marketing copy
+- CTAs use action verbs in title case: "View on GitHub", "Read the build log", "Notify on launch"
+- Headlines take a stand. Direct claims, no qualifiers.
+- Body copy stays under 2 lines per paragraph in marketing sections
+
+When writing for `/log`, the voice is honest builder-in-public: first person, specific numbers, decisions and tradeoffs, no triumphalism. Reference the studio as "we" only when the studio acts as the actor; use "I" when the founder acts as the actor.
+
+## Site structure (LOCKED)
 
 ```
-1. build   — implement the change
-2. test    — lint + typecheck + pytest + manual verification
-3. commit  — descriptive message: "type(phase): task - description"
-4. update  — check off task in ROADMAP.md
+/                    Homepage: hero + how it works + comparison + pricing + CTA
+/diagnose            Product page (deeper Trace explanation)
+/log                 Build log index
+/log/[slug]          Individual log post
+/about               Studio bio + origin story
 ```
 
-Commit message format:
-- Phase 0: `fix(phase0): 0.1 - remove unused packages`
-- Phase 1: `feat(phase1): 1.1 - set up supabase auth`
-- Phase 2: `feat(phase2): 2.3 - community API routes`
+Header nav order: `Diagnose` · `Log` · `About` · `GitHub` (external).
 
-## Branching Strategy
+## Performance budget
 
-- `main` — production (auto-deploys to Vercel)
-- `staging` — integration testing
-- Feature/fix branches created from staging: `fix/*`, `feat/*`
+- Lighthouse 100 on Performance, 100 on Accessibility minimum
+- LCP under 1.0s on 4G mobile
+- Zero render-blocking JavaScript on first load
+- Total page weight under 200KB excluding fonts
+- Fonts subset to Latin only, woff2 format, preloaded for Fraunces and Inter Tight, JetBrains Mono lazy-loaded
 
-Flow: feature branch > PR to staging > staging > PR to main
+If a change would break the budget, flag it before merging.
 
-## Architecture
+## Pricing (LOCKED for v1)
 
-### Frontend (apps/web)
+Surface these tiers identically on homepage and `/diagnose`:
 
-- **Framework:** Next.js 16, App Router, React 19, TypeScript 5.5
-- **Styling:** Tailwind CSS (primary) + Ant Design 6 (themed via `AntdConfigProvider.tsx`) + `global.css`
-- **Dark mode:** next-themes, class-based
-- **Animation:** `motion` (motion.dev). Import as `import { motion } from "motion/react"`. Never use `framer-motion`.
-- **Icons:** `react-bootstrap-icons`. Never use lucide-react.
-- **3D:** Three.js + @react-three/fiber (homepage blob only, may be removed for performance)
+- **Self-host**: Free, open source, no limits, user runs infra
+- **Hobbyist cloud**: $19/mo, 10k diagnoses, 1 user
+- **Team cloud**: $49/mo, 100k diagnoses, 5 users
+- Annual: 17% off
+- Cloud launches Q3 2026
 
-**Component locations:**
-- `app/components/features/` — domain-specific (animated logo, dino game, homepage, blog editor)
-- `app/components/features/blog-editor/` — Tiptap rich text + markdown editor
-- `app/components/layout/` — nav, footer, inline logo
-- `app/components/ui/` — reusable (ContentCard, ShareButtons, ReadingProgressBar, EmailVerificationBanner, UserMenu, NotificationBell, ProtectedRoute, theme switch, cookie consent)
+Do not change pricing copy without explicit ask.
 
-**Content systems:**
-- Blog: API-driven via Supabase `blog_posts` table. CRUD through FastAPI. Tiptap rich text editor at `/blog/write` and `/blog/edit/[id]`. Image uploads to Supabase Storage `blog-images` bucket. Auto-shares published posts to community as link posts.
-- Projects: Hybrid ISR — static curated data in `project-data.tsx` enriched with live GitHub stats (1h revalidation). Org repos fetched from `GET /projects/org`. Hub pages with README section parsing.
+## Hard "do not" list
 
-**Navigation:** Plain Next.js `Link` + `motion.div layoutId="nav-active"` for sliding underline. `NavigationLoading.tsx` shows a top loading bar on internal navigation.
+- Do NOT add testimonials, customer logos, or fake social proof
+- Do NOT add a Discord, Slack, or community section (community comes after the product has users)
+- Do NOT add a "team" or "founders" section beyond the brief bio on `/about`
+- Do NOT add stock illustrations, gradient blobs, or generic SaaS imagery
+- Do NOT add tracking pixels, analytics scripts, or third-party widgets in v1
+- Do NOT add a newsletter popup, exit-intent modal, or any modal-based capture
+- Do NOT introduce React, Vue, or Svelte components
+- Do NOT add cookie banners (no tracking means no banner needed)
+- Do NOT push to remote without local review with `bun run dev` and `bun run build`
+- Do NOT touch the codepawl-trace product repo
 
-**Feed generation:** `app/feed/[format]/route.ts` generates RSS/Atom/JSON. Aliased via rewrites in `next.config.js`.
+## Workflow expectations
 
-**Error monitoring:** `@sentry/nextjs` — client, server, and edge configs in `sentry.*.config.ts`. `global-error.tsx` and `error.tsx` capture exceptions.
+For any change:
 
-**Site config:** `app/config.ts` (metadata, `socialLinks` for org, `founderLinks` for personal, `foundedYear: 2026`)
+1. Read `DESIGN.md` and the relevant page file before writing code
+2. Make focused commits, not one giant one (one commit per logical change)
+3. After each batch of changes, run `bun run build` and verify dist/ output
+4. Show diff summaries after commits
+5. Do NOT push to remote, do NOT deploy. Wait for explicit confirmation.
 
-### Backend (apps/api)
+## Founder context
 
-- **Framework:** FastAPI 0.115, async, Python 3.12
-- **DB:** Supabase (PostgreSQL) via PostgREST client. No ORM.
-- **Cache:** TTLCache (in-memory, 1h) for GitHub stats, org repos, README data
-- **Error monitoring:** `sentry-sdk[fastapi]`
+Solo dev based in Southeast Asia. Plans an EU relocation within 12-18 months via a self-employment visa. Cash floor comes from freelance challenge work (hourly reviews + per-challenge fees). Building Codepawl Trace on the remaining time. Goal: reach a sustainable monthly income target by month 18.
 
-**API routes:**
-- `GET /health` — health check
-- `GET /projects` — live GitHub stats for tracked repos
-- `GET /projects/org` — all public repos from codepawl GitHub org
-- `GET /projects/{owner}/{repo}/readme` — fetch + parse README sections
-- `POST /webhook` — GitHub webhook handler
-- **Blog** (`/api/blog`):
-  - `GET /posts`, `GET /posts/{slug}` — public listing + detail
-  - `GET /my-posts` — authenticated user's drafts + posts
-  - `GET /admin/posts` — admin: all posts across authors
-  - `POST /posts`, `PUT /posts/{post_id}`, `DELETE /posts/{post_id}` — CRUD
-  - `PATCH /posts/{post_id}/status` — publish/draft/review (admin-only publish)
-  - `POST /upload-image` — Supabase Storage upload
-- **Community** (`/api/community`):
-  - `GET /posts`, `GET /posts/{post_id}`, `POST /posts`, `DELETE /posts/{post_id}` — CRUD
-  - `GET /posts/trending` — top posts by score from last N days
-  - `GET /posts/{post_id}/comments`, `POST /posts/{post_id}/comments`, `DELETE /comments/{comment_id}` — comments
-  - `POST /vote`, `GET /votes/mine` — voting
-  - `POST /flag` — flag content
-  - `GET /tags/stats`, `DELETE /tags/{tag_name}`, `POST /tags/merge` — tag management
-  - `GET /me`, `PATCH /me` — user profile (read + update)
-  - `PATCH /users/{user_id}/ban` — admin ban
-  - `GET /url-preview` — HEAD-check URL validity
-- **Notifications** (`/api/notifications`):
-  - `GET /`, `GET /unread-count`, `POST /{id}/read`, `POST /read-all`
-- **Auth** (in `main.py`):
-  - `POST /api/auth/login`, `POST /api/auth/logout` — admin session cookie
+GitHub: founder personal handle (redacted)
+X: founder personal handle (redacted), `@codepawl` org
 
-### Shared Package (packages/shared)
+## Decision log
 
-Contains:
-- TypeScript types shared between frontend and backend (`Profile`, `BlogPost`, `CommunityPost`, `TopComment`, etc.)
-- Status enums, `CATEGORIES`, `KARMA_THRESHOLDS` constants
-- API URL config getter
+When making non-obvious choices, append to this section instead of opening issues. Format: `### YYYY-MM-DD: short title` followed by 1-3 sentences of reasoning.
 
-### Database (Supabase)
+### 2026-04: Astro over Next.js for the marketing site
+The dashboard at `app.codepawl.com` (future) will be Next.js. The marketing site is mostly static, needs Lighthouse 100, and benefits from Astro's zero-JS-by-default model. Two separate apps, right tool for each.
 
-Tables: `profiles`, `blog_posts`, `posts`, `comments`, `votes`, `flags`, `notifications`
-Storage: `blog-images` bucket (for blog post cover images and inline images)
+### 2026-04: Pivot positioning from "studio of tools" to "failure-explanation layer"
+The original Codepawl framing was a studio brand with multiple future tools, with Trace as the first one. We narrowed the homepage to a single product pitch because solo founders win on focus. The studio framing survives only on `/about` as origin story.
 
-All tables use Row Level Security (RLS).
-
-## Key Patterns and Rules
-
-### Do
-- Use `motion` for animations, not CSS transitions (except simple hover states)
-- Use `react-bootstrap-icons` for icons
-- ISR with graceful fallback for any backend API calls (never show 500 to users)
-- Use `@codepawl/shared` for any types/constants shared between frontend and backend
-- Add new MDX components in `mdx.tsx` components mapping
-- Commit after each sub-task, not at the end of a phase
-- Run lint + typecheck + pytest before every commit
-
-### Do Not
-- Do not introduce new UI libraries (stick with Tailwind + Ant Design)
-- Do not use `framer-motion`, use `motion/react`
-- Do not use `lucide-react`, use `react-bootstrap-icons`
-- Do not use `npm`/`yarn`/`pnpm`
-- Do not connect frontend directly to Supabase DB for data (go through FastAPI). Exception: Supabase Auth is used directly on the client for login/signup/session management.
-- Do not skip testing in the work cycle
-- Do not work on features outside the current roadmap phase
-- Do not list products that don't have code (TeamClaw, Lognis, Yeastbook, OpenClaw are NOT products yet)
-- **Merge before moving on.** Before starting any new branch, check for unmerged feature/fix branches (`git branch --list "fix/*" "feat/*"`). Verify each passes lint + typecheck + pytest. If clean, create PR and squash merge to staging. If broken, report and stop. Always start new work from latest staging.
-
-### Backend Constraints
-- Supabase credentials may not be configured in all environments. Always handle gracefully with 503 fallback.
-- Python deps pinned in `requirements.txt`
-
-### Frontend Constraints
-- Next.js 16 canary, be aware of potential breaking changes
-- `next-mdx-remote` v6 breaks in Turbopack dev mode (production build works fine)
-- Public pages (/, /blog, /projects, /about) must never require auth
-
-## Deployment
-
-- **Frontend:** Vercel, root directory `apps/web`. Uses Vercel Analytics + Speed Insights.
-- **Backend:** Koyeb (free tier), Docker at `apps/api/`.
-- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`, `CODEPAWL_ADMIN_API_KEY`, `CODEPAWL_SENTRY_DSN`
-- **Env vars (frontend):** `BACKEND_API_URL` (server-only), `NEXT_PUBLIC_BACKEND_API_URL` (client-side), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SENTRY_DSN`
-
-### Supabase Dashboard Configuration
-
-**Redirect URLs** (Settings → Auth → URL Configuration — must be added):
-- `http://localhost:3000/auth/callback`
-- `http://localhost:3000/auth/confirm`
-- `http://localhost:3000/reset-password`
-- `https://codepawl.com/auth/callback`
-- `https://codepawl.com/auth/confirm`
-- `https://codepawl.com/reset-password`
-
-**Email Templates** (Auth → Email Templates — must be updated for PKCE):
-All confirmation links must use the token_hash format:
-```
-{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=TYPE&next={{ .RedirectTo }}
-```
-Where `TYPE` is one of: `signup` | `invite` | `magiclink` | `recovery` | `email_change`
-
-## Pages
-
-| Route | Description |
-|-------|-------------|
-| `/` | Homepage, animated logo, recent blog posts |
-| `/about` | Org info + expandable team card |
-| `/blog`, `/blog/[slug]` | Blog listing + post detail (API-driven) |
-| `/blog/write` | Blog post editor (Tiptap, auth required) |
-| `/blog/edit/[id]` | Edit existing blog post |
-| `/blog/drafts` | User's draft posts |
-| `/projects` | Project showcase, live GitHub stats, org repos |
-| `/projects/[slug]` | Project hub page with tabs (overview, install, API, benchmarks, community) |
-| `/community` | Post listing (ranked/new) |
-| `/community/submit` | Submit post form |
-| `/community/post/[id]` | Post detail + comments |
-| `/login` | GitHub OAuth + email/password sign-in |
-| `/signup` | Email/password sign-up |
-| `/forgot-password` | Request password reset email |
-| `/reset-password` | Set new password (after recovery email) |
-| `/settings` | User settings: profile, email, password, account |
-| `/auth/callback` | OAuth code exchange handler |
-| `/auth/confirm` | Token-hash confirm handler (email verification, recovery, email change) |
-| `/profile/[username]` | User profile |
-| `/admin` | Admin dashboard (auth required) |
-| `/admin/blog` | Blog post management |
-| `/admin/community` | Community post/comment management |
-| `/admin/moderation` | Flagged content review |
-| `/privacy`, `/terms`, `/cookies` | Legal pages |
-| 404 | Interactive dino runner game |
+### 2026-04: Kill /community, /papers, /projects from old site
+Zero members, zero papers, generic projects. Devs see through fake community instantly. Surfaces come back when there is real content to put on them.
