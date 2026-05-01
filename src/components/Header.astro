@@ -1,0 +1,48 @@
+---
+const navItems: ReadonlyArray<{ label: string; href: string; external?: boolean }> = [
+  { label: "Diagnose", href: "/diagnose" },
+  { label: "Log", href: "/log" },
+  { label: "About", href: "/about" },
+  { label: "GitHub", href: "https://github.com/codepawl", external: true },
+];
+
+const currentPath = Astro.url.pathname;
+---
+
+<header class="border-b border-ink-700/60">
+  <div class="mx-auto flex max-w-container items-center justify-between px-6 py-5 lg:px-12">
+    <a
+      href="/"
+      class="font-display text-xl font-light tracking-tighter-2 text-ink-50 transition-colors hover:text-ratchet-300"
+      aria-label="Codepawl home"
+    >
+      codepawl
+    </a>
+
+    <nav aria-label="Primary">
+      <ul class="flex items-center gap-6 font-mono text-[11px] uppercase tracking-technical">
+        {
+          navItems.map((item) => {
+            const isActive = !item.external && currentPath.startsWith(item.href);
+            return (
+              <li>
+                <a
+                  href={item.href}
+                  class:list={[
+                    "transition-colors duration-200",
+                    isActive ? "text-ratchet-300" : "text-ink-200 hover:text-ink-50",
+                  ]}
+                  {...(item.external
+                    ? { target: "_blank", rel: "noopener noreferrer" }
+                    : {})}
+                >
+                  {item.label}
+                </a>
+              </li>
+            );
+          })
+        }
+      </ul>
+    </nav>
+  </div>
+</header>
