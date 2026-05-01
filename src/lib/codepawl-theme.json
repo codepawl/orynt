@@ -36,7 +36,7 @@
         "punctuation.definition.string"
       ],
       "settings": {
-        "foreground": "#5a8e72"
+        "foreground": "#6ba889"
       }
     },
     {
@@ -46,7 +46,7 @@
         "constant.language.null"
       ],
       "settings": {
-        "foreground": "#ffb340"
+        "foreground": "#ffc266"
       }
     },
     {
