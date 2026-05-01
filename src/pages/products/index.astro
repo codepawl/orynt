@@ -46,7 +46,7 @@ const statusLabel: Record<string, string> = {
   <section class="border-b border-ink-700/60">
     <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
       <SectionMarker number="001" label="What we ship" />
-      <div class="mt-16 grid gap-8 md:grid-cols-2">
+      <div class="mt-16 max-w-2xl">
         {
           products.map((product) => (
             <ProductCard
@@ -59,24 +59,6 @@ const statusLabel: Record<string, string> = {
             />
           ))
         }
-        <article class="blueprint-card flex flex-col gap-5 p-8">
-          <p class="font-mono text-[11px] uppercase tracking-technical text-ink-500">
-            Product 02 · planning
-          </p>
-          <h3 class="font-display text-3xl font-light text-ink-400">More coming</h3>
-          <p class="text-base leading-relaxed text-ink-400">
-            We're shipping Trace first, in public, with the build log. The next
-            product picks up where Trace ends. We'll announce it on the changelog
-            when it's ready.
-          </p>
-          <a
-            href="/changelog"
-            class="mt-auto inline-flex items-center gap-2 self-start font-mono text-xs uppercase tracking-[0.1em] text-ink-400 transition-colors duration-200 hover:text-ink-200"
-          >
-            Watch the changelog
-            <span aria-hidden>›</span>
-          </a>
-        </article>
       </div>
     </div>
   </section>

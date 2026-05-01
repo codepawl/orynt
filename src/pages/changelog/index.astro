@@ -45,17 +45,17 @@ const fmtDate = (d: Date): string =>
     <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
       <SectionMarker number="001" label="Releases" />
       {sorted.length === 0 ? (
-        <div class="mt-16 border border-dashed border-ink-700/60 p-12 text-center">
-          <p class="font-mono text-xs uppercase tracking-technical text-ink-500">
-            No releases yet
+        <div class="mt-16 grid gap-6 border border-dashed border-ink-700/60 p-12 lg:grid-cols-12">
+          <p class="font-mono text-[10px] uppercase tracking-[0.18em] text-ratchet-500 lg:col-span-3">
+            Pre-release
           </p>
-          <p class="mt-6 max-w-2xl text-base leading-relaxed text-ink-300 mx-auto">
-            Codepawl Trace v0.1 alpha is being built in public. Until the first
-            release ships, follow progress on the build log.
+          <p class="font-mono text-sm leading-relaxed text-ink-200 lg:col-span-9">
+            First release lands when <span class="text-ink-50">Codepawl Trace v0.1</span> ships. Track progress in <a
+              href="/log"
+              class="text-ratchet-300 transition-colors hover:text-ratchet-500"
+              >/log</a
+            >.
           </p>
-          <a href="/log" class="btn-secondary mt-8 inline-flex">
-            Read the build log
-          </a>
         </div>
       ) : (
         <ul class="mt-16 space-y-12">
