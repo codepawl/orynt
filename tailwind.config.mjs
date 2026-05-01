@@ -34,7 +34,7 @@ export default {
         "technical-wide": "0.22em",
       },
       maxWidth: {
-        container: "1152px",
+        container: "1280px",
       },
       spacing: {
         "section": "8rem",

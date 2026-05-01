@@ -105,8 +105,8 @@ Hierarchy rule: huge type drops fast. Hero is 7rem, section h2 is 3rem, body is 
 ## Layout
 
 ```
-Container: max-w-6xl (1152px), centered
-Side padding: 24px mobile, 48px desktop (lg:px-12)
+Container: max-w-container (1280px, matches Tailwind max-w-7xl), centered
+Side padding: 24px mobile, 48px desktop (lg:px-12), 32px on extra-wide (xl:px-8) since the container is doing the centering work
 Section spacing: 128px between major sections (mt-32)
 Hero padding: 96px top, 128px bottom on mobile / 128px top, 160px bottom desktop
 ```
