@@ -1,111 +1,36 @@
-# Python
-__pycache__/
-*.py[cod]
-.venv/
+# Build output
+dist/
+.astro/
 
 # Dependencies
 node_modules/
-.pnp
-.pnp.js
 
-# Testing
-coverage/
+# Bun
+bun.lockb
 
-# Next.js
-.next/
-out/
-
-# Production
-build/
-dist/
-
-# Misc
-.DS_Store
-*.pem
-
-# Debug
+# Logs
+*.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# Local env files
-.env*.local
+# Environment
 .env
+.env.*
+!.env.example
 
-# Vercel
-.vercel
-
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
-
-# IDE
+# Editor / IDE
 .vscode/*
 !.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
 !.vscode/extensions.json
 .idea/
 *.swp
 *.swo
 
 # OS
+.DS_Store
 Thumbs.db
 
-# Logs
-logs/
-*.log
+# TypeScript
+*.tsbuildinfo
 
-# Cache
-.cache/
-.parcel-cache/
-
-# Temporary files
-tmp/
-temp/
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variables file
-.env.test
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-
-# Serverless directories
-.serverless/
-
-# FuseBox cache
-.fusebox/
-
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
-
-# Stores VSCode versions used for testing VSCode extensions
-.vscode-test
-
-# Yarn v2
-.yarn/cache
-.yarn/unplugged
-.yarn/build-state.yml
-.yarn/install-state.gz
-.pnp.*
+# Cloudflare
+.wrangler/
