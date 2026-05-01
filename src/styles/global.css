@@ -43,6 +43,14 @@
     color: var(--select-fg);
   }
 
+  /* Code-block-specific selection: ratchet-orange on ink-base, matches the
+     site selection treatment but scoped to the Shiki output for clarity. */
+  .astro-code ::selection,
+  .astro-code::selection {
+    background-color: var(--accent);
+    color: var(--bg-base);
+  }
+
   *:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
@@ -122,27 +130,32 @@
     @apply inline-flex items-center gap-2 border border-ink-700 bg-transparent px-5 py-3 font-mono text-xs uppercase tracking-[0.1em] text-ink-200 transition-colors duration-200 ease-out hover:border-ink-400 hover:text-ink-50;
   }
 
-  .file-tab-header {
-    @apply flex items-center gap-2 border-b border-ink-700 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400;
-  }
-
   /* Standard side padding for every top-level page section.
      Mobile 24, lg 48, xl 64, 2xl 80. Pairs with max-w-container (1440px). */
   .page-section {
     @apply px-6 lg:px-12 xl:px-16 2xl:px-20;
   }
 
-  .file-tab-dots span {
-    @apply inline-block h-2 w-2 rounded-full;
-  }
-
-  /* Shiki emits <pre class="astro-code"> with an inline background-color
-     from the theme. Strip it so the parent CodeBlock chrome (border + bg-ink-900)
-     shows through cleanly. Theme stays reusable in other contexts. */
-  pre.astro-code {
+  /* Shiki <pre class="astro-code">: strip the theme's bg/padding/margin so
+     the parent CodeBlock chrome (border + bg-ink-900) shows through, and
+     enforce DESIGN.md typography (13px / 1.7 line height / mono family). */
+  .astro-code {
     background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 13px;
+    line-height: 1.7;
+    font-family: theme("fontFamily.mono");
+  }
+  .astro-code code {
+    background: transparent;
     padding: 0;
-    margin: 0;
+  }
+  /* When the wrapper opts into .no-scrollbar (cards), force the pre to clip
+     instead of auto-scrolling. Shiki's inline overflow-x:auto would otherwise
+     show its own scrollbar inside the wrapper. */
+  .no-scrollbar .astro-code {
+    overflow-x: hidden !important;
   }
 
   /* Hide scrollbars entirely while preserving scroll behavior.
