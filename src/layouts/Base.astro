@@ -21,6 +21,14 @@ const fullTitle = title === "Codepawl" ? title : `${title} · Codepawl`;
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    {/* TODO: rasterize logo to apple-touch-icon.png 180x180 and og-default.png 1200x630.
+        Skipped in v1 to avoid pulling in a PNG-rasterization dependency.
+        Re-enable the two links below once the PNGs land in /public.
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <meta property="og:image" content={new URL("/og-default.png", Astro.url).href} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:image" content={new URL("/og-default.png", Astro.url).href} />
+    */}
     <link rel="canonical" href={Astro.url.href} />
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />

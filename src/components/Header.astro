@@ -1,4 +1,6 @@
 ---
+import Logo from "./Logo.astro";
+
 const navItems: ReadonlyArray<{ label: string; href: string; external?: boolean }> = [
   { label: "Products", href: "/products" },
   { label: "Diagnose", href: "/diagnose" },
@@ -17,13 +19,16 @@ const isActive = (href: string): boolean => {
 ---
 
 <header class="border-b border-ink-700/60">
-  <div class="mx-auto flex max-w-container items-center justify-between px-6 py-5 lg:px-12">
+  <div class="mx-auto flex max-w-container items-center justify-between px-6 py-5 lg:px-12 xl:px-8">
     <a
       href="/"
-      class="font-display text-xl font-light tracking-tighter-2 text-ink-50 transition-colors hover:text-ratchet-300"
+      class="group flex items-center gap-3 text-ratchet-500 transition-colors hover:text-ratchet-300"
       aria-label="Codepawl home"
     >
-      codepawl
+      <Logo class="text-ratchet-500 transition-colors group-hover:text-ratchet-300" />
+      <span class="font-display text-xl font-light tracking-tighter-2 lowercase text-ink-50 transition-colors group-hover:text-ratchet-300">
+        codepawl
+      </span>
     </a>
 
     <nav aria-label="Primary">
