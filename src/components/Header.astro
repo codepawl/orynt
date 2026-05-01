@@ -1,12 +1,19 @@
 ---
 const navItems: ReadonlyArray<{ label: string; href: string; external?: boolean }> = [
+  { label: "Products", href: "/products" },
   { label: "Diagnose", href: "/diagnose" },
   { label: "Log", href: "/log" },
+  { label: "Changelog", href: "/changelog" },
   { label: "About", href: "/about" },
   { label: "GitHub", href: "https://github.com/codepawl", external: true },
 ];
 
 const currentPath = Astro.url.pathname;
+
+const isActive = (href: string): boolean => {
+  if (href === "/") return currentPath === "/";
+  return currentPath === href || currentPath.startsWith(`${href}/`);
+};
 ---
 
 <header class="border-b border-ink-700/60">
@@ -20,17 +27,19 @@ const currentPath = Astro.url.pathname;
     </a>
 
     <nav aria-label="Primary">
-      <ul class="flex items-center gap-6 font-mono text-[11px] uppercase tracking-technical">
+      <ul class="flex items-center gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-technical">
         {
           navItems.map((item) => {
-            const isActive = !item.external && currentPath.startsWith(item.href);
+            const active = !item.external && isActive(item.href);
             return (
               <li>
                 <a
                   href={item.href}
                   class:list={[
                     "transition-colors duration-200",
-                    isActive ? "text-ratchet-300" : "text-ink-200 hover:text-ink-50",
+                    active
+                      ? "text-ratchet-300"
+                      : "text-ink-200 hover:text-ink-50",
                   ]}
                   {...(item.external
                     ? { target: "_blank", rel: "noopener noreferrer" }
