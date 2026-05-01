@@ -126,7 +126,7 @@ const fixCode = `result.suggested_fix
             Drop in our adapter for Langfuse, LangSmith, or OpenTelemetry. Or send
             raw traces over HTTP. We meet you where your traces live.
           </p>
-          <CodeBlock filename="ADAPTER.PY">
+          <CodeBlock filename="ADAPTER.PY" noScrollbar>
             <Fragment set:html={adapterCode} />
           </CodeBlock>
         </article>
@@ -139,7 +139,7 @@ const fixCode = `result.suggested_fix
             Get a structured failure type, root cause, and confidence score. Powered
             by an LLM judge tuned for agent failure modes.
           </p>
-          <CodeBlock filename="DIAGNOSE.PY">
+          <CodeBlock filename="DIAGNOSE.PY" noScrollbar>
             <Fragment set:html={diagnoseCode} />
           </CodeBlock>
         </article>
@@ -151,7 +151,7 @@ const fixCode = `result.suggested_fix
             Each diagnosis includes the exact fix to apply, with code. Not "try
             harder". The actual line to change.
           </p>
-          <CodeBlock filename="FIX.PY">
+          <CodeBlock filename="FIX.PY" noScrollbar>
             <Fragment set:html={fixCode} />
           </CodeBlock>
         </article>

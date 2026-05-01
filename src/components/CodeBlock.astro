@@ -3,9 +3,15 @@ interface Props {
   filename: string;
   hint?: string;
   class?: string;
+  noScrollbar?: boolean;
 }
 
-const { filename, hint, class: className = "" } = Astro.props;
+const {
+  filename,
+  hint,
+  class: className = "",
+  noScrollbar = false,
+} = Astro.props;
 ---
 
 <div class:list={["flex flex-col border border-ink-700 bg-ink-900", className]}>
@@ -20,5 +26,10 @@ const { filename, hint, class: className = "" } = Astro.props;
     </div>
     {hint && <span class="text-ink-500">{hint}</span>}
   </div>
-  <pre class="flex-1 overflow-x-auto px-5 py-4 font-mono text-[13px] leading-[1.7] text-ink-200"><code><slot /></code></pre>
+  <pre
+    class:list={[
+      "flex-1 px-5 py-4 font-mono text-[13px] leading-[1.7] text-ink-200 whitespace-pre",
+      noScrollbar ? "no-scrollbar overflow-hidden" : "overflow-x-auto",
+    ]}
+  ><code><slot /></code></pre>
 </div>

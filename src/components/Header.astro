@@ -32,7 +32,7 @@ const isActive = (href: string): boolean => {
     </a>
 
     <nav aria-label="Primary">
-      <ul class="flex items-center gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-technical">
+      <ul class="flex flex-wrap items-center justify-end gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-technical">
         {
           navItems.map((item) => {
             const active = !item.external && isActive(item.href);

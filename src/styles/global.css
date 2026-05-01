@@ -47,6 +47,38 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
+
+  /* Scrollbars: thin, ink-toned, ratchet on hover. Sharp corners.
+     Pages or components opt out via the .no-scrollbar utility below. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 0;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 @layer components {
@@ -115,5 +147,16 @@
   .syntax-comment {
     color: var(--fg-subtle);
     font-style: italic;
+  }
+
+  /* Hide scrollbars entirely while preserving scroll behavior.
+     Apply to UI chrome (nav, header, footer) and small embedded code blocks
+     where scroll is unwanted but content may exceed bounds. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
