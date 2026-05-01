@@ -49,10 +49,9 @@ No React, no Vue, no Svelte islands in v1. No client-side JS on any page. If a f
 ├── public/                         # favicon, og images, static assets
 └── src/
     ├── content/
-    │   ├── config.ts               # collection schemas (log, products, changelog)
+    │   ├── config.ts               # collection schemas (log, products)
     │   ├── log/                    # MDX build log entries
-    │   ├── products/               # MDX product entries (one per product)
-    │   └── changelog/              # MDX product release entries
+    │   └── products/               # MDX product entries (one per product)
     ├── components/
     │   ├── Header.astro
     │   ├── Footer.astro
@@ -70,10 +69,7 @@ No React, no Vue, no Svelte islands in v1. No client-side JS on any page. If a f
     │   ├── diagnose.astro          # product page (Codepawl Trace)
     │   ├── about.astro
     │   ├── products/index.astro
-    │   ├── log/
-    │   │   ├── index.astro
-    │   │   └── [...slug].astro
-    │   └── changelog/
+    │   └── log/
     │       ├── index.astro
     │       └── [...slug].astro
     └── styles/
@@ -131,12 +127,10 @@ When writing for `/log`, the voice is honest builder-in-public: first person, sp
 /products            Product index (Trace card + "more coming" placeholder)
 /log                 Build log index (MDX collection)
 /log/[slug]          Individual log post
-/changelog           Changelog index (MDX collection, scoped to product releases)
-/changelog/[slug]    Individual release entry
 /about               Studio bio + origin story
 ```
 
-Header nav order: `Products` · `Diagnose` · `Log` · `Changelog` · `About` · `GitHub` (external).
+Header nav order: `Products` · `Diagnose` · `Log` · `About` · `GitHub` (external). `/changelog` returns when v0.1 ships.
 
 Pages that should NOT exist on the marketing site: `/docs` (lives at docs.codepawl.com), `/pricing` (pricing surfaces on `/` and `/diagnose`), `/community`, `/papers`, `/blog`, `/team`, `/projects`.
 
@@ -213,3 +207,6 @@ Zero members, zero papers, generic projects. Devs see through fake community ins
 
 ### 2026-04-30: Pivoted positioning from single-product to studio-framing after design output
 Reverses the earlier 2026-04 decision to narrow to a single-product pitch. Trace remains the only shipped product in v1. Routes added: `/products`, `/changelog`. Reusable components (`ProductHero`, `ProductCard`, `PricingTier`) and content collections (`products`, `changelog`) make adding product #2 mechanical when it ships. Rejected design elements: customer logos strip, testimonial quotes, fake production stats (47 teams / 99.97% uptime), sticky nav with backdrop blur, "Open dashboard" / "Sign in" header buttons, blueprint blue accent (`#4D7FB8`), purple in code syntax (`#B89BD8`), the design's cooler ink scale (kept our warm `#070605..`), the design's `#FF6B1A` ratchet (kept our `#FF9500`). Pricing tiers stay locked at Self-host / Hobbyist $19 / Team $49 (rejected the design's Solo $0 / Team $20-seat / Enterprise model).
+
+### 2026-05-01: Removed `/changelog` routes and content collection until v0.1 ships
+The empty changelog collection was producing build-time warnings and the index page rendered a "pre-release" placeholder, which signaled emptiness rather than progress. Schema, both pages, header nav item, and notify.astro link removed. Reinstate together with the first real release entry when Trace v0.1 ships; the products collection pattern is the template.
