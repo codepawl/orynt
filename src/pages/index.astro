@@ -21,35 +21,39 @@ const comparisonRows = [
   { feature: "Self-host", langfuse: "partial", trace: "yes" },
 ] as const;
 
-const heroCode = `<span class="syntax-keyword">from</span> codepawl_trace <span class="syntax-keyword">import</span> diagnose
+const heroCode = `from codepawl_trace import diagnose
 
 trace = langfuse.get_trace(trace_id)
-result = <span class="syntax-decorator">diagnose</span>(trace)
+result = diagnose(trace)
 
 print(result.failure_type)
-<span class="syntax-comment"># "tool_misuse"</span>
+# "tool_misuse"
 
 print(result.suggested_fix)
-<span class="syntax-comment"># "agent.tools[0] schema mismatch"</span>`;
+# "agent.tools[0] schema mismatch"
+`;
 
-const adapterCode = `<span class="syntax-keyword">from</span> codepawl_trace <span class="syntax-keyword">import</span> (
+const adapterCode = `from codepawl_trace import (
     adapter,
 )
 
-trace = adapter.langfuse(id)`;
+trace = adapter.langfuse(id)
+`;
 
-const diagnoseCode = `result = <span class="syntax-decorator">diagnose</span>(trace)
+const diagnoseCardCode = `result = diagnose(trace)
 
 result.failure_type
-<span class="syntax-comment"># "tool_misuse"</span>
+# "tool_misuse"
 
 result.confidence
-<span class="syntax-comment"># <span class="syntax-number">0.91</span></span>`;
+# 0.91
+`;
 
 const fixCode = `result.suggested_fix
-<span class="syntax-comment"># agent.tools[0]:
+# agent.tools[0]:
 #   schema mismatch
-#   on \`query\` field</span>`;
+#   on \`query\` field
+`;
 ---
 
 <Base
@@ -90,9 +94,7 @@ const fixCode = `result.suggested_fix
           </a>
         </div>
         <div class="min-h-[280px] lg:col-start-8 lg:col-span-5 lg:row-span-3 lg:row-start-1 lg:min-h-[360px]">
-          <CodeBlock filename="AGENT.PY" class="h-full">
-            <Fragment set:html={heroCode} />
-          </CodeBlock>
+          <CodeBlock filename="AGENT.PY" lang="python" code={heroCode} class="h-full" />
         </div>
       </div>
     </div>
@@ -126,9 +128,7 @@ const fixCode = `result.suggested_fix
             Drop in our adapter for Langfuse, LangSmith, or OpenTelemetry. Or send
             raw traces over HTTP. We meet you where your traces live.
           </p>
-          <CodeBlock filename="ADAPTER.PY" noScrollbar>
-            <Fragment set:html={adapterCode} />
-          </CodeBlock>
+          <CodeBlock filename="ADAPTER.PY" lang="python" code={adapterCode} noScrollbar />
         </article>
         <article class="blueprint-card flex flex-col gap-5 p-7">
           <p class="font-mono text-xs uppercase tracking-technical text-ratchet-500">
@@ -139,9 +139,7 @@ const fixCode = `result.suggested_fix
             Get a structured failure type, root cause, and confidence score. Powered
             by an LLM judge tuned for agent failure modes.
           </p>
-          <CodeBlock filename="DIAGNOSE.PY" noScrollbar>
-            <Fragment set:html={diagnoseCode} />
-          </CodeBlock>
+          <CodeBlock filename="DIAGNOSE.PY" lang="python" code={diagnoseCardCode} noScrollbar />
         </article>
         <article class="blueprint-card flex flex-col gap-5 p-7">
           <p class="font-mono text-xs uppercase tracking-technical text-ratchet-500">
@@ -151,9 +149,7 @@ const fixCode = `result.suggested_fix
             Each diagnosis includes the exact fix to apply, with code. Not "try
             harder". The actual line to change.
           </p>
-          <CodeBlock filename="FIX.PY" noScrollbar>
-            <Fragment set:html={fixCode} />
-          </CodeBlock>
+          <CodeBlock filename="FIX.PY" lang="python" code={fixCode} noScrollbar />
         </article>
       </div>
     </div>

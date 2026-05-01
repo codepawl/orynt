@@ -5,7 +5,7 @@
     "editor.background": "#0d0c0a",
     "editor.foreground": "#c7c2b3"
   },
-  "tokenColors": [
+  "settings": [
     {
       "scope": ["comment", "punctuation.definition.comment"],
       "settings": {

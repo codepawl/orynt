@@ -5,22 +5,23 @@ import SectionMarker from "../components/SectionMarker.astro";
 import CodeBlock from "../components/CodeBlock.astro";
 import PricingTier from "../components/PricingTier.astro";
 
-const diagnoseFullCode = `<span class="syntax-keyword">from</span> codepawl_trace <span class="syntax-keyword">import</span> diagnose
+const diagnoseFullCode = `from codepawl_trace import diagnose
 
 trace = langfuse.get_trace(trace_id)
-result = <span class="syntax-decorator">diagnose</span>(trace)
+result = diagnose(trace)
 
 result.failure_type
-<span class="syntax-comment"># "tool_misuse"</span>
+# "tool_misuse"
 
 result.root_cause
-<span class="syntax-comment"># "schema mismatch on tools[0]"</span>
+# "schema mismatch on tools[0]"
 
 result.suggested_fix
-<span class="syntax-comment"># "annotate enum on input.kind"</span>
+# "annotate enum on input.kind"
 
 result.confidence
-<span class="syntax-comment"># <span class="syntax-number">0.91</span></span>`;
+# 0.91
+`;
 
 const failureTypes: ReadonlyArray<{ name: string; summary: string }> = [
   {
@@ -140,9 +141,7 @@ const adapters: ReadonlyArray<{ name: string; summary: string }> = [
           </p>
         </div>
         <div class="lg:col-span-7">
-          <CodeBlock filename="DIAGNOSE.PY">
-            <Fragment set:html={diagnoseFullCode} />
-          </CodeBlock>
+          <CodeBlock filename="DIAGNOSE.PY" lang="python" code={diagnoseFullCode} />
         </div>
       </div>
     </div>

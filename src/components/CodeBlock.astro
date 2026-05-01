@@ -1,6 +1,29 @@
 ---
+import { Code } from "astro:components";
+import type { ThemeRegistration } from "@shikijs/types";
+import codepawlThemeJson from "../lib/codepawl-theme.json";
+
+// JSON imports widen string literals (e.g. "dark" -> string), so the
+// shiki ThemeRegistration cast is needed once at the boundary.
+const codepawlTheme = codepawlThemeJson as unknown as ThemeRegistration;
+
+type CodeLang =
+  | "python"
+  | "typescript"
+  | "javascript"
+  | "bash"
+  | "shell"
+  | "json"
+  | "yaml"
+  | "markdown"
+  | "diff"
+  | "html"
+  | "css";
+
 interface Props {
   filename: string;
+  code: string;
+  lang?: CodeLang;
   hint?: string;
   class?: string;
   noScrollbar?: boolean;
@@ -8,6 +31,8 @@ interface Props {
 
 const {
   filename,
+  code,
+  lang = "python",
   hint,
   class: className = "",
   noScrollbar = false,
@@ -26,10 +51,12 @@ const {
     </div>
     {hint && <span class="text-ink-500">{hint}</span>}
   </div>
-  <pre
+  <div
     class:list={[
-      "flex-1 px-5 py-4 font-mono text-[13px] leading-[1.7] text-ink-200 whitespace-pre",
+      "flex-1 px-5 py-4 font-mono text-[13px] leading-[1.7]",
       noScrollbar ? "no-scrollbar overflow-hidden" : "overflow-x-auto",
     ]}
-  ><code><slot /></code></pre>
+  >
+    <Code code={code} lang={lang} theme={codepawlTheme} />
+  </div>
 </div>
