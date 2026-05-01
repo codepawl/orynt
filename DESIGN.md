@@ -37,11 +37,11 @@ Lines and borders (subtle, like blueprint paper):
 
 Primary accent (ratchet orange, signals "locked in motion"):
   --accent:        #ff9500
-  --accent-soft:   #ffb340
+  --accent-soft:   #ffc266
   --accent-deep:   #c25c00
 
 Technical secondary (graph green, used sparingly for "shipping" status):
-  --graph:         #5a8e72
+  --graph:         #6ba889
 
 Selection / highlight:
   --select-bg:     #ff9500
@@ -203,9 +203,9 @@ Syntax colors (only 5 swatches, NOT a full theme):
 ```
 Default text:     --fg-secondary
 Keywords:         --fg-muted (deemphasized, "from", "import", "def", "async", "return")
-Strings:          --graph (#5a8e72)
+Strings:          --graph (#6ba889)
 Decorators/tags:  --accent (#ff9500), this is the @trace, @diagnose, etc.
-Numbers:          --accent-soft (#ffb340)
+Numbers:          --accent-soft (#ffc266)
 Comments:         --fg-subtle, italic
 ```
 
@@ -456,6 +456,13 @@ Targets, not aspirations.
 - prefers-reduced-motion: disables the pawl rotation animation and any fade-up reveals
 
 ## Changelog
+
+### 2026-04-30: Brightened syntax accents for legibility
+- --accent-soft: #ffb340 → #ffc266 (bumped for number visibility on dark)
+- --graph: #5a8e72 → #6ba889 (bumped saturation for string visibility)
+- --accent stays #ff9500
+- Other tokens unchanged
+- Reason: original palette was too subtle in syntax-highlighted code blocks. Adjusted hex values to clear the visibility threshold without breaking the restrained aesthetic.
 
 ### 2026-04-30: Generalized to studio-wide design system
 - Added file header positioning Codepawl as a dev tools studio
