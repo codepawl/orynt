@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <pattern id="grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#2a2820" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="#070605"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <text x="64" y="80" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="14" letter-spacing="2">
+    <tspan fill="#ff9500">001 ·</tspan><tspan fill="#7a7466"> CODEPAWL · TRACE</tspan>
+  </text>
+  <line x1="64" y1="100" x2="304" y2="100" stroke="#2a2820" stroke-width="1"/>
+
+  <text x="64" y="240" font-family="Georgia, 'Fraunces', serif" font-size="84" font-weight="500" fill="#f5f4f0">
+    Why did your <tspan font-style="italic" fill="#ff9500">AI</tspan> fail?
+  </text>
+
+  <text x="64" y="340" font-family="Georgia, 'Fraunces', serif" font-size="84" font-weight="500" fill="#f5f4f0">
+    We tell you. <tspan font-style="italic" fill="#6ba889">In 30 seconds.</tspan>
+  </text>
+
+  <text x="64" y="440" font-family="'Inter Tight', system-ui, sans-serif" font-size="22" fill="#c7c2b3">
+    A failure-explanation layer for AI agent developers.
+  </text>
+  <text x="64" y="475" font-family="'Inter Tight', system-ui, sans-serif" font-size="22" fill="#c7c2b3">
+    Plug in Langfuse, LangSmith, OpenTelemetry. Get the fix.
+  </text>
+
+  <text x="64" y="586" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="13" letter-spacing="1" fill="#7a7466">
+    OPEN SOURCE · SELF-HOST OR $19/MO CLOUD
+  </text>
+
+  <line x1="956" y1="566" x2="1136" y2="566" stroke="#2a2820" stroke-width="1"/>
+  <text x="1136" y="586" text-anchor="end" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="14" letter-spacing="1" fill="#ff9500">
+    codepawl.com →
+  </text>
+</svg>
