@@ -97,4 +97,23 @@
   .file-tab-dots span {
     @apply inline-block h-2 w-2 rounded-full;
   }
+
+  /* Syntax colors per DESIGN.md. Default code text inherits the parent
+     ink-200 color; these classes layer on top of it for tokens. */
+  .syntax-keyword {
+    color: var(--fg-muted);
+  }
+  .syntax-string {
+    color: var(--graph);
+  }
+  .syntax-decorator {
+    color: var(--accent);
+  }
+  .syntax-number {
+    color: var(--accent-soft);
+  }
+  .syntax-comment {
+    color: var(--fg-subtle);
+    font-style: italic;
+  }
 }

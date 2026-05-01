@@ -5,6 +5,23 @@ import SectionMarker from "../components/SectionMarker.astro";
 import CodeBlock from "../components/CodeBlock.astro";
 import PricingTier from "../components/PricingTier.astro";
 
+const diagnoseFullCode = `<span class="syntax-keyword">from</span> codepawl_trace <span class="syntax-keyword">import</span> diagnose
+
+trace = langfuse.get_trace(trace_id)
+result = <span class="syntax-decorator">diagnose</span>(trace)
+
+result.failure_type
+<span class="syntax-comment"># "tool_misuse"</span>
+
+result.root_cause
+<span class="syntax-comment"># "schema mismatch on tools[0]"</span>
+
+result.suggested_fix
+<span class="syntax-comment"># "annotate enum on input.kind"</span>
+
+result.confidence
+<span class="syntax-comment"># <span class="syntax-number">0.91</span></span>`;
+
 const failureTypes: ReadonlyArray<{ name: string; summary: string }> = [
   {
     name: "Tool misuse",
@@ -56,7 +73,7 @@ const adapters: ReadonlyArray<{ name: string; summary: string }> = [
 >
   {/* Hero */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-32">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 xl:px-8 lg:py-32">
       <p class="font-mono text-xs uppercase tracking-technical text-ratchet-500">
         Product · Codepawl Trace
       </p>
@@ -77,7 +94,7 @@ const adapters: ReadonlyArray<{ name: string; summary: string }> = [
 
   {/* 001 · The problem */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 xl:px-8 lg:py-section">
       <SectionMarker number="001" label="The problem" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Tracing tools store. They don't <Em>explain</Em>.
@@ -106,7 +123,7 @@ const adapters: ReadonlyArray<{ name: string; summary: string }> = [
 
   {/* 002 · How diagnose() works */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 xl:px-8 lg:py-section">
       <SectionMarker number="002" label="How diagnose() works" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         One call. Structured <Em>output</Em>.
@@ -124,15 +141,7 @@ const adapters: ReadonlyArray<{ name: string; summary: string }> = [
         </div>
         <div class="lg:col-span-7">
           <CodeBlock filename="DIAGNOSE.PY">
-<span class="text-ink-400">from</span> codepawl_trace <span class="text-ink-400">import</span> diagnose
-
-trace = langfuse.get_trace(trace_id)
-result = diagnose(trace)
-
-result.failure_type        <span class="italic text-ink-500"># tool_misuse</span>
-result.root_cause          <span class="italic text-ink-500"># schema mismatch on tools[0]</span>
-result.suggested_fix       <span class="italic text-ink-500"># annotate enum on input.kind</span>
-result.confidence          <span class="italic text-ink-500"># 0.91</span>
+            <Fragment set:html={diagnoseFullCode} />
           </CodeBlock>
         </div>
       </div>
@@ -141,7 +150,7 @@ result.confidence          <span class="italic text-ink-500"># 0.91</span>
 
   {/* 003 · Failure taxonomy */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 xl:px-8 lg:py-section">
       <SectionMarker number="003" label="Failure taxonomy" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Eight modes. One <Em>label</Em> per trace.
@@ -163,7 +172,7 @@ result.confidence          <span class="italic text-ink-500"># 0.91</span>
 
   {/* 004 · Adapters */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 xl:px-8 lg:py-section">
       <SectionMarker number="004" label="Adapters" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         We read the traces you <Em>already</Em> have.
@@ -185,7 +194,7 @@ result.confidence          <span class="italic text-ink-500"># 0.91</span>
 
   {/* 005 · Pricing */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 xl:px-8 lg:py-section">
       <SectionMarker number="005" label="Pricing" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Free if you self-host. Cheap if you <Em>don't</Em>.
@@ -240,7 +249,7 @@ result.confidence          <span class="italic text-ink-500"># 0.91</span>
 
   {/* CTA */}
   <section>
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 xl:px-8 lg:py-section">
       <SectionMarker number="006" label="Ship" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Read the spec. Then <Em>install</Em>.

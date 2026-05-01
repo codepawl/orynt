@@ -20,6 +20,36 @@ const comparisonRows = [
   { feature: "Eval suite runner", langfuse: "partial", trace: "yes" },
   { feature: "Self-host", langfuse: "partial", trace: "yes" },
 ] as const;
+
+const heroCode = `<span class="syntax-keyword">from</span> codepawl_trace <span class="syntax-keyword">import</span> diagnose
+
+trace = langfuse.get_trace(trace_id)
+result = <span class="syntax-decorator">diagnose</span>(trace)
+
+print(result.failure_type)
+<span class="syntax-comment"># "tool_misuse"</span>
+
+print(result.suggested_fix)
+<span class="syntax-comment"># "agent.tools[0] schema mismatch"</span>`;
+
+const adapterCode = `<span class="syntax-keyword">from</span> codepawl_trace <span class="syntax-keyword">import</span> (
+    adapter,
+)
+
+trace = adapter.langfuse(id)`;
+
+const diagnoseCode = `result = <span class="syntax-decorator">diagnose</span>(trace)
+
+result.failure_type
+<span class="syntax-comment"># "tool_misuse"</span>
+
+result.confidence
+<span class="syntax-comment"># <span class="syntax-number">0.91</span></span>`;
+
+const fixCode = `result.suggested_fix
+<span class="syntax-comment"># agent.tools[0]:
+#   schema mismatch
+#   on \`query\` field</span>`;
 ---
 
 <Base
@@ -28,49 +58,40 @@ const comparisonRows = [
 >
   {/* Hero */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-32">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-32 xl:px-8">
       <p class="font-mono text-xs uppercase tracking-technical text-ink-400">
         <span class="text-ratchet-500">Codepawl</span> · dev tools studio for AI builders
       </p>
-      <h1
-        class="display-headline mt-10 text-4xl text-ink-50 md:text-7xl"
-        style="line-height: 1.05;"
-      >
-        Why did your <Em>AI</Em> fail?<br />
-        We tell you. In 30 seconds.
-      </h1>
-      <div class="mt-12 grid gap-12 lg:grid-cols-12 lg:items-end lg:gap-16">
-        <div class="lg:col-span-7">
-          <p class="text-lg leading-relaxed text-ink-200">
-            Codepawl Trace is a failure-explanation layer for AI agent developers.
-            Plug in your traces from Langfuse, LangSmith, OpenTelemetry, or raw SDK
-            logs. Get structured diagnoses, root causes, and the exact fix to apply.
-            Not another dashboard. A debugger that thinks.
-          </p>
-          <div class="mt-8 flex flex-wrap gap-3">
-            <a href="#how" class="btn-primary">See how it works</a>
-            <a
-              href="https://github.com/codepawl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="btn-secondary"
-            >
-              View on GitHub
-            </a>
-          </div>
+      <div class="mt-10 grid gap-y-8 lg:grid-cols-12 lg:gap-x-12">
+        <h1
+          class="display-headline text-4xl text-ink-50 md:text-6xl xl:text-7xl lg:col-span-7 lg:row-start-1"
+          style="line-height: 1.05;"
+        >
+          Why did your <Em>AI</Em> fail?<br />
+          We tell you. In 30 seconds.
+        </h1>
+        <p
+          class="text-lg leading-relaxed text-ink-200 lg:col-span-7 lg:row-start-2"
+        >
+          Codepawl Trace is a failure-explanation layer for AI agent developers.
+          Plug in your traces from Langfuse, LangSmith, OpenTelemetry, or raw SDK
+          logs. Get structured diagnoses, root causes, and the exact fix to apply.
+          Not another dashboard. A debugger that thinks.
+        </p>
+        <div class="flex flex-wrap gap-3 lg:col-span-7 lg:row-start-3">
+          <a href="#how" class="btn-primary">See how it works</a>
+          <a
+            href="https://github.com/codepawl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn-secondary"
+          >
+            View on GitHub
+          </a>
         </div>
-        <div class="lg:col-span-5">
-          <CodeBlock filename="AGENT.PY">
-            <span class="text-ink-400">from</span> codepawl_trace <span class="text-ink-400">import</span> diagnose
-
-trace = langfuse.get_trace(trace_id)
-result = diagnose(trace)
-
-<span class="text-ink-400">print</span>(result.failure_type)
-<span class="italic text-ink-500"># → "tool_misuse"</span>
-
-<span class="text-ink-400">print</span>(result.suggested_fix)
-<span class="italic text-ink-500"># → "agent.tools[0] schema mismatch"</span>
+        <div class="min-h-[280px] lg:col-start-8 lg:col-span-5 lg:row-span-3 lg:row-start-1 lg:min-h-[360px]">
+          <CodeBlock filename="AGENT.PY" class="h-full">
+            <Fragment set:html={heroCode} />
           </CodeBlock>
         </div>
       </div>
@@ -79,7 +100,7 @@ result = diagnose(trace)
 
   {/* Studio context line */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-8 lg:px-12">
+    <div class="mx-auto max-w-container px-6 py-8 lg:px-12 xl:px-8">
       <p class="font-mono text-xs uppercase tracking-technical text-ink-200">
         Codepawl <span class="text-ratchet-500">Trace</span> is the first product. More tools coming.
       </p>
@@ -91,7 +112,7 @@ result = diagnose(trace)
 
   {/* 001 · How it works */}
   <section id="how" class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section xl:px-8">
       <SectionMarker number="001" label="How it works" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Three steps. No new SDK to <Em>install</Em>.
@@ -106,9 +127,7 @@ result = diagnose(trace)
             raw traces over HTTP. We meet you where your traces live.
           </p>
           <CodeBlock filename="ADAPTER.PY">
-<span class="text-ink-400">from</span> codepawl_trace.adapters <span class="text-ink-400">import</span> langfuse
-
-trace = langfuse.fetch(trace_id)
+            <Fragment set:html={adapterCode} />
           </CodeBlock>
         </article>
         <article class="blueprint-card flex flex-col gap-5 p-7">
@@ -121,10 +140,7 @@ trace = langfuse.fetch(trace_id)
             by an LLM judge tuned for agent failure modes.
           </p>
           <CodeBlock filename="DIAGNOSE.PY">
-result = diagnose(trace)
-
-result.failure_type    <span class="italic text-ink-500"># tool_misuse</span>
-result.confidence      <span class="italic text-ink-500"># 0.91</span>
+            <Fragment set:html={diagnoseCode} />
           </CodeBlock>
         </article>
         <article class="blueprint-card flex flex-col gap-5 p-7">
@@ -136,10 +152,7 @@ result.confidence      <span class="italic text-ink-500"># 0.91</span>
             harder". The actual line to change.
           </p>
           <CodeBlock filename="FIX.PY">
-result.suggested_fix
-<span class="italic text-ink-500"># agent.tools[0]:</span>
-<span class="italic text-ink-500">#   schema does not match</span>
-<span class="italic text-ink-500">#   declared input type</span>
+            <Fragment set:html={fixCode} />
           </CodeBlock>
         </article>
       </div>
@@ -148,7 +161,7 @@ result.suggested_fix
 
   {/* 002 · Comparison */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section xl:px-8">
       <SectionMarker number="002" label="Why not just use Langfuse?" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Dashboards show what happened. We tell you <Em>why</Em>.
@@ -165,7 +178,7 @@ result.suggested_fix
 
   {/* 003 · Pricing */}
   <section class="border-b border-ink-700/60">
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section xl:px-8">
       <SectionMarker number="003" label="Pricing" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Cheap enough to <Em>try</Em>. Open source if you want.
@@ -220,7 +233,7 @@ result.suggested_fix
 
   {/* 004 · Ship */}
   <section>
-    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section">
+    <div class="mx-auto max-w-container px-6 py-24 lg:px-12 lg:py-section xl:px-8">
       <SectionMarker number="004" label="Ship" />
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Stop guessing why your agent <Em>broke</Em>.
