@@ -149,6 +149,15 @@
     font-style: italic;
   }
 
+  /* Shiki emits <pre class="astro-code"> with an inline background-color
+     from the theme. Strip it so the parent CodeBlock chrome (border + bg-ink-900)
+     shows through cleanly. Theme stays reusable in other contexts. */
+  pre.astro-code {
+    background: transparent !important;
+    padding: 0;
+    margin: 0;
+  }
+
   /* Hide scrollbars entirely while preserving scroll behavior.
      Apply to UI chrome (nav, header, footer) and small embedded code blocks
      where scroll is unwanted but content may exceed bounds. */

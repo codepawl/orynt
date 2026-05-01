@@ -2,6 +2,7 @@ import { defineConfig } from "astro/config";
 import tailwind from "@astrojs/tailwind";
 import sitemap from "@astrojs/sitemap";
 import mdx from "@astrojs/mdx";
+import codepawlTheme from "./src/lib/codepawl-theme.json";
 
 export default defineConfig({
   site: "https://codepawl.com",
@@ -13,5 +14,12 @@ export default defineConfig({
   output: "static",
   build: {
     format: "directory",
+  },
+  markdown: {
+    shikiConfig: {
+      theme: codepawlTheme,
+      wrap: false,
+    },
+    syntaxHighlight: "shiki",
   },
 });
