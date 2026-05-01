@@ -51,6 +51,8 @@
       "scope": [
         "entity.name.function",
         "support.function",
+        "support.function.builtin",
+        "support.function.magic",
         "meta.function-call entity.name.function",
         "variable.function"
       ],
@@ -68,6 +70,27 @@
       "settings": {
         "foreground": "#ff9500",
         "fontStyle": "bold"
+      }
+    },
+    {
+      "scope": [
+        "meta.member.access",
+        "meta.attribute",
+        "variable.other.member",
+        "variable.other.property",
+        "variable.other.object.property"
+      ],
+      "settings": {
+        "foreground": "#ffb340"
+      }
+    },
+    {
+      "scope": [
+        "variable.language",
+        "variable.parameter.function.language.python"
+      ],
+      "settings": {
+        "foreground": "#ffb340"
       }
     },
     {
