@@ -89,8 +89,8 @@ if result.confidence > 0.85:
             View on GitHub
           </a>
         </div>
-        <div class="min-h-[280px] lg:col-start-8 lg:col-span-5 lg:row-span-3 lg:row-start-1 lg:min-h-[440px]">
-          <CodeBlock filename="AGENT.PY" lang="python" code={heroCode} class="h-full" />
+        <div class="lg:col-start-8 lg:col-span-5 lg:row-span-3 lg:row-start-1">
+          <CodeBlock filename="AGENT.PY" lang="python" code={heroCode} minHeight="440px" />
         </div>
       </div>
     </div>
@@ -124,7 +124,7 @@ if result.confidence > 0.85:
             Drop in our adapter for Langfuse, LangSmith, or OpenTelemetry. Or send
             raw traces over HTTP. We meet you where your traces live.
           </p>
-          <CodeBlock filename="ADAPTER.PY" lang="python" code={adapterCode} noScrollbar />
+          <CodeBlock filename="ADAPTER.PY" lang="python" code={adapterCode} minHeight="200px" />
         </article>
         <article class="blueprint-card flex flex-col gap-5 p-7">
           <p class="font-mono text-xs uppercase tracking-technical text-ratchet-500">
@@ -135,7 +135,7 @@ if result.confidence > 0.85:
             Get a structured failure type, root cause, and confidence score. Powered
             by an LLM judge tuned for agent failure modes.
           </p>
-          <CodeBlock filename="DIAGNOSE.PY" lang="python" code={diagnoseCardCode} noScrollbar />
+          <CodeBlock filename="DIAGNOSE.PY" lang="python" code={diagnoseCardCode} minHeight="200px" />
         </article>
         <article class="blueprint-card flex flex-col gap-5 p-7">
           <p class="font-mono text-xs uppercase tracking-technical text-ratchet-500">
@@ -145,7 +145,7 @@ if result.confidence > 0.85:
             Each diagnosis includes the exact fix to apply, with code. Not "try
             harder". The actual line to change.
           </p>
-          <CodeBlock filename="FIX.PY" lang="python" code={fixCode} noScrollbar />
+          <CodeBlock filename="FIX.PY" lang="python" code={fixCode} minHeight="200px" />
         </article>
       </div>
     </div>

@@ -1,62 +1,43 @@
 ---
 import { Code } from "astro:components";
-import type { ThemeRegistration } from "@shikijs/types";
-import codepawlThemeJson from "../lib/codepawl-theme.json";
-
-// JSON imports widen string literals (e.g. "dark" -> string), so the
-// shiki ThemeRegistration cast is needed once at the boundary.
-const codepawlTheme = codepawlThemeJson as unknown as ThemeRegistration;
-
-type CodeLang =
-  | "python"
-  | "typescript"
-  | "javascript"
-  | "bash"
-  | "shell"
-  | "json"
-  | "yaml"
-  | "markdown"
-  | "diff"
-  | "html"
-  | "css";
+import codepawlTheme from "../lib/codepawl-theme.json";
 
 interface Props {
-  filename: string;
   code: string;
-  lang?: CodeLang;
-  hint?: string;
-  class?: string;
-  noScrollbar?: boolean;
+  lang?: "python" | "typescript" | "bash" | "json";
+  filename: string;
+  minHeight?: string;
 }
 
 const {
-  filename,
   code,
   lang = "python",
-  hint,
-  class: className = "",
-  noScrollbar = false,
+  filename,
+  minHeight,
 } = Astro.props;
+
+const minHeightStyle = minHeight ? `min-height: ${minHeight};` : "";
 ---
 
-<div class:list={["flex flex-col border border-ink-700 bg-ink-900", className]}>
-  <div class="flex items-center justify-between border-b border-ink-700 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400">
-    <div class="flex items-center gap-3">
-      <div class="file-tab-dots flex gap-1.5">
-        <span class="bg-ink-700"></span>
-        <span class="bg-ink-700"></span>
-        <span class="bg-ratchet-500"></span>
-      </div>
-      <span>{filename}</span>
+<div
+  class="blueprint-card relative flex flex-col overflow-hidden"
+  style={minHeightStyle}
+>
+  <div class="flex items-center gap-3 border-b border-ink-700 bg-ink-950/40 px-5 py-3">
+    <div class="flex items-center gap-1.5">
+      <span class="block h-[10px] w-[10px] rounded-full bg-ink-700"></span>
+      <span class="block h-[10px] w-[10px] rounded-full bg-ink-700"></span>
+      <span class="block h-[10px] w-[10px] rounded-full bg-ratchet-500"></span>
     </div>
-    {hint && <span class="text-ink-500">{hint}</span>}
+    <span class="font-mono text-[11px] uppercase tracking-[0.2em] text-ink-400">
+      {filename}
+    </span>
   </div>
-  <div
-    class:list={[
-      "flex-1 px-5 py-4 font-mono text-[13px] leading-[1.7]",
-      noScrollbar ? "no-scrollbar overflow-hidden" : "overflow-x-auto",
-    ]}
-  >
-    <Code code={code} lang={lang} theme={codepawlTheme} />
+  <div class="no-scrollbar flex-1 overflow-hidden px-5 py-5">
+    <Code
+      code={code}
+      lang={lang}
+      theme={codepawlTheme as never}
+    />
   </div>
 </div>
