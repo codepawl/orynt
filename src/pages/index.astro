@@ -179,21 +179,21 @@ const fixCode = `result.suggested_fix
       <h2 class="display-headline mt-10 text-3xl text-ink-50 md:text-5xl">
         Cheap enough to <Em>try</Em>. Open source if you want.
       </h2>
-      <div class="mt-16 grid gap-8 md:grid-cols-3">
+      <div class="mt-16 grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8 lg:pt-6">
         <PricingTier
           name="Self-host"
           price="Free"
-          tagline="No limits"
+          context="No limits"
           features={["Open source", "Run anywhere", "All adapters", "All diagnostics"]}
           ctaLabel="View on GitHub"
           ctaHref="https://github.com/codepawl/trace"
-          ctaExternal
+          ctaVariant="secondary"
         />
         <PricingTier
           name="Hobbyist"
           price="$19"
-          period="/ month"
-          tagline="Cloud · 1 user"
+          perUnit="$0.0019 per diagnosis"
+          context="Cloud · 1 user"
           features={[
             "10k diagnoses / month",
             "Hosted dashboard",
@@ -202,13 +202,14 @@ const fixCode = `result.suggested_fix
           ]}
           ctaLabel="Notify on launch"
           ctaHref="/notify"
-          primary
+          ctaVariant="primary"
+          recommended
         />
         <PricingTier
           name="Team"
           price="$49"
-          period="/ month"
-          tagline="Cloud · 5 users"
+          perUnit="$0.0005 per diagnosis"
+          context="Cloud · 5 users"
           features={[
             "100k diagnoses / month",
             "Hosted dashboard",
@@ -217,6 +218,7 @@ const fixCode = `result.suggested_fix
           ]}
           ctaLabel="Notify on launch"
           ctaHref="/notify"
+          ctaVariant="secondary"
         />
       </div>
       <p class="mt-8 font-mono text-xs uppercase tracking-[0.1em] text-ink-500">
