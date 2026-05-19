@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "codepawl-site",
+  "name": "codepawl",
   "compatibility_date": "2026-04-01",
   "assets": {
     "directory": "./dist",
