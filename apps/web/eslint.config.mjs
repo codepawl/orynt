@@ -11,18 +11,14 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      "e2e/**",
+      "__tests__/**",
     ],
   },
   {
     rules: {
-      // setState in useEffect is a standard hydration guard pattern with next-themes
+      "@typescript-eslint/no-explicit-any": "error",
       "react-hooks/set-state-in-effect": "off",
-      // Float32Array mutation in useFrame is the standard three.js pattern
-      "react-hooks/immutability": "off",
-      // Allow any in API response handlers and Ant Design callbacks
-      "@typescript-eslint/no-explicit-any": "warn",
-      // External avatar URLs use <img> intentionally (not optimized via next/image)
-      "@next/next/no-img-element": "off",
     },
   },
 ];

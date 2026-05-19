@@ -1,32 +1,21 @@
-import type { Metadata } from "next";
 import Link from "next/link";
-import { DinoGame } from "./components/features/DinoGame";
-
-export const metadata: Metadata = {
-  title: "404",
-  description: "Page not found.",
-  robots: {
-    index: false,
-    follow: true,
-  },
-};
 
 export default function NotFound() {
   return (
-    <section className="flex flex-col items-center text-center">
-      <h1 className="font-medium text-6xl mb-2 tracking-tight text-neutral-900 dark:text-neutral-100">
-        404
-      </h1>
-      <p className="mb-2 text-neutral-600 dark:text-neutral-400">
-        This page doesn&apos;t exist. But while you&apos;re here...
+    <main className="mx-auto flex min-h-[60vh] max-w-xl flex-col justify-center px-6 py-20">
+      <p className="cp-marker mb-6">404 · not found</p>
+      <h1 className="cp-h1 text-fg-1">We couldn&apos;t find that page.</h1>
+      <p className="cp-lead text-fg-2 mt-6">
+        It may have moved while we were rebuilding the site. Head back to{" "}
+        <Link href="/" className="text-ratchet hover:text-ratchet-hot">
+          the homepage
+        </Link>{" "}
+        or browse the{" "}
+        <Link href="/products" className="text-ratchet hover:text-ratchet-hot">
+          product catalog
+        </Link>
+        .
       </p>
-      <DinoGame />
-      <Link
-        href="/"
-        className="text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors text-sm"
-      >
-        &larr; Back to home
-      </Link>
-    </section>
+    </main>
   );
 }

@@ -1,246 +1,106 @@
-# CLAUDE.md
+# Project rules for Claude Code
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Read this file first in every session.
 
-## First Thing Every Session
+## What this project is
 
-**Read `ROADMAP.md` before doing any work.** Check which phase is current, which tasks are checked off, and what's next. Do not start work without confirming current state.
+Codepawl is the public website and product surface for an AI agent company. It hosts the open-source product catalog (OpenPawl, Featcat, HebbMem, TurboQuant, Cachepawl, KStudio), curated AI/ML research notes, documentation, and a path into KStudio (the closed product). The audience is AI/ML engineers building agents, ML practitioners, and researchers.
 
-If a task is blocked, document the blocker in ROADMAP.md and move to the next unblocked task. Do not create features not listed in the roadmap without explicit approval.
+The site is the marketing and developer-relations layer. App-style features (community forum, paper reproductions, challenges) live behind `(app)` route group and reuse the same monorepo but a different layout shell.
 
-## Project Overview
+## Tech stack (locked)
 
-CodePawl is an open-source AI/ML community platform with a blog and discussion forum.
+- Language: TypeScript (frontend), Python 3.12+ (backend)
+- Package manager: `bun add` for JS/TS, `uv add` for Python (never npm/yarn/pnpm/pip)
+- Frontend framework: Next.js 16 App Router with React Server Components by default
+- Styling: Tailwind v4 (CSS-first `@theme` directive), plus design tokens in `:root` CSS variables
+- UI library: pure Tailwind for `(marketing)` route group, Ant Design themed for `(app)` route group
+- Animation: `motion` from `motion/react` (never `framer-motion`)
+- Icons: `react-bootstrap-icons` (never `lucide-react`)
+- Backend framework: FastAPI on Koyeb, single gateway to Supabase
+- Database: Supabase Postgres with Auth, Realtime, Storage
+- Migration tool: Supabase CLI migrations in `apps/api/migrations/`
+- Auth: Supabase Auth with JWT, verified server-side in FastAPI middleware
+- Transactional email: Resend with React Email templates
+- Captcha: Cloudflare Turnstile (invisible)
+- Analytics: PostHog (self-hosted on Koyeb or cloud free tier, decide in OPS.md)
+- Error tracking: Sentry for both Next.js and FastAPI
+- Rate limiting: `slowapi` on FastAPI, in-memory backend until distributed needed
 
-**Live:** https://codepawl.com
-**Founded:** 2026
-**Founder:** An
-**Stack:** Bun monorepo, Next.js 16 (App Router), FastAPI, Supabase (PostgreSQL + Auth), Tailwind + Ant Design, Sentry (error monitoring)
-
-## Monorepo Structure
+## Monorepo layout
 
 ```
-codepawl/
-├── apps/
-│   ├── web/          # Next.js 16 frontend (@codepawl/web)
-│   └── api/          # Python FastAPI backend (Koyeb)
-├── packages/
-│   └── shared/       # @codepawl/shared (shared types, constants, config)
-├── ROADMAP.md        # Development roadmap (source of truth for all work)
-├── CLAUDE.md         # This file
-├── dev.sh            # Start both frontend + API
-└── package.json      # Bun workspaces root
+apps/
+  web/          Next.js 16 frontend
+  api/          FastAPI backend
+packages/
+  shared/       Shared TypeScript types and JSON schemas
 ```
+
+Bun workspaces drives the JS side. Python lives in `apps/api/` with its own `pyproject.toml`.
 
 ## Commands
 
-```bash
-# Root (Bun workspaces)
-bun install                # Install all workspace dependencies
-bun run dev                # Dev server (web only)
-bun run build              # Production build (web)
-bun run dev:api            # Dev server (api, requires Python venv)
-./dev.sh                   # Start both frontend + API
+- Install JS deps: `bun install`
+- Install Python deps: `cd apps/api && uv sync`
+- Run web dev: `bun --filter @codepawl/web dev`
+- Run API dev: `cd apps/api && uv run uvicorn main:app --reload`
+- Typecheck web: `bun --filter @codepawl/web typecheck`
+- Typecheck API: `cd apps/api && uv run mypy .`
+- Lint web: `bun --filter @codepawl/web lint`
+- Lint API: `cd apps/api && uv run ruff check .`
+- Format API: `cd apps/api && uv run ruff format .`
+- Test web: `bun --filter @codepawl/web test`
+- Test API: `cd apps/api && uv run pytest`
+- Build web: `bun --filter @codepawl/web build`
+- Migrate DB: `cd apps/api && uv run supabase migration up`
 
-# Frontend (apps/web)
-cd apps/web
-bun run dev
-bun run lint               # ESLint
-bun run typecheck          # TypeScript check (tsc --noEmit)
+## Conventions
 
-# Backend (apps/api)
-cd apps/api
-source .venv/bin/activate
-uvicorn app.main:app --reload
-ruff check .               # Linting
-pytest                     # Tests
-```
+- All identifiers, comments, docstrings: English only
+- Strict typing: TypeScript `strict: true` and `noUncheckedIndexedAccess: true`. Python `mypy --strict`. No `any`, no `# type: ignore`, no escape hatches
+- Formatter: Ruff for Python, Biome or Prettier for TS (one or the other, not both)
+- Line length: Python 100, TypeScript 100
+- Test framework: pytest for Python, vitest for TypeScript
+- Naming: `kebab-case` for files and folders, `PascalCase` for React components, `camelCase` for functions and variables, `snake_case` for Python
+- Server Components by default in Next.js. Add `"use client"` only when you need state, refs, browser APIs, or event handlers
+- Tailwind classes use design tokens, not arbitrary values. `bg-ink-1` not `bg-[#0B0E13]`
+- Dark mode is default. Light mode is opt-in via `next-themes` class toggle
 
-Always use `bun`, never `npm`/`yarn`/`pnpm`. Bun auto-loads `.env` files.
+## Architectural rules (do not violate)
 
-## Work Cycle
+- Next.js never talks to Supabase directly. All DB reads and writes go through FastAPI
+- FastAPI exposes a single `/api/v1/*` surface. No version sprawl until v1 ships a breaking change
+- Marketing pages under `app/(marketing)/` must not import Ant Design. App pages under `app/(app)/` can
+- All public marketing pages use ISR with `revalidate` set, never `dynamic = 'force-dynamic'`
+- Background jobs run in FastAPI via APScheduler. Do not introduce Celery, Inngest, or a separate worker process until traffic justifies it
+- Auth checks on protected endpoints use the FastAPI dependency `get_current_user`. Never read JWT manually in a route
+- Migration files are append-only. Never edit a migration that has been merged
 
-Every task follows this cycle. Do not skip steps.
+## Do not
 
-```
-1. build   — implement the change
-2. test    — lint + typecheck + pytest + manual verification
-3. commit  — descriptive message: "type(phase): task - description"
-4. update  — check off task in ROADMAP.md
-```
+- Do not rename existing public functions, classes, or React components when adding features. Add new names alongside, deprecate later
+- Do not introduce a state management library (Zustand, Redux, Jotai). React state plus URL search params is enough for MVP
+- Do not add a CSS-in-JS library. Tailwind plus design tokens covers everything
+- Do not pull `framer-motion`. Only `motion/react` (the renamed package)
+- Do not pull `lucide-react`. Only `react-bootstrap-icons`
+- Do not add `any` to silence the typechecker. Fix the type
+- Do not introduce a new dependency without writing an ADR via `add-decision`
 
-Commit message format:
-- Phase 0: `fix(phase0): 0.1 - remove unused packages`
-- Phase 1: `feat(phase1): 1.1 - set up supabase auth`
-- Phase 2: `feat(phase2): 2.3 - community API routes`
+## File map
 
-## Branching Strategy
+- `docs/PRODUCT.md` what we are building and for whom
+- `docs/SCOPE.md` what is in MVP and what is deferred
+- `docs/GLOSSARY.md` domain terms
+- `docs/ARCHITECTURE.md` system design, components, sequence diagrams
+- `docs/DATA.md` data model and ERD
+- `docs/API.md` FastAPI endpoint contract
+- `docs/UI.md` design tokens, component inventory, screens
+- `docs/TESTING.md` test strategy and definition of done
+- `docs/OPS.md` deployment, secrets, observability, runbook
+- `docs/ROADMAP.md` execution plan, read the current phase before starting work
+- `docs/DECISIONS.md` ADR log
 
-- `main` — production (auto-deploys to Vercel)
-- `staging` — integration testing
-- Feature/fix branches created from staging: `fix/*`, `feat/*`
+## Working with the roadmap
 
-Flow: feature branch > PR to staging > staging > PR to main
-
-## Architecture
-
-### Frontend (apps/web)
-
-- **Framework:** Next.js 16, App Router, React 19, TypeScript 5.5
-- **Styling:** Tailwind CSS (primary) + Ant Design 6 (themed via `AntdConfigProvider.tsx`) + `global.css`
-- **Dark mode:** next-themes, class-based
-- **Animation:** `motion` (motion.dev). Import as `import { motion } from "motion/react"`. Never use `framer-motion`.
-- **Icons:** `react-bootstrap-icons`. Never use lucide-react.
-- **3D:** Three.js + @react-three/fiber (homepage blob only, may be removed for performance)
-
-**Component locations:**
-- `app/components/features/` — domain-specific (animated logo, dino game, homepage, blog editor)
-- `app/components/features/blog-editor/` — Tiptap rich text + markdown editor
-- `app/components/layout/` — nav, footer, inline logo
-- `app/components/ui/` — reusable (ContentCard, ShareButtons, ReadingProgressBar, EmailVerificationBanner, UserMenu, NotificationBell, ProtectedRoute, theme switch, cookie consent)
-
-**Content systems:**
-- Blog: API-driven via Supabase `blog_posts` table. CRUD through FastAPI. Tiptap rich text editor at `/blog/write` and `/blog/edit/[id]`. Image uploads to Supabase Storage `blog-images` bucket. Auto-shares published posts to community as link posts.
-- Projects: Hybrid ISR — static curated data in `project-data.tsx` enriched with live GitHub stats (1h revalidation). Org repos fetched from `GET /projects/org`. Hub pages with README section parsing.
-
-**Navigation:** Plain Next.js `Link` + `motion.div layoutId="nav-active"` for sliding underline. `NavigationLoading.tsx` shows a top loading bar on internal navigation.
-
-**Feed generation:** `app/feed/[format]/route.ts` generates RSS/Atom/JSON. Aliased via rewrites in `next.config.js`.
-
-**Error monitoring:** `@sentry/nextjs` — client, server, and edge configs in `sentry.*.config.ts`. `global-error.tsx` and `error.tsx` capture exceptions.
-
-**Site config:** `app/config.ts` (metadata, `socialLinks` for org, `founderLinks` for personal, `foundedYear: 2026`)
-
-### Backend (apps/api)
-
-- **Framework:** FastAPI 0.115, async, Python 3.12
-- **DB:** Supabase (PostgreSQL) via PostgREST client. No ORM.
-- **Cache:** TTLCache (in-memory, 1h) for GitHub stats, org repos, README data
-- **Error monitoring:** `sentry-sdk[fastapi]`
-
-**API routes:**
-- `GET /health` — health check
-- `GET /projects` — live GitHub stats for tracked repos
-- `GET /projects/org` — all public repos from codepawl GitHub org
-- `GET /projects/{owner}/{repo}/readme` — fetch + parse README sections
-- `POST /webhook` — GitHub webhook handler
-- **Blog** (`/api/blog`):
-  - `GET /posts`, `GET /posts/{slug}` — public listing + detail
-  - `GET /my-posts` — authenticated user's drafts + posts
-  - `GET /admin/posts` — admin: all posts across authors
-  - `POST /posts`, `PUT /posts/{post_id}`, `DELETE /posts/{post_id}` — CRUD
-  - `PATCH /posts/{post_id}/status` — publish/draft/review (admin-only publish)
-  - `POST /upload-image` — Supabase Storage upload
-- **Community** (`/api/community`):
-  - `GET /posts`, `GET /posts/{post_id}`, `POST /posts`, `DELETE /posts/{post_id}` — CRUD
-  - `GET /posts/trending` — top posts by score from last N days
-  - `GET /posts/{post_id}/comments`, `POST /posts/{post_id}/comments`, `DELETE /comments/{comment_id}` — comments
-  - `POST /vote`, `GET /votes/mine` — voting
-  - `POST /flag` — flag content
-  - `GET /tags/stats`, `DELETE /tags/{tag_name}`, `POST /tags/merge` — tag management
-  - `GET /me`, `PATCH /me` — user profile (read + update)
-  - `PATCH /users/{user_id}/ban` — admin ban
-  - `GET /url-preview` — HEAD-check URL validity
-- **Notifications** (`/api/notifications`):
-  - `GET /`, `GET /unread-count`, `POST /{id}/read`, `POST /read-all`
-- **Auth** (in `main.py`):
-  - `POST /api/auth/login`, `POST /api/auth/logout` — admin session cookie
-
-### Shared Package (packages/shared)
-
-Contains:
-- TypeScript types shared between frontend and backend (`Profile`, `BlogPost`, `CommunityPost`, `TopComment`, etc.)
-- Status enums, `CATEGORIES`, `KARMA_THRESHOLDS` constants
-- API URL config getter
-
-### Database (Supabase)
-
-Tables: `profiles`, `blog_posts`, `posts`, `comments`, `votes`, `flags`, `notifications`
-Storage: `blog-images` bucket (for blog post cover images and inline images)
-
-All tables use Row Level Security (RLS).
-
-## Key Patterns and Rules
-
-### Do
-- Use `motion` for animations, not CSS transitions (except simple hover states)
-- Use `react-bootstrap-icons` for icons
-- ISR with graceful fallback for any backend API calls (never show 500 to users)
-- Use `@codepawl/shared` for any types/constants shared between frontend and backend
-- Add new MDX components in `mdx.tsx` components mapping
-- Commit after each sub-task, not at the end of a phase
-- Run lint + typecheck + pytest before every commit
-
-### Do Not
-- Do not introduce new UI libraries (stick with Tailwind + Ant Design)
-- Do not use `framer-motion`, use `motion/react`
-- Do not use `lucide-react`, use `react-bootstrap-icons`
-- Do not use `npm`/`yarn`/`pnpm`
-- Do not connect frontend directly to Supabase DB for data (go through FastAPI). Exception: Supabase Auth is used directly on the client for login/signup/session management.
-- Do not skip testing in the work cycle
-- Do not work on features outside the current roadmap phase
-- Do not list products that don't have code (TeamClaw, Lognis, Yeastbook, OpenClaw are NOT products yet)
-- **Merge before moving on.** Before starting any new branch, check for unmerged feature/fix branches (`git branch --list "fix/*" "feat/*"`). Verify each passes lint + typecheck + pytest. If clean, create PR and squash merge to staging. If broken, report and stop. Always start new work from latest staging.
-
-### Backend Constraints
-- Supabase credentials may not be configured in all environments. Always handle gracefully with 503 fallback.
-- Python deps pinned in `requirements.txt`
-
-### Frontend Constraints
-- Next.js 16 canary, be aware of potential breaking changes
-- `next-mdx-remote` v6 breaks in Turbopack dev mode (production build works fine)
-- Public pages (/, /blog, /projects, /about) must never require auth
-
-## Deployment
-
-- **Frontend:** Vercel, root directory `apps/web`. Uses Vercel Analytics + Speed Insights.
-- **Backend:** Koyeb (free tier), Docker at `apps/api/`.
-- **Env vars (backend):** `CODEPAWL_GITHUB_TOKEN`, `CODEPAWL_WEBHOOK_SECRET`, `CODEPAWL_TRACKED_REPOS`, `CODEPAWL_SUPABASE_URL`, `CODEPAWL_SUPABASE_SECRET_KEY`, `CODEPAWL_SUPABASE_JWT_SECRET`, `CODEPAWL_ADMIN_API_KEY`, `CODEPAWL_SENTRY_DSN`
-- **Env vars (frontend):** `BACKEND_API_URL` (server-only), `NEXT_PUBLIC_BACKEND_API_URL` (client-side), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SENTRY_DSN`
-
-### Supabase Dashboard Configuration
-
-**Redirect URLs** (Settings → Auth → URL Configuration — must be added):
-- `http://localhost:3000/auth/callback`
-- `http://localhost:3000/auth/confirm`
-- `http://localhost:3000/reset-password`
-- `https://codepawl.com/auth/callback`
-- `https://codepawl.com/auth/confirm`
-- `https://codepawl.com/reset-password`
-
-**Email Templates** (Auth → Email Templates — must be updated for PKCE):
-All confirmation links must use the token_hash format:
-```
-{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=TYPE&next={{ .RedirectTo }}
-```
-Where `TYPE` is one of: `signup` | `invite` | `magiclink` | `recovery` | `email_change`
-
-## Pages
-
-| Route | Description |
-|-------|-------------|
-| `/` | Homepage, animated logo, recent blog posts |
-| `/about` | Org info + expandable team card |
-| `/blog`, `/blog/[slug]` | Blog listing + post detail (API-driven) |
-| `/blog/write` | Blog post editor (Tiptap, auth required) |
-| `/blog/edit/[id]` | Edit existing blog post |
-| `/blog/drafts` | User's draft posts |
-| `/projects` | Project showcase, live GitHub stats, org repos |
-| `/projects/[slug]` | Project hub page with tabs (overview, install, API, benchmarks, community) |
-| `/community` | Post listing (ranked/new) |
-| `/community/submit` | Submit post form |
-| `/community/post/[id]` | Post detail + comments |
-| `/login` | GitHub OAuth + email/password sign-in |
-| `/signup` | Email/password sign-up |
-| `/forgot-password` | Request password reset email |
-| `/reset-password` | Set new password (after recovery email) |
-| `/settings` | User settings: profile, email, password, account |
-| `/auth/callback` | OAuth code exchange handler |
-| `/auth/confirm` | Token-hash confirm handler (email verification, recovery, email change) |
-| `/profile/[username]` | User profile |
-| `/admin` | Admin dashboard (auth required) |
-| `/admin/blog` | Blog post management |
-| `/admin/community` | Community post/comment management |
-| `/admin/moderation` | Flagged content review |
-| `/privacy`, `/terms`, `/cookies` | Legal pages |
-| 404 | Interactive dino runner game |
+Each roadmap phase is a standalone task with explicit verification. Do not skip ahead. Do not combine phases. When finishing a phase, invoke the `phase-complete` skill which runs all verification commands listed in that phase block.

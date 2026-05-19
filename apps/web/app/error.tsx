@@ -1,47 +1,41 @@
 "use client";
 
-import { useEffect } from "react";
 import Link from "next/link";
-import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
 
-export default function Error({
+export default function GlobalError({
   error,
   reset,
 }: {
-  error: Error;
+  error: Error & { digest?: string };
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    console.error(error);
   }, [error]);
-
   return (
-    <section className="flex flex-col items-center justify-center min-h-[60vh]">
-      <div className="flex flex-col items-center gap-4 max-w-md px-4 text-center">
-        <h1 className="text-4xl font-bold text-neutral-900 dark:text-neutral-100 m-0">
-          Something went wrong
-        </h1>
-        <p className="text-base text-neutral-600 dark:text-neutral-400">
-          An unexpected error occurred. Don&apos;t worry, it happens to the best of us.
-        </p>
-        <p className="text-sm text-neutral-500 dark:text-neutral-500">
-          Error: {error.message || "Unknown error"}
-        </p>
-        <div className="flex items-center gap-3 flex-wrap justify-center">
-          <button
-            onClick={reset}
-            className="px-4 py-2 text-sm font-medium bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-lg hover:bg-neutral-700 dark:hover:bg-neutral-300 transition-colors"
-          >
-            Try again
-          </button>
-          <Link
-            href="/"
-            className="px-4 py-2 text-sm font-medium border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors no-underline"
-          >
-            Go home
-          </Link>
-        </div>
+    <main className="mx-auto flex min-h-[60vh] max-w-xl flex-col justify-center px-6 py-20">
+      <p className="cp-marker text-danger mb-6">500 · something broke</p>
+      <h1 className="cp-h1 text-fg-1">We hit an error.</h1>
+      <p className="cp-lead text-fg-2 mt-6">
+        Sentry has been notified. You can retry, or head back to the
+        homepage.
+      </p>
+      <div className="mt-8 flex gap-3">
+        <button
+          type="button"
+          onClick={reset}
+          className="bg-ratchet text-ink-0 hover:bg-ratchet-hot inline-flex items-center px-4 py-2 text-sm font-medium transition-colors"
+        >
+          Try again
+        </button>
+        <Link
+          href="/"
+          className="border-fg-3 text-fg-1 hover:bg-ink-3 inline-flex items-center border px-4 py-2 text-sm font-medium transition-colors"
+        >
+          Go home
+        </Link>
       </div>
-    </section>
+    </main>
   );
 }

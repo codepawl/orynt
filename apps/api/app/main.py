@@ -1,126 +1,152 @@
-import logging
-from contextlib import asynccontextmanager
+"""FastAPI application factory.
 
+Wires CORS, rate limiting (slowapi), structlog logging, Sentry (optional),
+the public routers, the admin router, and the APScheduler cron that runs
+sync_github_stats every 6 hours.
+"""
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+
+import structlog
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.responses import JSONResponse
 
-from app.api.blog.router import router as blog_router
-from app.api.community.router import router as community_router
-from app.api.papers.router import router as papers_router
-from app.api.wiki.router import router as wiki_router
-from app.api.community.notifications import router as notifications_router
-from app.api.projects import router as projects_router
-from app.api.routes import router as stats_router
-from app.api.webhook import router as webhook_router
-from app.config import Settings
-from app.core.cache import TTLCache
-from app.services.github import GitHubService
+from app.config import get_settings
+from app.errors import register_exception_handlers
+from app.jobs.sync_github_stats import sync as sync_stats_job
+from app.middleware import limiter
+from app.repositories.product_repo import SupabaseProductRepo
+from app.repositories.product_stats_repo import SupabaseProductStatsRepo
+from app.routers import admin, contact, health, newsletter, products
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer(),
+        ]
+    )
+
+
+def _maybe_init_sentry() -> None:
+    settings = get_settings()
+    if not settings.sentry_dsn:
+        return
+    import sentry_sdk
+
+    sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.1)
+
+
+def _cors_origins() -> list[str]:
+    return [
+        "http://localhost:3000",
+        "https://codepawl.com",
+        "https://www.codepawl.com",
+    ]
+
+
+async def _run_sync_stats() -> None:
+    settings = get_settings()
+    if settings.testing or not settings.supabase_url or not settings.supabase_service_role_key:
+        return
+    from supabase import create_client
+
+    client = create_client(settings.supabase_url, settings.supabase_service_role_key)
+    await sync_stats_job(
+        products_repo=SupabaseProductRepo(client),
+        stats_repo=SupabaseProductStatsRepo(client),
+        settings=settings,
+    )
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    settings = Settings()
-    app.state.settings = settings
-    app.state.cache = TTLCache(ttl_seconds=settings.cache_ttl_seconds)
-    app.state.github_service = GitHubService(settings)
-    app.state.projects_store = {}
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    scheduler: AsyncIOScheduler | None = None
+    if not settings.testing:
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        # First run ~30s after boot per docs/ROADMAP.md.
+        scheduler.add_job(
+            _run_sync_stats,
+            trigger=DateTrigger(run_date=datetime.now(UTC) + timedelta(seconds=30)),
+            id="github_sync_boot",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            _run_sync_stats,
+            trigger=IntervalTrigger(hours=6),
+            id="github_sync_cron",
+            replace_existing=True,
+        )
+        scheduler.start()
+        log.info("scheduler_started")
 
-    if settings.supabase_url and settings.supabase_secret_key:
-        try:
-            from supabase import acreate_client
-            app.state.supabase = await acreate_client(settings.supabase_url, settings.supabase_secret_key)
-            logger.info("Supabase client initialized")
-        except Exception:
-            logger.exception("Failed to initialize Supabase — blog/community endpoints will return 503")
-
-    yield
-
-    app.state.cache.clear()
-    app.state.projects_store.clear()
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+            log.info("scheduler_stopped")
 
 
-settings = Settings()
+def create_app() -> FastAPI:
+    _configure_logging()
+    _maybe_init_sentry()
 
-if settings.sentry_dsn:
-    import sentry_sdk
-    sentry_sdk.init(
-        dsn=settings.sentry_dsn,
-        traces_sample_rate=0.1,
-        send_default_pii=True,
-        environment="production",
+    app = FastAPI(
+        title="Codepawl API",
+        version="0.1.0",
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        lifespan=_lifespan,
     )
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+    app.state.limiter = limiter
 
-app = FastAPI(
-    title="CodePawl API",
-    description="GitHub stats, webhooks, and news automation",
-    lifespan=lifespan,
-)
+    @app.exception_handler(RateLimitExceeded)
+    async def _rate_limit_handler(_: Request, exc: RateLimitExceeded) -> JSONResponse:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": {
+                    "code": "rate_limited",
+                    "message": f"Rate limit exceeded: {exc.detail}",
+                }
+            },
+        )
 
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
-)
-
-app.include_router(stats_router)
-app.include_router(webhook_router)
-app.include_router(projects_router)
-
-app.include_router(blog_router)
-app.include_router(community_router)
-app.include_router(notifications_router)
-app.include_router(papers_router)
-app.include_router(wiki_router)
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-
-
-@app.post("/api/auth/login")
-@limiter.limit("5/minute")
-async def admin_login(request: Request):
-    """Validate admin key and set httpOnly cookie."""
-    import hmac as _hmac
-
-    body = await request.json()
-    key = body.get("key", "")
-    expected = request.app.state.settings.admin_api_key
-
-    if not expected:
-        return JSONResponse({"error": "Admin key not configured"}, status_code=500)
-    if not key or not _hmac.compare_digest(key, expected):
-        return JSONResponse({"error": "Invalid key"}, status_code=401)
-
-    response = JSONResponse({"ok": True})
-    response.set_cookie(
-        key="admin_session",
-        value=key,
-        httponly=True,
-        samesite="strict",
-        max_age=86400,
-        path="/",
+    app.add_middleware(SlowAPIMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(),
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
     )
-    return response
+
+    register_exception_handlers(app)
+
+    app.include_router(health.router)
+    app.include_router(newsletter.router)
+    app.include_router(contact.router)
+    app.include_router(products.router)
+    app.include_router(admin.router)
+    return app
 
 
-@app.post("/api/auth/logout")
-async def admin_logout():
-    """Clear admin session cookie."""
-    response = JSONResponse({"ok": True})
-    response.delete_cookie(key="admin_session", path="/")
-    return response
+app = create_app()

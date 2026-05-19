@@ -1,0 +1,147 @@
+/* Codepawl design tokens.
+ *
+ * Ported from the Landing Page V1.0 template (design/colors_and_type.css).
+ * These raw tokens are the source of truth. Tailwind v4 @theme block in
+ * globals.css aliases them so utilities like bg-ink-0, text-fg-1,
+ * font-display, rounded-md (forced to 0) all resolve correctly.
+ */
+
+:root {
+  /* Ink neutrals (dark canvas) */
+  --ink-0: #07090c;
+  --ink-1: #0b0e13;
+  --ink-2: #11151b;
+  --ink-3: #181d25;
+  --ink-4: #1f2530;
+  --ink-5: #2a3140;
+  --ink-6: #3a4253;
+
+  /* Foreground */
+  --fg-1: #f4f6fa;
+  --fg-2: #c7cdd8;
+  --fg-3: #8b95a6;
+  --fg-4: #5a6577;
+  --fg-5: #3a4253;
+
+  /* Blueprint accents */
+  --blueprint: #4d7fb8;
+  --blueprint-soft: #6e9bd2;
+  --blueprint-deep: #2b4a73;
+  --blueprint-grid: rgba(77, 127, 184, 0.08);
+
+  /* Ratchet orange */
+  --ratchet: #ff6b1a;
+  --ratchet-hot: #ff842d;
+  --ratchet-deep: #c44a0e;
+  --ratchet-tint: rgba(255, 107, 26, 0.12);
+
+  /* Semantic */
+  --success: #4fb286;
+  --warning: #e5b341;
+  --danger: #e5524a;
+  --info: var(--blueprint);
+
+  /* Code syntax (dark) */
+  --code-bg: #0e1218;
+  --code-border: var(--ink-5);
+  --code-tab: #161b23;
+  --syn-fg: #d7dce5;
+  --syn-comment: #5a6577;
+  --syn-keyword: #ff6b1a;
+  --syn-string: #94b86f;
+  --syn-number: #e5b341;
+  --syn-fn: #6e9bd2;
+  --syn-type: #b89bd8;
+  --syn-punct: #8b95a6;
+
+  /* Type scale */
+  --fs-display: clamp(3.5rem, 6vw, 5.5rem);
+  --fs-h1: clamp(2.5rem, 4vw, 3.75rem);
+  --fs-h2: clamp(2rem, 3vw, 2.75rem);
+  --fs-h3: 1.625rem;
+  --fs-h4: 1.25rem;
+  --fs-lead: 1.25rem;
+  --fs-body: 1rem;
+  --fs-small: 0.875rem;
+  --fs-caption: 0.75rem;
+  --fs-code: 0.875rem;
+  --fs-marker: 0.75rem;
+
+  /* Type weight */
+  --fw-light: 300;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semi: 600;
+  --fw-bold: 700;
+
+  /* Line height */
+  --lh-tight: 1.05;
+  --lh-snug: 1.2;
+  --lh-normal: 1.5;
+  --lh-loose: 1.7;
+
+  /* Tracking */
+  --tracking-tight: -0.02em;
+  --tracking-snug: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-marker: 0.18em;
+
+  /* Spacing scale (4px base) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+
+  /* Borders */
+  --border-1: 1px solid var(--ink-4);
+  --border-2: 1px solid var(--ink-5);
+  --border-strong: 1px solid var(--ink-6);
+  --border-accent: 1px solid var(--ratchet);
+  --border-blueprint: 1px solid var(--blueprint-deep);
+
+  /* Shadows */
+  --shadow-hairline: inset 0 0 0 1px var(--ink-5);
+  --shadow-1: 0 1px 0 var(--ink-5);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 0 3px rgba(255, 107, 26, 0.18);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.6, 0, 0.8, 0.2);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 360ms;
+
+  /* Layout */
+  --container-max: 1240px;
+  --content-max: 720px;
+  --grid-gutter: 24px;
+}
+
+/* Light-mode opt-in. next-themes flips html.light to override. */
+html.light {
+  --ink-0: #ffffff;
+  --ink-1: #f7f9fc;
+  --ink-2: #eef2f7;
+  --ink-3: #e3e8ef;
+  --ink-4: #cdd5df;
+  --ink-5: #aab3c0;
+  --ink-6: #7a8392;
+  --fg-1: #0b0e13;
+  --fg-2: #2a3140;
+  --fg-3: #5a6577;
+  --fg-4: #8b95a6;
+  --fg-5: #c7cdd8;
+  --code-bg: #f3f6fa;
+  --code-tab: #e8ecf2;
+  --shadow-glow: 0 0 0 3px rgba(255, 107, 26, 0.22);
+}

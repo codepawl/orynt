@@ -9,10 +9,11 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     include: ["**/__tests__/**/*.test.{ts,tsx}"],
     globals: true,
+    passWithNoTests: true,
   },
   resolve: {
     alias: {
-      app: path.resolve(__dirname, "./app"),
+      "@/": path.resolve(__dirname, "./"),
       "@codepawl/shared": path.resolve(__dirname, "../../packages/shared/src"),
     },
   },
