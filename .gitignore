@@ -1,37 +1,56 @@
-# Build output
-dist/
-.astro/
-
-# Dependencies
+# JS/TS
 node_modules/
+.next/
+dist/
+build/
+.turbo/
+.vercel/
+*.tsbuildinfo
 
-# Bun
-bun.lockb
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
-# Logs
-*.log
-npm-debug.log*
-
-# Environment
+# Env files
 .env
-.env.*
-!.env.example
-
-# Editor / IDE
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
-.idea/
-*.swp
-*.swo
+.env.local
+.env.*.local
+.env.production
+.env.development
 
 # OS
 .DS_Store
 Thumbs.db
 
-# TypeScript
-*.tsbuildinfo
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
 
-# Cloudflare
-.wrangler/
-.dev.vars
+# Supabase
+supabase/.temp/
+supabase/.branches/
+
+# Build artifacts
+*.log
+*.pid
+
+# Claude Code per-user settings
+.claude/
+
+# Design reference (template, not shipped)
+Landing Page for CodePawl V1.0/
+
+# Test outputs
+playwright-report/
+test-results/

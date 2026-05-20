@@ -1,0 +1,171 @@
+@import "tailwindcss";
+@import "../styles/design-tokens.css";
+
+/* next-themes flips a class on <html>, so dark variants resolve via that. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v4 @theme block. Aliases raw design tokens onto the names that
+ * Tailwind expects so utilities like bg-ink-0, text-fg-2, font-display,
+ * rounded-md (forced to 0 per ADR-006) all generate correctly.
+ */
+@theme {
+  /* Colors */
+  --color-ink-0: var(--ink-0);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-ink-5: var(--ink-5);
+  --color-ink-6: var(--ink-6);
+  --color-fg-1: var(--fg-1);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-4: var(--fg-4);
+  --color-fg-5: var(--fg-5);
+  --color-blueprint: var(--blueprint);
+  --color-blueprint-soft: var(--blueprint-soft);
+  --color-blueprint-deep: var(--blueprint-deep);
+  --color-ratchet: var(--ratchet);
+  --color-ratchet-hot: var(--ratchet-hot);
+  --color-ratchet-deep: var(--ratchet-deep);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+
+  /* Fonts. next/font/local sets --font-display, --font-body, --font-mono
+   * on the <html> className, so Tailwind's font-display utility resolves
+   * to the loaded font with the template's fallbacks underneath.
+   */
+  --font-display: "Fraunces", "Times New Roman", serif;
+  --font-body: "Inter Tight", system-ui, -apple-system, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: var(--font-body);
+
+  /* Sharp corners — every Tailwind radius utility resolves to 0 except
+   * rounded-full (which keeps Tailwind's default pill behavior at 1e5px).
+   */
+  --radius-none: 0;
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+}
+
+/* Body defaults port the template's html/body rules. */
+html,
+body {
+  background: var(--ink-0);
+  color: var(--fg-1);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Semantic type classes ported verbatim from the template so Phase 6
+ * components can use cp-display, cp-h1, cp-marker, cp-em without
+ * re-translating. Mirrors design/colors_and_type.css.
+ */
+.cp-display {
+  font-family: var(--font-display);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
+}
+.cp-h1 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
+}
+.cp-h2 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-tight);
+  font-variation-settings: "opsz" 96, "SOFT" 30, "WONK" 0;
+}
+.cp-h3 {
+  font-family: var(--font-body);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-snug);
+}
+.cp-h4 {
+  font-family: var(--font-body);
+  font-size: var(--fs-h4);
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-snug);
+}
+.cp-lead {
+  font-family: var(--font-body);
+  font-size: var(--fs-lead);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  color: var(--fg-2);
+}
+.cp-body {
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  color: var(--fg-2);
+}
+.cp-small {
+  font-family: var(--font-body);
+  font-size: var(--fs-small);
+  color: var(--fg-3);
+}
+.cp-caption {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.cp-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  color: var(--syn-fg);
+}
+.cp-marker {
+  font-family: var(--font-mono);
+  font-size: var(--fs-marker);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-marker);
+  text-transform: uppercase;
+  color: var(--ratchet);
+}
+.cp-em,
+em.cp-em {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: var(--fw-regular);
+  font-variation-settings: "opsz" 144, "SOFT" 50, "WONK" 1;
+  color: var(--ratchet);
+}
+
+/* Respect reduced motion globally per the accessibility bar in docs/UI.md. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

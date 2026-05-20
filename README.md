@@ -1,71 +1,40 @@
-# CodePawl
+# Codepawl
 
-![CI Web](https://github.com/codepawl/codepawl/actions/workflows/ci-web.yml/badge.svg)
-![CI API](https://github.com/codepawl/codepawl/actions/workflows/ci-api.yml/badge.svg)
+Open-source AI agent products plus a curated AI/ML research surface. The website and product catalog for an AI agent company.
 
-A personal blog and portfolio showcasing AI engineering and data science work, featuring in-depth articles, research insights, and project demonstrations.
+## Status
 
-## About
+Pre-MVP rebuild. May 2026. Greenfield restructure on top of a prior community-platform codebase. New design system, new monorepo layout, narrower scope.
 
-CodePawl is the digital space of an AI Engineer and Data Scientist, dedicated to sharing knowledge, research findings, and practical insights in artificial intelligence, machine learning, and data science.
-
-## Features
-
-### Blog
-
-- **Research Articles**: Deep dives into cutting-edge AI research, algorithms, and methodologies
-- **Technical Tutorials**: Practical guides for implementing AI/ML solutions
-- **Industry Insights**: Analysis of trends, tools, and best practices in data science
-- **Project Case Studies**: Detailed breakdowns of real-world AI projects and their outcomes
-
-### Portfolio
-
-- **AI Projects**: Showcase of machine learning models, data pipelines, and AI applications
-- **Research Contributions**: Publications, experiments, and open-source contributions
-- **Technical Skills**: Demonstrations of expertise across the AI/ML stack
-
-## Content Focus
-
-- **Machine Learning**: Model development, training strategies, and optimization techniques
-- **Deep Learning**: Neural network architectures, transfer learning, and advanced techniques
-- **Data Science**: Data analysis, visualization, and statistical modeling
-- **AI Engineering**: Production systems, MLOps, and scalable AI infrastructure
-- **Research**: Academic and applied research in artificial intelligence
-
-## Tech Stack
-
-Built with Next.js, TypeScript, and modern web technologies. Content authored in MDX with code syntax highlighting.
-
-## Getting Started
+## Quick start
 
 ```bash
-# Install dependencies
+# Install JS workspace deps
 bun install
 
-# Run development server
-bun run dev
+# Install Python deps for the API
+cd apps/api && uv sync && cd ../..
 
-# Build for production
-bun run build
+# Copy env template
+cp .env.example .env.local
 
-# Start production server
-bun run start
+# Run web (Next.js)
+bun --filter @codepawl/web dev
+
+# Run API (FastAPI) in another terminal
+cd apps/api && uv run uvicorn main:app --reload
 ```
 
-## Live Site
+Web runs on `http://localhost:3000`, API on `http://localhost:8000`.
 
-Visit [codepawl.com](https://codepawl.com)
+## Documentation
 
-## RSS Feed
+Specs and execution plan live in `docs/`. Start with:
 
-Stay updated with the latest blog posts by subscribing to the RSS feed:
-
-[![RSS Feed](https://img.shields.io/badge/RSS-Feed-orange)](https://codepawl.com/rss.xml)
-
-- **RSS 2.0**: [https://codepawl.com/rss.xml](https://codepawl.com/rss.xml)
-- **Atom**: [https://codepawl.com/atom.xml](https://codepawl.com/atom.xml)
-- **JSON Feed**: [https://codepawl.com/feed.json](https://codepawl.com/feed.json)
+- `docs/PRODUCT.md` what this is and who it serves
+- `docs/ROADMAP.md` execution phases in order
+- `CLAUDE.md` rules for Claude Code in this repo
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+TBD. The website is closed-source. Individual products listed on `/products` have their own MIT-licensed repos under the `codepawl` GitHub org.

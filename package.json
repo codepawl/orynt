@@ -1,29 +1,18 @@
 {
-  "name": "codepawl-site",
-  "type": "module",
-  "version": "0.0.1",
+  "name": "codepawl",
   "private": true,
+  "workspaces": ["apps/web", "packages/*"],
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro check && astro build",
-    "preview": "astro preview",
-    "typecheck": "astro check",
-    "astro": "astro",
-    "og:build": "rsvg-convert -w 1200 -h 630 og/og.svg -o public/og.png || (echo 'rsvg-convert not found. Install it: sudo apt install -y librsvg2-bin' && exit 1)"
-  },
-  "dependencies": {
-    "@fontsource-variable/fraunces": "^5.2.0",
-    "@fontsource-variable/inter-tight": "^5.2.0",
-    "@fontsource-variable/jetbrains-mono": "^5.2.0",
-    "astro": "^5.5.0"
-  },
-  "devDependencies": {
-    "@astrojs/check": "^0.9.4",
-    "@astrojs/mdx": "^4.2.0",
-    "@astrojs/sitemap": "^3.4.0",
-    "@astrojs/tailwind": "^6.0.0",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.0",
-    "wrangler": "^4.87.0"
+    "dev": "bun --filter @codepawl/web dev",
+    "build": "bun --filter @codepawl/web build",
+    "start": "bun --filter @codepawl/web start",
+    "lint": "bun --filter @codepawl/web lint",
+    "typecheck": "bun --filter @codepawl/web typecheck",
+    "test": "bun --filter @codepawl/web test",
+    "test:e2e": "bun --filter @codepawl/web test:e2e",
+    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --port 8000",
+    "test:api": "cd apps/api && uv run pytest",
+    "lint:api": "cd apps/api && uv run ruff check .",
+    "typecheck:api": "cd apps/api && uv run mypy ."
   }
 }

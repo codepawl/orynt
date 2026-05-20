@@ -1,0 +1,59 @@
+[project]
+name = "codepawl-api"
+version = "0.1.0"
+description = "FastAPI gateway for Codepawl"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "httpx==0.27.2",
+    "pydantic-settings==2.5.2",
+    "supabase==2.28.3",
+    "slowapi==0.1.9",
+    "python-multipart==0.0.20",
+    "sentry-sdk[fastapi]==2.22.0",
+    "structlog==24.4.0",
+    "apscheduler==3.10.4",
+    "resend==2.4.0",
+    "email-validator==2.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.3",
+    "pytest-asyncio==0.24.0",
+    "respx==0.21.1",
+    "ruff==0.8.6",
+    "mypy==1.13.0",
+    "asgi-lifespan==2.1.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "RUF", "SIM"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+explicit_package_bases = true
+ignore_missing_imports = true
+exclude = ["^\\.venv/", "^seed/", "^migrations/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
