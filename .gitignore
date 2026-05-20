@@ -50,6 +50,10 @@ supabase/.branches/
 
 # Design reference (template, not shipped)
 Landing Page for CodePawl V1.0/
+landing_page_template/
+
+# Astro build cache (legacy, pre-monorepo)
+.astro/
 
 # Test outputs
 playwright-report/
