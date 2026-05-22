@@ -147,6 +147,44 @@ ADR-style log of architectural decisions. Append new decisions; do not edit hist
 
 ---
 
+## ADR-009: API hosted on Fly.io (replaces Koyeb)
+
+**Date**: 2026-05-22
+**Status**: accepted
+
+**Context**: `docs/OPS.md` originally named Koyeb as the API host, chosen mostly because it appeared first in the comparison. Before any production traffic exists is the right moment to revisit. Koyeb's free tier is generous but its scale-to-zero behavior is coarse, regional choice is limited near our Supabase + WSL2 dev locale, and its build pipeline is a separate concept layered on top of Docker. Fly.io exposes the underlying Machines API directly, has a Singapore region (matching the user's WSL2 dev + the Supabase project tier we are about to provision), bills per machine-second so scale-to-zero is genuinely $0 when idle, and ships first-class custom certificates via `fly certs create` without a control-plane queue.
+
+**Decision**: Host `apps/api` on Fly.io. App name `codepawl-api`, primary region `sin`, one shared-CPU 256 MB machine with `min_machines_running = 0` and auto-start on HTTP. Health check hits `/health/ready` (which now performs a real Supabase round-trip per ADR-004's gateway contract). Production domain `api.codepawl.com` is attached via `fly certs create` with a Cloudflare DNS-only record (no orange-cloud proxy) per the existing OPS.md rule, so long-running requests bypass Cloudflare's edge timeout. Secrets are managed via `fly secrets set`, never committed to `fly.toml`.
+
+**Alternatives considered**:
+- **Stay on Koyeb**: zero migration cost but loses the regional fit and the per-second billing; control plane is also more opinionated about build steps, harder to script.
+- **Railway**: similar DX to Fly, but pricing is per-resource rather than per-machine-second and the region list is smaller; no clear edge on cost or latency.
+- **Render**: cleaner free tier UI but no scale-to-zero on web services; pays for an always-on instance even with zero traffic.
+- **Self-host on a VPS**: cheapest long-term but adds OS patching, TLS renewal, and reverse-proxy config — not justified for a Python service with no exotic runtime needs.
+
+**Consequences**: One Dockerfile, one `fly.toml`, one `fly deploy` step from `apps/api`. Scale-to-zero means the first request after idle pays a cold-start (~1–2 s for a slim Python image with no jit); acceptable for marketing-tier traffic, revisit if `/health/ready` p95 from Cloudflare's uptime check spikes. Regional scope is single-region at launch — if global p95 latency on the API becomes user-visible, add a second region via `fly scale count 2 --region iad`. `docs/OPS.md` Hosting + Deployment + Runbook sections move from Koyeb to Fly commands. The Koyeb mention in older ADR commentary is left as historical context; this ADR is the active source of truth.
+
+---
+
+## ADR-010: Replace `next-themes` with `@wrksz/themes` for theme management
+
+**Date**: 2026-05-22
+**Status**: accepted
+
+**Context**: `next-themes@0.4.6` renders its FOUC-prevention `<script>` from inside a client component, which trips a React 19 console warning ("Encountered a script tag while rendering React component") on every render of `ThemeProvider` in Next.js 16.2. The script still executes from the initial SSR'd HTML so dark mode works, but the warning re-fires on client transitions and buries real errors in DevTools. Upstream `next-themes` has not shipped since 2025-03-11 and the proposed fix ([pacocoursey/next-themes#386](https://github.com/pacocoursey/next-themes/pull/386)) has sat open without maintainer activity. We need theming to stay viable for the eventual light/dark toggle (CSS for `html.light` already lives in `apps/web/styles/design-tokens.css`).
+
+**Decision**: Replace `next-themes` with `@wrksz/themes` (pinned to `^0.9.3`), imported from the drop-in `@wrksz/themes/next` entrypoint. The new library uses `useServerInsertedHTML` to inject the pre-hydration theme script outside the React component tree, which is the proper root-cause fix. The migration touches one import line in `apps/web/components/theme-provider.tsx`; the wrapper component, its props (`attribute="class"`, `defaultTheme="dark"`, `enableSystem={false}`, `disableTransitionOnChange`), and `app/layout.tsx` are unchanged.
+
+**Alternatives considered**:
+- **Stay on `next-themes` and patch via `bun patch`**: zero new dep but requires maintaining a fork-patch against an unmaintained library with no upstream to merge back into; higher long-term carrying cost than a one-line vendor swap.
+- **Drop theming entirely and hardcode `className="dark"` on `<html>`**: smallest diff, but discards the path to a real light-mode toggle that the design tokens already support.
+- **Suppress the specific `console.error` message in the provider**: hides the symptom rather than fixing the root cause, and risks masking unrelated React errors emitted by the same channel.
+- **Roll a custom `useServerInsertedHTML`-based provider**: ~50 lines of code we would own and test ourselves; not worth it when a maintained drop-in exists.
+
+**Consequences**: The React 19 script warning goes away across all marketing pages and client transitions, leaving DevTools clean for real issues. `@wrksz/themes` carries abandonment risk — it is single-maintainer, published 2026-05-21, lower adoption than `next-themes` — but the risk is contained: only `apps/web/components/theme-provider.tsx` imports it, no consumer code calls `useTheme` yet, and reverting to `next-themes` (or any future replacement) stays a one-file change. Bundle impact is neutral (both libraries are ~3–4 kB minified and `@wrksz/themes` has zero runtime deps). The CLAUDE.md line about "Light mode is opt-in via `next-themes` class toggle" is reworded to drop the library name so the doc no longer mis-names the implementation.
+
+---
+
 ## Open questions
 
 - **PostHog cloud vs self-hosted**. Default: cloud free tier. Revisit when: traffic exceeds the free tier, at which point self-host on Koyeb in the same network as the API.

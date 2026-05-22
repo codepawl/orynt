@@ -1,0 +1,47 @@
+import { STACK_PRODUCTS } from "./products";
+
+export function Stack() {
+  return (
+    <section aria-label="The CodePawl stack" className="border-ink-4 border-b">
+      <div className="mx-auto max-w-[1240px] px-6 py-20">
+        <p className="cp-marker mb-6">003 · the codepawl stack</p>
+        <h2 className="cp-h2 text-fg-1 max-w-3xl">
+          One company. One stack. Four problems.
+        </h2>
+
+        <pre className="border-ink-5 bg-code-bg cp-code mt-10 inline-block border p-6 leading-relaxed">
+          <code>{`CodePawl
+├── TracePawl    failure diagnosis and replay for coding agents
+├── Mempawl      persistent memory for agentic systems
+├── OpenPawl     runtime for coordinated coding agents
+└── CachePawl    optimization for long-horizon agent workloads`}</code>
+        </pre>
+
+        <div className="mt-12 grid gap-6 md:grid-cols-2">
+          {STACK_PRODUCTS.map((product) => (
+            <article
+              key={product.id}
+              className={
+                product.current_focus
+                  ? "border-ratchet bg-ink-1 border p-6"
+                  : "border-ink-5 bg-ink-1 border p-6"
+              }
+            >
+              <header className="mb-4 flex items-center justify-between gap-3">
+                <p className="cp-caption text-fg-3">{product.language}</p>
+                {product.current_focus ? (
+                  <span className="bg-ratchet-tint text-ratchet cp-caption px-2 py-1">
+                    current focus
+                  </span>
+                ) : null}
+              </header>
+              <h3 className="cp-h3 text-fg-1">{product.name}</h3>
+              <p className="cp-body text-fg-2 mt-2">{product.tagline}</p>
+              <p className="cp-small text-fg-3 mt-4">{product.description}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}

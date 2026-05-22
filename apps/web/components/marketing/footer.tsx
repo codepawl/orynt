@@ -1,64 +1,45 @@
-import Link from "next/link";
-
-import { FooterNewsletterForm } from "./footer-newsletter-form";
-
-const LINKS = {
-  product: [
-    { href: "/products", label: "Products" },
-    { href: "/pricing", label: "Pricing" },
-    { href: "/docs", label: "Docs" },
-  ],
-  company: [
-    { href: "/research", label: "Research" },
-    { href: "/blog", label: "Blog" },
-    { href: "/careers", label: "Careers" },
-    { href: "/contact", label: "Contact" },
-  ],
-  legal: [
-    { href: "/privacy", label: "Privacy" },
-    { href: "/terms", label: "Terms" },
-  ],
-} as const;
-
 export function Footer() {
   return (
     <footer className="bg-ink-0 border-ink-4 border-t">
-      <div className="mx-auto grid max-w-[1240px] gap-12 px-6 py-16 lg:grid-cols-[2fr_3fr]">
-        <div>
-          <p className="cp-h4 text-fg-1 font-display">Codepawl</p>
-          <p className="cp-small text-fg-3 mt-3 max-w-sm">
-            Open-source AI agent tooling. Subscribe for new releases and the
-            occasional research note.
-          </p>
-          <div className="mt-6 max-w-md">
-            <FooterNewsletterForm />
+      <div className="mx-auto max-w-[1240px] px-6 py-12">
+        <div className="grid gap-8 sm:grid-cols-[2fr_3fr] sm:items-start">
+          <div>
+            <p className="cp-h4 text-fg-1 font-display">CodePawl</p>
+            <p className="cp-small text-fg-3 mt-2">
+              Infrastructure for autonomous coding agents.
+            </p>
           </div>
-        </div>
-        <nav aria-label="Footer" className="grid grid-cols-3 gap-6">
-          {(["product", "company", "legal"] as const).map((group) => (
-            <div key={group}>
-              <p className="cp-caption text-fg-3 mb-3">{group}</p>
-              <ul className="space-y-2">
-                {LINKS[group].map((link) => (
-                  <li key={link.href}>
-                    <Link
-                      href={link.href}
-                      className="text-fg-2 hover:text-fg-1 cp-small transition-colors"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <dt className="cp-caption text-fg-3">Email</dt>
+              <dd className="mt-1">
+                <a
+                  href="mailto:founder@codepawl.com"
+                  className="text-fg-2 hover:text-fg-1 cp-small transition-colors"
+                >
+                  founder@codepawl.com
+                </a>
+              </dd>
             </div>
-          ))}
-        </nav>
+            <div>
+              <dt className="cp-caption text-fg-3">GitHub</dt>
+              <dd className="mt-1">
+                <a
+                  href="https://github.com/codepawl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-fg-2 hover:text-fg-1 cp-small transition-colors"
+                >
+                  github.com/codepawl
+                </a>
+              </dd>
+            </div>
+          </dl>
+        </div>
       </div>
       <div className="border-ink-4 mx-auto flex max-w-[1240px] items-center justify-between border-t px-6 py-6">
-        <p className="cp-caption text-fg-4">© 2026 Codepawl</p>
-        <p className="cp-caption text-fg-4">
-          Built with motion, Tailwind v4, and a lot of black coffee.
-        </p>
+        <p className="cp-caption text-fg-4">© 2026 CodePawl</p>
+        <p className="cp-caption text-fg-4">Early-stage research engineering.</p>
       </div>
     </footer>
   );

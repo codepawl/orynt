@@ -4,7 +4,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Research notes",
-  description: "Curated AI/ML research notes from the Codepawl team.",
+  description: "Curated AI/ML research notes from the CodePawl team.",
 };
 
 export default function ResearchIndex() {

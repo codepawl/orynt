@@ -4,7 +4,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Blog",
-  description: "Engineering notes from the Codepawl team.",
+  description: "Engineering notes from the CodePawl team.",
 };
 
 export default function BlogIndex() {

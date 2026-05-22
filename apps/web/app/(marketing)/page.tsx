@@ -1,24 +1,23 @@
 import type { Metadata } from "next";
 
-import { CTA } from "@/components/marketing/cta";
-import { Features } from "@/components/marketing/features";
-import { Formats } from "@/components/marketing/formats";
+import { ContactBlock } from "@/components/marketing/contact-block";
+import { CurrentFocus } from "@/components/marketing/current-focus";
 import { Hero } from "@/components/marketing/hero";
-import { PricingTeaser } from "@/components/marketing/pricing-teaser";
-import { SDKDemo } from "@/components/marketing/sdk-demo";
-import { Testimonials } from "@/components/marketing/testimonials";
-import { TrustedBy } from "@/components/marketing/trusted-by";
+import { Problem } from "@/components/marketing/problem";
+import { ResearchDirection } from "@/components/marketing/research-direction";
+import { Stack } from "@/components/marketing/stack";
+import { Status } from "@/components/marketing/status";
 
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Ship production agents, not demos",
+  title: "CodePawl — Infrastructure for autonomous coding agents",
   description:
-    "Open-source AI agent tooling for engineers. OpenPawl, Featcat, HebbMem, TurboQuant, Cachepawl, and the KStudio closed product.",
+    "Debugging, memory, coordination, and optimization infrastructure for autonomous coding agents.",
   openGraph: {
-    title: "Codepawl — Ship production agents",
+    title: "CodePawl — Infrastructure for autonomous coding agents",
     description:
-      "Open-source AI agent tooling for engineers shipping in 2026.",
+      "Debugging, memory, coordination, and optimization infrastructure for autonomous coding agents.",
     type: "website",
     url: "/",
   },
@@ -28,13 +27,12 @@ export default function MarketingLanding() {
   return (
     <>
       <Hero />
-      <TrustedBy />
-      <Formats />
-      <Features />
-      <SDKDemo />
-      <PricingTeaser />
-      <Testimonials />
-      <CTA />
+      <Problem />
+      <Stack />
+      <CurrentFocus />
+      <ResearchDirection />
+      <Status />
+      <ContactBlock />
     </>
   );
 }

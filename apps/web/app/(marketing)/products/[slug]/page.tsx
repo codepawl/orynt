@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { HERO_PRODUCTS } from "@/components/marketing/products";
+import { STACK_PRODUCTS } from "@/components/marketing/products";
 
 export const revalidate = 3600;
 
 export function generateStaticParams(): { slug: string }[] {
-  return HERO_PRODUCTS.map((product) => ({ slug: product.slug }));
+  return STACK_PRODUCTS.map((product) => ({ slug: product.slug }));
 }
 
 export async function generateMetadata({
@@ -15,7 +15,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const product = HERO_PRODUCTS.find((p) => p.slug === slug);
+  const product = STACK_PRODUCTS.find((p) => p.slug === slug);
   if (!product) return { title: "Not found" };
   return { title: product.name, description: product.tagline };
 }
@@ -41,7 +41,7 @@ export default async function ProductDetail({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = HERO_PRODUCTS.find((p) => p.slug === slug);
+  const product = STACK_PRODUCTS.find((p) => p.slug === slug);
   if (!product) {
     notFound();
   }

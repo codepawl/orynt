@@ -1,94 +1,72 @@
 /**
- * Static product data used by the Hero cycler and product chips. Mirrors
- * docs/DATA.md and apps/api/seed/products.py. This is design copy, not DB
- * state — live stars come from `GET /api/v1/products/{slug}/stats`.
+ * Static product data for the CodePawl stack. Mirrors docs/DATA.md and
+ * apps/api/seed/products.py. Live stars come from `GET /api/v1/products/{slug}/stats`.
  */
 
 import type { Product } from "@codepawl/shared";
 
-export interface HeroProduct extends Product {
+export interface StackProduct extends Product {
   readonly description: string;
   readonly install: string;
   readonly language: string;
+  readonly current_focus: boolean;
 }
 
-export const HERO_PRODUCTS: ReadonlyArray<HeroProduct> = [
+export const STACK_PRODUCTS: ReadonlyArray<StackProduct> = [
+  {
+    id: "trace",
+    name: "TracePawl",
+    slug: "trace",
+    tagline: "Failure diagnosis and replay for coding agents.",
+    status: "pre-alpha",
+    github_repo: "codepawl/tracepawl",
+    display_order: 1,
+    description:
+      "TracePawl analyzes coding-agent runs to identify where execution drifted, which tool call caused failure, and what recovery action should be attempted next.",
+    install: "$ pip install tracepawl",
+    language: "Python",
+    current_focus: true,
+  },
+  {
+    id: "mempawl",
+    name: "Mempawl",
+    slug: "mempawl",
+    tagline: "Persistent memory for agentic systems.",
+    status: "pre-alpha",
+    github_repo: "codepawl/mempawl",
+    display_order: 2,
+    description:
+      "Mempawl stores operational knowledge for long-running agents: previous failures, workflow preferences, and recovery patterns.",
+    install: "$ pip install mempawl",
+    language: "Python",
+    current_focus: false,
+  },
   {
     id: "openpawl",
     name: "OpenPawl",
     slug: "openpawl",
-    tagline: "A team of agents in your terminal.",
+    tagline: "Runtime for coordinated coding agents.",
     status: "beta",
     github_repo: "codepawl/openpawl",
-    display_order: 1,
-    description:
-      "Run a swarm of specialized agents from your shell. Orchestrates tools, files, and remote APIs without leaving the terminal.",
-    install: "$ npx openpawl@latest",
-    language: "TypeScript",
-  },
-  {
-    id: "featcat",
-    name: "Featcat",
-    slug: "featcat",
-    tagline: "Feature flags and config for agent workflows.",
-    status: "alpha",
-    github_repo: "codepawl/featcat",
-    display_order: 2,
-    description:
-      "Type-safe feature flags with offline evaluation. Roll out new prompts, models, and tools without redeploying.",
-    install: "$ bun add featcat",
-    language: "TypeScript",
-  },
-  {
-    id: "hebbmem",
-    name: "HebbMem",
-    slug: "hebbmem",
-    tagline: "Continual associative memory for long-running agents.",
-    status: "pre-alpha",
-    github_repo: "codepawl/hebbmem",
     display_order: 3,
     description:
-      "Sparse, Hebbian memory primitives so agents accumulate context without dragging the conversation along.",
-    install: "$ pip install hebbmem",
-    language: "Python",
-  },
-  {
-    id: "turboquant",
-    name: "TurboQuant",
-    slug: "turboquant",
-    tagline: "Quantization toolkit for production inference.",
-    status: "alpha",
-    github_repo: "codepawl/turboquant",
-    display_order: 4,
-    description:
-      "Per-layer post-training quantization with calibration data, designed for production latency budgets.",
-    install: "$ uv add turboquant",
-    language: "Python",
+      "OpenPawl runs agent workflows with shared state, task coordination, and recovery hooks. The execution layer for long-horizon software engineering tasks.",
+    install: "$ npx openpawl@latest",
+    language: "TypeScript",
+    current_focus: false,
   },
   {
     id: "cachepawl",
-    name: "Cachepawl",
+    name: "CachePawl",
     slug: "cachepawl",
-    tagline: "Prompt and KV cache for the Claude API and friends.",
+    tagline: "Optimization for long-horizon agent workloads.",
     status: "beta",
     github_repo: "codepawl/cachepawl",
-    display_order: 5,
+    display_order: 4,
     description:
-      "Drop-in cache layer that exploits Anthropic prompt caching and serializes KV state for self-hosted models.",
+      "CachePawl reduces cost and latency for repeated, memory-heavy, and replay-heavy agent execution. Optimization layer, not an inference platform.",
     install: "$ bun add cachepawl",
     language: "TypeScript",
-  },
-  {
-    id: "kstudio",
-    name: "KStudio",
-    slug: "kstudio",
-    tagline: "The closed-product studio for shipping agents.",
-    status: "private",
-    github_repo: "codepawl/kstudio",
-    display_order: 6,
-    description:
-      "Web studio for designing, evaluating, and observing production agents. Closed beta — request access.",
-    install: "$ open https://kstudio.codepawl.com",
-    language: "Hosted",
+    current_focus: false,
   },
 ];

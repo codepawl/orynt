@@ -1,20 +1,23 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
 import { NewsletterConfirm } from "@/components/marketing/newsletter-confirm";
 
 export const metadata: Metadata = {
   title: "Confirm subscription",
-  description: "Confirm your Codepawl newsletter subscription.",
+  description: "Confirm your CodePawl newsletter subscription.",
 };
 
-export default function NewsletterConfirmPage() {
+type Props = {
+  searchParams: Promise<{ token?: string | string[] }>;
+};
+
+export default async function NewsletterConfirmPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const token = typeof params.token === "string" ? params.token : "";
   return (
     <section className="mx-auto max-w-xl px-6 py-20">
       <p className="cp-marker mb-6">newsletter · confirm</p>
-      <Suspense fallback={<p className="cp-body text-fg-3">Loading…</p>}>
-        <NewsletterConfirm />
-      </Suspense>
+      <NewsletterConfirm token={token} />
     </section>
   );
 }

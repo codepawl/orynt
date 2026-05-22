@@ -69,7 +69,7 @@ def confirm(*, token: str, repo: SubscriberRepo, settings: Settings) -> str:
     row = repo.find_by_token(token=token)
     if not row:
         raise ApiError(
-            status_code=410, code="invalid_token", message="Confirmation token is invalid."
+            status_code=400, code="invalid_token", message="Confirmation token is invalid."
         )
 
     if row.get("confirmed_at"):

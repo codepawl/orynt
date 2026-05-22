@@ -1,6 +1,4 @@
-"use client";
-
-import { ThemeProvider as NextThemesProvider } from "next-themes";
+import { ThemeProvider as NextThemesProvider } from "@wrksz/themes/next";
 import type { ComponentProps, ReactNode } from "react";
 
 type Props = Omit<ComponentProps<typeof NextThemesProvider>, "children"> & {

@@ -44,9 +44,9 @@ def test_confirm_marks_confirmed(client: TestClient, subscriber_repo: FakeSubscr
     assert next(iter(subscriber_repo.rows.values()))["confirmed_at"] is not None
 
 
-def test_confirm_with_invalid_token_returns_410(client: TestClient) -> None:
+def test_confirm_with_invalid_token_returns_400(client: TestClient) -> None:
     response = client.get("/api/v1/newsletter/confirm?token=nope")
-    assert response.status_code == 410
+    assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_token"
 
 

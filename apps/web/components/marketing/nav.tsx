@@ -1,12 +1,9 @@
 import Link from "next/link";
 
 const LINKS = [
-  { href: "/products", label: "Products" },
+  { href: "/products", label: "Stack" },
+  { href: "/products/trace", label: "TracePawl" },
   { href: "/research", label: "Research" },
-  { href: "/docs", label: "Docs" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "/blog", label: "Blog" },
-  { href: "/careers", label: "Careers" },
 ] as const;
 
 export function Nav() {
@@ -19,11 +16,8 @@ export function Nav() {
         Skip to main content
       </a>
       <div className="mx-auto flex max-w-[1240px] items-center justify-between px-6 py-4">
-        <Link
-          href="/"
-          className="text-fg-1 cp-h4 font-display tracking-tight"
-        >
-          Codepawl
+        <Link href="/" className="text-fg-1 cp-h4 font-display tracking-tight">
+          CodePawl
         </Link>
         <nav aria-label="Primary" className="hidden md:block">
           <ul className="flex items-center gap-6">
@@ -39,12 +33,14 @@ export function Nav() {
             ))}
           </ul>
         </nav>
-        <Link
-          href="/contact"
+        <a
+          href="https://github.com/codepawl"
+          target="_blank"
+          rel="noopener noreferrer"
           className="border-ratchet text-ratchet hover:bg-ratchet hover:text-ink-0 border px-4 py-2 text-sm font-medium transition-colors"
         >
-          Talk to us
-        </Link>
+          GitHub
+        </a>
       </div>
     </header>
   );

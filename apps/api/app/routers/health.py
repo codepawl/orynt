@@ -1,8 +1,21 @@
-"""Liveness and readiness probes per docs/API.md."""
+"""Liveness and readiness probes per docs/API.md.
 
-from fastapi import APIRouter
+`/health` is a flat liveness probe (no I/O). `/health/ready` exercises the
+Supabase round-trip so Fly's HTTP check pulls the machine out of rotation
+when the DB is unreachable.
+"""
+
+from typing import Annotated
+
+import structlog
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+from supabase import Client
+
+from app.dependencies import get_supabase_client
 
 router = APIRouter(tags=["health"])
+log = structlog.get_logger(__name__)
 
 
 @router.get("/health")
@@ -11,7 +24,12 @@ def liveness() -> dict[str, str]:
 
 
 @router.get("/health/ready")
-def readiness() -> dict[str, str]:
-    # Phase 1 stub: DB connectivity check is added in Phase 3 once Supabase
-    # config is wired. For now, ready = liveness.
-    return {"status": "ready", "db": "ok"}
+def readiness(
+    client: Annotated[Client, Depends(get_supabase_client)],
+) -> JSONResponse:
+    try:
+        client.table("products").select("id").limit(1).execute()
+    except Exception as exc:
+        log.warning("readiness_db_error", error=str(exc))
+        return JSONResponse(status_code=503, content={"status": "not_ready", "db": "error"})
+    return JSONResponse(status_code=200, content={"status": "ready", "db": "ok"})

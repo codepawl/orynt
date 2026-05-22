@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # for the Cloudflare dev token without needing a real secret.
     testing: bool = False
 
+    # When False, /docs, /redoc, and /openapi.json return 404. Set DOCS_PUBLIC=true
+    # in dev .env to expose Swagger locally; leave unset in production per
+    # docs/API.md "OpenAPI doc" section.
+    docs_public: bool = False
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

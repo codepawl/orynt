@@ -5,7 +5,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Careers",
-  description: "Open roles at Codepawl.",
+  description: "Open roles at CodePawl.",
 };
 
 export default function CareersIndex() {

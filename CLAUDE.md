@@ -65,7 +65,7 @@ Bun workspaces drives the JS side. Python lives in `apps/api/` with its own `pyp
 - Naming: `kebab-case` for files and folders, `PascalCase` for React components, `camelCase` for functions and variables, `snake_case` for Python
 - Server Components by default in Next.js. Add `"use client"` only when you need state, refs, browser APIs, or event handlers
 - Tailwind classes use design tokens, not arbitrary values. `bg-ink-1` not `bg-[#0B0E13]`
-- Dark mode is default. Light mode is opt-in via `next-themes` class toggle
+- Dark mode is default. Light mode is opt-in via a class toggle on `<html>`
 
 ## Architectural rules (do not violate)
 

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { HERO_PRODUCTS } from "@/components/marketing/products";
+import { STACK_PRODUCTS } from "@/components/marketing/products";
 
 export const revalidate = 3600;
 
@@ -10,7 +10,7 @@ export function generateStaticParams(): { path: string[] }[] {
   // Empty array params represents the bare /docs index page.
   return [
     { path: [] as string[] },
-    ...HERO_PRODUCTS.map((product) => ({ path: [product.slug] })),
+    ...STACK_PRODUCTS.map((product) => ({ path: [product.slug] })),
   ];
 }
 
@@ -22,7 +22,7 @@ export async function generateMetadata({
   const { path } = await params;
   const slug = path?.[0];
   if (!slug) return { title: "Docs" };
-  const product = HERO_PRODUCTS.find((p) => p.slug === slug);
+  const product = STACK_PRODUCTS.find((p) => p.slug === slug);
   return {
     title: product ? `${product.name} docs` : "Docs",
     description: product?.tagline,
@@ -47,7 +47,7 @@ export default async function DocsCatchAll({
           repository&apos;s <code className="cp-code">docs/</code> tree.
         </p>
         <ul className="border-ink-4 mt-12 grid gap-4 border-t pt-12 md:grid-cols-2 lg:grid-cols-3">
-          {HERO_PRODUCTS.map((product) => (
+          {STACK_PRODUCTS.map((product) => (
             <li key={product.id}>
               <Link
                 href={`/docs/${product.slug}`}
@@ -63,7 +63,7 @@ export default async function DocsCatchAll({
     );
   }
 
-  const product = HERO_PRODUCTS.find((p) => p.slug === slug);
+  const product = STACK_PRODUCTS.find((p) => p.slug === slug);
   if (!product) {
     notFound();
   }

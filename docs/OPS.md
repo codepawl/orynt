@@ -19,7 +19,7 @@ OS: WSL2 Ubuntu. Node 20+, Bun 1.x, Python 3.12+, uv installed.
 
 ### Staging
 
-Single environment branched from `staging` git branch. Auto-deploys via Koyeb (API) and Cloudflare Workers Builds (web).
+Single environment branched from `staging` git branch. Auto-deploys via Fly.io (API) and Cloudflare Workers Builds (web).
 
 URL: `staging.codepawl.com` (web), `api-staging.codepawl.com` (API).
 
@@ -34,13 +34,13 @@ URL: `codepawl.com` and `www.codepawl.com` (web), `api.codepawl.com` (API).
 ## Hosting
 
 - **Frontend (Next.js)**: Cloudflare Workers Builds via the `@opennextjs/cloudflare` adapter (see [ADR-008](DECISIONS.md)). Worker name `codepawl`, asset binding `ASSETS`. Production branch `main` runs `wrangler deploy`; other branches run `wrangler versions upload` for preview URLs.
-- **Backend (FastAPI)**: Koyeb single service, Python runtime, scales from 0 to 2 instances based on load.
+- **Backend (FastAPI)**: Fly.io single app `codepawl-api`, primary region `sin`, shared-CPU 256 MB machine, `min_machines_running = 0` with auto-start on HTTP (see [ADR-009](DECISIONS.md)). Add a second region via `fly scale count 2 --region iad` if global p95 spikes.
 - **Database**: Supabase managed Postgres on the `Pro` tier from launch (better SLA than free; rollback to free if pre-revenue and traffic is tiny).
 - **DNS**: Cloudflare. Proxy on for the web hostnames, DNS-only for the API hostname (avoids Cloudflare's interference with long-running requests).
 
 ## Secrets
 
-Tool: GitHub Actions secrets for CI, Koyeb env vars for the API runtime, Cloudflare Workers environment variables (and Workers Secrets for sensitive values) for the web runtime. No 1Password or Doppler in MVP.
+Tool: GitHub Actions secrets for CI, `fly secrets set` for the API runtime, Cloudflare Workers environment variables (and Workers Secrets for sensitive values) for the web runtime. No 1Password or Doppler in MVP.
 
 Naming: uppercase snake case, prefixed with surface when ambiguous (`SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`).
 
@@ -62,9 +62,11 @@ Never commit `.env`, `.env.local`, or any file containing real keys. `.env.examp
 ### API (apps/api)
 
 - **Trigger**: push to `main` (production), push to `staging` (staging)
-- **Build**: Koyeb builds from `apps/api/Dockerfile` (multi-stage, slim Python 3.12 base)
-- **Start command**: `uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **Build**: `fly deploy` builds the multi-stage `apps/api/Dockerfile` remotely (uv-based, slim Python 3.12)
+- **Config**: `apps/api/fly.toml` (app name, region, internal port `8080`, HTTP health check on `/health/ready`)
+- **Start command**: container `CMD` runs `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}`
 - **Migrations**: pre-deploy hook runs `uv run supabase migration up` against the target Supabase project
+- **First-time setup**: `cd apps/api && fly apps create codepawl-api` (one-time), then `fly secrets set SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... TURNSTILE_SECRET_KEY=... RESEND_API_KEY=... RESEND_FROM_EMAIL=hello@codepawl.com SENTRY_DSN=... GITHUB_TOKEN=... GITHUB_ORG=codepawl ADMIN_API_KEY=$(openssl rand -hex 32) SITE_URL=https://codepawl.com`, then `fly deploy`. Attach the custom domain via `fly certs create api.codepawl.com` and add the printed DNS records at Cloudflare (DNS-only, gray cloud)
 
 ### Order of operations
 
@@ -83,7 +85,7 @@ Provider: GitHub Actions.
 Workflows:
 
 - `.github/workflows/ci.yml` runs on every PR: lint, typecheck, unit tests, integration tests, e2e
-- `.github/workflows/deploy-staging.yml` runs on push to `staging`: re-runs full CI, then triggers Koyeb (API). Web is deployed directly by Cloudflare Workers Builds off the same push.
+- `.github/workflows/deploy-staging.yml` runs on push to `staging`: re-runs full CI, then `flyctl deploy --remote-only --config apps/api/fly.toml`. Web is deployed directly by Cloudflare Workers Builds off the same push.
 - `.github/workflows/deploy-prod.yml` runs on push to `main`: same as staging but against prod targets, with a manual approval gate. Web production deploy is also driven by Cloudflare Workers Builds on `main`.
 
 Concurrency: cancel in-progress runs on the same branch when a new commit lands.
@@ -92,12 +94,12 @@ Concurrency: cancel in-progress runs on the same branch when a new commit lands.
 
 ### Logs
 
-- API: structured JSON logs via `structlog`, streamed to Koyeb log drain. 7-day retention on Koyeb free tier. Pipe to a long-term sink (Logflare, Better Stack, S3) when log volume justifies it.
+- API: structured JSON logs via `structlog`, viewable via `fly logs --app codepawl-api` (tail) or the Fly dashboard. Pipe to a long-term sink (Logflare, Better Stack, S3) when log volume justifies it.
 - Web: Worker logs streamed via `wrangler tail codepawl` or viewed in the Cloudflare dashboard under Workers → codepawl → Logs. Client errors go to Sentry, not stdout.
 
 ### Metrics
 
-- Koyeb dashboard for API request rate, latency p50/p95/p99, error rate, CPU, memory
+- Fly.io dashboard (and `fly status`, `fly metrics`) for API request rate, latency p50/p95/p99, error rate, CPU, memory
 - Cloudflare Workers Analytics for web (requests, errors, p50/p95/p99 latency, CPU time)
 - Supabase dashboard for DB connection pool, query stats, slow queries
 - PostHog for product analytics (page views, newsletter conversion event)
@@ -125,9 +127,9 @@ Concurrency: cancel in-progress runs on the same branch when a new commit lands.
 
 **API**:
 
-1. Go to Koyeb dashboard, deployments tab
-2. Click "Redeploy" on the previous successful deployment
-3. Watch `/health/ready` until green
+1. `fly releases --app codepawl-api` to find the previous release version
+2. `fly releases rollback --app codepawl-api <version>` (or use the Fly dashboard → codepawl-api → Releases → Rollback)
+3. Watch `/health/ready` until green: `curl -fsS https://api.codepawl.com/health/ready`
 
 **Database migration rollback**:
 
@@ -146,7 +148,7 @@ Never delete migration files. Never edit a merged migration.
 
 ```bash
 # API logs
-koyeb service logs codepawl-api --since 1h
+fly logs --app codepawl-api
 
 # Web logs (Cloudflare Workers)
 cd apps/web && npx wrangler tail codepawl --format pretty

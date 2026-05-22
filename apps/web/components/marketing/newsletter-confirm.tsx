@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const API_BASE =
@@ -9,9 +8,7 @@ const API_BASE =
 
 type Status = "loading" | "success" | "error";
 
-export function NewsletterConfirm() {
-  const params = useSearchParams();
-  const token = params.get("token") ?? "";
+export function NewsletterConfirm({ token }: { token: string }) {
   const [status, setStatus] = useState<Status>("loading");
   const [email, setEmail] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");

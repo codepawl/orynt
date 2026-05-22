@@ -51,12 +51,19 @@ def _maybe_init_sentry() -> None:
     sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.1)
 
 
+PRODUCTION_ORIGINS = (
+    "https://codepawl.com",
+    "https://www.codepawl.com",
+)
+DEV_ORIGIN = "http://localhost:3000"
+
+
 def _cors_origins() -> list[str]:
-    return [
-        "http://localhost:3000",
-        "https://codepawl.com",
-        "https://www.codepawl.com",
-    ]
+    settings = get_settings()
+    origins: set[str] = {DEV_ORIGIN, *PRODUCTION_ORIGINS}
+    if settings.site_url:
+        origins.add(settings.site_url.rstrip("/"))
+    return sorted(origins)
 
 
 async def _run_sync_stats() -> None:
@@ -107,12 +114,17 @@ def create_app() -> FastAPI:
     _configure_logging()
     _maybe_init_sentry()
 
+    settings = get_settings()
+    docs_url = "/docs" if settings.docs_public else None
+    redoc_url = "/redoc" if settings.docs_public else None
+    openapi_url = "/openapi.json" if settings.docs_public else None
+
     app = FastAPI(
         title="Codepawl API",
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
         lifespan=_lifespan,
     )
 

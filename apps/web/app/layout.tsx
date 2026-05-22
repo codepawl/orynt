@@ -1,17 +1,18 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+import { PostHogProvider } from "@/components/posthog-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { fontBody, fontDisplay, fontMono } from "@/lib/fonts";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Codepawl",
-    template: "%s | Codepawl",
+    default: "CodePawl",
+    template: "%s | CodePawl",
   },
   description:
-    "Open-source AI agent tooling for engineers building agents, ML practitioners, and researchers.",
+    "Debugging, memory, coordination, and optimization infrastructure for autonomous coding agents.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   ),
@@ -34,14 +35,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={fontClasses} suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
+        <PostHogProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            enableSystem={false}
+            disableTransitionOnChange
+          >
+            {children}
+          </ThemeProvider>
+        </PostHogProvider>
       </body>
     </html>
   );
