@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -18,6 +18,10 @@ export function ContactForm() {
   });
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string>("");
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -65,7 +69,11 @@ export function ContactForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-4">
+    <form
+      onSubmit={onSubmit}
+      className="grid gap-4"
+      data-hydrated={hydrated ? "true" : "false"}
+    >
       <label className="grid gap-2">
         <span className="cp-caption text-fg-3">Name</span>
         <input

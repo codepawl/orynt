@@ -39,6 +39,9 @@ Thumbs.db
 *.swp
 *~
 
+# Supabase CLI local link cache
+apps/api/supabase/.temp/
+
 # Supabase
 supabase/.temp/
 supabase/.branches/

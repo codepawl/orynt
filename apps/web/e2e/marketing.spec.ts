@@ -67,7 +67,8 @@ test.describe("contact form", () => {
     });
 
     await page.goto("/contact");
-    const form = page.locator("form").first();
+    const form = page.locator('form[data-hydrated="true"]').first();
+    await form.waitFor();
     await form.getByLabel("Name").fill("Ada Lovelace");
     await form.getByLabel("Email", { exact: true }).fill("ada@example.com");
     await form

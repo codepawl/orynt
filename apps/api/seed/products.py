@@ -1,4 +1,6 @@
-"""Idempotent seed of the six open-source products into public.products.
+"""Idempotent seed of the CodePawl stack into public.products.
+
+Mirrors apps/web/components/marketing/products.ts STACK_PRODUCTS.
 
 Run with:
 
@@ -29,58 +31,40 @@ class ProductSeed:
 
 PRODUCTS: tuple[ProductSeed, ...] = (
     ProductSeed(
+        id="trace",
+        name="TracePawl",
+        slug="trace",
+        github_repo="codepawl/tracepawl",
+        tagline="Failure diagnosis and replay for coding agents.",
+        status="pre-alpha",
+        display_order=1,
+    ),
+    ProductSeed(
+        id="mempawl",
+        name="Mempawl",
+        slug="mempawl",
+        github_repo="codepawl/mempawl",
+        tagline="Persistent memory for agentic systems.",
+        status="pre-alpha",
+        display_order=2,
+    ),
+    ProductSeed(
         id="openpawl",
         name="OpenPawl",
         slug="openpawl",
         github_repo="codepawl/openpawl",
-        tagline="A team of agents in your terminal.",
+        tagline="Runtime for coordinated coding agents.",
         status="beta",
-        display_order=1,
-    ),
-    ProductSeed(
-        id="featcat",
-        name="Featcat",
-        slug="featcat",
-        github_repo="codepawl/featcat",
-        tagline="Feature flags and config for agent workflows.",
-        status="alpha",
-        display_order=2,
-    ),
-    ProductSeed(
-        id="hebbmem",
-        name="HebbMem",
-        slug="hebbmem",
-        github_repo="codepawl/hebbmem",
-        tagline="Continual associative memory for long-running agents.",
-        status="pre-alpha",
         display_order=3,
     ),
     ProductSeed(
-        id="turboquant",
-        name="TurboQuant",
-        slug="turboquant",
-        github_repo="codepawl/turboquant",
-        tagline="Quantization toolkit for production inference.",
-        status="alpha",
-        display_order=4,
-    ),
-    ProductSeed(
         id="cachepawl",
-        name="Cachepawl",
+        name="CachePawl",
         slug="cachepawl",
         github_repo="codepawl/cachepawl",
-        tagline="Prompt and KV cache for the Claude API and friends.",
+        tagline="Optimization for long-horizon agent workloads.",
         status="beta",
-        display_order=5,
-    ),
-    ProductSeed(
-        id="kstudio",
-        name="KStudio",
-        slug="kstudio",
-        github_repo="codepawl/kstudio",
-        tagline="The closed-product studio for shipping agents.",
-        status="private",
-        display_order=6,
+        display_order=4,
     ),
 )
 
