@@ -19,7 +19,7 @@ OS: WSL2 Ubuntu. Node 20+, Bun 1.x, Python 3.12+, uv installed.
 
 ### Staging
 
-Single environment branched from `staging` git branch. Auto-deploys via Koyeb (API) and Vercel or Koyeb (web).
+Single environment branched from `staging` git branch. Auto-deploys via Koyeb (API) and Cloudflare Workers Builds (web).
 
 URL: `staging.codepawl.com` (web), `api-staging.codepawl.com` (API).
 
@@ -33,14 +33,14 @@ URL: `codepawl.com` and `www.codepawl.com` (web), `api.codepawl.com` (API).
 
 ## Hosting
 
-- **Frontend (Next.js)**: Vercel or Koyeb. Decision deferred to phase 8 of the roadmap. Default to Vercel for ISR ergonomics unless cost or vendor concerns force otherwise.
+- **Frontend (Next.js)**: Cloudflare Workers Builds via the `@opennextjs/cloudflare` adapter (see [ADR-008](DECISIONS.md)). Worker name `codepawl`, asset binding `ASSETS`. Production branch `main` runs `wrangler deploy`; other branches run `wrangler versions upload` for preview URLs.
 - **Backend (FastAPI)**: Koyeb single service, Python runtime, scales from 0 to 2 instances based on load.
 - **Database**: Supabase managed Postgres on the `Pro` tier from launch (better SLA than free; rollback to free if pre-revenue and traffic is tiny).
 - **DNS**: Cloudflare. Proxy on for the web hostnames, DNS-only for the API hostname (avoids Cloudflare's interference with long-running requests).
 
 ## Secrets
 
-Tool: GitHub Actions secrets for CI, Koyeb env vars for runtime, Vercel env vars for the web runtime. No 1Password or Doppler in MVP.
+Tool: GitHub Actions secrets for CI, Koyeb env vars for the API runtime, Cloudflare Workers environment variables (and Workers Secrets for sensitive values) for the web runtime. No 1Password or Doppler in MVP.
 
 Naming: uppercase snake case, prefixed with surface when ambiguous (`SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`).
 
@@ -52,10 +52,12 @@ Never commit `.env`, `.env.local`, or any file containing real keys. `.env.examp
 
 ### Web (apps/web)
 
-- **Trigger**: push to `main` (production), push to `staging` (staging)
-- **Build command**: `bun --filter @codepawl/web build`
-- **Output**: `.next/`
-- **ISR**: handled by hosting platform (Vercel native; Koyeb via Next.js standalone output)
+- **Trigger**: push to `main` (production), push to any other branch (preview)
+- **Build command**: `bun install && bun --filter @codepawl/web build:cf` (wraps `next build` and emits a Worker entry + assets)
+- **Output**: `apps/web/.open-next/worker.js` + `apps/web/.open-next/assets/`
+- **Production deploy**: `cd apps/web && npx wrangler deploy` (promotes to live)
+- **Non-production deploy**: `cd apps/web && npx wrangler versions upload` (preview URL only, no traffic shift)
+- **ISR**: in-Worker by default. Promote to a Workers KV namespace via `incrementalCache` in `open-next.config.ts` once cold-deploy cache misses become visible
 
 ### API (apps/api)
 
@@ -81,8 +83,8 @@ Provider: GitHub Actions.
 Workflows:
 
 - `.github/workflows/ci.yml` runs on every PR: lint, typecheck, unit tests, integration tests, e2e
-- `.github/workflows/deploy-staging.yml` runs on push to `staging`: re-runs full CI, then triggers Koyeb and Vercel deploys
-- `.github/workflows/deploy-prod.yml` runs on push to `main`: same as staging but against prod targets, with a manual approval gate
+- `.github/workflows/deploy-staging.yml` runs on push to `staging`: re-runs full CI, then triggers Koyeb (API). Web is deployed directly by Cloudflare Workers Builds off the same push.
+- `.github/workflows/deploy-prod.yml` runs on push to `main`: same as staging but against prod targets, with a manual approval gate. Web production deploy is also driven by Cloudflare Workers Builds on `main`.
 
 Concurrency: cancel in-progress runs on the same branch when a new commit lands.
 
@@ -91,12 +93,12 @@ Concurrency: cancel in-progress runs on the same branch when a new commit lands.
 ### Logs
 
 - API: structured JSON logs via `structlog`, streamed to Koyeb log drain. 7-day retention on Koyeb free tier. Pipe to a long-term sink (Logflare, Better Stack, S3) when log volume justifies it.
-- Web: Next.js server logs to Vercel or Koyeb. Client errors go to Sentry, not stdout.
+- Web: Worker logs streamed via `wrangler tail codepawl` or viewed in the Cloudflare dashboard under Workers → codepawl → Logs. Client errors go to Sentry, not stdout.
 
 ### Metrics
 
 - Koyeb dashboard for API request rate, latency p50/p95/p99, error rate, CPU, memory
-- Vercel analytics for web (or Koyeb equivalent)
+- Cloudflare Workers Analytics for web (requests, errors, p50/p95/p99 latency, CPU time)
 - Supabase dashboard for DB connection pool, query stats, slow queries
 - PostHog for product analytics (page views, newsletter conversion event)
 
@@ -117,8 +119,8 @@ Concurrency: cancel in-progress runs on the same branch when a new commit lands.
 
 **Web**:
 
-1. Go to Vercel dashboard, find the previous deployment for the production environment
-2. Click "Promote to Production"
+1. Find the previous version: `cd apps/web && npx wrangler versions list`
+2. Roll back: `npx wrangler rollback --version-id <previous-version-id>` (or use the Cloudflare dashboard → Workers → codepawl → Deployments → Rollback)
 3. Confirm in PostHog that traffic is now hitting the previous build
 
 **API**:
@@ -146,8 +148,8 @@ Never delete migration files. Never edit a merged migration.
 # API logs
 koyeb service logs codepawl-api --since 1h
 
-# Web logs (Vercel)
-vercel logs codepawl --since 1h
+# Web logs (Cloudflare Workers)
+cd apps/web && npx wrangler tail codepawl --format pretty
 ```
 
 ### Common debugging

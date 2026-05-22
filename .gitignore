@@ -5,6 +5,8 @@ dist/
 build/
 .turbo/
 .vercel/
+.open-next/
+.wrangler/
 *.tsbuildinfo
 
 # Python

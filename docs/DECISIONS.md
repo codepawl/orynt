@@ -128,8 +128,26 @@ ADR-style log of architectural decisions. Append new decisions; do not edit hist
 
 ---
 
+## ADR-008: Cloudflare Workers Builds with `@opennextjs/cloudflare` for the web frontend
+
+**Date**: 2026-05-22
+**Status**: accepted
+
+**Context**: The hosting target for `apps/web` was an open question deferred to phase 8 between Vercel and Koyeb. In the meantime, Cloudflare already owns DNS for the project and Workers Builds matured into a Git-integrated CI that ships a Worker + static assets in one step. The `@opennextjs/cloudflare` adapter is now Cloudflare's official path for Next.js App Router and supports ISR. Continuing to defer adds two unknowns on top of every web change (build target and rollback story); locking it now lets the deploy pipeline stabilize before traffic arrives.
+
+**Decision**: Host `apps/web` on Cloudflare Workers Builds. Build with `opennextjs-cloudflare build` (which wraps `next build`) to produce `.open-next/worker.js` and `.open-next/assets/`. `wrangler.jsonc` lives at `apps/web/wrangler.jsonc` with `name: codepawl`, `compatibility_flags: ["nodejs_compat"]`, and an `ASSETS` binding pointing at `.open-next/assets`. Production branch `main` deploys via `wrangler deploy`; non-production branches use `wrangler versions upload` to get a preview URL. ISR cache is in-Worker until cold-deploy misses become visible, at which point a KV namespace is added in `open-next.config.ts` and `wrangler.jsonc`.
+
+**Alternatives considered**:
+- **Vercel**: best ISR ergonomics and per-page analytics, but a second vendor on top of Cloudflare DNS and a second dashboard for runtime env vars.
+- **Koyeb (Next.js standalone)**: same vendor as the API, but Cloudflare's edge cannot cache Koyeb origin responses with the same fidelity as a Worker, and Koyeb scales-from-zero adds cold-start latency on marketing pages where TTFB matters most.
+- **Cloudflare Pages classic with `@cloudflare/next-on-pages`**: the adapter is in maintenance mode and Cloudflare is migrating Next.js users to Workers + Static Assets.
+- **`output: 'export'` (pure static)**: removes the runtime entirely but conflicts with the CLAUDE.md mandate that marketing pages use ISR.
+
+**Consequences**: One vendor for DNS, edge cache, and asset hosting — one bill, one auth, fewer integration seams. Cloudflare's network footprint gives lower TTFB than either alternative for global traffic. The trade-off: Vercel-specific niceties (per-page analytics, one-click rollback UI, automatic source-map upload via the Sentry build plugin) are lost and must be replicated through wrangler and the Cloudflare dashboard. ISR cache rebuilds cold on every deploy until KV is wired in, which is acceptable for a marketing site with hourly revalidate windows. The `apps/web/vercel.json` file is deleted; `docs/OPS.md` Hosting and Deployment sections move to reflect Workers Builds.
+
+---
+
 ## Open questions
 
-- **Hosting target for the web frontend (Vercel vs Koyeb)**. Default: Vercel for ISR ergonomics. Revisit when: cost or compliance forces consolidation, or when Vercel limits force a move.
 - **PostHog cloud vs self-hosted**. Default: cloud free tier. Revisit when: traffic exceeds the free tier, at which point self-host on Koyeb in the same network as the API.
 - **Whether `(app)` route group survives the rebuild or is dropped from MVP**. Default: keep the directory, do not build features. Revisit when: community or admin features are explicitly in scope per `SCOPE.md`.
