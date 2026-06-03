@@ -1,45 +1,78 @@
+import Image from "next/image";
+import Link from "next/link";
+
+import { FooterNewsletterForm } from "./footer-newsletter-form";
+
+const LINKS = {
+  explore: [
+    { href: "/products", label: "Stack" },
+    { href: "/products/trace", label: "TracePawl" },
+    { href: "/research", label: "Research" },
+  ],
+  company: [
+    { href: "/blog", label: "Blog" },
+    { href: "/careers", label: "Careers" },
+    { href: "/contact", label: "Contact" },
+  ],
+  legal: [
+    { href: "/privacy", label: "Privacy" },
+    { href: "/terms", label: "Terms" },
+  ],
+} as const;
+
+function FooterLinks({ group }: { group: keyof typeof LINKS }) {
+  return (
+    <div>
+      <p className="cp-caption text-fg-3 mb-3">{group}</p>
+      <ul className="space-y-2">
+        {LINKS[group].map((link) => (
+          <li key={link.href}>
+            <Link
+              href={link.href}
+              className="text-fg-2 hover:text-ratchet cp-small transition-colors"
+            >
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function Footer() {
   return (
-    <footer className="bg-ink-0 border-ink-4 border-t">
-      <div className="mx-auto max-w-[1240px] px-6 py-12">
-        <div className="grid gap-8 sm:grid-cols-[2fr_3fr] sm:items-start">
-          <div>
-            <p className="cp-h4 text-fg-1 font-display">CodePawl</p>
-            <p className="cp-small text-fg-3 mt-2">
-              Infrastructure for autonomous coding agents.
-            </p>
+    <footer className="bg-ink-1 border-ink-4 border-t-2">
+      <div className="mx-auto grid max-w-[1240px] gap-12 px-6 py-16 lg:grid-cols-[2fr_3fr]">
+        <div>
+          <div className="cp-h4 flex items-center gap-3 text-fg-1 font-display">
+            <Image
+              src="/logo_for_light_mode.svg"
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8"
+            />
+            <span>CODEPAWL</span>
           </div>
-          <dl className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <dt className="cp-caption text-fg-3">Email</dt>
-              <dd className="mt-1">
-                <a
-                  href="mailto:founder@codepawl.com"
-                  className="text-fg-2 hover:text-fg-1 cp-small transition-colors"
-                >
-                  founder@codepawl.com
-                </a>
-              </dd>
-            </div>
-            <div>
-              <dt className="cp-caption text-fg-3">GitHub</dt>
-              <dd className="mt-1">
-                <a
-                  href="https://github.com/codepawl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-fg-2 hover:text-fg-1 cp-small transition-colors"
-                >
-                  github.com/codepawl
-                </a>
-              </dd>
-            </div>
-          </dl>
+          <p className="cp-small text-fg-3 mt-3 max-w-lg">
+            Infrastructure for autonomous coding agents.
+          </p>
+          <div className="mt-6 w-full max-w-none border-2 border-ink-4 bg-ink-0 p-4">
+            <FooterNewsletterForm />
+          </div>
         </div>
+        <nav aria-label="Footer" className="grid grid-cols-3 gap-6">
+          {(["explore", "company", "legal"] as const).map((group) => (
+            <FooterLinks key={group} group={group} />
+          ))}
+        </nav>
       </div>
-      <div className="border-ink-4 mx-auto flex max-w-[1240px] items-center justify-between border-t px-6 py-6">
+      <div className="border-ink-4 mx-auto flex max-w-[1240px] flex-col gap-2 border-t-2 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
         <p className="cp-caption text-fg-4">© 2026 CodePawl</p>
-        <p className="cp-caption text-fg-4">Early-stage research engineering.</p>
+        <p className="cp-caption text-fg-4">
+          Infrastructure for autonomous coding agents.
+        </p>
       </div>
     </footer>
   );

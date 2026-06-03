@@ -7,33 +7,33 @@
  */
 
 :root {
-  /* Ink neutrals (dark canvas) */
-  --ink-0: #07090c;
-  --ink-1: #0b0e13;
-  --ink-2: #11151b;
-  --ink-3: #181d25;
-  --ink-4: #1f2530;
-  --ink-5: #2a3140;
-  --ink-6: #3a4253;
+  /* Warm concrete neutrals */
+  --ink-0: #f5f2ed;
+  --ink-1: #eae7e1;
+  --ink-2: #ddd9d0;
+  --ink-3: #cfcbc2;
+  --ink-4: #141414;
+  --ink-5: #3a3935;
+  --ink-6: #5f5d56;
 
   /* Foreground */
-  --fg-1: #f4f6fa;
-  --fg-2: #c7cdd8;
-  --fg-3: #8b95a6;
-  --fg-4: #5a6577;
-  --fg-5: #3a4253;
+  --fg-1: #141414;
+  --fg-2: #34322f;
+  --fg-3: #66635d;
+  --fg-4: #8a867e;
+  --fg-5: #b6b0a7;
 
-  /* Blueprint accents */
-  --blueprint: #4d7fb8;
-  --blueprint-soft: #6e9bd2;
-  --blueprint-deep: #2b4a73;
-  --blueprint-grid: rgba(77, 127, 184, 0.08);
+  /* Concrete secondary */
+  --blueprint: #6f766f;
+  --blueprint-soft: #899188;
+  --blueprint-deep: #4a524b;
+  --blueprint-grid: rgba(20, 20, 20, 0.08);
 
-  /* Ratchet orange */
-  --ratchet: #ff6b1a;
-  --ratchet-hot: #ff842d;
-  --ratchet-deep: #c44a0e;
-  --ratchet-tint: rgba(255, 107, 26, 0.12);
+  /* Restrained single accent */
+  --ratchet: #8f4d36;
+  --ratchet-hot: #a65d43;
+  --ratchet-deep: #6f3928;
+  --ratchet-tint: rgba(143, 77, 54, 0.12);
 
   /* Semantic */
   --success: #4fb286;
@@ -42,7 +42,7 @@
   --info: var(--blueprint);
 
   /* Code syntax (dark) */
-  --code-bg: #0e1218;
+  --code-bg: #1a1a18;
   --code-border: var(--ink-5);
   --code-tab: #161b23;
   --syn-fg: #d7dce5;
@@ -55,7 +55,7 @@
   --syn-punct: #8b95a6;
 
   /* Type scale */
-  --fs-display: clamp(3.5rem, 6vw, 5.5rem);
+  --fs-display: clamp(3rem, 6vw, 5.25rem);
   --fs-h1: clamp(2.5rem, 4vw, 3.75rem);
   --fs-h2: clamp(2rem, 3vw, 2.75rem);
   --fs-h3: 1.625rem;
@@ -81,8 +81,8 @@
   --lh-loose: 1.7;
 
   /* Tracking */
-  --tracking-tight: -0.02em;
-  --tracking-snug: -0.01em;
+  --tracking-tight: 0;
+  --tracking-snug: 0;
   --tracking-normal: 0;
   --tracking-wide: 0.04em;
   --tracking-marker: 0.18em;
@@ -111,8 +111,8 @@
   /* Shadows */
   --shadow-hairline: inset 0 0 0 1px var(--ink-5);
   --shadow-1: 0 1px 0 var(--ink-5);
-  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 0 3px rgba(255, 107, 26, 0.18);
+  --shadow-2: 8px 8px 0 rgba(20, 20, 20, 0.16);
+  --shadow-glow: 0 0 0 3px rgba(143, 77, 54, 0.22);
 
   /* Motion */
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -128,20 +128,22 @@
 }
 
 /* Light-mode opt-in. next-themes flips html.light to override. */
+html.dark,
 html.light {
   --ink-0: #ffffff;
-  --ink-1: #f7f9fc;
-  --ink-2: #eef2f7;
-  --ink-3: #e3e8ef;
-  --ink-4: #cdd5df;
-  --ink-5: #aab3c0;
-  --ink-6: #7a8392;
-  --fg-1: #0b0e13;
-  --fg-2: #2a3140;
-  --fg-3: #5a6577;
-  --fg-4: #8b95a6;
-  --fg-5: #c7cdd8;
-  --code-bg: #f3f6fa;
-  --code-tab: #e8ecf2;
-  --shadow-glow: 0 0 0 3px rgba(255, 107, 26, 0.22);
+  --ink-0: #f5f2ed;
+  --ink-1: #eae7e1;
+  --ink-2: #ddd9d0;
+  --ink-3: #cfcbc2;
+  --ink-4: #141414;
+  --ink-5: #3a3935;
+  --ink-6: #5f5d56;
+  --fg-1: #141414;
+  --fg-2: #34322f;
+  --fg-3: #66635d;
+  --fg-4: #8a867e;
+  --fg-5: #b6b0a7;
+  --code-bg: #1a1a18;
+  --code-tab: #22221f;
+  --shadow-glow: 0 0 0 3px rgba(143, 77, 54, 0.22);
 }

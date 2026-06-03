@@ -1,0 +1,451 @@
+import Link from "next/link";
+import {
+  ArrowRight,
+  Boxes,
+  ClipboardData,
+  Envelope,
+  JournalText,
+} from "react-bootstrap-icons";
+
+import { ArchitecturalOverlay } from "./architectural-overlay";
+import { STACK_PRODUCTS, type StackProduct } from "./products";
+
+type IconComponent = React.ComponentType<{
+  size?: number;
+  className?: string;
+  "aria-hidden"?: boolean;
+}>;
+
+type SectionHeaderProps = {
+  eyebrow: string;
+  title: string;
+  body?: string;
+};
+
+type BrutalCardProps = {
+  children: React.ReactNode;
+  tone?: "bone" | "concrete" | "charcoal";
+  className?: string;
+};
+
+type EvidenceItem = {
+  label: string;
+  body: string;
+  href: string;
+  action: string;
+};
+
+type ArchitectureItem = {
+  title: string;
+  body: string;
+  motif: "louvers" | "bricks" | "columns";
+  icon: IconComponent;
+};
+
+type RoadmapItem = {
+  phase: string;
+  title: string;
+  status: "complete" | "current" | "todo";
+};
+
+const LANDING_PRODUCTS = STACK_PRODUCTS;
+
+const PROBLEM_POINTS = [
+  {
+    title: "Compose",
+    body: "Use focused tools instead of one heavy framework.",
+  },
+  {
+    title: "Evaluate",
+    body: "Keep changes visible before they reach production.",
+  },
+  {
+    title: "Operate",
+    body: "Ship workflows with clearer status, docs, and handoff paths.",
+  },
+] as const;
+
+const ARCHITECTURE_ITEMS: ReadonlyArray<ArchitectureItem> = [
+  {
+    title: "Build",
+    body: "Agent tools for terminal workflows, flags, memory, inference, and caching.",
+    motif: "bricks",
+    icon: Boxes,
+  },
+  {
+    title: "Track",
+    body: "Product status and release signals stay visible as the tools evolve.",
+    motif: "louvers",
+    icon: ClipboardData,
+  },
+  {
+    title: "Connect",
+    body: "Docs, newsletter, and contact paths keep the product surface easy to follow.",
+    motif: "columns",
+    icon: Envelope,
+  },
+] as const;
+
+const EVIDENCE_ITEMS: ReadonlyArray<EvidenceItem> = [
+  {
+    label: "Products",
+    body: "Browse the current agent tooling catalog.",
+    href: "/products",
+    action: "Browse products",
+  },
+  {
+    label: "Docs",
+    body: "Read setup notes and product documentation.",
+    href: "/docs",
+    action: "Read docs",
+  },
+  {
+    label: "Contact",
+    body: "Talk to us about production agent workflows.",
+    href: "/contact",
+    action: "Contact us",
+  },
+  {
+    label: "Updates",
+    body: "Follow product releases and notes.",
+    href: "/blog",
+    action: "Read updates",
+  },
+] as const;
+
+const ROADMAP_ITEMS: ReadonlyArray<RoadmapItem> = [
+  {
+    phase: "Phase 1-2",
+    title: "Foundation",
+    status: "complete",
+  },
+  {
+    phase: "Phase 3-5",
+    title: "Catalog and API",
+    status: "complete",
+  },
+  {
+    phase: "Now",
+    title: "Product surface",
+    status: "current",
+  },
+  {
+    phase: "Next",
+    title: "More demos and guides",
+    status: "todo",
+  },
+] as const;
+
+function SectionHeader({ eyebrow, title, body }: SectionHeaderProps) {
+  return (
+    <header className="max-w-3xl">
+      <p className="cp-marker">{eyebrow}</p>
+      <h2 className="cp-h2 mt-5 text-fg-1">{title}</h2>
+      {body ? <p className="cp-body mt-4 max-w-xl">{body}</p> : null}
+    </header>
+  );
+}
+
+function BrutalCard({ children, tone = "bone", className = "" }: BrutalCardProps) {
+  const toneClass =
+    tone === "charcoal"
+      ? "bg-ink-0 text-fg-1"
+      : tone === "concrete"
+        ? "bg-ink-2 text-fg-1"
+        : "bg-ink-1 text-fg-1";
+
+  return (
+    <article
+      className={`block-shadow-sm border-2 border-ink-4 ${toneClass} ${className}`}
+    >
+      {children}
+    </article>
+  );
+}
+
+function StatusTag({
+  status,
+}: {
+  status: StackProduct["status"] | RoadmapItem["status"];
+}) {
+  const tone =
+    status === "complete" || status === "stable" || status === "beta"
+      ? "bg-success/15 text-success border-success"
+      : status === "current" || status === "alpha" || status === "pre-alpha"
+        ? "bg-ratchet/10 text-ratchet border-ratchet"
+        : "bg-ink-2 text-fg-3 border-ink-4";
+
+  return (
+    <span className={`cp-caption inline-flex border px-2 py-1 ${tone}`}>
+      {status}
+    </span>
+  );
+}
+
+function CTAGroup() {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row">
+      <Link
+        href="/products"
+        className="inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-4 px-5 py-3 text-sm font-semibold text-ink-1 transition-colors hover:bg-ratchet focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+      >
+        Browse products
+        <ArrowRight aria-hidden size={16} />
+      </Link>
+      <Link
+        href="/docs"
+        className="inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-sm font-semibold text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+      >
+        Read docs
+        <JournalText aria-hidden size={16} />
+      </Link>
+    </div>
+  );
+}
+
+function ProjectCard({ product }: { product: StackProduct }) {
+  return (
+    <BrutalCard className="flex h-full flex-col p-5 transition-transform hover:-translate-y-1">
+      <header className="flex items-start justify-between gap-4 border-b border-ink-4 pb-4">
+        <div>
+          <p className="cp-caption text-fg-3">
+            {String(product.display_order).padStart(2, "0")} / {product.language}
+          </p>
+          <h3 className="cp-h3 mt-2 text-fg-1">{product.name}</h3>
+        </div>
+        <StatusTag status={product.status} />
+      </header>
+      <p className="cp-body mt-5">{product.tagline}</p>
+      <Link
+        href={`/products/${product.slug}`}
+        className="cp-small mt-auto inline-flex w-fit items-center gap-2 pt-8 text-ratchet hover:text-ratchet-hot"
+      >
+        View product <ArrowRight aria-hidden size={14} />
+      </Link>
+    </BrutalCard>
+  );
+}
+
+function ArchitecturePanel({ item }: { item: ArchitectureItem }) {
+  const motifClass =
+    item.motif === "bricks"
+      ? "vent-blocks"
+      : item.motif === "louvers"
+        ? "louver-field"
+        : "column-field";
+
+  return (
+    <BrutalCard className="grid overflow-hidden md:grid-cols-[180px_minmax(0,1fr)]">
+      <div
+        className={`facade-reserve min-h-[180px] border-b-2 border-ink-4 bg-ink-2 md:border-b-0 md:border-r-2 ${motifClass}`}
+        aria-hidden="true"
+      />
+      <div className="p-6">
+        <item.icon
+          aria-hidden
+          className="text-ratchet"
+          size={28}
+        />
+        <h3 className="cp-h3 mt-4 text-fg-1">{item.title}</h3>
+        <p className="cp-body mt-3">{item.body}</p>
+      </div>
+    </BrutalCard>
+  );
+}
+
+function EvidenceRow({ item }: { item: EvidenceItem }) {
+  return (
+    <li className="block-shadow-sm border-2 border-ink-4 bg-ink-1 p-5">
+      <p className="cp-caption text-ratchet">{item.label}</p>
+      <p className="cp-body mt-4 min-h-[48px] text-fg-1">{item.body}</p>
+      <Link
+        href={item.href}
+        className="cp-small mt-6 inline-flex w-full items-center justify-between gap-2 border-t border-ink-4 pt-4 text-fg-1 hover:text-ratchet"
+      >
+        {item.action} <ArrowRight aria-hidden size={14} />
+      </Link>
+    </li>
+  );
+}
+
+function RoadmapStep({
+  item,
+  isLast,
+}: {
+  item: RoadmapItem;
+  isLast: boolean;
+}) {
+  const markerClass =
+    item.status === "complete"
+      ? "bg-success"
+      : item.status === "current"
+        ? "bg-ratchet"
+        : "bg-ink-2";
+
+  return (
+    <li className="grid grid-cols-[24px_minmax(0,1fr)] gap-x-4 pb-8 last:pb-0 md:grid-cols-[150px_24px_minmax(0,1fr)_auto] md:gap-x-6">
+      <p className="cp-caption col-start-2 text-fg-3 md:col-start-1 md:pt-1">
+        {item.phase}
+      </p>
+      <div
+        className="relative col-start-1 row-span-3 row-start-1 flex justify-center md:col-start-2"
+        aria-hidden="true"
+      >
+        <span className={`mt-1 h-5 w-5 border-2 border-ink-4 ${markerClass}`} />
+        {!isLast ? (
+          <span className="absolute bottom-[-32px] top-6 w-0.5 bg-ink-4" />
+        ) : null}
+      </div>
+      <h3 className="cp-h4 col-start-2 text-fg-1 md:col-start-3">
+        {item.title}
+      </h3>
+      <div className="col-start-2 md:col-start-4 md:justify-self-end">
+        <StatusTag status={item.status} />
+      </div>
+    </li>
+  );
+}
+
+export function ModernistLanding() {
+  const productStatuses = Array.from(
+    new Set(LANDING_PRODUCTS.map((product) => product.status)),
+  ).join(" / ");
+
+  return (
+    <div className="bg-ink-0 text-fg-1">
+      <section className="relative overflow-hidden border-b-2 border-ink-4">
+        <div className="concrete-grid relative mx-auto max-w-[1240px] px-6 py-16 md:py-24">
+          <ArchitecturalOverlay className="right-[-210px] top-[-92px] h-[720px] w-[670px] opacity-[0.07] lg:right-[-170px] lg:top-[-120px] lg:opacity-[0.085]" />
+          <div className="relative z-10 max-w-4xl">
+            <div className="flex flex-col justify-between gap-12">
+              <div>
+                <p className="cp-marker mb-6">001 / codepawl public surface</p>
+                <h1 className="cp-display max-w-4xl text-fg-1">
+                  AI agent products for teams building production platforms.
+                </h1>
+                <p className="cp-lead mt-8 max-w-2xl">
+                  Codepawl builds agent tooling for designing, evaluating, and
+                  operating production systems across modern engineering teams.
+                </p>
+              </div>
+              <div className="grid gap-5 border-y-2 border-ink-4 py-5 sm:grid-cols-3">
+                <div>
+                  <p className="cp-caption text-fg-3">Products</p>
+                  <p className="cp-h4 mt-1 text-fg-1">
+                    {LANDING_PRODUCTS.length}
+                  </p>
+                </div>
+                <div>
+                  <p className="cp-caption text-fg-3">Statuses</p>
+                  <p className="cp-small mt-1 text-fg-2">{productStatuses}</p>
+                </div>
+                <div>
+                  <p className="cp-caption text-fg-3">Focus</p>
+                  <p className="cp-small mt-1 text-fg-2">Production agents</p>
+                </div>
+              </div>
+              <CTAGroup />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b-2 border-ink-4">
+        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
+          <SectionHeader
+            eyebrow="002 / problem"
+            title="Build agents without stitching tools together."
+            body="Codepawl gives engineering teams focused building blocks for production agent workflows."
+          />
+          <div className="mt-10 grid gap-5 lg:grid-cols-3">
+            {PROBLEM_POINTS.map((point, index) => (
+              <BrutalCard key={point.title} className="p-6" tone={index === 1 ? "concrete" : "bone"}>
+                <p className="cp-caption text-ratchet">
+                  {String(index + 1).padStart(2, "0")}
+                </p>
+                <h3 className="cp-h4 mt-5 text-fg-1">{point.title}</h3>
+                <p className="cp-body mt-3 text-fg-2">{point.body}</p>
+              </BrutalCard>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b-2 border-ink-4">
+        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
+          <SectionHeader
+            eyebrow="003 / products"
+            title="A focused toolkit for production agents."
+          />
+          <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {LANDING_PRODUCTS.map((product) => (
+              <ProjectCard key={product.id} product={product} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b-2 border-ink-4 bg-ink-1">
+        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
+          <SectionHeader
+            eyebrow="004 / architecture"
+            title="Simple paths from idea to shipped agent."
+          />
+          <div className="mt-10 grid gap-5">
+            {ARCHITECTURE_ITEMS.map((item) => (
+              <ArchitecturePanel key={item.title} item={item} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b-2 border-ink-4">
+        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
+          <SectionHeader
+            eyebrow="005 / start"
+            title="Pick the path you need."
+          />
+          <ul className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {EVIDENCE_ITEMS.map((item) => (
+              <EvidenceRow key={item.label} item={item} />
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section className="border-b-2 border-ink-4 bg-ink-1">
+        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
+          <SectionHeader
+            eyebrow="006 / roadmap and status"
+            title="What is ready, and what is next."
+          />
+          <ol className="mt-10 border-2 border-ink-4 bg-ink-0 p-6 md:p-8">
+            {ROADMAP_ITEMS.map((item, index) => (
+              <RoadmapStep
+                key={`${item.phase}-${item.title}`}
+                item={item}
+                isLast={index === ROADMAP_ITEMS.length - 1}
+              />
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="border-b-2 border-ink-4">
+        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
+          <p className="cp-marker mb-6">007 / next</p>
+          <h2 className="cp-h2 max-w-2xl text-fg-1">
+            Start with the product catalog.
+          </h2>
+          <p className="cp-body mt-5 max-w-xl">
+            Browse the tools, read the docs, or contact us when you are ready to
+            talk through a production agent workflow.
+          </p>
+          <div className="mt-8">
+            <CTAGroup />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}

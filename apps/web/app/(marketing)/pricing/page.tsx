@@ -48,7 +48,7 @@ const TIERS = [
 export default function PricingPage() {
   return (
     <section className="mx-auto max-w-[1240px] px-6 py-20">
-      <p className="cp-marker mb-6">pricing · 2026</p>
+      <p className="cp-marker mb-6">pricing</p>
       <h1 className="cp-h1 text-fg-1 max-w-3xl">
         Free libraries. Paid <em className="cp-em">studio</em>.
       </h1>

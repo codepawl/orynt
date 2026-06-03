@@ -40,11 +40,10 @@ export default async function DocsCatchAll({
   if (!slug) {
     return (
       <section className="mx-auto max-w-[1240px] px-6 py-20">
-        <p className="cp-marker mb-6">docs · index</p>
+        <p className="cp-marker mb-6">docs</p>
         <h1 className="cp-h1 text-fg-1">Documentation</h1>
         <p className="cp-lead text-fg-2 mt-6 max-w-2xl">
-          Pick a product to read its docs. The hosted version mirrors the
-          repository&apos;s <code className="cp-code">docs/</code> tree.
+          Pick a product to read its documentation.
         </p>
         <ul className="border-ink-4 mt-12 grid gap-4 border-t pt-12 md:grid-cols-2 lg:grid-cols-3">
           {STACK_PRODUCTS.map((product) => (
@@ -73,7 +72,7 @@ export default async function DocsCatchAll({
       <h1 className="cp-h1 text-fg-1">{product.name} docs</h1>
       <p className="cp-lead text-fg-2 mt-6 max-w-2xl">
         Live docs sync from the {product.github_repo} repository&apos;s{" "}
-        <code className="cp-code">docs/</code> tree. Hosted MDX rendering
+        <code className="cp-inline-code">docs/</code> tree. Hosted MDX rendering
         with admin-triggered ISR refresh ships in a follow-up — for now this
         page is a placeholder.
       </p>

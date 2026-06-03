@@ -69,6 +69,75 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+::selection {
+  background: var(--ratchet);
+  color: var(--ink-0);
+}
+
+.concrete-grid {
+  background-size: 24px 24px;
+  background-image:
+    linear-gradient(to right, rgba(20, 20, 20, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(20, 20, 20, 0.045) 1px, transparent 1px);
+  position: relative;
+}
+
+.concrete-grid::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  backdrop-filter: blur(0.5px);
+  mask-image: linear-gradient(to bottom, black, transparent 85%);
+}
+
+.facade-reserve {
+  contain: paint;
+  overflow: hidden;
+}
+
+.block-shadow {
+  box-shadow: 8px 8px 0 var(--ink-4);
+}
+
+.block-shadow-sm {
+  box-shadow: 5px 5px 0 var(--ink-4);
+}
+
+.vent-blocks {
+  background-color: var(--ink-2);
+  background-image:
+    radial-gradient(circle at center, transparent 0 25%, var(--ink-4) 26% 31%, transparent 32%),
+    linear-gradient(var(--ink-4), var(--ink-4)),
+    linear-gradient(90deg, var(--ink-4), var(--ink-4));
+  background-position:
+    0 0,
+    0 50%,
+    50% 0;
+  background-size:
+    42px 42px,
+    42px 2px,
+    2px 42px;
+}
+
+.louver-field {
+  background-color: var(--ink-2);
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--ink-4) 0 3px,
+    transparent 3px 18px
+  );
+}
+
+.column-field {
+  background-color: var(--ink-2);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--ink-4) 0 10px,
+    transparent 10px 28px
+  );
+}
+
 /* Semantic type classes ported verbatim from the template so Phase 6
  * components can use cp-display, cp-h1, cp-marker, cp-em without
  * re-translating. Mirrors design/colors_and_type.css.
@@ -140,6 +209,14 @@ body {
   font-family: var(--font-mono);
   font-size: var(--fs-code);
   color: var(--syn-fg);
+}
+.cp-inline-code {
+  border: 1px solid var(--ink-4);
+  background: var(--ink-1);
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.05em 0.28em;
 }
 .cp-marker {
   font-family: var(--font-mono);
