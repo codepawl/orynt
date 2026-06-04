@@ -68,7 +68,7 @@ export default function PricingPage() {
             </ul>
             <Link
               href={tier.cta.href}
-              className="border-ratchet text-ratchet hover:bg-ratchet hover:text-ink-0 mt-auto inline-flex items-center justify-center border px-4 py-2 text-sm font-medium transition-colors"
+              className="cp-button border-ratchet text-ratchet hover:bg-ratchet hover:text-ink-0 mt-auto inline-flex items-center justify-center border px-4 py-2 transition-colors"
             >
               {tier.cta.label}
             </Link>

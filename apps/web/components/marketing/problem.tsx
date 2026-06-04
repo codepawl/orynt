@@ -8,7 +8,7 @@ export function Problem() {
         </h2>
         <div className="mt-8 grid max-w-4xl gap-6 md:grid-cols-2">
           <p className="cp-body text-fg-2">
-            Modern coding agents can write, edit, and reason over software
+            Modern AI agents can write, edit, and reason over software
             projects, but long-running execution remains fragile. Agents drift
             from intent, use stale context, misuse tools, repeat failures, and
             struggle to coordinate across multi-step tasks.

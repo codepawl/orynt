@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     template: "%s | CodePawl",
   },
   description:
-    "Debugging, memory, coordination, and optimization infrastructure for autonomous coding agents.",
+    "Debugging, memory, coordination, and optimization infrastructure for AI agents.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   ),

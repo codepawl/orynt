@@ -4,15 +4,22 @@ import Link from "next/link";
 import { FooterNewsletterForm } from "./footer-newsletter-form";
 
 const LINKS = {
-  explore: [
-    { href: "/products", label: "Stack" },
+  products: [
+    { href: "/products", label: "Products" },
     { href: "/products/trace", label: "TracePawl" },
+    { href: "/products/mempawl", label: "Mempawl" },
+    { href: "/products/openpawl", label: "OpenPawl" },
+    { href: "/products/cachepawl", label: "CachePawl" },
+  ],
+  resources: [
     { href: "/research", label: "Research" },
+    { href: "/blog", label: "Blog" },
+    { href: "/docs", label: "Docs" },
   ],
   company: [
-    { href: "/blog", label: "Blog" },
-    { href: "/careers", label: "Careers" },
     { href: "/contact", label: "Contact" },
+    { href: "/careers", label: "Careers" },
+    { href: "/pricing", label: "Pricing" },
   ],
   legal: [
     { href: "/privacy", label: "Privacy" },
@@ -29,7 +36,7 @@ function FooterLinks({ group }: { group: keyof typeof LINKS }) {
           <li key={link.href}>
             <Link
               href={link.href}
-              className="text-fg-2 hover:text-ratchet cp-small transition-colors"
+              className="cp-link text-fg-2 hover:text-ratchet transition-colors"
             >
               {link.label}
             </Link>
@@ -56,14 +63,30 @@ export function Footer() {
             <span>CODEPAWL</span>
           </div>
           <p className="cp-small text-fg-3 mt-3 max-w-lg">
-            Infrastructure for autonomous coding agents.
+            Infrastructure for AI agents.
           </p>
+          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+            <a
+              href="mailto:founder@codepawl.com"
+              className="cp-link text-fg-2 hover:text-ratchet transition-colors"
+            >
+              founder@codepawl.com
+            </a>
+            <a
+              href="https://x.com/codepawl"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="cp-link text-fg-2 hover:text-ratchet transition-colors"
+            >
+              X @codepawl
+            </a>
+          </div>
           <div className="mt-6 w-full max-w-none border-2 border-ink-4 bg-ink-0 p-4">
             <FooterNewsletterForm />
           </div>
         </div>
-        <nav aria-label="Footer" className="grid grid-cols-3 gap-6">
-          {(["explore", "company", "legal"] as const).map((group) => (
+        <nav aria-label="Footer" className="grid grid-cols-2 gap-6 lg:grid-cols-4">
+          {(["products", "resources", "company", "legal"] as const).map((group) => (
             <FooterLinks key={group} group={group} />
           ))}
         </nav>
@@ -71,7 +94,7 @@ export function Footer() {
       <div className="border-ink-4 mx-auto flex max-w-[1240px] flex-col gap-2 border-t-2 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
         <p className="cp-caption text-fg-4">© 2026 CodePawl</p>
         <p className="cp-caption text-fg-4">
-          Infrastructure for autonomous coding agents.
+          Infrastructure for AI agents.
         </p>
       </div>
     </footer>

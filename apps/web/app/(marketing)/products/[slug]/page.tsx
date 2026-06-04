@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { STACK_PRODUCTS } from "@/components/marketing/products";
+import {
+  STACK_PRODUCTS,
+  productAvailabilityLabel,
+  productBadgeClass,
+  productStateClass,
+} from "@/components/marketing/products";
 
 export const revalidate = 3600;
 
@@ -45,6 +50,36 @@ export default async function ProductDetail({
   if (!product) {
     notFound();
   }
+  if (product.availability === "announced_soon") {
+    return (
+      <article className="mx-auto max-w-[1240px] px-6 py-20">
+        <p className="cp-marker mb-6">
+          {String(product.display_order).padStart(3, "0")} · {product.language}
+        </p>
+        <h1 className="cp-h1 text-fg-1">{product.name}</h1>
+        <p className="cp-lead text-fg-2 mt-4 max-w-2xl">{product.tagline}</p>
+
+        <section
+          className={`border-ink-4 mt-12 border p-6 ${productStateClass(product)}`}
+        >
+          <span className={productBadgeClass(product)}>
+            {productAvailabilityLabel(product)}
+          </span>
+          <p className="cp-body text-fg-2 mt-5 max-w-2xl">
+            {product.description}
+          </p>
+          <a
+            href={`https://github.com/${product.github_repo}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="cp-button bg-ratchet text-ink-0 hover:bg-ratchet-hot mt-8 inline-flex border-2 border-ratchet px-5 py-3 transition-colors"
+          >
+            Get early access on GitHub
+          </a>
+        </section>
+      </article>
+    );
+  }
   const stats = await fetchStats(slug);
   return (
     <article className="mx-auto max-w-[1240px] px-6 py-20">
@@ -57,7 +92,12 @@ export default async function ProductDetail({
       <section className="border-ink-4 mt-12 grid gap-6 border-t pt-12 md:grid-cols-3">
         <div>
           <p className="cp-caption text-fg-3">Status</p>
-          <p className="cp-h4 text-fg-1 mt-2">{product.status}</p>
+          <p className="mt-2">
+            <span className={productBadgeClass(product)}>
+              <span className="product-pulse-dot" aria-hidden />
+              {productAvailabilityLabel(product)}
+            </span>
+          </p>
         </div>
         <div>
           <p className="cp-caption text-fg-3">GitHub</p>

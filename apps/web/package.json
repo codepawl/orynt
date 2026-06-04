@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:attached": "PLAYWRIGHT_SKIP_WEBSERVER=1 playwright test"
   },
   "dependencies": {
     "@codepawl/shared": "workspace:*",

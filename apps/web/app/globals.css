@@ -32,6 +32,9 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-info: var(--info);
+  --color-code-bg: var(--code-bg);
+  --color-code-border: var(--code-border);
+  --color-code-tab: var(--code-tab);
 
   /* Fonts. next/font/local sets --font-display, --font-body, --font-mono
    * on the <html> className, so Tailwind's font-display utility resolves
@@ -138,6 +141,113 @@ body {
   );
 }
 
+.tracepawl-new-badge {
+  border: 1px solid var(--ratchet);
+  background: color-mix(in srgb, var(--ratchet) 14%, transparent);
+  color: var(--ratchet);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  line-height: 1;
+  padding: 0.2rem 0.3rem;
+  animation: tracepawl-pulse 2.4s ease-in-out infinite;
+}
+
+.tracepawl-nav-link {
+  text-shadow: 0 0 16px color-mix(in srgb, var(--ratchet) 24%, transparent);
+}
+
+.nav-product-status {
+  align-items: center;
+  color: var(--fg-3);
+  display: inline-flex;
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  gap: 0.25rem;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.tracepawl-nav-link .nav-product-status {
+  color: var(--ratchet);
+}
+
+.product-state-active {
+  border-color: var(--ratchet);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ratchet) 34%, transparent),
+    0 0 22px color-mix(in srgb, var(--ratchet) 14%, transparent);
+}
+
+.product-state-soon {
+  border-style: dashed;
+  background-image:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--blueprint) 12%, transparent) 0 1px,
+      transparent 1px 14px
+    ),
+    linear-gradient(var(--ink-1), var(--ink-1));
+}
+
+.product-badge-active,
+.product-badge-soon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid currentColor;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--tracking-wide);
+  line-height: 1;
+  padding: 0.32rem 0.42rem;
+  text-transform: uppercase;
+}
+
+.product-badge-active {
+  background: color-mix(in srgb, var(--ratchet) 13%, transparent);
+  color: var(--ratchet);
+}
+
+.product-badge-soon {
+  background: color-mix(in srgb, var(--blueprint) 10%, transparent);
+  color: var(--fg-3);
+}
+
+.product-pulse-dot {
+  background: var(--ratchet);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ratchet) 42%, transparent);
+  display: inline-block;
+  height: 0.45rem;
+  width: 0.45rem;
+  animation: product-live-pulse 1.8s ease-in-out infinite;
+}
+
+.nav-product-status .product-pulse-dot {
+  height: 0.32rem;
+  width: 0.32rem;
+}
+
+@keyframes tracepawl-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ratchet) 28%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+@keyframes product-live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ratchet) 42%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
 /* Semantic type classes ported verbatim from the template so Phase 6
  * components can use cp-display, cp-h1, cp-marker, cp-em without
  * re-translating. Mirrors design/colors_and_type.css.
@@ -196,6 +306,7 @@ body {
 .cp-small {
   font-family: var(--font-body);
   font-size: var(--fs-small);
+  line-height: var(--lh-normal);
   color: var(--fg-3);
 }
 .cp-caption {
@@ -208,6 +319,7 @@ body {
 .cp-code {
   font-family: var(--font-mono);
   font-size: var(--fs-code);
+  background: var(--code-bg);
   color: var(--syn-fg);
 }
 .cp-inline-code {
@@ -226,6 +338,34 @@ body {
   text-transform: uppercase;
   color: var(--ratchet);
 }
+.cp-button {
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  font-weight: var(--fw-semi);
+  line-height: 1;
+}
+.cp-nav {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-wide);
+  line-height: 1;
+  text-transform: uppercase;
+}
+.cp-link {
+  font-family: var(--font-body);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-normal);
+}
+.cp-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-wide);
+  line-height: 1;
+  text-transform: uppercase;
+}
 .cp-em,
 em.cp-em {
   font-family: var(--font-display);
@@ -237,6 +377,14 @@ em.cp-em {
 
 /* Respect reduced motion globally per the accessibility bar in docs/UI.md. */
 @media (prefers-reduced-motion: reduce) {
+  .tracepawl-new-badge {
+    animation: none;
+  }
+
+  .product-pulse-dot {
+    animation: none;
+  }
+
   *,
   *::before,
   *::after {

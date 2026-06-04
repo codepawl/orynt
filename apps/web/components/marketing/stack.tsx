@@ -1,4 +1,9 @@
-import { STACK_PRODUCTS } from "./products";
+import {
+  STACK_PRODUCTS,
+  productAvailabilityLabel,
+  productBadgeClass,
+  productStateClass,
+} from "./products";
 
 export function Stack() {
   return (
@@ -11,9 +16,9 @@ export function Stack() {
 
         <pre className="border-ink-5 bg-code-bg cp-code mt-10 inline-block border p-6 leading-relaxed">
           <code>{`CodePawl
-├── TracePawl    failure diagnosis and replay for coding agents
+├── TracePawl    failure diagnosis and replay for AI agents
 ├── Mempawl      persistent memory for agentic systems
-├── OpenPawl     runtime for coordinated coding agents
+├── OpenPawl     runtime for coordinated AI agents
 └── CachePawl    optimization for long-horizon agent workloads`}</code>
         </pre>
 
@@ -21,19 +26,16 @@ export function Stack() {
           {STACK_PRODUCTS.map((product) => (
             <article
               key={product.id}
-              className={
-                product.current_focus
-                  ? "border-ratchet bg-ink-1 border p-6"
-                  : "border-ink-5 bg-ink-1 border p-6"
-              }
+              className={`bg-ink-1 border p-6 ${productStateClass(product)}`}
             >
               <header className="mb-4 flex items-center justify-between gap-3">
                 <p className="cp-caption text-fg-3">{product.language}</p>
-                {product.current_focus ? (
-                  <span className="bg-ratchet-tint text-ratchet cp-caption px-2 py-1">
-                    current focus
-                  </span>
-                ) : null}
+                <span className={productBadgeClass(product)}>
+                  {product.availability === "active" ? (
+                    <span className="product-pulse-dot" aria-hidden />
+                  ) : null}
+                  {productAvailabilityLabel(product)}
+                </span>
               </header>
               <h3 className="cp-h3 text-fg-1">{product.name}</h3>
               <p className="cp-body text-fg-2 mt-2">{product.tagline}</p>

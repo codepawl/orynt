@@ -1,20 +1,15 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  Boxes,
-  ClipboardData,
-  Envelope,
-  JournalText,
-} from "react-bootstrap-icons";
+import { ArrowRight, JournalText } from "react-bootstrap-icons";
 
 import { ArchitecturalOverlay } from "./architectural-overlay";
-import { STACK_PRODUCTS, type StackProduct } from "./products";
-
-type IconComponent = React.ComponentType<{
-  size?: number;
-  className?: string;
-  "aria-hidden"?: boolean;
-}>;
+import { CustomerJourney } from "./customer-journey";
+import {
+  STACK_PRODUCTS,
+  productAvailabilityLabel,
+  productBadgeClass,
+  productStateClass,
+  type StackProduct,
+} from "./products";
 
 type SectionHeaderProps = {
   eyebrow: string;
@@ -35,13 +30,6 @@ type EvidenceItem = {
   action: string;
 };
 
-type ArchitectureItem = {
-  title: string;
-  body: string;
-  motif: "louvers" | "bricks" | "columns";
-  icon: IconComponent;
-};
-
 type RoadmapItem = {
   phase: string;
   title: string;
@@ -49,42 +37,6 @@ type RoadmapItem = {
 };
 
 const LANDING_PRODUCTS = STACK_PRODUCTS;
-
-const PROBLEM_POINTS = [
-  {
-    title: "Compose",
-    body: "Use focused tools instead of one heavy framework.",
-  },
-  {
-    title: "Evaluate",
-    body: "Keep changes visible before they reach production.",
-  },
-  {
-    title: "Operate",
-    body: "Ship workflows with clearer status, docs, and handoff paths.",
-  },
-] as const;
-
-const ARCHITECTURE_ITEMS: ReadonlyArray<ArchitectureItem> = [
-  {
-    title: "Build",
-    body: "Agent tools for terminal workflows, flags, memory, inference, and caching.",
-    motif: "bricks",
-    icon: Boxes,
-  },
-  {
-    title: "Track",
-    body: "Product status and release signals stay visible as the tools evolve.",
-    motif: "louvers",
-    icon: ClipboardData,
-  },
-  {
-    title: "Connect",
-    body: "Docs, newsletter, and contact paths keep the product surface easy to follow.",
-    motif: "columns",
-    icon: Envelope,
-  },
-] as const;
 
 const EVIDENCE_ITEMS: ReadonlyArray<EvidenceItem> = [
   {
@@ -187,14 +139,14 @@ function CTAGroup() {
     <div className="flex flex-col gap-3 sm:flex-row">
       <Link
         href="/products"
-        className="inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-4 px-5 py-3 text-sm font-semibold text-ink-1 transition-colors hover:bg-ratchet focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+        className="cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-4 px-5 py-3 text-ink-1 transition-colors hover:bg-ratchet focus:outline-none focus:ring-4 focus:ring-ratchet/20"
       >
         Browse products
         <ArrowRight aria-hidden size={16} />
       </Link>
       <Link
         href="/docs"
-        className="inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-sm font-semibold text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+        className="cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
       >
         Read docs
         <JournalText aria-hidden size={16} />
@@ -205,7 +157,9 @@ function CTAGroup() {
 
 function ProjectCard({ product }: { product: StackProduct }) {
   return (
-    <BrutalCard className="flex h-full flex-col p-5 transition-transform hover:-translate-y-1">
+    <BrutalCard
+      className={`flex h-full flex-col p-5 transition-transform hover:-translate-y-1 ${productStateClass(product)}`}
+    >
       <header className="flex items-start justify-between gap-4 border-b border-ink-4 pb-4">
         <div>
           <p className="cp-caption text-fg-3">
@@ -213,42 +167,21 @@ function ProjectCard({ product }: { product: StackProduct }) {
           </p>
           <h3 className="cp-h3 mt-2 text-fg-1">{product.name}</h3>
         </div>
-        <StatusTag status={product.status} />
+        <span className={productBadgeClass(product)}>
+          {product.availability === "active" ? (
+            <span className="product-pulse-dot" aria-hidden />
+          ) : null}
+          {productAvailabilityLabel(product)}
+        </span>
       </header>
       <p className="cp-body mt-5">{product.tagline}</p>
       <Link
         href={`/products/${product.slug}`}
-        className="cp-small mt-auto inline-flex w-fit items-center gap-2 pt-8 text-ratchet hover:text-ratchet-hot"
+        className="cp-link mt-auto inline-flex w-fit items-center gap-2 pt-8 text-ratchet hover:text-ratchet-hot"
       >
-        View product <ArrowRight aria-hidden size={14} />
+        {product.availability === "active" ? "View product" : "Early access"}{" "}
+        <ArrowRight aria-hidden size={14} />
       </Link>
-    </BrutalCard>
-  );
-}
-
-function ArchitecturePanel({ item }: { item: ArchitectureItem }) {
-  const motifClass =
-    item.motif === "bricks"
-      ? "vent-blocks"
-      : item.motif === "louvers"
-        ? "louver-field"
-        : "column-field";
-
-  return (
-    <BrutalCard className="grid overflow-hidden md:grid-cols-[180px_minmax(0,1fr)]">
-      <div
-        className={`facade-reserve min-h-[180px] border-b-2 border-ink-4 bg-ink-2 md:border-b-0 md:border-r-2 ${motifClass}`}
-        aria-hidden="true"
-      />
-      <div className="p-6">
-        <item.icon
-          aria-hidden
-          className="text-ratchet"
-          size={28}
-        />
-        <h3 className="cp-h3 mt-4 text-fg-1">{item.title}</h3>
-        <p className="cp-body mt-3">{item.body}</p>
-      </div>
     </BrutalCard>
   );
 }
@@ -260,7 +193,7 @@ function EvidenceRow({ item }: { item: EvidenceItem }) {
       <p className="cp-body mt-4 min-h-[48px] text-fg-1">{item.body}</p>
       <Link
         href={item.href}
-        className="cp-small mt-6 inline-flex w-full items-center justify-between gap-2 border-t border-ink-4 pt-4 text-fg-1 hover:text-ratchet"
+        className="cp-link mt-6 inline-flex w-full items-center justify-between gap-2 border-t border-ink-4 pt-4 text-fg-1 hover:text-ratchet"
       >
         {item.action} <ArrowRight aria-hidden size={14} />
       </Link>
@@ -291,9 +224,11 @@ function RoadmapStep({
         className="relative col-start-1 row-span-3 row-start-1 flex justify-center md:col-start-2"
         aria-hidden="true"
       >
-        <span className={`mt-1 h-5 w-5 border-2 border-ink-4 ${markerClass}`} />
+        <span
+          className={`relative z-10 mt-1 h-5 w-5 border-2 border-ink-4 ${markerClass}`}
+        />
         {!isLast ? (
-          <span className="absolute bottom-[-32px] top-6 w-0.5 bg-ink-4" />
+          <span className="absolute bottom-[-32px] left-1/2 top-9 w-0.5 -translate-x-1/2 bg-ink-4" />
         ) : null}
       </div>
       <h3 className="cp-h4 col-start-2 text-fg-1 md:col-start-3">
@@ -312,16 +247,17 @@ export function ModernistLanding() {
   ).join(" / ");
 
   return (
-    <div className="bg-ink-0 text-fg-1">
-      <section className="relative overflow-hidden border-b-2 border-ink-4">
-        <div className="concrete-grid relative mx-auto max-w-[1240px] px-6 py-16 md:py-24">
+    <div className="text-fg-1">
+      <section className="concrete-grid relative overflow-hidden border-b-2 border-ink-4">
+        <div className="relative mx-auto max-w-[1240px] px-6 py-16 md:py-24">
           <ArchitecturalOverlay className="right-[-210px] top-[-92px] h-[720px] w-[670px] opacity-[0.07] lg:right-[-170px] lg:top-[-120px] lg:opacity-[0.085]" />
           <div className="relative z-10 max-w-4xl">
             <div className="flex flex-col justify-between gap-12">
               <div>
                 <p className="cp-marker mb-6">001 / codepawl public surface</p>
                 <h1 className="cp-display max-w-4xl text-fg-1">
-                  AI agent products for teams building production platforms.
+                  AI agent products for teams building production{" "}
+                  <em className="cp-em">platforms</em>.
                 </h1>
                 <p className="cp-lead mt-8 max-w-2xl">
                   Codepawl builds agent tooling for designing, evaluating, and
@@ -350,28 +286,18 @@ export function ModernistLanding() {
         </div>
       </section>
 
-      <section className="border-b-2 border-ink-4">
+      <section className="border-b-2 border-ink-4 bg-ink-1">
         <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
           <SectionHeader
-            eyebrow="002 / problem"
-            title="Build agents without stitching tools together."
-            body="Codepawl gives engineering teams focused building blocks for production agent workflows."
+            eyebrow="002 / customer journey"
+            title="The problem is not writing code. It is operating agent work."
+            body="CodePawl connects failure diagnosis, memory, coordination, and cost control into the workflow teams need after the first demo works."
           />
-          <div className="mt-10 grid gap-5 lg:grid-cols-3">
-            {PROBLEM_POINTS.map((point, index) => (
-              <BrutalCard key={point.title} className="p-6" tone={index === 1 ? "concrete" : "bone"}>
-                <p className="cp-caption text-ratchet">
-                  {String(index + 1).padStart(2, "0")}
-                </p>
-                <h3 className="cp-h4 mt-5 text-fg-1">{point.title}</h3>
-                <p className="cp-body mt-3 text-fg-2">{point.body}</p>
-              </BrutalCard>
-            ))}
-          </div>
+          <CustomerJourney />
         </div>
       </section>
 
-      <section className="border-b-2 border-ink-4">
+      <section className="concrete-grid border-b-2 border-ink-4">
         <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
           <SectionHeader
             eyebrow="003 / products"
@@ -388,35 +314,7 @@ export function ModernistLanding() {
       <section className="border-b-2 border-ink-4 bg-ink-1">
         <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
           <SectionHeader
-            eyebrow="004 / architecture"
-            title="Simple paths from idea to shipped agent."
-          />
-          <div className="mt-10 grid gap-5">
-            {ARCHITECTURE_ITEMS.map((item) => (
-              <ArchitecturePanel key={item.title} item={item} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="border-b-2 border-ink-4">
-        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
-          <SectionHeader
-            eyebrow="005 / start"
-            title="Pick the path you need."
-          />
-          <ul className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-            {EVIDENCE_ITEMS.map((item) => (
-              <EvidenceRow key={item.label} item={item} />
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section className="border-b-2 border-ink-4 bg-ink-1">
-        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
-          <SectionHeader
-            eyebrow="006 / roadmap and status"
+            eyebrow="004 / roadmap and status"
             title="What is ready, and what is next."
           />
           <ol className="mt-10 border-2 border-ink-4 bg-ink-0 p-6 md:p-8">
@@ -431,9 +329,23 @@ export function ModernistLanding() {
         </div>
       </section>
 
-      <section className="border-b-2 border-ink-4">
+      <section className="concrete-grid border-b-2 border-ink-4">
         <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
-          <p className="cp-marker mb-6">007 / next</p>
+          <SectionHeader
+            eyebrow="005 / start"
+            title="Pick the path you need."
+          />
+          <ul className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {EVIDENCE_ITEMS.map((item) => (
+              <EvidenceRow key={item.label} item={item} />
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section className="border-b-2 border-ink-4 bg-ink-0">
+        <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
+          <p className="cp-marker mb-6">006 / next</p>
           <h2 className="cp-h2 max-w-2xl text-fg-1">
             Start with the product catalog.
           </h2>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -13,6 +13,10 @@ export function FooterNewsletterForm() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string>("");
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,6 +55,7 @@ export function FooterNewsletterForm() {
       onSubmit={onSubmit}
       className="flex w-full flex-col gap-3"
       aria-describedby="footer-newsletter-help"
+      data-hydrated={hydrated ? "true" : "false"}
     >
       <div className="flex w-full flex-col gap-3 sm:flex-row">
         <label className="sr-only" htmlFor="footer-newsletter-email">
@@ -65,12 +70,12 @@ export function FooterNewsletterForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={status === "submitting"}
-          className="border-ink-4 bg-ink-1 text-fg-1 placeholder:text-fg-4 focus:border-ratchet min-w-0 flex-1 border-2 px-3 py-2 text-sm focus:outline-none"
+          className="cp-body border-ink-4 bg-ink-1 text-fg-1 placeholder:text-fg-4 focus:border-ratchet min-w-0 flex-1 border-2 px-3 py-2 focus:outline-none"
         />
         <button
           type="submit"
           disabled={status === "submitting"}
-          className="bg-ink-4 text-ink-0 hover:bg-ratchet disabled:bg-ink-3 inline-flex items-center justify-center border-2 border-ink-4 px-4 py-2 text-sm font-semibold transition-colors"
+          className="cp-button bg-ink-4 text-ink-0 hover:bg-ratchet disabled:bg-ink-3 inline-flex items-center justify-center border-2 border-ink-4 px-4 py-2 transition-colors"
         >
           {status === "submitting" ? "Sending..." : "Subscribe"}
         </button>

@@ -25,13 +25,13 @@ export default function GlobalError({
         <button
           type="button"
           onClick={reset}
-          className="bg-ratchet text-ink-0 hover:bg-ratchet-hot inline-flex items-center px-4 py-2 text-sm font-medium transition-colors"
+          className="cp-button bg-ratchet text-ink-0 hover:bg-ratchet-hot inline-flex items-center px-4 py-2 transition-colors"
         >
           Try again
         </button>
         <Link
           href="/"
-          className="border-fg-3 text-fg-1 hover:bg-ink-3 inline-flex items-center border px-4 py-2 text-sm font-medium transition-colors"
+          className="cp-button border-fg-3 text-fg-1 hover:bg-ink-3 inline-flex items-center border px-4 py-2 transition-colors"
         >
           Go home
         </Link>

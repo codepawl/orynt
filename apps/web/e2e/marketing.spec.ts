@@ -17,7 +17,37 @@ test.describe("marketing landing", () => {
     await expect(
       page.getByRole("heading", { level: 3, name: "CachePawl" }),
     ).toBeVisible();
-    await expect(page.getByText("pre-alpha").first()).toBeVisible();
+    await expect(
+      page.locator("#main").getByText("DEVELOPING").first(),
+    ).toBeVisible();
+    await expect(
+      page.locator("#main").getByText("COMING SOON").first(),
+    ).toBeVisible();
+  });
+
+  test("customer journey cards update the problem detail", async ({ page }) => {
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", {
+        name: "The problem is not writing code. It is operating agent work.",
+      }),
+    ).toBeVisible();
+    const journeyDetail = page.locator("#customer-journey-detail");
+    await expect(
+      journeyDetail.getByText("TracePawl / failure diagnosis"),
+    ).toBeVisible();
+
+    await expect(page.getByTestId("customer-journey")).toHaveAttribute(
+      "data-hydrated",
+      "true",
+    );
+    await page.getByRole("tab", { name: /Preserve context/ }).click();
+    await expect(
+      journeyDetail.getByText("Mempawl / persistent operational memory"),
+    ).toBeVisible();
+    await expect(
+      journeyDetail.getByText("agents forget previous failures"),
+    ).toBeVisible();
   });
 
   test("product cards preserve real product routes", async ({ page }) => {
@@ -26,11 +56,14 @@ test.describe("marketing landing", () => {
       page.getByRole("link", { name: "View product", exact: true }).first(),
     ).toHaveAttribute("href", "/products/trace");
     await expect(
-      page.getByRole("link", { name: "View product", exact: true }).nth(3),
+      page
+        .locator('a[href="/products/cachepawl"]')
+        .filter({ hasText: "Early access" })
+        .first(),
     ).toHaveAttribute("href", "/products/cachepawl");
   });
 
-  test("hero CTA links to the stack", async ({ page }) => {
+  test("hero CTA links to products", async ({ page }) => {
     await page.goto("/");
     const cta = page.getByRole("link", { name: "Browse products" }).first();
     await expect(cta).toBeVisible();
@@ -65,7 +98,8 @@ test.describe("marketing landing", () => {
     );
 
     await page.goto("/");
-    const footerForm = page.locator("footer form").first();
+    const footerForm = page.locator('footer form[data-hydrated="true"]').first();
+    await footerForm.waitFor();
     await footerForm.getByLabel("Email address").fill("ada@example.com");
     const subscribeRequest = page.waitForRequest(
       (req) =>
@@ -82,9 +116,80 @@ test.describe("marketing landing", () => {
     await expect(page.getByText(/on the list/i)).toBeVisible();
     await expect(page.getByText(/ada@example.com/)).toBeVisible();
   });
+
+  test("header exposes product selector and product state labels", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const primaryNav = page.getByRole("navigation", { name: "Primary" });
+    await expect(primaryNav.getByRole("link", { name: "Research" })).toHaveAttribute(
+      "href",
+      "/research",
+    );
+    await expect(primaryNav.getByRole("link", { name: "Blog" })).toHaveAttribute(
+      "href",
+      "/blog",
+    );
+    await expect(primaryNav.getByRole("link", { name: "Contact" })).toHaveAttribute(
+      "href",
+      "/contact",
+    );
+    await primaryNav.getByRole("link", { name: /Products/ }).hover();
+    await expect(
+      primaryNav.getByText("Products"),
+    ).toBeVisible();
+    await expect(
+      primaryNav.getByRole("link", { name: /TracePawl/ }),
+    ).toHaveAttribute("href", "/products/trace");
+    await expect(primaryNav.getByText("DEVELOPING").first()).toBeVisible();
+    await expect(primaryNav.getByText("COMING SOON").first()).toBeVisible();
+    await expect(
+      primaryNav.getByRole("link", { name: /CachePawl/ }),
+    ).toHaveAttribute("href", "/products/cachepawl");
+    await expect(
+      page.getByRole("link", { name: "GitHub Follow @codepawl" }),
+    ).toHaveAttribute("href", "https://github.com/codepawl");
+  });
+
+  test("footer groups products, resources, company, and legal links", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const footer = page.getByRole("contentinfo");
+    await expect(footer.getByText("products", { exact: true })).toBeVisible();
+    await expect(footer.getByText("resources", { exact: true })).toBeVisible();
+    await expect(footer.getByText("company", { exact: true })).toBeVisible();
+    await expect(footer.getByText("legal", { exact: true })).toBeVisible();
+    await expect(footer.getByRole("link", { name: "Docs" })).toHaveAttribute(
+      "href",
+      "/docs",
+    );
+    await expect(footer.getByRole("link", { name: "Blog" })).toHaveAttribute(
+      "href",
+      "/blog",
+    );
+    await expect(footer.getByRole("link", { name: "Contact" })).toHaveAttribute(
+      "href",
+      "/contact",
+    );
+    await expect(footer.getByRole("link", { name: "CachePawl" })).toHaveAttribute(
+      "href",
+      "/products/cachepawl",
+    );
+  });
 });
 
 test.describe("contact form", () => {
+  test("shows direct contact email and X profile", async ({ page }) => {
+    await page.goto("/contact");
+    await expect(
+      page.locator("#main").getByRole("link", { name: "founder@codepawl.com" }),
+    ).toHaveAttribute("href", "mailto:founder@codepawl.com");
+    await expect(
+      page.locator("#main").getByRole("link", { name: "@codepawl", exact: true }),
+    ).toHaveAttribute("href", "https://x.com/codepawl");
+  });
+
   test("submits and shows success when API returns 201", async ({ page }) => {
     await page.route("**/api/v1/contact", async (route) => {
       const method = route.request().method();
@@ -143,6 +248,40 @@ test.describe("product detail", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "TracePawl" }),
     ).toBeVisible();
+    await expect(page.locator("#main").getByText("DEVELOPING")).toBeVisible();
     await expect(page.getByTestId("product-stars")).toBeVisible();
+  });
+
+  test("renders announced-soon pages with GitHub early access", async ({
+    page,
+  }) => {
+    await page.goto("/products/mempawl");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Mempawl" }),
+    ).toBeVisible();
+    await expect(
+      page.locator("#main").getByText("COMING SOON"),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Get early access on GitHub" }),
+    ).toHaveAttribute("href", "https://github.com/codepawl/mempawl");
+    await expect(page.getByText("Install")).toHaveCount(0);
+    await expect(page.getByTestId("product-stars")).toHaveCount(0);
+  });
+
+  test("product and docs indexes expose availability labels", async ({
+    page,
+  }) => {
+    await page.goto("/products");
+    await expect(page.locator("#main").getByText("DEVELOPING")).toBeVisible();
+    await expect(
+      page.locator("#main").getByText("COMING SOON").first(),
+    ).toBeVisible();
+
+    await page.goto("/docs");
+    await expect(page.locator("#main").getByText("DEVELOPING")).toBeVisible();
+    await expect(
+      page.locator("#main").getByText("COMING SOON").first(),
+    ).toBeVisible();
   });
 });

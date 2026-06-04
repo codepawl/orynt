@@ -1,5 +1,5 @@
 const ITEMS = [
-  "Failure diagnosis for long-horizon coding agents",
+  "Failure diagnosis for long-horizon AI agents",
   "Persistent agent memory and operational learning",
   "Multi-agent coordination and recovery semantics",
   "Cost optimization for repeated agent execution",

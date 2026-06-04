@@ -12,7 +12,7 @@ export function CurrentFocus() {
           <h2 className="cp-h2 text-fg-1">Current focus: TracePawl</h2>
           <p className="cp-lead text-fg-2 mt-6 max-w-xl">
             TracePawl is the first product wedge in the CodePawl stack. It
-            focuses on postmortem intelligence for coding agents: understanding
+            focuses on postmortem intelligence for AI agents: understanding
             why a run failed, where execution drifted, which event caused the
             failure, and what recovery action should be attempted next.
           </p>
