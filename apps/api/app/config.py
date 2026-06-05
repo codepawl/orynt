@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     # Front-end origin allowed by CORS
     site_url: str = "http://localhost:3000"
 
+    # Comma-separated hostnames accepted by Starlette's TrustedHostMiddleware.
+    # Includes TestClient's default host and local development hosts.
+    allowed_hosts: str = (
+        "api.codepawl.com,codepawl.com,www.codepawl.com,"
+        "localhost,127.0.0.1,0.0.0.0,testserver"
+    )
+
     # Token TTL for double opt-in (days) — per ADR-007
     confirm_token_ttl_days: int = 7
 

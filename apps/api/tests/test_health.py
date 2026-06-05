@@ -35,6 +35,11 @@ def test_liveness(client: TestClient) -> None:
     assert body["version"] == "0.1.0"
 
 
+def test_rejects_untrusted_host(client: TestClient) -> None:
+    response = client.get("/health", headers={"host": "evil.example"})
+    assert response.status_code == 400
+
+
 def test_readiness_returns_200_when_db_reachable(app: FastAPI, client: TestClient) -> None:
     app.dependency_overrides[get_supabase_client] = lambda: _FakeSupabaseOk()
     response = client.get("/health/ready")

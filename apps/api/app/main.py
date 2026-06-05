@@ -9,6 +9,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -18,6 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
 from app.config import get_settings
@@ -64,6 +66,20 @@ def _cors_origins() -> list[str]:
     if settings.site_url:
         origins.add(settings.site_url.rstrip("/"))
     return sorted(origins)
+
+
+def _allowed_hosts() -> list[str]:
+    settings = get_settings()
+    hosts = {
+        host.strip()
+        for host in settings.allowed_hosts.split(",")
+        if host.strip()
+    }
+    if settings.site_url:
+        site_hostname = urlparse(settings.site_url).hostname
+        if site_hostname:
+            hosts.add(site_hostname)
+    return sorted(hosts)
 
 
 async def _run_sync_stats() -> None:
@@ -143,6 +159,7 @@ def create_app() -> FastAPI:
         )
 
     app.add_middleware(SlowAPIMiddleware)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
