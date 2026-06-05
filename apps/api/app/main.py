@@ -6,7 +6,7 @@ sync_github_stats every 6 hours.
 """
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
@@ -19,8 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from app.config import get_settings
 from app.errors import register_exception_handlers
@@ -80,6 +79,11 @@ def _allowed_hosts() -> list[str]:
         if site_hostname:
             hosts.add(site_hostname)
     return sorted(hosts)
+
+
+def _request_host(request: Request) -> str:
+    host = request.headers.get("host", "")
+    return host.split(":", 1)[0].lower().rstrip(".")
 
 
 async def _run_sync_stats() -> None:
@@ -145,6 +149,7 @@ def create_app() -> FastAPI:
     )
 
     app.state.limiter = limiter
+    allowed_hosts = set(_allowed_hosts())
 
     @app.exception_handler(RateLimitExceeded)
     async def _rate_limit_handler(_: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -158,8 +163,17 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.middleware("http")
+    async def _host_header_guard(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        path = str(request.scope.get("path", ""))
+        if path != "/health/ready" and _request_host(request) not in allowed_hosts:
+            return PlainTextResponse("Invalid host header", status_code=400)
+        return await call_next(request)
+
     app.add_middleware(SlowAPIMiddleware)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
