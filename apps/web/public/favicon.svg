@@ -1,7 +1,7 @@
-<svg width="32" height="32" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect x="100" y="100" width="300" height="300" rx="15" fill="#161616"/>
-<line x1="192.675" y1="247.14" x2="215.068" y2="224.746" stroke="white" stroke-width="21.1132" stroke-linecap="round"/>
-<line x1="215.069" y1="224.746" x2="192.675" y2="202.352" stroke="white" stroke-width="21.1132" stroke-linecap="round"/>
-<line x1="285.269" y1="224.671" x2="316.938" y2="224.671" stroke="white" stroke-width="21.1132" stroke-linecap="round"/>
-<circle cx="250.432" cy="286.955" r="15.8349" fill="white"/>
+<svg width="32" height="32" viewBox="62.5 62.5 375 375" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="100" y="100" width="300" height="300" rx="15" fill="white"/>
+<line x1="192.675" y1="247.14" x2="215.068" y2="224.746" stroke="black" stroke-width="21.1132" stroke-linecap="round"/>
+<line x1="215.069" y1="224.746" x2="192.675" y2="202.352" stroke="black" stroke-width="21.1132" stroke-linecap="round"/>
+<line x1="285.269" y1="224.671" x2="316.938" y2="224.671" stroke="black" stroke-width="21.1132" stroke-linecap="round"/>
+<circle cx="250.432" cy="286.955" r="15.8349" fill="black"/>
 </svg>

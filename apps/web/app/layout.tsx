@@ -14,19 +14,7 @@ export const metadata: Metadata = {
   description:
     "Debugging, memory, coordination, and optimization infrastructure for AI agents.",
   icons: {
-    icon: [
-      {
-        url: "/favicon-light.svg",
-        type: "image/svg+xml",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/favicon-dark.svg",
-        type: "image/svg+xml",
-        media: "(prefers-color-scheme: dark)",
-      },
-      { url: "/favicon.svg", type: "image/svg+xml" },
-    ],
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
     shortcut: ["/favicon.svg"],
   },
   metadataBase: new URL(

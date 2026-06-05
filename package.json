@@ -17,5 +17,8 @@
     "test:api": "cd apps/api && uv run pytest",
     "lint:api": "cd apps/api && uv run ruff check .",
     "typecheck:api": "cd apps/api && uv run mypy ."
+  },
+  "overrides": {
+    "postcss": "8.5.14"
   }
 }
