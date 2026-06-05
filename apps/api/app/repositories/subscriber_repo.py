@@ -35,6 +35,10 @@ class SubscriberRepo(Protocol):
         metadata: dict[str, object] | None = None,
     ) -> None: ...
 
+    def list_admin(
+        self, *, status: str | None, page: int, per_page: int
+    ) -> tuple[list[dict[str, object]], int]: ...
+
 
 class SupabaseSubscriberRepo:
     """Supabase-backed implementation. Used in production; tests inject fakes."""
@@ -115,3 +119,28 @@ class SupabaseSubscriberRepo:
                 },
             )
         ).execute()
+
+    def list_admin(
+        self, *, status: str | None, page: int, per_page: int
+    ) -> tuple[list[dict[str, object]], int]:
+        result = (
+            self._c.table("newsletter_subscribers")
+            .select("*")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        rows = cast(list[dict[str, object]], result.data or [])
+        if status == "confirmed":
+            rows = [
+                row
+                for row in rows
+                if row.get("confirmed_at") and not row.get("unsubscribed_at")
+            ]
+        elif status == "pending":
+            rows = [row for row in rows if not row.get("confirmed_at")]
+        elif status == "unsubscribed":
+            rows = [row for row in rows if row.get("unsubscribed_at")]
+
+        total = len(rows)
+        start = (page - 1) * per_page
+        return rows[start : start + per_page], total

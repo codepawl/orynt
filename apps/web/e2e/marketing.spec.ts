@@ -82,20 +82,21 @@ test.describe("marketing landing", () => {
       });
     });
 
-    await page.route(
-      "**/api/v1/newsletter/confirm?token=fake-token",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            status: "confirmed",
-            email: "ada@example.com",
-            confirmed_at: "2026-06-03T00:00:00.000Z",
-          }),
-        });
-      },
-    );
+    await page.route("**/api/v1/newsletter/confirm**", async (route) => {
+      if (!route.request().url().includes("token=fake-token")) {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "confirmed",
+          email: "ada@example.com",
+          confirmed_at: "2026-06-03T00:00:00.000Z",
+        }),
+      });
+    });
 
     await page.goto("/");
     const footerForm = page.locator('footer form[data-hydrated="true"]').first();
@@ -112,7 +113,9 @@ test.describe("marketing landing", () => {
       "Check your inbox to confirm.",
     );
 
-    await page.goto("/newsletter/confirm?token=fake-token");
+    await page.goto("/newsletter/confirm?token=fake-token", {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page.getByText(/on the list/i)).toBeVisible();
     await expect(page.getByText(/ada@example.com/)).toBeVisible();
   });

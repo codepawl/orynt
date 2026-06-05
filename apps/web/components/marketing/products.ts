@@ -13,6 +13,14 @@ export interface StackProduct extends Product {
   readonly current_focus: boolean;
 }
 
+type ProductsResponse = {
+  readonly products: ReadonlyArray<Product>;
+};
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const API_FETCH_TIMEOUT_MS = 2500;
+
 export const STACK_PRODUCTS: ReadonlyArray<StackProduct> = [
   {
     id: "trace",
@@ -76,6 +84,33 @@ export const STACK_PRODUCTS: ReadonlyArray<StackProduct> = [
   },
 ];
 
+export async function getStackProducts(): Promise<ReadonlyArray<StackProduct>> {
+  const apiProducts = await fetchApiProducts();
+  if (!apiProducts) {
+    return STACK_PRODUCTS;
+  }
+
+  const fallbackBySlug = new Map(
+    STACK_PRODUCTS.map((product) => [product.slug, product]),
+  );
+  const merged = apiProducts
+    .map((product) => {
+      const fallback = fallbackBySlug.get(product.slug);
+      return fallback ? { ...fallback, ...product } : null;
+    })
+    .filter((product): product is StackProduct => product !== null)
+    .sort((a, b) => a.display_order - b.display_order);
+
+  return merged.length > 0 ? merged : STACK_PRODUCTS;
+}
+
+export async function getStackProduct(
+  slug: string,
+): Promise<StackProduct | null> {
+  const products = await getStackProducts();
+  return products.find((product) => product.slug === slug) ?? null;
+}
+
 export function productAvailabilityLabel(product: StackProduct): string {
   return product.availability === "active" ? "DEVELOPING" : "COMING SOON";
 }
@@ -90,4 +125,20 @@ export function productBadgeClass(product: StackProduct): string {
   return product.availability === "active"
     ? "product-badge-active"
     : "product-badge-soon";
+}
+
+async function fetchApiProducts(): Promise<ReadonlyArray<Product> | null> {
+  try {
+    const response = await fetch(`${API_BASE}/products`, {
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const body = (await response.json()) as ProductsResponse;
+    return Array.isArray(body.products) ? body.products : null;
+  } catch {
+    return null;
+  }
 }

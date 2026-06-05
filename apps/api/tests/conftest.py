@@ -22,7 +22,12 @@ from app.repositories.product_repo import ProductRepo
 from app.repositories.product_stats_repo import ProductStatsRepo
 from app.repositories.submission_repo import SubmissionRepo
 from app.repositories.subscriber_repo import SubscriberRepo
-from app.routers.admin import get_product_repo_admin, get_product_stats_repo_admin
+from app.routers.admin import (
+    get_product_repo_admin,
+    get_product_stats_repo_admin,
+    get_submission_repo_admin,
+    get_subscriber_repo_admin,
+)
 from app.routers.contact import get_submission_repo
 from app.routers.newsletter import get_subscriber_repo
 from app.routers.products import get_product_repo, get_product_stats_repo
@@ -82,10 +87,34 @@ class FakeSubscriberRepo:
     ) -> None:
         return None
 
+    def list_admin(
+        self, *, status: str | None, page: int, per_page: int
+    ) -> tuple[list[dict[str, object]], int]:
+        rows = sorted(
+            self.rows.values(),
+            key=lambda row: str(row.get("created_at", "")),
+            reverse=True,
+        )
+        if status == "confirmed":
+            rows = [
+                row
+                for row in rows
+                if row.get("confirmed_at") and not row.get("unsubscribed_at")
+            ]
+        elif status == "pending":
+            rows = [row for row in rows if not row.get("confirmed_at")]
+        elif status == "unsubscribed":
+            rows = [row for row in rows if row.get("unsubscribed_at")]
+
+        total = len(rows)
+        start = (page - 1) * per_page
+        return rows[start : start + per_page], total
+
 
 class FakeSubmissionRepo:
     def __init__(self) -> None:
         self.rows: list[dict[str, object]] = []
+        self.replies: list[dict[str, object]] = []
 
     def create(
         self,
@@ -105,8 +134,50 @@ class FakeSubmissionRepo:
             "message": message,
             "ip_hash": ip_hash,
             "user_agent": user_agent,
+            "created_at": datetime.now(UTC).isoformat(),
         }
         self.rows.append(row)
+        return row
+
+    def list_admin(
+        self, *, replied: bool | None, page: int, per_page: int
+    ) -> tuple[list[dict[str, object]], int]:
+        rows = [
+            {
+                **row,
+                "contact_replies": [
+                    reply for reply in self.replies if reply["submission_id"] == row["id"]
+                ],
+            }
+            for row in self.rows
+        ]
+        rows = sorted(rows, key=lambda row: str(row.get("created_at", "")), reverse=True)
+        if replied is not None:
+            rows = [
+                row
+                for row in rows
+                if bool(row.get("contact_replies")) is replied
+            ]
+
+        total = len(rows)
+        start = (page - 1) * per_page
+        return rows[start : start + per_page], total
+
+    def create_reply(
+        self,
+        *,
+        submission_id: str,
+        replied_by: str,
+        reply_summary: str | None,
+    ) -> dict[str, object]:
+        row: dict[str, object] = {
+            "id": secrets.token_hex(8),
+            "submission_id": submission_id,
+            "replied_by": replied_by,
+            "reply_summary": reply_summary,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        self.replies.append(row)
         return row
 
 
@@ -205,6 +276,8 @@ def app(
     application.dependency_overrides[get_product_stats_repo] = lambda: product_stats_repo
     application.dependency_overrides[get_product_repo_admin] = lambda: product_repo
     application.dependency_overrides[get_product_stats_repo_admin] = lambda: product_stats_repo
+    application.dependency_overrides[get_subscriber_repo_admin] = lambda: subscriber_repo
+    application.dependency_overrides[get_submission_repo_admin] = lambda: submission_repo
     yield application
     application.dependency_overrides.clear()
 

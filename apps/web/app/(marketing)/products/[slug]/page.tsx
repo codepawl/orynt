@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import {
-  STACK_PRODUCTS,
+  getStackProduct,
+  getStackProducts,
   productAvailabilityLabel,
   productBadgeClass,
   productStateClass,
@@ -10,8 +11,11 @@ import {
 
 export const revalidate = 3600;
 
-export function generateStaticParams(): { slug: string }[] {
-  return STACK_PRODUCTS.map((product) => ({ slug: product.slug }));
+const API_FETCH_TIMEOUT_MS = 2500;
+
+export async function generateStaticParams(): Promise<{ slug: string }[]> {
+  const products = await getStackProducts();
+  return products.map((product) => ({ slug: product.slug }));
 }
 
 export async function generateMetadata({
@@ -20,7 +24,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const product = STACK_PRODUCTS.find((p) => p.slug === slug);
+  const product = await getStackProduct(slug);
   if (!product) return { title: "Not found" };
   return { title: product.name, description: product.tagline };
 }
@@ -31,6 +35,7 @@ async function fetchStats(slug: string): Promise<{ stars: number } | null> {
   try {
     const response = await fetch(`${base}/products/${slug}/stats`, {
       next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) return null;
     const body = (await response.json()) as { stars: number };
@@ -46,7 +51,7 @@ export default async function ProductDetail({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = STACK_PRODUCTS.find((p) => p.slug === slug);
+  const product = await getStackProduct(slug);
   if (!product) {
     notFound();
   }

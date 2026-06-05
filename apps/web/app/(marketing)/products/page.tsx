@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import {
-  STACK_PRODUCTS,
+  getStackProducts,
   productAvailabilityLabel,
   productBadgeClass,
   productStateClass,
@@ -16,7 +16,9 @@ export const metadata: Metadata = {
     "CodePawl products: TracePawl, Mempawl, OpenPawl, and CachePawl. Infrastructure for AI agents.",
 };
 
-export default function ProductsIndex() {
+export default async function ProductsIndex() {
+  const products = await getStackProducts();
+
   return (
     <section className="mx-auto max-w-[1240px] px-6 py-20">
       <p className="cp-marker mb-6">000 · codepawl products</p>
@@ -29,7 +31,7 @@ export default function ProductsIndex() {
         current focus.
       </p>
       <ul className="mt-12 grid gap-6 md:grid-cols-2">
-        {STACK_PRODUCTS.map((product) => (
+        {products.map((product) => (
           <li
             key={product.id}
             className={`bg-ink-1 hover:border-ratchet flex flex-col gap-3 border p-6 transition-colors ${productStateClass(product)}`}
