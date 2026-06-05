@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # Comma-separated hostnames accepted by Starlette's TrustedHostMiddleware.
     # Includes TestClient's default host and local development hosts.
     allowed_hosts: str = (
-        "api.codepawl.com,codepawl.com,www.codepawl.com,"
+        "api.codepawl.com,codepawl-api.fly.dev,codepawl.com,www.codepawl.com,"
         "localhost,127.0.0.1,0.0.0.0,testserver"
     )
 
