@@ -73,9 +73,10 @@ export function CustomerJourney() {
               onClick={() => setSelectedId(step.id)}
               className={
                 active
-                  ? "product-state-active grid border-2 border-ratchet bg-ink-1 p-5 text-left transition-colors"
-                  : "grid border-2 border-ink-4 bg-ink-0 p-5 text-left transition-colors hover:border-ratchet hover:bg-ink-1"
+                  ? "cp-hover-frame product-state-active grid border-2 border-ratchet bg-ink-1 p-5 text-left transition-colors"
+                  : "cp-hover-frame grid border-2 border-ink-4 bg-ink-0 p-5 text-left transition-colors hover:border-ratchet hover:bg-ink-1"
               }
+              whileHover={{ y: -3 }}
               whileTap={{ x: 2, y: 2 }}
               transition={{
                 duration: BLOCK_FAST,
@@ -95,7 +96,7 @@ export function CustomerJourney() {
       <section
         id="customer-journey-detail"
         role="tabpanel"
-        className="border-2 border-ink-4 bg-ink-0 p-6 md:p-8"
+        className="cp-hover-frame border-2 border-ink-4 bg-ink-0 p-6 md:p-8"
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div

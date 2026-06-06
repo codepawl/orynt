@@ -11,6 +11,7 @@ export const fontDisplay = localFont({
   ],
   variable: "--font-display",
   display: "swap",
+  preload: false,
 });
 
 export const fontBody = localFont({
@@ -24,6 +25,7 @@ export const fontBody = localFont({
   ],
   variable: "--font-body",
   display: "swap",
+  preload: false,
 });
 
 export const fontMono = localFont({
@@ -41,4 +43,5 @@ export const fontMono = localFont({
   ],
   variable: "--font-mono",
   display: "swap",
+  preload: false,
 });

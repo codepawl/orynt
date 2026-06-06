@@ -38,7 +38,7 @@ function FooterLinks({ group }: { group: keyof typeof LINKS }) {
           <li key={link.href}>
             <Link
               href={link.href}
-              className="cp-link text-fg-2 hover:text-ratchet transition-colors"
+              className="cp-hover-link cp-link text-fg-2 hover:text-ratchet inline-block transition-colors"
             >
               {link.label}
             </Link>
@@ -65,7 +65,7 @@ function FooterSocialLink({
       href={href}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
-      className="cp-button border-ink-4 text-fg-2 hover:border-ratchet hover:text-ratchet inline-flex items-center gap-2 border px-3 py-2 transition-colors"
+      className="cp-hover-button cp-button border-ink-4 text-fg-2 hover:border-ratchet hover:text-ratchet inline-flex items-center gap-2 border px-3 py-2 transition-colors"
     >
       <Icon aria-hidden size={15} />
       <span>{label}</span>
@@ -109,7 +109,7 @@ export function Footer() {
               Icon={TwitterX}
             />
           </div>
-          <div className="mt-6 w-full max-w-none border-2 border-ink-4 bg-ink-0 p-4">
+          <div className="cp-hover-frame mt-6 w-full max-w-none border-2 border-ink-4 bg-ink-0 p-4">
             <FooterNewsletterForm />
           </div>
         </div>

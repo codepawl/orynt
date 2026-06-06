@@ -10,6 +10,8 @@ export const BLOCK_MAX = 0.48;
 
 const BLOCK_EASE = "linear";
 const VIEWPORT = { once: true, amount: 0.28 };
+const HOVER_LIFT = { y: -4 };
+const PRESS_NUDGE = { x: 2, y: 2 };
 
 type MotionPrimitiveProps = {
   children: ReactNode;
@@ -49,8 +51,8 @@ export function BlockMotionItem({
       className={className}
       initial={{ opacity: 0, y: 10 }}
       whileInView={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -4 }}
-      whileTap={{ x: 2, y: 2 }}
+      whileHover={HOVER_LIFT}
+      whileTap={PRESS_NUDGE}
       viewport={VIEWPORT}
       transition={{
         duration: BLOCK_BASE,
@@ -73,8 +75,8 @@ export function BlockMotionListItem({
       className={className}
       initial={{ opacity: 0, y: 10 }}
       whileInView={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -4 }}
-      whileTap={{ x: 2, y: 2 }}
+      whileHover={HOVER_LIFT}
+      whileTap={PRESS_NUDGE}
       viewport={VIEWPORT}
       transition={{
         duration: BLOCK_BASE,
@@ -116,7 +118,7 @@ export function BlockPress({
   return (
     <motion.span
       className={className}
-      whileTap={{ x: 2, y: 2 }}
+      whileTap={PRESS_NUDGE}
       transition={{
         duration: BLOCK_FAST,
         ease: BLOCK_EASE,

@@ -108,6 +108,123 @@ body {
   box-shadow: 5px 5px 0 var(--ink-4);
 }
 
+.cp-hover-lift {
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform 180ms linear,
+    box-shadow 180ms linear,
+    border-color 180ms linear,
+    background-color 180ms linear,
+    color 180ms linear;
+  will-change: transform;
+}
+
+.cp-hover-lift:hover,
+.cp-hover-lift:focus-within {
+  border-color: var(--ratchet);
+  box-shadow:
+    8px 8px 0 var(--ink-4),
+    0 0 0 1px color-mix(in srgb, var(--ratchet) 28%, transparent);
+  transform: translate3d(-2px, -4px, 0);
+}
+
+.cp-hover-lift:active {
+  box-shadow:
+    3px 3px 0 var(--ink-4),
+    0 0 0 1px color-mix(in srgb, var(--ratchet) 24%, transparent);
+  transform: translate3d(2px, 2px, 0);
+}
+
+.cp-hover-frame {
+  transition:
+    box-shadow 180ms linear,
+    border-color 180ms linear,
+    background-color 180ms linear,
+    color 180ms linear;
+}
+
+.cp-hover-frame:hover,
+.cp-hover-frame:focus-within {
+  border-color: var(--ratchet);
+  box-shadow:
+    8px 8px 0 var(--ink-4),
+    0 0 0 1px color-mix(in srgb, var(--ratchet) 28%, transparent);
+}
+
+.cp-hover-contained {
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform 140ms linear,
+    border-color 140ms linear,
+    background-color 140ms linear,
+    color 140ms linear;
+  will-change: transform;
+}
+
+.cp-hover-contained:hover,
+.cp-hover-contained:focus-visible,
+.cp-hover-contained:focus-within {
+  border-color: var(--ratchet);
+  background-color: var(--ink-2);
+  transform: translate3d(-1px, -2px, 0);
+}
+
+.cp-hover-contained:active {
+  transform: translate3d(1px, 1px, 0);
+}
+
+.cp-hover-button {
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform 140ms linear,
+    box-shadow 140ms linear,
+    border-color 140ms linear,
+    background-color 140ms linear,
+    color 140ms linear;
+  will-change: transform;
+}
+
+.cp-hover-button:hover,
+.cp-hover-button:focus-visible {
+  box-shadow: 4px 4px 0 var(--ink-4);
+  transform: translate3d(-1px, -2px, 0);
+}
+
+.cp-hover-button:active {
+  box-shadow: 1px 1px 0 var(--ink-4);
+  transform: translate3d(1px, 1px, 0);
+}
+
+.cp-hover-link {
+  position: relative;
+  transition:
+    color 140ms linear,
+    transform 140ms linear;
+}
+
+.cp-hover-link::after {
+  position: absolute;
+  right: 0;
+  bottom: -0.28rem;
+  left: 0;
+  height: 2px;
+  content: "";
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 140ms linear;
+}
+
+.cp-hover-link:hover,
+.cp-hover-link:focus-visible {
+  transform: translate3d(0, -2px, 0);
+}
+
+.cp-hover-link:hover::after,
+.cp-hover-link:focus-visible::after {
+  transform: scaleX(1);
+}
+
 .vent-blocks {
   background-color: var(--ink-2);
   background-image:
@@ -459,6 +576,35 @@ em.cp-em {
   color: var(--ratchet) !important;
 }
 
+.cl-userButtonPopoverActionButton,
+.cl-navbarButton,
+.cl-profileSectionItem,
+.cl-profileSectionItemList,
+.cl-userButtonTrigger {
+  transition:
+    transform 140ms linear,
+    box-shadow 140ms linear,
+    background-color 140ms linear,
+    color 140ms linear;
+}
+
+.cl-userButtonPopoverActionButton:hover,
+.cl-userButtonPopoverActionButton:focus-visible,
+.cl-navbarButton:hover,
+.cl-navbarButton:focus-visible,
+.cl-profileSectionItem:hover,
+.cl-profileSectionItemList:hover {
+  transform: translate3d(-1px, -2px, 0);
+}
+
+.cl-userButtonTrigger:hover,
+.cl-userButtonTrigger:focus-visible {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ratchet) 22%, transparent),
+    3px 3px 0 var(--ink-4);
+  transform: translate3d(-1px, -2px, 0);
+}
+
 .cl-userProfile-root :is(h1, h2, h3, h4, label),
 .cl-userProfile-root :is([class*="Title"], [class*="Label"]) {
   color: var(--fg-1) !important;
@@ -486,6 +632,41 @@ em.cp-em {
 
   .product-pulse-dot {
     animation: none;
+  }
+
+  .cp-hover-lift,
+  .cp-hover-lift:hover,
+  .cp-hover-lift:focus-within,
+  .cp-hover-lift:active,
+  .cp-hover-frame,
+  .cp-hover-frame:hover,
+  .cp-hover-frame:focus-within,
+  .cp-hover-contained,
+  .cp-hover-contained:hover,
+  .cp-hover-contained:focus-visible,
+  .cp-hover-contained:focus-within,
+  .cp-hover-contained:active,
+  .cp-hover-button,
+  .cp-hover-button:hover,
+  .cp-hover-button:focus-visible,
+  .cp-hover-button:active,
+  .cp-hover-link,
+  .cp-hover-link:hover,
+  .cp-hover-link:focus-visible,
+  .cl-userButtonPopoverActionButton,
+  .cl-userButtonPopoverActionButton:hover,
+  .cl-userButtonPopoverActionButton:focus-visible,
+  .cl-navbarButton,
+  .cl-navbarButton:hover,
+  .cl-navbarButton:focus-visible,
+  .cl-profileSectionItem,
+  .cl-profileSectionItem:hover,
+  .cl-profileSectionItemList,
+  .cl-profileSectionItemList:hover,
+  .cl-userButtonTrigger,
+  .cl-userButtonTrigger:hover,
+  .cl-userButtonTrigger:focus-visible {
+    transform: none !important;
   }
 
   *,

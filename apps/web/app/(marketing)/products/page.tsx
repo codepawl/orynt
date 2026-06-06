@@ -34,7 +34,7 @@ export default async function ProductsIndex() {
         {products.map((product) => (
           <li
             key={product.id}
-            className={`bg-ink-1 hover:border-ratchet flex flex-col gap-3 border p-6 transition-colors ${productStateClass(product)}`}
+            className={`cp-hover-lift bg-ink-1 hover:border-ratchet flex flex-col gap-3 border p-6 transition-colors ${productStateClass(product)}`}
           >
             <header className="flex items-center justify-between">
               <p className="cp-caption text-fg-3">{product.language}</p>
@@ -50,7 +50,7 @@ export default async function ProductsIndex() {
             <p className="cp-small text-fg-3">{product.description}</p>
             <Link
               href={`/products/${product.slug}`}
-              className="text-ratchet hover:text-ratchet-hot cp-small mt-auto"
+              className="cp-hover-link text-ratchet hover:text-ratchet-hot cp-small mt-auto w-fit"
             >
               {product.availability === "active"
                 ? "View product →"

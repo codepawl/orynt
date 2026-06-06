@@ -57,7 +57,7 @@ export default async function DocsCatchAll({
             <li key={product.id}>
               <Link
                 href={`/docs/${product.slug}`}
-                className={`bg-ink-1 hover:border-ratchet block border p-5 transition-colors ${productStateClass(product)}`}
+                className={`cp-hover-lift bg-ink-1 hover:border-ratchet block border p-5 transition-colors ${productStateClass(product)}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <p className="cp-h4 text-fg-1">{product.name}</p>
@@ -97,7 +97,7 @@ export default async function DocsCatchAll({
         Read the source on{" "}
         <a
           href={`https://github.com/${product.github_repo}`}
-          className="text-ratchet hover:text-ratchet-hot"
+          className="cp-hover-link inline-block text-ratchet hover:text-ratchet-hot"
         >
           GitHub
         </a>

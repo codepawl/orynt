@@ -149,7 +149,7 @@ function CTAGroup() {
       <BlockPress className="inline-flex">
         <Link
           href="/products"
-          className="cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-4 px-5 py-3 text-ink-1 transition-colors hover:bg-ratchet focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+          className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-4 px-5 py-3 text-ink-1 transition-colors hover:bg-ratchet focus:outline-none focus:ring-4 focus:ring-ratchet/20"
         >
           Browse products
           <ArrowRight aria-hidden size={16} />
@@ -158,7 +158,7 @@ function CTAGroup() {
       <BlockPress className="inline-flex">
         <Link
           href="/docs"
-          className="cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+          className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
         >
           Read docs
           <JournalText aria-hidden size={16} />
@@ -177,7 +177,9 @@ function ProjectCard({
 }) {
   return (
     <BlockMotionItem className="h-full" delay={index * 0.04}>
-      <BrutalCard className={`flex h-full flex-col p-5 ${productStateClass(product)}`}>
+      <BrutalCard
+        className={`cp-hover-frame flex h-full flex-col p-5 ${productStateClass(product)}`}
+      >
         <header className="flex items-start justify-between gap-4 border-b border-ink-4 pb-4">
           <div>
             <p className="cp-caption text-fg-3">
@@ -196,7 +198,7 @@ function ProjectCard({
         <p className="cp-body mt-5">{product.tagline}</p>
         <Link
           href={`/products/${product.slug}`}
-          className="cp-link mt-auto inline-flex w-fit items-center gap-2 pt-8 text-ratchet hover:text-ratchet-hot"
+          className="cp-hover-link cp-link mt-auto inline-flex w-fit items-center gap-2 pt-8 text-ratchet hover:text-ratchet-hot"
         >
           {product.availability === "active" ? "View product" : "Early access"}{" "}
           <ArrowRight aria-hidden size={14} />
@@ -209,14 +211,14 @@ function ProjectCard({
 function EvidenceRow({ item, index }: { item: EvidenceItem; index: number }) {
   return (
     <BlockMotionListItem
-      className="block-shadow-sm h-full border-2 border-ink-4 bg-ink-1 p-5"
+      className="cp-hover-frame block-shadow-sm h-full border-2 border-ink-4 bg-ink-1 p-5"
       delay={index * 0.04}
     >
       <p className="cp-caption text-ratchet">{item.label}</p>
       <p className="cp-body mt-4 min-h-[48px] text-fg-1">{item.body}</p>
       <Link
         href={item.href}
-        className="cp-link mt-6 inline-flex w-full items-center justify-between gap-2 border-t border-ink-4 pt-4 text-fg-1 hover:text-ratchet"
+        className="cp-hover-link cp-link mt-6 inline-flex w-full items-center justify-between gap-2 border-t border-ink-4 pt-4 text-fg-1 hover:text-ratchet"
       >
         {item.action} <ArrowRight aria-hidden size={14} />
       </Link>
