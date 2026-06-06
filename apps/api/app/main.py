@@ -69,11 +69,7 @@ def _cors_origins() -> list[str]:
 
 def _allowed_hosts() -> list[str]:
     settings = get_settings()
-    hosts = {
-        host.strip()
-        for host in settings.allowed_hosts.split(",")
-        if host.strip()
-    }
+    hosts = {host.strip() for host in settings.allowed_hosts.split(",") if host.strip()}
     if settings.site_url:
         site_hostname = urlparse(settings.site_url).hostname
         if site_hostname:

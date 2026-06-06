@@ -132,9 +132,7 @@ class SupabaseSubscriberRepo:
         rows = cast(list[dict[str, object]], result.data or [])
         if status == "confirmed":
             rows = [
-                row
-                for row in rows
-                if row.get("confirmed_at") and not row.get("unsubscribed_at")
+                row for row in rows if row.get("confirmed_at") and not row.get("unsubscribed_at")
             ]
         elif status == "pending":
             rows = [row for row in rows if not row.get("confirmed_at")]
