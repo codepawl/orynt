@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Github } from "react-bootstrap-icons";
+import { SignInButton, SignUpButton, Show, UserButton } from "@clerk/nextjs";
 
 import {
   STACK_PRODUCTS,
@@ -98,19 +98,95 @@ export function Nav() {
             </li>
           </ul>
         </nav>
-        <a
-          href="https://github.com/codepawl"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="cp-button border-ratchet text-ratchet hover:bg-ink-4 hover:text-ink-1 inline-flex items-center gap-3 border px-3 py-2 transition-colors"
-          aria-label="GitHub Follow @codepawl"
-        >
-          <Github aria-hidden size={18} />
-          <span className="grid text-left leading-none">
-            <span className="nav-product-status">GitHub</span>
-            <span>Follow @codepawl</span>
-          </span>
-        </a>
+        <div className="flex items-center gap-2">
+          <Show when="signed-out">
+            <SignInButton>
+              <button
+                type="button"
+                className="cp-button border-fg-3 text-fg-1 hover:bg-ink-3 inline-flex items-center border px-3 py-2 transition-colors"
+              >
+                Sign in
+              </button>
+            </SignInButton>
+            <SignUpButton>
+              <button
+                type="button"
+                className="cp-button bg-ratchet text-ink-0 hover:bg-ratchet-hot inline-flex items-center border border-ratchet px-3 py-2 transition-colors"
+              >
+                Sign up
+              </button>
+            </SignUpButton>
+          </Show>
+          <Show when="signed-in">
+            <div className="inline-flex items-center">
+              <UserButton
+                fallback={
+                  <span
+                    aria-hidden="true"
+                    className="bg-ink-2 ring-ink-4/20 inline-block h-8 w-8 animate-pulse rounded-full ring-1 shadow-[0_0_0_3px_rgba(143,77,54,0.12)]"
+                  />
+                }
+                appearance={{
+                  elements: {
+                    userButtonAvatarBox: "h-8 w-8 rounded-full border-0",
+                    userButtonTrigger:
+                      "rounded-full focus:shadow-[0_0_0_3px_rgba(143,77,54,0.22)]",
+                    userButtonPopoverCard:
+                      "border-2 border-ink-4 bg-ink-1 text-fg-1 shadow-[8px_8px_0_var(--ink-4)]",
+                    userButtonPopoverActionButton:
+                      "text-fg-1 hover:bg-ink-2 hover:text-ratchet",
+                    userButtonPopoverActionButtonText: "text-fg-1",
+                    userButtonPopoverActionButtonIcon: "text-fg-3",
+                    userPreviewMainIdentifier: "text-fg-1",
+                    userPreviewSecondaryIdentifier: "text-fg-3",
+                    userPreviewTextContainer: "text-fg-1",
+                    navbar: "bg-ink-1 text-fg-1",
+                    navbarButton: "text-fg-2 hover:bg-ink-2 hover:text-ratchet",
+                    navbarButtonIcon: "text-fg-3",
+                    navbarButtonText: "text-fg-1",
+                    page: "bg-ink-1 text-fg-1",
+                    pageScrollBox: "bg-ink-1 text-fg-1",
+                    pageTitle: "text-fg-1",
+                    pageSubtitle: "text-fg-3",
+                    profileSectionTitleText: "text-fg-1",
+                    profileSectionContent: "text-fg-2",
+                    profileSectionItem: "text-fg-1",
+                    profileSectionItemList: "text-fg-1",
+                    profileSectionPrimaryButton:
+                      "text-ratchet hover:text-ratchet-hot",
+                    formFieldLabel: "text-fg-1",
+                    formFieldInfoText: "text-fg-3",
+                  },
+                }}
+                userProfileProps={{
+                  appearance: {
+                    elements: {
+                      card: "bg-ink-1 text-fg-1",
+                      page: "bg-ink-1 text-fg-1",
+                      pageScrollBox: "bg-ink-1 text-fg-1",
+                      pageTitle: "text-fg-1",
+                      pageSubtitle: "text-fg-3",
+                      navbar: "bg-ink-1 text-fg-1",
+                      navbarTitle: "text-fg-1",
+                      navbarDescription: "text-fg-3",
+                      navbarButton:
+                        "text-fg-2 hover:bg-ink-2 hover:text-ratchet",
+                      navbarButtonText: "text-fg-1",
+                      profileSectionTitleText: "text-fg-1",
+                      profileSectionContent: "text-fg-2",
+                      profileSectionItem: "text-fg-1",
+                      profileSectionItemTitle: "text-fg-1",
+                      profileSectionItemSubtitle: "text-fg-3",
+                      profileSectionItemDescription: "text-fg-3",
+                      formFieldLabel: "text-fg-1",
+                      formFieldInfoText: "text-fg-3",
+                    },
+                  },
+                }}
+              />
+            </div>
+          </Show>
+        </div>
       </div>
     </header>
   );

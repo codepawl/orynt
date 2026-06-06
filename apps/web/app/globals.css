@@ -1,3 +1,4 @@
+@layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
 @import "../styles/design-tokens.css";
 
@@ -149,7 +150,7 @@ body {
   font-size: 0.62rem;
   line-height: 1;
   padding: 0.2rem 0.3rem;
-  animation: tracepawl-pulse 2.4s ease-in-out infinite;
+  animation: tracepawl-pulse 0.9s steps(2, end) infinite;
 }
 
 .tracepawl-nav-link {
@@ -220,7 +221,7 @@ body {
   display: inline-block;
   height: 0.45rem;
   width: 0.45rem;
-  animation: product-live-pulse 1.8s ease-in-out infinite;
+  animation: product-live-pulse 0.8s steps(2, end) infinite;
 }
 
 .nav-product-status .product-pulse-dot {
@@ -373,6 +374,108 @@ em.cp-em {
   font-weight: var(--fw-regular);
   font-variation-settings: "opsz" 144, "SOFT" 50, "WONK" 1;
   color: var(--ratchet);
+}
+
+.cl-card,
+.cl-userButtonPopoverCard,
+.cl-userProfile-root,
+.cl-page,
+.cl-pageScrollBox,
+.cl-navbar,
+.cl-profilePage,
+.cl-profilePage__account,
+.cl-profilePage__security {
+  --clerk-color-foreground: var(--fg-1);
+  --clerk-color-muted-foreground: var(--fg-3);
+  --clerk-color-background: var(--ink-1);
+  --clerk-color-input-foreground: var(--fg-1);
+  background: var(--ink-1);
+  color: var(--fg-1) !important;
+}
+
+.cl-headerTitle,
+.cl-navbarTitle,
+.cl-pageTitle,
+.cl-navbarButtonText,
+.cl-formFieldLabel,
+.cl-formFieldInput,
+.cl-accordionTriggerButton,
+.cl-accordionContent,
+.cl-menuItem,
+.cl-menuItem__connectedAccounts,
+.cl-menuList,
+.cl-menuList__connectedAccounts,
+.cl-identityPreviewText,
+.cl-identityPreviewEditButton,
+.cl-connectedAccountPreview,
+.cl-connectedAccountPreviewText,
+.cl-connectedAccountPreviewTitle,
+.cl-profileSectionItem,
+.cl-profileSectionItemList,
+.cl-profileSectionItemText,
+.cl-profileSectionItemTitle,
+.cl-profileSectionTitleText,
+.cl-userPreviewMainIdentifier,
+.cl-userPreviewTextContainer,
+.cl-userButtonPopoverActionButtonText,
+.cl-userButtonPopoverActionButton {
+  color: var(--fg-1) !important;
+}
+
+.cl-headerSubtitle,
+.cl-navbarDescription,
+.cl-pageSubtitle,
+.cl-formFieldInfoText,
+.cl-accordionContent p,
+.cl-menuItem p,
+.cl-identityPreviewSecondaryIdentifier,
+.cl-connectedAccountPreviewSubtitle,
+.cl-profileSectionItemSubtitle,
+.cl-profileSectionItemDescription,
+.cl-profileSectionPrimaryButton,
+.cl-profileSectionContent,
+.cl-userPreviewSecondaryIdentifier,
+.cl-userButtonPopoverFooter,
+.cl-userButtonPopoverActionButtonIcon,
+.cl-navbarButtonIcon {
+  color: var(--fg-3) !important;
+}
+
+.cl-profileSectionPrimaryButton,
+.cl-footerActionLink,
+.cl-formFieldAction {
+  color: var(--ratchet) !important;
+}
+
+.cl-profileSectionPrimaryButton:hover,
+.cl-footerActionLink:hover,
+.cl-formFieldAction:hover {
+  color: var(--ratchet-hot) !important;
+}
+
+.cl-userButtonPopoverActionButton:hover,
+.cl-navbarButton:hover {
+  background: var(--ink-2);
+  color: var(--ratchet) !important;
+}
+
+.cl-userProfile-root :is(h1, h2, h3, h4, label),
+.cl-userProfile-root :is([class*="Title"], [class*="Label"]) {
+  color: var(--fg-1) !important;
+}
+
+.cl-userProfile-root :is(p, small),
+.cl-userProfile-root :is([class*="Subtitle"], [class*="Description"], [class*="SecondaryIdentifier"]) {
+  color: var(--fg-3) !important;
+}
+
+.cl-userButtonAvatarBox {
+  border: 0;
+  border-radius: 9999px;
+}
+
+.cl-userButtonTrigger {
+  border-radius: 9999px;
 }
 
 /* Respect reduced motion globally per the accessibility bar in docs/UI.md. */

@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+
+import { BLOCK_BASE, BLOCK_FAST } from "./motion-primitives";
 
 const JOURNEY_STEPS = [
   {
@@ -61,7 +64,7 @@ export function CustomerJourney() {
         {JOURNEY_STEPS.map((step, index) => {
           const active = step.id === selected.id;
           return (
-            <button
+            <motion.button
               key={step.id}
               type="button"
               role="tab"
@@ -73,13 +76,18 @@ export function CustomerJourney() {
                   ? "product-state-active grid border-2 border-ratchet bg-ink-1 p-5 text-left transition-colors"
                   : "grid border-2 border-ink-4 bg-ink-0 p-5 text-left transition-colors hover:border-ratchet hover:bg-ink-1"
               }
+              whileTap={{ x: 2, y: 2 }}
+              transition={{
+                duration: BLOCK_FAST,
+                ease: "linear",
+              }}
             >
               <span className="cp-caption text-ratchet">
                 {String(index + 1).padStart(2, "0")}
               </span>
               <span className="cp-h4 mt-3 text-fg-1">{step.label}</span>
               <span className="cp-small mt-2 text-fg-3">{step.layer}</span>
-            </button>
+            </motion.button>
           );
         })}
       </div>
@@ -89,25 +97,38 @@ export function CustomerJourney() {
         role="tabpanel"
         className="border-2 border-ink-4 bg-ink-0 p-6 md:p-8"
       >
-        <p className="product-badge-active">
-          <span className="product-pulse-dot" aria-hidden />
-          Customer workflow
-        </p>
-        <h3 className="cp-h3 mt-6 text-fg-1">{selected.label}</h3>
-        <div className="mt-6 grid gap-6 md:grid-cols-2">
-          <div>
-            <p className="cp-caption text-fg-3">Customer problem</p>
-            <p className="cp-body mt-3 text-fg-2">{selected.problem}</p>
-          </div>
-          <div>
-            <p className="cp-caption text-fg-3">CodePawl response</p>
-            <p className="cp-body mt-3 text-fg-2">{selected.response}</p>
-          </div>
-        </div>
-        <div className="mt-8 border-t border-ink-4 pt-5">
-          <p className="cp-caption text-fg-3">Architecture layer</p>
-          <p className="cp-h4 mt-2 text-fg-1">{selected.layer}</p>
-        </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={selected.id}
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -10 }}
+            transition={{
+              duration: BLOCK_BASE,
+              ease: "linear",
+            }}
+          >
+            <p className="product-badge-active">
+              <span className="product-pulse-dot" aria-hidden />
+              Customer workflow
+            </p>
+            <h3 className="cp-h3 mt-6 text-fg-1">{selected.label}</h3>
+            <div className="mt-6 grid gap-6 md:grid-cols-2">
+              <div>
+                <p className="cp-caption text-fg-3">Customer problem</p>
+                <p className="cp-body mt-3 text-fg-2">{selected.problem}</p>
+              </div>
+              <div>
+                <p className="cp-caption text-fg-3">CodePawl response</p>
+                <p className="cp-body mt-3 text-fg-2">{selected.response}</p>
+              </div>
+            </div>
+            <div className="mt-8 border-t border-ink-4 pt-5">
+              <p className="cp-caption text-fg-3">Architecture layer</p>
+              <p className="cp-h4 mt-2 text-fg-1">{selected.layer}</p>
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </section>
     </div>
   );

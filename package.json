@@ -20,5 +20,8 @@
   },
   "overrides": {
     "postcss": "8.5.14"
+  },
+  "dependencies": {
+    "next": "^16.2.7"
   }
 }

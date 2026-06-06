@@ -1,5 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { Icon } from "react-bootstrap-icons";
+import { EnvelopeAt, Github, TwitterX } from "react-bootstrap-icons";
 
 import { FooterNewsletterForm } from "./footer-newsletter-form";
 
@@ -47,6 +49,30 @@ function FooterLinks({ group }: { group: keyof typeof LINKS }) {
   );
 }
 
+function FooterSocialLink({
+  href,
+  label,
+  Icon,
+  external = true,
+}: {
+  href: string;
+  label: string;
+  Icon: Icon;
+  external?: boolean;
+}) {
+  return (
+    <a
+      href={href}
+      target={external ? "_blank" : undefined}
+      rel={external ? "noopener noreferrer" : undefined}
+      className="cp-button border-ink-4 text-fg-2 hover:border-ratchet hover:text-ratchet inline-flex items-center gap-2 border px-3 py-2 transition-colors"
+    >
+      <Icon aria-hidden size={15} />
+      <span>{label}</span>
+    </a>
+  );
+}
+
 export function Footer() {
   return (
     <footer className="bg-ink-1 border-ink-4 border-t-2">
@@ -65,21 +91,23 @@ export function Footer() {
           <p className="cp-small text-fg-3 mt-3 max-w-lg">
             Infrastructure for AI agents.
           </p>
-          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
-            <a
+          <div className="mt-4 flex flex-wrap gap-2">
+            <FooterSocialLink
               href="mailto:founder@codepawl.com"
-              className="cp-link text-fg-2 hover:text-ratchet transition-colors"
-            >
-              founder@codepawl.com
-            </a>
-            <a
+              label="Email"
+              Icon={EnvelopeAt}
+              external={false}
+            />
+            <FooterSocialLink
+              href="https://github.com/codepawl"
+              label="GitHub"
+              Icon={Github}
+            />
+            <FooterSocialLink
               href="https://x.com/codepawl"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="cp-link text-fg-2 hover:text-ratchet transition-colors"
-            >
-              X @codepawl
-            </a>
+              label="X"
+              Icon={TwitterX}
+            />
           </div>
           <div className="mt-6 w-full max-w-none border-2 border-ink-4 bg-ink-0 p-4">
             <FooterNewsletterForm />

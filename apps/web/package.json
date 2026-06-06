@@ -15,16 +15,17 @@
     "test:e2e:attached": "PLAYWRIGHT_SKIP_WEBSERVER=1 playwright test"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.4.3",
     "@codepawl/shared": "workspace:*",
     "@sentry/nextjs": "^10.46.0",
     "@types/node": "22.5.0",
     "@types/react": "19.2.8",
     "@types/react-dom": "19.2.3",
+    "@wrksz/themes": "^0.9.3",
     "katex": "^0.16.11",
     "motion": "^12.38.0",
     "next": "^16.2.0-canary.8",
     "next-mdx-remote": "^6.0.0",
-    "@wrksz/themes": "^0.9.3",
     "posthog-js": "^1.375.0",
     "react": "19.2.3",
     "react-bootstrap-icons": "^1.11.6",
