@@ -1,40 +1,59 @@
-# Codepawl
+# CodePawl
 
-Open-source AI agent products plus a curated AI/ML research surface. The website and product catalog for an AI agent company.
+CodePawl is a server-side coding-agent ecosystem designed for autonomous development orchestration. The repository houses **Openpawl**, the core agent engine, along with internal tracing and memory modules.
 
-## Status
+## Project Structure
 
-Pre-MVP rebuild. May 2026. Greenfield restructure on top of a prior community-platform codebase. New design system, new monorepo layout, narrower scope.
+This project is organized as a Bun-powered monorepo containing:
+- **`apps/web`**: The public-facing website and product surface built on Next.js 16.
+- **`apps/api`**: FastAPI gateway backend service.
+- **`packages/core`** (`@codepawl/core`): The core Openpawl engine featuring LangGraph agent orchestration, trace ledger, and memory management interfaces.
+- **`packages/cli`** (`@codepawl/cli`): The command-line interface for executing and testing coding agents.
+- **`packages/shared`** (`@codepawl/shared`): Shared TypeScript definitions and interfaces.
 
-## Quick start
+## Quick Start
 
+### 1. Installation
+
+Install JavaScript/TypeScript dependencies at the root and Python dependencies for the API:
 ```bash
-# Install JS workspace deps
+# Install JS workspace dependencies
 bun install
 
-# Install Python deps for the API
+# Install Python dependencies for the API
 cd apps/api && uv sync && cd ../..
-
-# Copy env template
-cp .env.example .env.local
-
-# Run web (Next.js)
-bun --filter @codepawl/web dev
-
-# Run API (FastAPI) in another terminal
-cd apps/api && uv run uvicorn main:app --reload
 ```
+
+### 2. Copy Environment Template
+```bash
+cp .env.example .env.local
+```
+
+### 3. Run Development Servers
+
+- **Frontend (Next.js)**:
+  ```bash
+  bun dev
+  ```
+- **API (FastAPI)**:
+  ```bash
+  bun dev:api
+  ```
+- **Agent CLI (Openpawl)**:
+  ```bash
+  bun dev:cli run "Plan a code refactoring task"
+  ```
 
 Web runs on `http://localhost:3000`, API on `http://localhost:8000`.
 
 ## Documentation
 
-Specs and execution plan live in `docs/`. Start with:
-
-- `docs/PRODUCT.md` what this is and who it serves
-- `docs/ROADMAP.md` execution phases in order
-- `CLAUDE.md` rules for Claude Code in this repo
+Specs and architecture details live in the `docs/` folder:
+- [PRODUCT.md](file:///z:/home/nxank4/personal/codepawl/docs/PRODUCT.md) - Product definition and roadmap.
+- [ARCHITECTURE.md](file:///z:/home/nxank4/personal/codepawl/docs/ARCHITECTURE.md) - System design and package details.
+- [CLAUDE.md](file:///z:/home/nxank4/personal/codepawl/CLAUDE.md) - Guidelines for working on this repository.
 
 ## License
 
-TBD. The website is closed-source. Individual products listed on `/products` have their own MIT-licensed repos under the `codepawl` GitHub org.
+TBD.
+

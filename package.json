@@ -1,14 +1,24 @@
 {
   "name": "codepawl",
   "private": true,
-  "workspaces": ["apps/web", "packages/*"],
+  "workspaces": [
+    "apps/web",
+    "packages/shared",
+    "packages/core",
+    "packages/cli"
+  ],
   "scripts": {
     "dev": "bun --filter @codepawl/web dev",
     "dev:web": "rm -rf apps/web/.next/dev && bun --filter @codepawl/web dev",
+    "dev:cli": "bun --filter @codepawl/cli dev",
     "build": "bun --filter @codepawl/web build",
     "start": "bun --filter @codepawl/web start",
     "lint": "bun --filter @codepawl/web lint",
-    "typecheck": "bun --filter @codepawl/web typecheck",
+    "typecheck": "bun typecheck:shared && bun typecheck:core && bun typecheck:cli && bun typecheck:web",
+    "typecheck:web": "bun --filter @codepawl/web typecheck",
+    "typecheck:shared": "bun --filter @codepawl/shared typecheck",
+    "typecheck:core": "bun --filter @codepawl/core typecheck",
+    "typecheck:cli": "bun --filter @codepawl/cli typecheck",
     "test": "bun --filter @codepawl/web test",
     "test:e2e": "cd apps/web && bunx playwright test --reporter=line",
     "test:e2e:attached": "cd apps/web && PLAYWRIGHT_SKIP_WEBSERVER=1 bunx playwright test --reporter=line",

@@ -34,7 +34,9 @@ apps/
   web/          Next.js 16 frontend
   api/          FastAPI backend
 packages/
-  shared/       Shared TypeScript types and JSON schemas
+  core/         @codepawl/core - LangGraph agent orchestration, trace ledger, state schemas
+  cli/          @codepawl/cli - developer agent execution CLI
+  shared/       @codepawl/shared - Shared TypeScript types and JSON schemas
 ```
 
 Bun workspaces drives the JS side. Python lives in `apps/api/` with its own `pyproject.toml`.
@@ -43,9 +45,14 @@ Bun workspaces drives the JS side. Python lives in `apps/api/` with its own `pyp
 
 - Install JS deps: `bun install`
 - Install Python deps: `cd apps/api && uv sync`
-- Run web dev: `bun --filter @codepawl/web dev`
-- Run API dev: `cd apps/api && uv run uvicorn main:app --reload`
-- Typecheck web: `bun --filter @codepawl/web typecheck`
+- Run web dev: `bun dev` (runs `@codepawl/web dev`)
+- Run API dev: `bun dev:api` (runs FastAPI server)
+- Run CLI dev: `bun dev:cli run "your-query"`
+- Typecheck all JS/TS workspace projects: `bun typecheck`
+- Typecheck web: `bun typecheck:web`
+- Typecheck core: `bun typecheck:core`
+- Typecheck cli: `bun typecheck:cli`
+- Typecheck shared: `bun typecheck:shared`
 - Typecheck API: `cd apps/api && uv run mypy .`
 - Lint web: `bun --filter @codepawl/web lint`
 - Lint API: `cd apps/api && uv run ruff check .`

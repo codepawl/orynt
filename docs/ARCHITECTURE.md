@@ -8,7 +8,7 @@
 
 **Supabase Postgres for data, Auth, Realtime, Storage.** One vendor, four services, less integration glue. Auth is the most valuable piece: OAuth providers and email auth come free. Marketing site does not need user state, but the `(app)` route group will.
 
-**Bun workspaces for the monorepo.** Bun installs and runs faster than npm/pnpm and the team already standardized on it. Workspaces keep `web`, `api`, and `shared` types in one repo without lerna or turbo orchestration.
+**Bun workspaces for the monorepo.** Bun installs and runs faster than npm/pnpm. Workspace packages are normalized around `apps/*` and `packages/*`. Workspaces isolate the Next.js frontend (`web`), shared interfaces (`shared`), the Openpawl core agent loop (`core`), and the CLI tool (`cli`) cleanly.
 
 **Tailwind v4 with CSS-first config.** Design tokens live in `@theme` directives, generating utilities automatically. The sharp-corner design system is enforced at the token level.
 
@@ -80,12 +80,26 @@ Internal layout:
 - `app/jobs/` APScheduler job definitions: `sync_github_stats.py`.
 - `migrations/` Supabase SQL migrations, timestamped.
 
+### packages/core (TypeScript)
+
+- **Responsibility**: Implement the Openpawl core agent framework, including LangGraph agent orchestration (`StateGraph`), the auditing and token-tracking trace ledger (`TraceLedger`), and state memory interfaces (`MemoryManager`).
+- **Path**: `packages/core/`
+- **Depends on**: `@codepawl/shared`
+- **Depended on by**: `@codepawl/cli`, `apps/web` (future integration)
+
+### packages/cli (TypeScript)
+
+- **Responsibility**: Expose CLI tools to execute, test, and debug coding agents.
+- **Path**: `packages/cli/`
+- **Depends on**: `@codepawl/core`, `@codepawl/shared`
+- **Depended on by**: Local developer terminal runs
+
 ### packages/shared (TypeScript)
 
 - **Responsibility**: Shared types and JSON schemas used by both web and API. Generated from Pydantic models via `datamodel-code-generator`.
 - **Path**: `packages/shared/`
 - **Depends on**: nothing
-- **Depended on by**: `apps/web`
+- **Depended on by**: `apps/web`, `@codepawl/core`, `@codepawl/cli`
 
 Generation flow: Pydantic models are source of truth, JSON Schema is emitted from FastAPI's OpenAPI doc, TypeScript types are generated into `packages/shared/src/generated/`. Hand-written types live in `packages/shared/src/types/`.
 
