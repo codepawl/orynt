@@ -150,49 +150,44 @@ export class MockLlmProvider implements LlmProvider {
     const firstMessage = messages.find(m => m.role === "user")?.content ?? "";
     const firstLineOfLastMessage = lastMessage.trimStart().split(/\r?\n/, 2)[0] ?? "";
 
-    for (const rule of this.rules) {
-      if (rule.matchQuery) {
-        const pattern = rule.matchQuery;
-        let isMatch = false;
-        try {
-          const regex = new RegExp(pattern);
-          if (regex.test(firstMessage)) {
-            isMatch = true;
-          }
-        } catch (e) {
-          // Ignore regex parsing error
-        }
-        if (firstMessage.includes(pattern)) {
+    const hasPatternMatch = (text: string, pattern: string): boolean => {
+      let isMatch = false;
+      try {
+        const regex = new RegExp(pattern);
+        if (regex.test(text)) {
           isMatch = true;
         }
+      } catch {
+        // Ignore regex parsing errors and fall back to substring matching.
+      }
 
-        if (isMatch) {
-          return rule.response;
-        }
+      return (
+        isMatch ||
+        text === pattern ||
+        text.startsWith(`${pattern}:`) ||
+        text.startsWith(`${pattern} `) ||
+        text.includes(pattern)
+      );
+    };
+
+    for (const rule of this.rules) {
+      let isMatch = true;
+
+      if (rule.matchQuery) {
+        isMatch = hasPatternMatch(firstMessage, rule.matchQuery);
       }
 
       if (rule.matchLastMessage) {
-        const pattern = rule.matchLastMessage;
-        let isMatch = false;
-        try {
-          const regex = new RegExp(pattern);
-          if (regex.test(firstLineOfLastMessage)) {
-            isMatch = true;
-          }
-        } catch (e) {
-          // Ignore regex parsing error
-        }
-        if (
-          firstLineOfLastMessage === pattern ||
-          firstLineOfLastMessage.startsWith(`${pattern}:`) ||
-          firstLineOfLastMessage.startsWith(`${pattern} `)
-        ) {
-          isMatch = true;
-        }
+        isMatch = isMatch && hasPatternMatch(firstLineOfLastMessage, rule.matchLastMessage);
+      }
 
-        if (isMatch) {
-          return rule.response;
-        }
+      if (isMatch && !rule.matchQuery && !rule.matchLastMessage) {
+        // Keep legacy behavior: wildcard-like rule should always apply.
+        return rule.response;
+      }
+
+      if (isMatch) {
+        return rule.response;
       }
     }
 

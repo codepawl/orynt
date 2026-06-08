@@ -1,5 +1,6 @@
 [
   {
+    "matchQuery": "auth helpers",
     "matchLastMessage": "Scope Context Pack",
     "response": {
       "content": "{\"rationale\": \"The task requires adding tests for authentication helpers. Based on the repository scan, the relevant module is in packages/core/src.\", \"affectedModules\": [\"packages/core/src\"], \"proposedFilesToModify\": [], \"proposedFilesToCreate\": [\"packages/core/src/__tests__/auth-helpers.test.ts\"]}",
@@ -7,9 +8,40 @@
     }
   },
   {
+    "matchQuery": "auth helpers",
     "matchLastMessage": "Patch Context Pack",
     "response": {
       "content": "{\"rationale\": \"Generating patch based on selected files.\", \"chunks\": []}",
+      "usage": { "inputTokens": 120, "outputTokens": 60 }
+    }
+  },
+  {
+    "matchQuery": "Openpawl trace ledger",
+    "matchLastMessage": "Scope Context Pack",
+    "response": {
+      "content": "{\"rationale\": \"The task targets trace-ledger validation behavior. Relevant module is in packages/core/src.\", \"affectedModules\": [\"packages/core/src\"], \"proposedFilesToModify\": [], \"proposedFilesToCreate\": [\"packages/core/src/__tests__/trace-ledger.generated.test.ts\"]}",
+      "usage": { "inputTokens": 128, "outputTokens": 88 }
+    }
+  },
+  {
+    "matchQuery": "Openpawl trace ledger",
+    "matchLastMessage": "Patch Context Pack",
+    "response": {
+      "content": "{\"rationale\": \"Generate a focused scaffold test for the trace ledger module.\", \"chunks\": [{\"type\": \"create\", \"file\": \"packages/core/src/__tests__/trace-ledger.generated.test.ts\", \"description\": \"Create a minimal Vitest scaffold for trace-ledger coverage.\"}]}",
+      "usage": { "inputTokens": 128, "outputTokens": 92 }
+    }
+  },
+  {
+    "matchLastMessage": "Scope Context Pack",
+    "response": {
+      "content": "{\"rationale\": \"Generic scope fallback for deterministic mock runs.\", \"affectedModules\": [\"packages/core/src\"], \"proposedFilesToModify\": [], \"proposedFilesToCreate\": [\"packages/core/src/__tests__/generic.generated.test.ts\"]}",
+      "usage": { "inputTokens": 120, "outputTokens": 80 }
+    }
+  },
+  {
+    "matchLastMessage": "Patch Context Pack",
+    "response": {
+      "content": "{\"rationale\": \"Generic patch fallback for deterministic mock runs.\", \"chunks\": []}",
       "usage": { "inputTokens": 150, "outputTokens": 50 }
     }
   }
