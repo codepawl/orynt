@@ -53,6 +53,9 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     apiKey,
     baseUrl,
     includePromptMetadata = false,
+    maxTokens,
+    scopeAnalysisMaxTokens,
+    patchPlanMaxTokens,
   } = options;
 
   // Resolve workspace directory
@@ -74,7 +77,15 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
 
   // Set up LLM provider. Mock remains the default unless explicitly configured.
   const fixturePath = mockFixturePath ?? DEFAULT_MOCK_FIXTURE_PATH;
-  const providerConfig = resolveProviderConfig({ provider, model, apiKey, baseUrl });
+  const providerConfig = resolveProviderConfig({
+    provider,
+    model,
+    apiKey,
+    baseUrl,
+    maxTokens,
+    scopeAnalysisMaxTokens,
+    patchPlanMaxTokens,
+  });
   const llm = createLlmProvider(providerConfig, fixturePath);
 
   // Set up trace ledger after startup validation/config resolution succeeds.
@@ -121,6 +132,8 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       providerName: llm.providerName,
       modelName: llm.modelName,
       includePromptMetadata,
+      scopeAnalysisMaxTokens: providerConfig.scopeAnalysisMaxTokens,
+      patchPlanMaxTokens: providerConfig.patchPlanMaxTokens,
     },
     nextNode: null,
     isComplete: false,

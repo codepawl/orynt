@@ -27,6 +27,60 @@ export interface TraceSummary {
   readonly steps: ReadonlyArray<AgentStep>;
 }
 
+function redactTraceString(value: string): string {
+  return value
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+    .replace(/sk-[A-Za-z0-9_-]{12,}/g, "sk-[REDACTED]")
+    .replace(/[A-Za-z0-9_-]{32,}/g, "[REDACTED_TOKEN]");
+}
+
+function summarizeMessage(message: AgentMessage): Record<string, unknown> {
+  return {
+    id: message.id,
+    role: message.role,
+    name: message.name,
+    timestamp: message.timestamp,
+    contentLength: message.content.length,
+  };
+}
+
+function sanitizeTraceValue(value: unknown, key?: string): unknown {
+  if (typeof value === "string") {
+    if (key === "content") {
+      return { omitted: "content", length: value.length };
+    }
+    return redactTraceString(value);
+  }
+
+  if (Array.isArray(value)) {
+    if (key === "messages") {
+      return value.map((item) => {
+        if (
+          typeof item === "object" &&
+          item !== null &&
+          "role" in item &&
+          "content" in item &&
+          typeof (item as { content?: unknown }).content === "string"
+        ) {
+          return summarizeMessage(item as AgentMessage);
+        }
+        return sanitizeTraceValue(item);
+      });
+    }
+    return value.map((item) => sanitizeTraceValue(item));
+  }
+
+  if (typeof value === "object" && value !== null) {
+    const sanitized: Record<string, unknown> = {};
+    for (const [entryKey, entryValue] of Object.entries(value)) {
+      sanitized[entryKey] = sanitizeTraceValue(entryValue, entryKey);
+    }
+    return sanitized;
+  }
+
+  return value;
+}
+
 /**
  * Ledger implementation to record, trace and audit agent runs.
  */
@@ -72,18 +126,23 @@ export class TraceLedger {
       name,
       severity,
       timestamp: new Date().toISOString(),
-      payload: payload ?? null,
+      payload: sanitizeTraceValue(payload ?? null),
     };
     this.events.push(event);
     return event;
   }
 
   public addStep(step: AgentStep): void {
-    this.steps.push(step);
+    const sanitizedStep: AgentStep = {
+      ...step,
+      input: sanitizeTraceValue(step.input),
+      output: sanitizeTraceValue(step.output),
+    };
+    this.steps.push(sanitizedStep);
     this.recordEvent("node_end", step.nodeName, "info", {
       action: step.action,
       durationMs: step.durationMs,
-      output: step.output,
+      output: sanitizedStep.output,
     });
   }
 

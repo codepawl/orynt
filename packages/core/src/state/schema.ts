@@ -43,6 +43,8 @@ export interface AgentContext {
   readonly providerName?: string;
   readonly modelName?: string;
   readonly includePromptMetadata?: boolean;
+  readonly scopeAnalysisMaxTokens?: number;
+  readonly patchPlanMaxTokens?: number;
 }
 
 /**
@@ -100,6 +102,9 @@ export interface RunOptions {
   readonly apiKey?: string;
   readonly baseUrl?: string;
   readonly includePromptMetadata?: boolean;
+  readonly maxTokens?: number;
+  readonly scopeAnalysisMaxTokens?: number;
+  readonly patchPlanMaxTokens?: number;
 }
 
 export interface RunResult {
@@ -143,9 +148,7 @@ export interface FileSelectionResult {
 
 export interface PatchChunk {
   readonly type: "create" | "modify" | "delete";
-  readonly path: string;
-  readonly content?: string;
-  readonly targetContent?: string;
+  readonly file: string;
   readonly description: string;
 }
 

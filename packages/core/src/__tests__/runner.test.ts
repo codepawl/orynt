@@ -146,12 +146,34 @@ describe("runAgent — dry-run mode", () => {
     await expectRequiredArtifacts(runDir);
   });
 
-  it("uses placeholder validation for review-only dry-runs without an explicit command", async () => {
+  it("runs explicit bun test command and preserves artifacts on failure", async () => {
     const result = await runAgent({
-      query: "review current repository changes",
+      query: "add tests for the Openpawl trace ledger",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "bun test --preload ./missing-openpawl-preload.ts",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Validation command failed.");
+    expect(result.state.validationResult?.commandsRun[0]?.command).toBe(
+      "bun test --preload ./missing-openpawl-preload.ts"
+    );
+    expect(result.state.validationResult?.commandsRun[0]?.exitCode).not.toBe(0);
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+  });
+
+  it("uses placeholder validation for any dry-run without an explicit command", async () => {
+    const result = await runAgent({
+      query: "add tests for the Openpawl trace ledger",
       workspaceDir: tmpDir,
       dryRun: true,
       mockFixturePath: FIXTURE_PATH,
+      provider: "mock",
+      model: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
     });
 
     expect(result.success).toBe(true);
@@ -164,8 +186,7 @@ describe("runAgent — dry-run mode", () => {
 
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("Placeholder validation");
-    expect(report).toContain("No changed files available in current context");
-    expect(report).not.toContain("auth-helpers.test.ts");
+    expect(result.state.validationResult?.commandsRun[0]?.stdout).toContain("placeholder validation skipped");
   });
 
   it("report.md contains task, run ID, and mode information", async () => {
@@ -184,6 +205,27 @@ describe("runAgent — dry-run mode", () => {
     expect(report).toContain(result.runId);
     expect(report).toContain("Dry-run");
     expect(report).toContain(task);
+  });
+
+  it("report.md Next Suggested Human Action references concrete patch-plan path and run ID", async () => {
+    const result = await runAgent({
+      query: "review current repository changes",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+
+    const suggestedActionSection = report
+      .split("## 🚀 Next Suggested Human Action\n\n")[1]
+      ?.split("\n\n---")[0];
+
+    expect(suggestedActionSection).toContain(result.runId);
+    expect(suggestedActionSection).toContain(`.codepawl/runs/${result.runId}/patch-plan.json`);
+    expect(report).not.toContain("${runId}");
   });
 
   it("trace.json is valid JSON with events array", async () => {
@@ -254,9 +296,7 @@ describe("runAgent — write mode safety guardrails", () => {
             chunks: [
               {
                 type: "modify",
-                path: "bun.lock",
-                content: "tampered-content",
-                targetContent: "fake lock",
+                file: "bun.lock",
                 description: "Tamper the lockfile",
               },
             ],
@@ -362,6 +402,13 @@ describe("runAgent — error handling", () => {
             usage: { inputTokens: 3, outputTokens: 2 },
           },
         },
+        {
+          matchLastMessage: "Structured Output Retry",
+          response: {
+            content: JSON.stringify({ unexpected: "still wrong" }),
+            usage: { inputTokens: 2, outputTokens: 2 },
+          },
+        },
       ]),
       "utf-8"
     );
@@ -375,7 +422,9 @@ describe("runAgent — error handling", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("scope_analysis provider response failed schema validation");
+    expect(result.error).toContain("provider=mock");
+    expect(result.error).toContain("purpose=scope_analysis");
+    expect(result.error).toContain("category=schema_validation");
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
@@ -384,7 +433,298 @@ describe("runAgent — error handling", () => {
     const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: unknown }> };
     expect(trace.events.some((event) =>
       event.name === "scope_analysis_response" &&
-      JSON.stringify(event.payload).includes("\"validationStatus\":\"invalid\"")
+      JSON.stringify(event.payload).includes("\"validationStatus\":\"schema_invalid\"") &&
+      JSON.stringify(event.payload).includes("\"parseCategory\":\"schema_validation\"") &&
+      JSON.stringify(event.payload).includes("\"contentPreview\"")
+    )).toBe(true);
+  });
+
+  it("retries malformed scope_analysis JSON once and succeeds with a compact prompt", async () => {
+    const retryFixturePath = path.join(tmpDir, "malformed-then-valid-scope.json");
+    await fs.writeFile(
+      retryFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Repository Scan Result",
+          response: {
+            content: "{ \"rationale\": The user requests tests }",
+            finishReason: "stop",
+            usage: { inputTokens: 10, outputTokens: 4 },
+          },
+        },
+        {
+          matchLastMessage: "Structured Output Retry",
+          response: {
+            content: JSON.stringify({
+              rationale: "Retry returned valid scope.",
+              affectedModules: ["packages/core"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["packages/core/src/__tests__/trace-ledger.test.ts"],
+            }),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 6 },
+          },
+        },
+        {
+          matchLastMessage: "Selected Files Content",
+          response: {
+            content: JSON.stringify({ rationale: "No code chunks in dry-run.", chunks: [] }),
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for the Openpawl trace ledger",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: retryFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.scopeAnalysisResult?.rationale).toBe("Retry returned valid scope.");
+
+    const traceRaw = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "trace.json"), "utf-8");
+    const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: Record<string, unknown> }> };
+    const retry = trace.events.find((event) => event.name === "provider_structured_retry");
+    const response = trace.events.find((event) => event.name === "scope_analysis_response");
+    expect(retry?.payload.parseCategory).toBe("malformed_json");
+    expect(retry?.payload.finishReason).toBe("stop");
+    expect(retry?.payload.contentLength).toBeGreaterThan(0);
+    expect(response?.payload.retryAttempt).toBe(1);
+  });
+
+  it("retries schema-invalid patch_plan once and succeeds", async () => {
+    const retryFixturePath = path.join(tmpDir, "schema-then-valid-patch.json");
+    await fs.writeFile(
+      retryFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Repository Scan Result",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope trace tests.",
+              affectedModules: ["packages/core"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["packages/core/src/__tests__/trace-ledger.test.ts"],
+            }),
+            usage: { inputTokens: 3, outputTokens: 4 },
+          },
+        },
+        {
+          matchLastMessage: "Selected Files Content",
+          response: {
+            content: JSON.stringify({
+              rationale: "Missing chunk description.",
+              chunks: [{ type: "create", file: "packages/core/src/__tests__/trace-ledger.test.ts" }],
+            }),
+            finishReason: "stop",
+            usage: { inputTokens: 4, outputTokens: 4 },
+          },
+        },
+        {
+          matchLastMessage: "Structured Output Retry",
+          response: {
+            content: JSON.stringify({
+              rationale: "Retry returned metadata-only plan.",
+              chunks: [
+                {
+                  type: "create",
+                  file: "packages/core/src/__tests__/trace-ledger.test.ts",
+                  description: "Create trace ledger tests.",
+                },
+              ],
+            }),
+            finishReason: "stop",
+            usage: { inputTokens: 3, outputTokens: 5 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for the Openpawl trace ledger",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: retryFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.patchPlan?.chunks[0]?.description).toBe("Create trace ledger tests.");
+
+    const traceRaw = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "trace.json"), "utf-8");
+    const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: Record<string, unknown> }> };
+    const retry = trace.events.find((event) => event.name === "provider_structured_retry");
+    const response = trace.events.find((event) => event.name === "patch_plan_response");
+    expect(retry?.payload.parseCategory).toBe("schema_validation");
+    expect(retry?.payload.schemaValidationPath).toBe("chunks[0].description");
+    expect(response?.payload.retryAttempt).toBe(1);
+  });
+
+  it("reports actionable metadata when malformed JSON retry also fails", async () => {
+    const retryFailureFixturePath = path.join(tmpDir, "malformed-retry-fails.json");
+    await fs.writeFile(
+      retryFailureFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Repository Scan Result",
+          response: {
+            content: "{ \"rationale\": The user requests tests }",
+            finishReason: "stop",
+            usage: { inputTokens: 10, outputTokens: 4 },
+          },
+        },
+        {
+          matchLastMessage: "Structured Output Retry",
+          response: {
+            content: "{ \"rationale\": Still not quoted }",
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 3 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for the Openpawl trace ledger",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: retryFailureFixturePath,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("category=malformed_json");
+    expect(result.error).toContain("finish_reason=stop");
+    expect(result.error).toContain("content_length=");
+
+    const traceRaw = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "trace.json"), "utf-8");
+    const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: Record<string, unknown> }> };
+    const response = trace.events.find((event) => event.name === "scope_analysis_response");
+    expect(response?.payload.parseCategory).toBe("malformed_json");
+    expect(response?.payload.finishReason).toBe("stop");
+    expect(response?.payload.contentLength).toBeGreaterThan(0);
+    expect(response?.payload.responseFormatRequested).toBe(true);
+  });
+
+  it("does not write full prompts or secrets to trace metadata", async () => {
+    const secretFixturePath = path.join(tmpDir, "secret-preview-redaction.json");
+    const secret = "sk-abcdefghijklmnopqrstuvwxyz123456";
+    await fs.writeFile(
+      secretFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Repository Scan Result",
+          response: {
+            content: `{ "rationale": ${secret} }`,
+            finishReason: "stop",
+            usage: { inputTokens: 10, outputTokens: 4 },
+          },
+        },
+        {
+          matchLastMessage: "Structured Output Retry",
+          response: {
+            content: JSON.stringify({
+              rationale: "Retry returned valid scope.",
+              affectedModules: ["packages/core"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: [],
+            }),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 6 },
+          },
+        },
+        {
+          matchLastMessage: "Selected Files Content",
+          response: {
+            content: JSON.stringify({ rationale: "No file changes.", chunks: [] }),
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: `add tests for token ${secret}`,
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: secretFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    const traceRaw = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "trace.json"), "utf-8");
+    expect(traceRaw).not.toContain(secret);
+    expect(traceRaw).not.toContain("Repository Scan Result");
+    expect(traceRaw).not.toContain("Return JSON object only");
+    expect(traceRaw).toContain("sk-[REDACTED]");
+  });
+
+  it("records provider_schema_repaired when patch_plan aliases are safely repaired", async () => {
+    const repairFixturePath = path.join(tmpDir, "repair-fixture.json");
+    await fs.writeFile(
+      repairFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Repository Scan Result",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope existing trace file.",
+              affectedModules: ["packages/core/src"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["packages/core/src/__tests__/trace-ledger.test.ts"],
+            }),
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+        },
+        {
+          matchLastMessage: "Selected Files Content",
+          response: {
+            content: JSON.stringify({
+              rationale: "Create a trace ledger test.",
+              chunks: [
+                {
+                  type: "create",
+                  path: "packages/core/src/__tests__/trace-ledger.test.ts",
+                  summary: "Create trace ledger tests.",
+                },
+              ],
+            }),
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for the Openpawl trace ledger",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: repairFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+
+    const patchPlanRaw = await fs.readFile(path.join(runDir, "patch-plan.json"), "utf-8");
+    const patchPlan = JSON.parse(patchPlanRaw) as { chunks: Array<Record<string, unknown>> };
+    expect(patchPlan.chunks[0]?.["file"]).toBe("packages/core/src/__tests__/trace-ledger.test.ts");
+    expect(patchPlan.chunks[0]?.["description"]).toBe("Create trace ledger tests.");
+    expect(patchPlan.chunks[0]?.["path"]).toBeUndefined();
+    expect(patchPlan.chunks[0]?.["summary"]).toBeUndefined();
+
+    const traceRaw = await fs.readFile(path.join(runDir, "trace.json"), "utf-8");
+    const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: unknown }> };
+    expect(trace.events.some((event) =>
+      event.name === "provider_schema_repaired" &&
+      JSON.stringify(event.payload).includes("\"alias\":\"path\"") &&
+      JSON.stringify(event.payload).includes("\"alias\":\"summary\"")
     )).toBe(true);
   });
 });

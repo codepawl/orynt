@@ -10,6 +10,14 @@
 
 This walkthrough documents the implementation of the Openpawl MVP — a complete, locally-runnable and CI/CD-ready server-side coding-agent workflow for GitHub repositories. All work is in the `codepawl` monorepo under `packages/core` and `packages/cli`.
 
+### CLI Branding
+
+- Symbol logo: `[>.-]`
+- Compact status marker: `>.-`
+- Source of truth: `packages/cli/src/branding.ts`
+- Full logo rendering uses a colored terminal badge around `[>.-]` when color is enabled.
+- CLI color can be disabled with `NO_COLOR=1` or `OPENPAWL_COLOR=0`; `OPENPAWL_COLOR=1` forces badge color for local smoke checks.
+
 ### 2026-06-08 Artifact Path Regression Fix
 
 **Bug:** `bun run dev:cli -- run --repo . --task "add tests for shared helpers" --dry-run` was writing run artifacts under `packages/cli/.codepawl/runs/<run-id>/` because Bun workspace filtering starts the CLI with `process.cwd()` set to `packages/cli`.
@@ -352,10 +360,10 @@ Issue found before re-tagging `v0.1.0-alpha.1`:
 bun run dev:cli -- run --repo . --task "review current repository changes" --dry-run
 ```
 
-The run produced all five artifacts but exited `1` because the validation node defaulted to `bun test` when no explicit `--test-cmd` was provided. That made deterministic review-only release smoke checks depend on unrelated local test state.
+The run produced all five artifacts but exited `1` because the validation node defaulted to `bun test` when no explicit `--test-cmd` was provided. That made deterministic dry-run release smoke checks depend on unrelated local test state.
 
 Fix:
-- Review-only dry-runs without an explicit validation command now use safe placeholder validation.
+- Dry-runs without an explicit validation command now use safe placeholder validation.
 - The placeholder is recorded as `echo placeholder validation skipped`.
 - The generated report labels it as `Placeholder validation`.
 - Explicit validation commands still run normally and still fail the run when they exit non-zero.
@@ -385,6 +393,17 @@ Report verification:
 
 ✅ **PASS** — Review-only RC smoke now exits `0` and produces all five artifacts under the target repo root.
 
+Real-provider validation follow-up (DeepInfra/Nemotron):
+- A real-provider dry-run using `OPENPAWL_PROVIDER=openai-compatible` and
+  `OPENPAWL_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B` now verifies cleanly in Smoke.
+- Observed run status: `SUCCESS`.
+- Trace `llmCallsCount`: `2` (`scope_analysis`, `patch_plan`).
+- `patch-plan.json` validated as valid metadata-only contract output.
+- No structured-output retry was needed.
+- `validationStatus` was `valid` for provider model responses.
+- Remaining token cost for this smoke is around `6k` total (shared run-specific variance).
+- Placeholder validation behavior still defaults on dry-run without `--test-cmd`, including real-provider runs.
+
 ---
 
 ### Experimental OpenAI-Compatible Provider Integration
@@ -397,26 +416,103 @@ Status:
   - `OPENPAWL_MODEL=<model>`
   - `OPENPAWL_API_KEY=<key>`
   - `OPENPAWL_BASE_URL=<optional base url>`
+  - `OPENPAWL_MAX_TOKENS=<optional structured-output token cap>`
+  - `OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS=<optional scope_analysis override>`
+  - `OPENPAWL_PATCH_PLAN_MAX_TOKENS=<optional patch_plan override>`
 - CLI overrides:
   - `--provider mock|openai-compatible`
   - `--model <model>`
-  - `--include-prompt-metadata`
+- `--include-prompt-metadata`
 
 Behavior:
 - `OPENPAWL_PROVIDER` defaults to `mock`.
 - `openai-compatible` requires `OPENPAWL_MODEL` and `OPENPAWL_API_KEY`.
 - Missing required provider config fails fast before a run starts.
-- Real provider requests use chat completions with JSON response format.
-- Scope and patch-plan outputs are schema-validated before use.
+- Real provider requests use chat completions with JSON response format and bounded structured-output token caps.
+- Scope and patch-plan outputs are extracted from common model formats and then schema-validated with Zod before use.
+- Supported response formats include clean JSON, whitespace around JSON, markdown fenced JSON, and extra text around one safely extractable JSON object.
 - Invalid provider output produces a clear validation error and preserves artifacts when the run has started.
-- Trace records provider name, model name, request purpose, response validation status, and token usage when available.
+- Malformed JSON or schema validation failure triggers one compact structured-output retry with only the expected schema, previous error category/path, and task summary.
+- Trace records provider name, model name, request purpose, response-format request status, parse status, validation status, schema validation path, finish reason, content length, redacted content preview on parse/schema errors, and token usage when available.
 - Trace does not record API keys, secrets, or full prompt content by default.
 - `--include-prompt-metadata` records only redacted prompt counts and character sizes.
+- OpenAI-compatible transport does not guarantee schema adherence for every model. Some models may need the structured retry, lower temperature, or a different model with stronger JSON-mode behavior.
+- Run reports intentionally keep emoji section headers and `---` separators to match existing CLI-style GitHub-ready markdown formatting.
+
+Provider connectivity smoke:
+```bash
+curl -sS "${OPENPAWL_BASE_URL:-https://api.openai.com/v1}/chat/completions" \
+  -H "Authorization: Bearer $OPENPAWL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "'"$OPENPAWL_MODEL"'",
+    "messages": [
+      { "role": "user", "content": "Return exactly this JSON object: {\"ok\":true}" }
+    ],
+    "response_format": { "type": "json_object" },
+    "max_tokens": 64
+  }'
+```
+
+Agent structured smoke:
+```bash
+OPENPAWL_PROVIDER=openai-compatible \
+OPENPAWL_MODEL=<model> \
+OPENPAWL_BASE_URL=<base-url> \
+OPENPAWL_API_KEY=<key> \
+OPENPAWL_MAX_TOKENS=2000 \
+bun run dev:cli -- run \
+  --repo . \
+  --task "add tests for the Openpawl trace ledger" \
+  --dry-run
+```
+
+Explicit full-validation variant:
+```bash
+OPENPAWL_PROVIDER=openai-compatible \
+OPENPAWL_MODEL=<model> \
+OPENPAWL_BASE_URL=<base-url> \
+OPENPAWL_API_KEY=<key> \
+bun run dev:cli -- run \
+  --repo . \
+  --task "add tests for the Openpawl trace ledger" \
+  --dry-run \
+  --test-cmd "bun test"
+```
+
+Observed real-provider failure before parse hardening:
+- Provider call succeeded with `provider=openai-compatible`.
+- Model: `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B`.
+- Trace recorded `llmCallsCount: 1`.
+- Run failed in `scope_analysis` with `scope_analysis provider response was not valid JSON`.
+
+Hardening fix:
+- JSON parsing now handles fenced JSON and single balanced JSON objects embedded in surrounding text.
+- Provider-specific fields such as `reasoning_content` are ignored and are not treated as output content.
+- If JSON cannot be extracted, the error includes provider, model, purpose, parse category, schema validation path when available, finish reason, content length, and a capped redacted content preview.
+- If provider output is likely truncated, such as `finish_reason=length` or unbalanced JSON ending mid-object, the parse category is `truncated_output`.
+- If `finish_reason=stop` still returns invalid JSON, the parse category remains `malformed_json`.
+- If JSON parses but fails schema validation, the run fails clearly without coercing the content into a valid shape.
+- A one-time structured retry is recorded as `provider_structured_retry`.
+
+Patch-plan contract hardening:
+- `patch_plan` is metadata-only in the current MVP: `rationale` plus up to five `{ type, file, description }` chunks.
+- The patch-plan prompt is intentionally short and does not ask for code chunks, diffs, `content`, or `targetContent`.
+- Too many chunks fail schema validation instead of being silently accepted.
+- Final Zod validation remains strict.
+- A narrow audited repair layer accepts only safe aliases:
+  - `path` string -> `file`
+  - `summary`, `reason`, or `details` string -> `description`
+- Repairs are recorded in trace as `provider_schema_repaired`.
+- Missing or non-string descriptions still fail with schema errors including `chunks[0].description`.
 
 Verification added:
 - Provider config resolution defaults to mock.
 - Missing `OPENPAWL_API_KEY` for `openai-compatible` fails clearly.
 - OpenAI-compatible client tests use mocked `fetch` only.
+- Provider JSON parser tests cover clean JSON, whitespace, fenced JSON, extra text with one extractable object, invalid JSON, and invalid schema.
+- Patch-plan schema tests cover valid chunks, missing `description`, non-string `description`, safe alias repair, and trace repair auditing.
+- Dry-run validation tests cover placeholder validation without `--test-cmd` and explicit `bun test` failure preserving artifacts.
 - Invalid provider-shaped output is covered with a local mock fixture and still writes all five artifacts.
 - Existing deterministic mock behavior remains covered.
 

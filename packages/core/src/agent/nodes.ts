@@ -10,11 +10,15 @@ import {
   ScopeAnalysisResult,
   FileSelectionResult,
   PatchPlan,
-  PatchChunk,
   ValidationResult,
   ReportResult,
 } from "../state/schema";
-import { LlmProvider, ProviderResponseValidationError } from "../providers/llm";
+import { LlmCompletionResult, LlmProvider } from "../providers/llm";
+import {
+  ProviderJsonOutputError,
+  parsePatchPlanResponse,
+  parseScopeAnalysisResponse,
+} from "../providers/json-output";
 import { TraceLedger } from "../ledger/trace";
 import {
   SafetyViolationError,
@@ -33,6 +37,10 @@ const BINARY_FILE_EXTENSION_RE =
   /\.(png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot|otf|mp4|webm|mp3|pdf|zip|tar|gz|rar|bin|exe|dll|so|dylib)$/i;
 
 const PLACEHOLDER_VALIDATION_COMMAND = "echo placeholder validation skipped";
+const DEFAULT_SCOPE_ANALYSIS_MAX_TOKENS = 1200;
+const DEFAULT_PATCH_PLAN_MAX_TOKENS = 1600;
+const SCOPE_ANALYSIS_JSON_SCHEMA = `{"rationale":"string","affectedModules":["string"],"proposedFilesToModify":["relative/path"],"proposedFilesToCreate":["relative/path"]}`;
+const PATCH_PLAN_JSON_SCHEMA = `{"rationale":"string","chunks":[{"type":"create|modify|delete","file":"relative/path","description":"string"}]}`;
 
 function isBinaryFilePath(filePath: string): boolean {
   return BINARY_FILE_EXTENSION_RE.test(filePath);
@@ -46,7 +54,7 @@ function isReviewOnlyTask(query: string): boolean {
 }
 
 function shouldUsePlaceholderValidation(state: AgentState): boolean {
-  return state.context.dryRun && !state.context.testCommand && isReviewOnlyTask(state.query);
+  return state.context.dryRun && !state.context.testCommand;
 }
 
 function isPlaceholderValidationCommand(command: string): boolean {
@@ -65,91 +73,128 @@ function providerPayload(
   llm: LlmProvider,
   purpose: string,
   messages?: ReadonlyArray<{ content: string }>,
-  responseFormat: "json_object" | "text" = "json_object"
+  responseFormat: "json_object" | "text" = "json_object",
+  maxTokens?: number
 ): Record<string, unknown> {
   return {
     provider: llm.providerName,
     model: llm.modelName,
     purpose,
     responseFormat,
+    responseFormatRequested: responseFormat === "json_object",
+    maxTokens: maxTokens ?? null,
     ...(state.context.includePromptMetadata && messages
       ? { promptMetadata: promptMetadata(messages) }
       : {}),
   };
 }
 
-function parseJsonObject(content: string, purpose: string): unknown {
+function providerErrorPayload(
+  llm: LlmProvider,
+  purpose: string,
+  err: unknown,
+  tokenUsage?: { readonly inputTokens: number; readonly outputTokens: number },
+  finishReason?: string,
+  contentLength?: number,
+  responseFormatRequested: boolean = true
+): Record<string, unknown> {
+  return {
+    provider: llm.providerName,
+    model: llm.modelName,
+    purpose,
+    parseCategory: err instanceof ProviderJsonOutputError ? err.category : "unknown",
+    schemaValidationPath: err instanceof ProviderJsonOutputError ? err.schemaValidationPath : null,
+    validationStatus: err instanceof ProviderJsonOutputError && err.category === "schema_validation"
+      ? "schema_invalid"
+      : "parse_invalid",
+    contentPreview: err instanceof ProviderJsonOutputError ? err.preview : null,
+    finishReason: finishReason ?? (err instanceof ProviderJsonOutputError ? err.finishReason ?? null : null),
+    contentLength: contentLength ?? (err instanceof ProviderJsonOutputError ? err.contentLength : null),
+    responseFormatRequested,
+    error: err instanceof Error ? err.message : String(err),
+    tokenUsage: tokenUsage ?? null,
+  };
+}
+
+function isStructuredRetryable(err: unknown): err is ProviderJsonOutputError {
+  return err instanceof ProviderJsonOutputError &&
+    (err.category === "malformed_json" || err.category === "schema_validation");
+}
+
+function compactStructuredMessages(purpose: string, schema: string, previousError: ProviderJsonOutputError, taskSummary: unknown): AgentMessage[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: crypto.randomUUID(),
+      role: "system",
+      content: `Return JSON object only. No markdown. No prose. Match this schema exactly: ${schema}`,
+      timestamp: now,
+    },
+    {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: `Structured Output Retry\n${JSON.stringify({
+        purpose,
+        previousError: {
+          category: previousError.category,
+          schemaValidationPath: previousError.schemaValidationPath,
+        },
+        taskSummary,
+      })}`,
+      timestamp: now,
+    },
+  ];
+}
+
+async function generateStructuredWithRetry<T>(
+  state: AgentState,
+  llm: LlmProvider,
+  purpose: "scope_analysis" | "patch_plan",
+  messages: AgentMessage[],
+  maxTokens: number,
+  schema: string,
+  retryTaskSummary: unknown,
+  parse: (completion: LlmCompletionResult) => T
+): Promise<{ parsed: T; completion: LlmCompletionResult; retryAttempt: number }> {
+  const ledger = activeLedgers.get(state.context.sessionId);
+  const options = { responseFormat: { type: "json_object" as const }, temperature: state.context.temperature, maxTokens };
+  const firstCompletion = await llm.generateCompletion(messages, options);
+  if (ledger && firstCompletion.usage) {
+    ledger.addTokenUsage(firstCompletion.usage.inputTokens, firstCompletion.usage.outputTokens);
+  }
+
   try {
-    return JSON.parse(content) as unknown;
-  } catch {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]) as unknown;
-      } catch {
-        // Fall through to the normalized validation error.
-      }
-    }
-  }
-
-  throw new ProviderResponseValidationError(`${purpose} provider response was not valid JSON.`);
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function validateScopeAnalysis(value: unknown): ScopeAnalysisResult {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    typeof (value as { rationale?: unknown }).rationale !== "string" ||
-    !isStringArray((value as { affectedModules?: unknown }).affectedModules) ||
-    !isStringArray((value as { proposedFilesToModify?: unknown }).proposedFilesToModify) ||
-    !isStringArray((value as { proposedFilesToCreate?: unknown }).proposedFilesToCreate)
-  ) {
-    throw new ProviderResponseValidationError(
-      "scope_analysis provider response failed schema validation."
-    );
-  }
-
-  const result = value as ScopeAnalysisResult;
-  return {
-    rationale: result.rationale,
-    affectedModules: result.affectedModules,
-    proposedFilesToModify: result.proposedFilesToModify,
-    proposedFilesToCreate: result.proposedFilesToCreate,
-  };
-}
-
-function validatePatchPlan(value: unknown): PatchPlan {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    typeof (value as { rationale?: unknown }).rationale !== "string" ||
-    !Array.isArray((value as { chunks?: unknown }).chunks)
-  ) {
-    throw new ProviderResponseValidationError("patch_plan provider response failed schema validation.");
-  }
-
-  const chunks = (value as { chunks: unknown[] }).chunks.map((chunk) => {
-    if (
-      typeof chunk !== "object" ||
-      chunk === null ||
-      !["create", "modify", "delete"].includes(String((chunk as { type?: unknown }).type)) ||
-      typeof (chunk as { path?: unknown }).path !== "string" ||
-      typeof (chunk as { description?: unknown }).description !== "string"
-    ) {
-      throw new ProviderResponseValidationError("patch_plan chunk failed schema validation.");
+    return { parsed: parse(firstCompletion), completion: firstCompletion, retryAttempt: 0 };
+  } catch (err: unknown) {
+    if (!isStructuredRetryable(err)) {
+      throw err;
     }
 
-    return chunk as PatchChunk;
-  });
+    const retryMessages = compactStructuredMessages(purpose, schema, err, retryTaskSummary);
+    if (ledger) {
+      ledger.recordEvent("system", "provider_structured_retry", "warning", {
+        ...providerErrorPayload(
+          llm,
+          purpose,
+          err,
+          firstCompletion.usage,
+          firstCompletion.finishReason,
+          firstCompletion.content.length
+        ),
+        retryAttempt: 1,
+        retryPrompt: {
+          messageCount: retryMessages.length,
+          totalChars: retryMessages.reduce((sum, message) => sum + message.content.length, 0),
+        },
+      });
+    }
 
-  return {
-    rationale: (value as { rationale: string }).rationale,
-    chunks,
-  };
+    const retryCompletion = await llm.generateCompletion(retryMessages, options);
+    if (ledger && retryCompletion.usage) {
+      ledger.addTokenUsage(retryCompletion.usage.inputTokens, retryCompletion.usage.outputTokens);
+    }
+    return { parsed: parse(retryCompletion), completion: retryCompletion, retryAttempt: 1 };
+  }
 }
 
 export function createIntakeNode(): AgentNode {
@@ -336,19 +381,16 @@ export function createScopeAnalysisNode(llm: LlmProvider): AgentNode {
       };
     }
 
-    const systemPrompt = `You are an expert repository scope analyzer. Analyze the repository structure and user query to identify which files must be modified or created.
-Respond ONLY with a JSON object matching this schema:
-{
-  "rationale": "Explanation of the scope analysis",
-  "affectedModules": ["list of affected module paths or names"],
-  "proposedFilesToModify": ["list of relative file paths to modify"],
-  "proposedFilesToCreate": ["list of relative file paths to create"]
-}`;
-    const userMessage = `User Query: ${state.query}
-Repository Scan Result:
-Root: ${state.repoScanResult?.rootDir}
-Files:
-${JSON.stringify(state.repoScanResult?.files.map((f) => ({ path: f.path, isDir: f.isDir })))}`;
+    const systemPrompt = `Return JSON object only. No markdown. No prose.
+Schema: ${SCOPE_ANALYSIS_JSON_SCHEMA}
+Example: {"rationale":"Add focused tests for trace ledger behavior.","affectedModules":["packages/core"],"proposedFilesToModify":[],"proposedFilesToCreate":["packages/core/src/__tests__/trace-ledger.test.ts"]}`;
+    const repoFiles = state.repoScanResult?.files.map((f) => ({ path: f.path, isDir: f.isDir })).slice(0, SCAN_MAX_FILES) ?? [];
+    const userMessage = `Repository Scan Result Summary:
+${JSON.stringify({
+  task: state.query,
+  root: state.repoScanResult?.rootDir,
+  files: repoFiles,
+})}`;
 
     const messages: AgentMessage[] = [
       ...state.messages,
@@ -366,43 +408,75 @@ ${JSON.stringify(state.repoScanResult?.files.map((f) => ({ path: f.path, isDir: 
       },
     ];
 
+    const maxTokens = state.context.scopeAnalysisMaxTokens ?? DEFAULT_SCOPE_ANALYSIS_MAX_TOKENS;
+
     if (ledger) {
-      ledger.recordEvent("llm_call", "scope_analysis", "info", providerPayload(state, llm, "scope_analysis", messages));
+      ledger.recordEvent(
+        "llm_call",
+        "scope_analysis",
+        "info",
+        providerPayload(state, llm, "scope_analysis", messages, "json_object", maxTokens)
+      );
     }
 
-    const completion = await llm.generateCompletion(
-      messages,
-      { responseFormat: { type: "json_object" }, temperature: state.context.temperature }
-    );
-
     let scopeAnalysisResult: ScopeAnalysisResult;
+    let completion: LlmCompletionResult | undefined;
+    let retryAttempt = 0;
     try {
-      scopeAnalysisResult = validateScopeAnalysis(parseJsonObject(completion.content, "scope_analysis"));
+      const structured = await generateStructuredWithRetry(
+        state,
+        llm,
+        "scope_analysis",
+        messages,
+        maxTokens,
+        SCOPE_ANALYSIS_JSON_SCHEMA,
+        {
+          task: state.query,
+          fileCount: repoFiles.length,
+          detectedLanguages: state.repoScanResult?.detectedLanguages ?? [],
+        },
+        (candidate) => parseScopeAnalysisResponse(candidate.content, {
+          provider: llm.providerName,
+          model: llm.modelName,
+          purpose: "scope_analysis",
+          finishReason: candidate.finishReason,
+        })
+      );
+      scopeAnalysisResult = structured.parsed;
+      completion = structured.completion;
+      retryAttempt = structured.retryAttempt;
       if (ledger) {
         ledger.recordEvent("tool_response", "scope_analysis_response", "info", {
           provider: llm.providerName,
           model: llm.modelName,
           purpose: "scope_analysis",
+          parseCategory: "ok",
+          schemaValidationPath: null,
           validationStatus: "valid",
+          finishReason: completion.finishReason ?? null,
+          contentLength: completion.content.length,
+          responseFormatRequested: true,
+          retryAttempt,
           tokenUsage: completion.usage ?? null,
         });
       }
     } catch (err: unknown) {
       if (ledger) {
-        ledger.recordEvent("tool_response", "scope_analysis_response", "error", {
-          provider: llm.providerName,
-          model: llm.modelName,
-          purpose: "scope_analysis",
-          validationStatus: "invalid",
-          error: err instanceof Error ? err.message : String(err),
-          tokenUsage: completion.usage ?? null,
-        });
+        ledger.recordEvent(
+          "tool_response",
+          "scope_analysis_response",
+          "error",
+          providerErrorPayload(
+            llm,
+            "scope_analysis",
+            err,
+            completion?.usage,
+            completion?.finishReason,
+            completion?.content.length
+          )
+        );
       }
       throw err;
-    }
-
-    if (ledger && completion.usage) {
-      ledger.addTokenUsage(completion.usage.inputTokens, completion.usage.outputTokens);
     }
 
     return {
@@ -536,26 +610,25 @@ export function createPatchPlanNode(llm: LlmProvider): AgentNode {
       };
     }
 
-    const systemPrompt = `You are an expert programmer. Generate a precise patch plan (list of creations, modifications, and deletions of files) to solve the user query based on the selected files and validation errors if any.
-For modifications, provide 'targetContent' (the exact block of lines to search for) and 'content' (the replacement code). Make targetContent unique and precise.
-Respond ONLY with a JSON object matching this schema:
-{
-  "rationale": "Explanation of the patch plan",
-  "chunks": [
-    {
-      "type": "create" | "modify" | "delete",
-      "path": "relative/path/to/file",
-      "content": "new or replacement content",
-      "targetContent": "exact original block of code to search and replace (only required for modify type)",
-      "description": "Short explanation of this chunk change"
-    }
-  ]
-}`;
-    const userMessage = `User Query: ${state.query}
-Selected Files Content:
-${JSON.stringify(state.fileSelectionResult?.selectedFiles)}
-Validation Result from previous run (if any):
-${JSON.stringify(state.validationResult)}`;
+    const systemPrompt = `Return JSON object only. No markdown. No prose.
+Schema: ${PATCH_PLAN_JSON_SCHEMA}
+Example: {"rationale":"Add trace ledger tests.","chunks":[{"type":"create","file":"packages/core/src/__tests__/trace-ledger.test.ts","description":"Create focused trace ledger tests."}]}
+Rules:
+- Do not include code, diffs, content, targetContent, markdown, or extra fields.
+- Use at most 5 chunks.
+- If no file changes are appropriate, return {"rationale":"...","chunks":[]}.`;
+    const selectedFilesSummary = (state.fileSelectionResult?.selectedFiles ?? []).map((file) => ({
+      file: file.path,
+      reason: file.reason,
+      chars: file.content.length,
+    }));
+    const userMessage = `Selected Files Content Summary:
+${JSON.stringify({
+  task: state.query,
+  selectedFiles: selectedFilesSummary,
+  validationSuccess: state.validationResult?.success ?? null,
+  validationErrors: state.validationResult?.errors.slice(0, 3) ?? [],
+})}`;
 
     const messages: AgentMessage[] = [
       ...state.messages,
@@ -573,43 +646,84 @@ ${JSON.stringify(state.validationResult)}`;
       },
     ];
 
+    const maxTokens = state.context.patchPlanMaxTokens ?? DEFAULT_PATCH_PLAN_MAX_TOKENS;
+
     if (ledger) {
-      ledger.recordEvent("llm_call", "patch_plan", "info", providerPayload(state, llm, "patch_plan", messages));
+      ledger.recordEvent(
+        "llm_call",
+        "patch_plan",
+        "info",
+        providerPayload(state, llm, "patch_plan", messages, "json_object", maxTokens)
+      );
     }
 
-    const completion = await llm.generateCompletion(
-      messages,
-      { responseFormat: { type: "json_object" }, temperature: state.context.temperature }
-    );
-
     let patchPlan: PatchPlan;
+    let completion: LlmCompletionResult | undefined;
+    let retryAttempt = 0;
     try {
-      patchPlan = validatePatchPlan(parseJsonObject(completion.content, "patch_plan"));
+      const structured = await generateStructuredWithRetry(
+        state,
+        llm,
+        "patch_plan",
+        messages,
+        maxTokens,
+        PATCH_PLAN_JSON_SCHEMA,
+        {
+          task: state.query,
+          selectedFiles: selectedFilesSummary.map((file) => file.file),
+        },
+        (candidate) => parsePatchPlanResponse(candidate.content, {
+          provider: llm.providerName,
+          model: llm.modelName,
+          purpose: "patch_plan",
+          finishReason: candidate.finishReason,
+        })
+      );
+      const parsedPatchPlan = structured.parsed;
+      completion = structured.completion;
+      retryAttempt = structured.retryAttempt;
+      patchPlan = parsedPatchPlan.patchPlan;
+      if (ledger && parsedPatchPlan.repairs.length > 0) {
+        ledger.recordEvent("system", "provider_schema_repaired", "warning", {
+          provider: llm.providerName,
+          model: llm.modelName,
+          purpose: "patch_plan",
+          repairs: parsedPatchPlan.repairs,
+        });
+      }
       if (ledger) {
         ledger.recordEvent("tool_response", "patch_plan_response", "info", {
           provider: llm.providerName,
           model: llm.modelName,
           purpose: "patch_plan",
+          parseCategory: "ok",
+          schemaValidationPath: null,
           validationStatus: "valid",
+          finishReason: completion.finishReason ?? null,
+          contentLength: completion.content.length,
+          responseFormatRequested: true,
+          retryAttempt,
+          schemaRepairCount: parsedPatchPlan.repairs.length,
           tokenUsage: completion.usage ?? null,
         });
       }
     } catch (err: unknown) {
       if (ledger) {
-        ledger.recordEvent("tool_response", "patch_plan_response", "error", {
-          provider: llm.providerName,
-          model: llm.modelName,
-          purpose: "patch_plan",
-          validationStatus: "invalid",
-          error: err instanceof Error ? err.message : String(err),
-          tokenUsage: completion.usage ?? null,
-        });
+        ledger.recordEvent(
+          "tool_response",
+          "patch_plan_response",
+          "error",
+          providerErrorPayload(
+            llm,
+            "patch_plan",
+            err,
+            completion?.usage,
+            completion?.finishReason,
+            completion?.content.length
+          )
+        );
       }
       throw err;
-    }
-
-    if (ledger && completion.usage) {
-      ledger.addTokenUsage(completion.usage.inputTokens, completion.usage.outputTokens);
     }
 
     return {
@@ -618,7 +732,7 @@ ${JSON.stringify(state.validationResult)}`;
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: `Patch Plan:\nRationale: ${patchPlan.rationale}\nChunks:\n${patchPlan.chunks.map((c) => `- ${c.type.toUpperCase()} ${c.path}: ${c.description}`).join("\n")}`,
+          content: `Patch Plan:\nRationale: ${patchPlan.rationale}\nChunks:\n${patchPlan.chunks.map((c) => `- ${c.type.toUpperCase()} ${c.file}: ${c.description}`).join("\n")}`,
           timestamp: new Date().toISOString(),
         },
       ],
@@ -648,7 +762,7 @@ export function createOptionalPatchApplyNode(): AgentNode {
     }
 
     // Safety check: validate ALL paths before any writes
-    const allPaths = patchPlan.chunks.map((c) => c.path);
+    const allPaths = patchPlan.chunks.map((c) => c.file);
     try {
       assertWriteSafe(state.context.workspaceDir, allPaths);
     } catch (err: unknown) {
@@ -665,65 +779,10 @@ export function createOptionalPatchApplyNode(): AgentNode {
       throw err;
     }
 
-    for (const chunk of patchPlan.chunks) {
-      const fullPath = path.join(state.context.workspaceDir, chunk.path);
-      if (chunk.type === "create") {
-        await fs.mkdir(path.dirname(fullPath), { recursive: true });
-        await fs.writeFile(fullPath, chunk.content ?? "", "utf-8");
-        if (ledger) {
-          ledger.recordEvent("tool_call", `create_file:${chunk.path}`, "info", {
-            description: chunk.description,
-          });
-        }
-      } else if (chunk.type === "modify") {
-        let currentContent = "";
-        try {
-          currentContent = await fs.readFile(fullPath, "utf-8");
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          throw new Error(`Failed to read file for modification: ${chunk.path}. Error: ${msg}`);
-        }
-
-        if (chunk.targetContent) {
-          if (currentContent.includes(chunk.targetContent)) {
-            const newContent = currentContent.replace(chunk.targetContent, chunk.content ?? "");
-            await fs.writeFile(fullPath, newContent, "utf-8");
-            if (ledger) {
-              ledger.recordEvent("tool_call", `modify_file:${chunk.path}`, "info", {
-                description: chunk.description,
-              });
-            }
-          } else {
-            throw new Error(`Target content not found in file: ${chunk.path}`);
-          }
-        } else {
-          await fs.writeFile(fullPath, chunk.content ?? "", "utf-8");
-          if (ledger) {
-            ledger.recordEvent("tool_call", `modify_file_overwrite:${chunk.path}`, "warning", {
-              description: chunk.description,
-            });
-          }
-        }
-      } else if (chunk.type === "delete") {
-        try {
-          await fs.unlink(fullPath);
-          if (ledger) {
-            ledger.recordEvent("tool_call", `delete_file:${chunk.path}`, "info", {
-              description: chunk.description,
-            });
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (ledger) {
-            ledger.recordEvent("system", `delete_file_failed:${chunk.path}`, "warning", {
-              error: msg,
-            });
-          }
-        }
-      }
-    }
-
-    return {};
+    throw new Error(
+      "Patch application is disabled for metadata-only patch plans in the current Openpawl MVP. " +
+      "Run with --dry-run to review planning metadata."
+    );
   };
 }
 
@@ -781,9 +840,8 @@ export function createValidationNode(): AgentNode {
   };
 }
 
-/** Detect which test command is available in the current environment. */
+/** Detect which validation command is available for write mode when no explicit command is provided. */
 function detectTestCommand(): string {
-  // Default to bun test; a more sophisticated version could check package.json scripts
   return "bun test";
 }
 
@@ -829,9 +887,10 @@ export function createReportExportNode(): AgentNode {
     const runId = state.context.sessionId;
     const ledger = activeLedgers.get(runId);
 
-    const filesModified = state.patchPlan?.chunks.map((c) => c.path) ?? [];
+    const filesModified = state.patchPlan?.chunks.map((c) => c.file) ?? [];
     const validationSuccess = state.validationResult?.success ?? false;
     const patchApplied = !state.context.dryRun && (state.patchPlan?.chunks.length ?? 0) > 0;
+    const patchPlanPath = `.codepawl/runs/${runId}/patch-plan.json`;
 
     let durationMs = 0;
     let tokenUsage = { input: 0, output: 0, total: 0 };
@@ -949,9 +1008,11 @@ ${
   state.patchPlan
     ? `**Rationale:** ${state.patchPlan.rationale}
 
+Patch plans are metadata-only in the current MVP. They describe intended file-level work and do not include code diffs or replacement content.
+
 | # | Type | File | Description |
 |---|------|------|-------------|
-${state.patchPlan.chunks.map((c, i) => `| ${i + 1} | \`${c.type}\` | \`${c.path}\` | ${c.description} |`).join("\n")}
+${state.patchPlan.chunks.map((c, i) => `| ${i + 1} | \`${c.type}\` | \`${c.file}\` | ${c.description} |`).join("\n")}
 
 **Applied:** ${patchApplied ? "✅ Yes" : "⏭️ No (dry-run or no chunks)"}`
     : "_No patch plan generated._"
@@ -985,12 +1046,12 @@ ${riskNotes.length > 0 ? riskNotes.map((n) => `- ${n}`).join("\n") : "_No risk n
 
 ${
   state.error
-    ? `1. Review the error: \`${state.error}\`\n2. Fix the underlying issue and re-run.`
-    : validationSuccess
-    ? patchApplied
-      ? "1. Review the applied patch in the run artifacts.\n2. Run your full test suite.\n3. Open a pull request if satisfied."
-      : "1. This was a dry-run. Review the patch plan in \`.codepawl/runs/${runId}/patch-plan.json\`.\n2. Re-run with \`--write\` to apply the patch."
-    : "1. Review validation errors above.\n2. Inspect the patch plan and adjust if needed.\n3. Re-run after fixing the issues."
+      ? `1. Review the error: \`${state.error}\`\n2. Fix the underlying issue and re-run.`
+      : validationSuccess
+        ? patchApplied
+          ? "1. Review the applied patch in the run artifacts.\n2. Run your full test suite.\n3. Open a pull request if satisfied."
+          : `1. This was a dry-run. Review the patch plan in \`${patchPlanPath}\`.\n2. Re-run with \`--write\` to apply the patch.`
+        : "1. Review validation errors above.\n2. Inspect the patch plan and adjust if needed.\n3. Re-run after fixing the issues."
 }
 
 ---

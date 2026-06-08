@@ -15,6 +15,8 @@ This project is organized as a Bun-powered monorepo containing:
 
 ## [>.-] Openpawl CLI Quick Start
 
+The CLI symbol logo is `[>.-]`, rendered as a colored terminal badge when color is enabled. The compact status marker is `>.-`. Symbols, badge styling, and ANSI color controls live in `packages/cli/src/branding.ts`; set `NO_COLOR=1` or `OPENPAWL_COLOR=0` to disable color, or `OPENPAWL_COLOR=1` to force it.
+
 ### 1. Install dependencies
 
 ```bash
@@ -27,8 +29,7 @@ bun install
 bun run dev:cli -- run \
   --repo . \
   --task "review current repository changes" \
-  --dry-run \
-  --test-cmd "echo placeholder validation skipped"
+  --dry-run
 ```
 
 Artifacts will appear in `.codepawl/runs/<run-id>/`:
@@ -37,6 +38,8 @@ Artifacts will appear in `.codepawl/runs/<run-id>/`:
 - `run.json`: structured run result
 - `patch-plan.json`: the generated patch plan
 - `selected-files.json`: files selected for the task
+
+Dry-runs use placeholder validation when `--test-cmd` is omitted, so smoke checks do not run unrelated repo-wide tests. Pass `--test-cmd "<command>"` to run real validation; a non-zero command still fails the run and preserves artifacts.
 
 ### 3. Run in write mode (applies patch)
 
@@ -98,6 +101,7 @@ export OPENPAWL_PROVIDER=openai-compatible
 export OPENPAWL_MODEL=<model>
 export OPENPAWL_API_KEY=<key>
 export OPENPAWL_BASE_URL=<optional base url>
+export OPENPAWL_MAX_TOKENS=<optional structured-output token cap>
 
 bun run dev:cli -- run \
   --repo . \
@@ -105,7 +109,57 @@ bun run dev:cli -- run \
   --dry-run
 ```
 
-You can also pass `--provider openai-compatible --model <model>` on `codepawl run`. Missing `OPENPAWL_MODEL` or `OPENPAWL_API_KEY` fails fast with a clear error. Provider calls request JSON output and validate response schemas before using them. Trace artifacts record provider name, model, request purpose, response validation status, and token usage when available; they do not record API keys or full prompts by default. Use `--include-prompt-metadata` to record only redacted prompt counts and sizes.
+Provider connectivity smoke:
+
+Use this to verify the OpenAI-compatible endpoint, key, model, and `response_format` transport before running the agent workflow.
+
+```bash
+curl -sS "${OPENPAWL_BASE_URL:-https://api.openai.com/v1}/chat/completions" \
+  -H "Authorization: Bearer $OPENPAWL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "'"$OPENPAWL_MODEL"'",
+    "messages": [
+      { "role": "user", "content": "Return exactly this JSON object: {\"ok\":true}" }
+    ],
+    "response_format": { "type": "json_object" },
+    "max_tokens": 64
+  }'
+```
+
+Agent structured smoke:
+
+```bash
+OPENPAWL_PROVIDER=openai-compatible \
+OPENPAWL_MODEL=<model> \
+OPENPAWL_BASE_URL=<base-url> \
+OPENPAWL_API_KEY=<key> \
+OPENPAWL_MAX_TOKENS=2000 \
+bun run dev:cli -- run \
+  --repo . \
+  --task "add tests for the Openpawl trace ledger" \
+  --dry-run
+```
+
+You can also pass `--provider openai-compatible --model <model>` on `codepawl run`. Missing `OPENPAWL_MODEL` or `OPENPAWL_API_KEY` fails fast with a clear error. Provider calls request JSON output, apply structured-output token caps with `OPENPAWL_MAX_TOKENS` plus optional `OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS` and `OPENPAWL_PATCH_PLAN_MAX_TOKENS`, extract common JSON object formats such as fenced JSON, and validate response schemas before using them. On malformed JSON or schema validation failure, Openpawl performs one compact structured-output retry that includes only the expected schema, previous error category/path, and task summary. Trace artifacts record provider name, model, request purpose, response-format request status, parse/validation status, schema validation path, finish reason, content length, a small redacted content preview on parse errors, and token usage when available; they do not record API keys or full prompts by default. Use `--include-prompt-metadata` to record only redacted prompt counts and sizes.
+
+OpenAI-compatible transport does not guarantee schema adherence for every model. Some models may need the structured retry, lower temperature, or a different model with stronger JSON-mode behavior.
+
+`patch_plan` is metadata-only in the current MVP. Its JSON contains only `rationale` and up to five chunks shaped as `{ "type": "...", "file": "...", "description": "..." }`; it does not include code diffs or replacement content.
+
+To intentionally run full validation during a real-provider dry-run:
+
+```bash
+OPENPAWL_PROVIDER=openai-compatible \
+OPENPAWL_MODEL=<model> \
+OPENPAWL_BASE_URL=<base-url> \
+OPENPAWL_API_KEY=<key> \
+bun run dev:cli -- run \
+  --repo . \
+  --task "add tests for the Openpawl trace ledger" \
+  --dry-run \
+  --test-cmd "bun test"
+```
 
 Real provider integration is experimental in v0. It does not imply production autonomous coding, and it does not loosen dry-run defaults, write-mode opt-in, or path safety guardrails.
 

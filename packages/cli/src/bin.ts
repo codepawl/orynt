@@ -13,15 +13,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { resolveProviderConfig, runAgent } from "@codepawl/core";
 import type { RunResult } from "@codepawl/core";
-
-// Banner
-
-const BANNER = `
-  [>.-] Openpawl
-        codepawl/core server-side coding-agent workflow
-`;
-
-const COMPACT_LOGO = ">.-";
+import { renderBanner, renderCompactLogo } from "./branding";
 
 // Helpers
 
@@ -54,7 +46,7 @@ function die(msg: string): never {
 }
 
 function ok(msg: string): void {
-  console.log(`${COMPACT_LOGO} ${msg}`);
+  console.log(`${renderCompactLogo()} ${msg}`);
 }
 
 function hasHelpFlag(argv: string[]): boolean {
@@ -99,6 +91,76 @@ function readStringFlag(
     die(`--${name} requires a value.`);
   }
   return value;
+}
+
+type GithubFetch = (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1]
+) => Promise<Response>;
+
+type Logger = {
+  log: (...args: unknown[]) => void;
+};
+
+type PostGithubCommentDeps = {
+  githubFetch?: GithubFetch;
+  logger?: Logger;
+};
+
+export async function postGithubComment(
+  {
+    reportContent,
+    token,
+    repoSlug,
+    prNumber,
+  }: {
+    reportContent: string;
+    token: string;
+    repoSlug: string;
+    prNumber: string;
+  },
+  deps: PostGithubCommentDeps = {}
+): Promise<string> {
+  const githubFetch = deps.githubFetch ?? fetch;
+  const [owner, repoName] = repoSlug.split("/");
+  if (!owner || !repoName) {
+    throw new Error("--repo must be in format owner/repo");
+  }
+
+  const url = `https://api.github.com/repos/${owner}/${repoName}/issues/${prNumber}/comments`;
+  const body = JSON.stringify({ body: reportContent });
+
+  const response = await githubFetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`GitHub API error (${response.status}): ${errText}`);
+  }
+
+  const data = (await response.json()) as { html_url: string };
+
+  deps.logger?.log(`Posted comment to ${url}`);
+  return data.html_url;
+}
+
+function showGithubCommentHelp(): void {
+  console.log(`Usage: codepawl github-comment --report <report.md> [options]
+
+Options:
+  --report <path>        Path to report.md (required)
+  --token <token>        GitHub token (or set GITHUB_TOKEN)
+  --repo <owner/repo>    Repository slug (e.g. codepawl/codepawl)
+  --pr <number>          Pull request number
+`);
 }
 
 async function assertDirectory(dirPath: string, label: string): Promise<void> {
@@ -146,8 +208,8 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
     die(err instanceof Error ? err.message : String(err));
   }
 
-  console.log(BANNER);
-  console.log(`${COMPACT_LOGO} Starting Openpawl run`);
+  console.log(renderBanner());
+  console.log(`${renderCompactLogo()} Starting Openpawl run`);
   console.log(`   Repo:    ${resolvedRepo}`);
   if (resolvedOutDir) console.log(`   OutDir:  ${resolvedOutDir}`);
   console.log(`   Task:    ${task}`);
@@ -174,7 +236,7 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
     die(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  console.log(`${COMPACT_LOGO} Run complete`);
+  console.log(`${renderCompactLogo()} Run complete`);
   console.log(`   Run ID:  ${result.runId}`);
   console.log(`   Status:  ${result.success ? "SUCCESS" : "FAILED"}`);
   if (result.error) {
@@ -259,7 +321,7 @@ async function cmdTrace(flags: Record<string, string | boolean>): Promise<void> 
 // doctor command
 
 async function cmdDoctor(): Promise<void> {
-  console.log(BANNER);
+  console.log(renderBanner());
   console.log("Openpawl Doctor - system health check\n");
 
   const checks: Array<{ label: string; ok: boolean; detail?: string }> = [];
@@ -341,7 +403,7 @@ async function cmdDoctor(): Promise<void> {
 
   console.log();
   if (allOk) {
-    console.log(`${COMPACT_LOGO} All checks passed. Openpawl is ready to run.`);
+    console.log(`${renderCompactLogo()} All checks passed. Openpawl is ready to run.`);
   } else {
     console.log("Some checks failed. Review above and fix before running.");
     process.exit(1);
@@ -351,6 +413,11 @@ async function cmdDoctor(): Promise<void> {
 // github-comment command
 
 async function cmdGithubComment(flags: Record<string, string | boolean>): Promise<void> {
+  if (flags["help"] === true) {
+    showGithubCommentHelp();
+    return;
+  }
+
   const reportPath = readStringFlag(flags, "report");
   const token = readStringFlag(flags, "token") ?? process.env["GITHUB_TOKEN"];
   const repoSlug = readStringFlag(flags, "repo");
@@ -365,49 +432,37 @@ async function cmdGithubComment(flags: Record<string, string | boolean>): Promis
     die(`Cannot read report file: ${reportPath}`);
   }
 
-  if (!token || !repoSlug || !prNumber) {
-    // No token/repo/PR: print the report to stdout for CI without permissions.
-    console.log("No GitHub token, repo, or PR number provided. Printing report to stdout:\n");
-    console.log(reportContent);
-    console.log(
-      "\nTo post to GitHub, provide: --token <token> --repo <owner/repo> --pr <number>"
-    );
-    return;
+  if (!token) {
+    die("GitHub token is required. Provide --token or set GITHUB_TOKEN.");
+  }
+  if (!repoSlug) {
+    die("--repo is required for github-comment and must be in owner/repo format.");
+  }
+  if (!prNumber) {
+    die("--pr is required for github-comment.");
+  }
+  if (!repoSlug.includes("/")) {
+    die("--repo must be in format owner/repo");
   }
 
-  // Post comment to GitHub PR via REST API
   const [owner, repoName] = repoSlug.split("/");
-  if (!owner || !repoName) die("--repo must be in format owner/repo");
-
   const url = `https://api.github.com/repos/${owner}/${repoName}/issues/${prNumber}/comments`;
-  const body = JSON.stringify({ body: reportContent });
+  console.log(`${renderCompactLogo()} Posting report as PR comment to ${url}...`);
 
-  console.log(`${COMPACT_LOGO} Posting report as PR comment to ${url}...`);
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    body,
+  const htmlUrl = await postGithubComment({
+    reportContent,
+    token,
+    repoSlug,
+    prNumber,
   });
 
-  if (response.ok) {
-    const data = (await response.json()) as { html_url: string };
-    ok(`Comment posted: ${data.html_url}`);
-  } else {
-    const errText = await response.text();
-    die(`GitHub API error (${response.status}): ${errText}`);
-  }
+  ok(`Comment posted: ${htmlUrl}`);
 }
 
 // help
 
 function showHelp(): void {
-  console.log(BANNER);
+  console.log(renderBanner());
   console.log(`Usage: codepawl <command> [options]
 
 Commands:
@@ -473,6 +528,11 @@ Provider env:
   OPENPAWL_MODEL         Required for openai-compatible
   OPENPAWL_API_KEY       Required for openai-compatible; never printed
   OPENPAWL_BASE_URL      Optional OpenAI-compatible base URL
+  OPENPAWL_MAX_TOKENS    Optional structured-output token cap
+  OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS
+                         Optional scope_analysis token cap override
+  OPENPAWL_PATCH_PLAN_MAX_TOKENS
+                         Optional patch_plan token cap override
 
 Examples:
   codepawl run --repo . --task "review current repository changes" --dry-run
@@ -521,7 +581,14 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  console.error("Fatal:", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+const isCliEntrypoint = (() => {
+  const metaMain = (import.meta as { readonly main?: string | boolean }).main;
+  return metaMain === true || metaMain === import.meta.url;
+})();
+
+if (isCliEntrypoint) {
+  main().catch((err: unknown) => {
+    console.error("Fatal:", err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

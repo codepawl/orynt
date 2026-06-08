@@ -6,12 +6,14 @@ export type OpenpawlProviderName = "mock" | "openai-compatible";
 export interface LlmCompletionOptions {
   readonly temperature?: number;
   readonly maxTokens?: number;
+  readonly maxCompletionTokens?: number;
   readonly responseFormat?: { type: "json_object" | "text" };
   readonly systemPrompt?: string;
 }
 
 export interface LlmCompletionResult {
   readonly content: string;
+  readonly finishReason?: string;
   readonly usage?: {
     readonly inputTokens: number;
     readonly outputTokens: number;
@@ -32,6 +34,9 @@ export interface ProviderConfigInput {
   readonly model?: string;
   readonly apiKey?: string;
   readonly baseUrl?: string;
+  readonly maxTokens?: number;
+  readonly scopeAnalysisMaxTokens?: number;
+  readonly patchPlanMaxTokens?: number;
 }
 
 export interface ResolvedProviderConfig {
@@ -39,6 +44,9 @@ export interface ResolvedProviderConfig {
   readonly model?: string;
   readonly apiKey?: string;
   readonly baseUrl?: string;
+  readonly maxTokens?: number;
+  readonly scopeAnalysisMaxTokens?: number;
+  readonly patchPlanMaxTokens?: number;
 }
 
 export interface OpenAiCompatibleProviderOptions {
@@ -48,11 +56,21 @@ export interface OpenAiCompatibleProviderOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
+function parsePositiveInteger(value: string | number | undefined, label: string): number | undefined {
+  if (value === undefined || value === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new ProviderConfigurationError(`${label} must be a positive integer.`);
+  }
+  return parsed;
+}
+
 export interface MockCompletionRule {
   readonly matchQuery?: string;
   readonly matchLastMessage?: string;
   readonly response: {
     readonly content: string;
+    readonly finishReason?: string;
     readonly usage?: {
       readonly inputTokens: number;
       readonly outputTokens: number;
@@ -178,6 +196,15 @@ export function resolveProviderConfig(
   const model = input.model ?? env["OPENPAWL_MODEL"];
   const apiKey = input.apiKey ?? env["OPENPAWL_API_KEY"];
   const baseUrl = input.baseUrl ?? env["OPENPAWL_BASE_URL"] ?? "https://api.openai.com/v1";
+  const maxTokens = parsePositiveInteger(input.maxTokens ?? env["OPENPAWL_MAX_TOKENS"], "OPENPAWL_MAX_TOKENS");
+  const scopeAnalysisMaxTokens = parsePositiveInteger(
+    input.scopeAnalysisMaxTokens ?? env["OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS"],
+    "OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS"
+  ) ?? maxTokens;
+  const patchPlanMaxTokens = parsePositiveInteger(
+    input.patchPlanMaxTokens ?? env["OPENPAWL_PATCH_PLAN_MAX_TOKENS"],
+    "OPENPAWL_PATCH_PLAN_MAX_TOKENS"
+  ) ?? maxTokens;
   const missing: string[] = [];
   if (!model) missing.push("OPENPAWL_MODEL");
   if (!apiKey) missing.push("OPENPAWL_API_KEY");
@@ -193,6 +220,9 @@ export function resolveProviderConfig(
     model,
     apiKey,
     baseUrl,
+    maxTokens,
+    scopeAnalysisMaxTokens,
+    patchPlanMaxTokens,
   };
 }
 
@@ -228,6 +258,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         })),
         temperature: options?.temperature,
         max_tokens: options?.maxTokens,
+        max_completion_tokens: options?.maxCompletionTokens,
         response_format: options?.responseFormat?.type === "json_object"
           ? { type: "json_object" }
           : undefined,
@@ -240,10 +271,11 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: unknown } }>;
+      choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     };
-    const content = data.choices?.[0]?.message?.content;
+    const firstChoice = data.choices?.[0];
+    const content = firstChoice?.message?.content;
     if (typeof content !== "string" || content.trim().length === 0) {
       throw new ProviderResponseValidationError(
         "OpenAI-compatible provider response did not include choices[0].message.content."
@@ -252,6 +284,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 
     return {
       content,
+      finishReason: typeof firstChoice?.finish_reason === "string" ? firstChoice.finish_reason : undefined,
       usage: data.usage
         ? {
             inputTokens: data.usage.prompt_tokens ?? 0,

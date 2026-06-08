@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { spawn } from "child_process";
 import { runAgent } from "@codepawl/core";
+import { postGithubComment } from "../bin";
 
 // Path to the mock LLM fixture shipped with core
 const FIXTURE_PATH = path.join(
@@ -39,6 +40,8 @@ function runCliFromPackageDir(
   stderr: string;
   exitCode: number | null;
 }> {
+  const CLI_TIMEOUT_MS = 5000;
+
   return new Promise((resolve, reject) => {
     const env = { ...process.env };
     if (invocationCwd) {
@@ -50,6 +53,7 @@ function runCliFromPackageDir(
     delete env["OPENPAWL_MODEL"];
     delete env["OPENPAWL_API_KEY"];
     delete env["OPENPAWL_BASE_URL"];
+    env["NO_COLOR"] = "1";
     for (const [key, value] of Object.entries(envOverrides)) {
       if (value === undefined) {
         delete env[key];
@@ -62,14 +66,36 @@ function runCliFromPackageDir(
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
+
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf-8");
     child.stderr.setEncoding("utf-8");
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (exitCode) => resolve({ stdout, stderr, exitCode }));
+
+    const timer = setTimeout(() => {
+      cleanup();
+      child.kill("SIGKILL");
+      reject(new Error(`CLI command timed out after ${CLI_TIMEOUT_MS}ms: bun src/bin.ts ${args.join(" ")}`));
+    }, CLI_TIMEOUT_MS);
+
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      child.stdout.removeAllListeners("data");
+      child.stderr.removeAllListeners("data");
+      child.removeAllListeners("close");
+      child.removeAllListeners("error");
+    };
+
+    child.on("close", (exitCode) => {
+      cleanup();
+      resolve({ stdout, stderr, exitCode });
+    });
+    child.on("error", (error) => {
+      cleanup();
+      reject(error);
+    });
   });
 }
 
@@ -77,6 +103,19 @@ async function writeReportFile(): Promise<string> {
   const reportPath = path.join(tmpDir, "report.md");
   await fs.writeFile(reportPath, "# Test Report\n\nRun completed.", "utf-8");
   return reportPath;
+}
+
+async function runMockAgent(
+  options: {
+    query: string;
+    workspaceDir: string;
+    dryRun: boolean;
+    testCommand: string;
+    mockFixturePath: string;
+    outDir?: string;
+  }
+): ReturnType<typeof runAgent> {
+  return runAgent({ ...options, provider: "mock" });
 }
 
 /**
@@ -87,7 +126,7 @@ async function writeReportFile(): Promise<string> {
 
 describe("CLI: codepawl run --dry-run (via runAgent)", () => {
   it("produces all 5 artifacts in dry-run mode", async () => {
-    const result = await runAgent({
+    const result = await runMockAgent({
       query: "add tests for auth helpers",
       workspaceDir: tmpDir,
       dryRun: true,
@@ -105,7 +144,7 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
   });
 
   it("report.md is non-empty and contains run metadata", async () => {
-    const result = await runAgent({
+    const result = await runMockAgent({
       query: "add tests for auth helpers",
       workspaceDir: tmpDir,
       dryRun: true,
@@ -270,13 +309,13 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     }
   });
 
-  it("exits zero for review-only dry-run smoke without explicit validation command", async () => {
+  it("exits zero for dry-run smoke without explicit validation command", async () => {
     const result = await runCliFromPackageDir([
       "run",
       "--repo",
       tmpDir,
       "--task",
-      "review current repository changes",
+      "add tests for the Openpawl trace ledger",
       "--dry-run",
     ]);
 
@@ -288,12 +327,11 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
     for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
       const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
-      expect(stat, `${file} should exist after review dry-run smoke`).not.toBeNull();
+      expect(stat, `${file} should exist after dry-run smoke`).not.toBeNull();
     }
 
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("Placeholder validation");
-    expect(report).not.toContain("auth-helpers.test.ts");
   });
 
   it("fails clearly when openai-compatible provider is missing an API key", async () => {
@@ -317,8 +355,8 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
 });
 
 describe("CLI: codepawl run --write (via runAgent)", () => {
-  it("applies a create-file patch in write mode", async () => {
-    // Use a fixture that generates a create patch
+  it("fails clearly because current MVP patch plans are metadata-only", async () => {
+    // Use a fixture that generates a metadata-only create plan.
     const writeFixture = [
       {
         matchLastMessage: "Repository Scan Result",
@@ -340,8 +378,7 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
             chunks: [
               {
                 type: "create",
-                path: "src/hello.ts",
-                content: "export const hello = 'world';\n",
+                file: "src/hello.ts",
                 description: "Create hello.ts",
               },
             ],
@@ -354,7 +391,7 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
     await fs.writeFile(fixturePath, JSON.stringify(writeFixture), "utf-8");
     await fs.mkdir(path.join(tmpDir, "src"), { recursive: true });
 
-    const result = await runAgent({
+    const result = await runMockAgent({
       query: "create hello file",
       workspaceDir: tmpDir,
       dryRun: false,
@@ -364,17 +401,15 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
 
     const createdFile = path.join(tmpDir, "src", "hello.ts");
     const exists = await fs.stat(createdFile).catch(() => null);
-    expect(exists, "hello.ts should have been created by write mode").not.toBeNull();
-
-    const content = await fs.readFile(createdFile, "utf-8");
-    expect(content).toContain("hello");
-    expect(result.success).toBe(true);
+    expect(exists, "metadata-only write mode must not create files").toBeNull();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("metadata-only patch plans");
   });
 });
 
 describe("CLI: codepawl trace (utility logic)", () => {
   it("trace.json is valid and parseable", async () => {
-    const result = await runAgent({
+    const result = await runMockAgent({
       query: "add tests for auth helpers",
       workspaceDir: tmpDir,
       dryRun: true,
@@ -424,7 +459,7 @@ describe("CLI: codepawl doctor (utility checks)", () => {
 
 describe("CLI: codepawl github-comment (mocked)", () => {
   it("report.md content is suitable for GitHub comment (contains markdown)", async () => {
-    const result = await runAgent({
+    const result = await runMockAgent({
       query: "add tests for auth helpers",
       workspaceDir: tmpDir,
       dryRun: true,
@@ -437,13 +472,43 @@ describe("CLI: codepawl github-comment (mocked)", () => {
 
     // Should contain markdown headings
     expect(report).toContain("# ");
+    expect(report).not.toContain("${runId}");
     // Should contain the run ID (used as reference)
     expect(report).toContain(result.runId);
     // Should not be empty
     expect(report.length).toBeGreaterThan(200);
   });
 
-  it("prints the report and exits successfully without a token", async () => {
+  it("exits non-zero for missing report file", async () => {
+    const missingReport = path.join(tmpDir, "missing-report.md");
+    const result = await runCliFromPackageDir(
+      [
+        "github-comment",
+        "--report",
+        missingReport,
+        "--token",
+        "fake-token",
+        "--repo",
+        "codepawl/codepawl",
+        "--pr",
+        "1",
+      ],
+      undefined,
+      { GITHUB_TOKEN: undefined }
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Cannot read report file");
+  });
+
+  it("prints github-comment help and exits 0", async () => {
+    const result = await runCliFromPackageDir(["github-comment", "--help"], undefined, { GITHUB_TOKEN: undefined });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Usage: codepawl github-comment --report <report.md> [options]");
+  });
+
+  it("exits non-zero without a token", async () => {
     const reportPath = await writeReportFile();
     const result = await runCliFromPackageDir(
       ["github-comment", "--report", reportPath, "--repo", "codepawl/codepawl", "--pr", "1"],
@@ -451,21 +516,64 @@ describe("CLI: codepawl github-comment (mocked)", () => {
       { GITHUB_TOKEN: undefined }
     );
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("No GitHub token, repo, or PR number provided");
-    expect(result.stdout).toContain("# Test Report");
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("GitHub token is required");
   });
 
-  it("prints the report and exits successfully without PR context", async () => {
+  it("exits cleanly for invalid args", async () => {
     const reportPath = await writeReportFile();
     const result = await runCliFromPackageDir(
-      ["github-comment", "--report", reportPath, "--token", "fake-token"],
+      ["github-comment", "--report", reportPath, "--token", "fake-token", "--repo", "codepawl/codepawl"],
       undefined,
       { GITHUB_TOKEN: undefined }
     );
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("No GitHub token, repo, or PR number provided");
-    expect(result.stdout).toContain("# Test Report");
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("--pr is required for github-comment");
+  });
+
+  it("posts markdown report using mocked GitHub fetch", async () => {
+    const result = await runMockAgent({
+      query: "add tests for auth helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+
+    let postedBody = "";
+    let requestUrl = "";
+
+    const mockedGithubFetch = async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1]
+    ): Promise<Response> => {
+      requestUrl = String(input);
+      postedBody = String(init?.body ?? "");
+      return new Response(
+        JSON.stringify({
+          html_url: "https://github.com/codepawl/codepawl/pull/1#issuecomment-123",
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } }
+      );
+    };
+
+    const htmlUrl = await postGithubComment({
+      reportContent: report,
+      token: "fake-token",
+      repoSlug: "codepawl/codepawl",
+      prNumber: "1",
+    }, {
+      githubFetch: mockedGithubFetch,
+    });
+
+    expect(htmlUrl).toBe("https://github.com/codepawl/codepawl/pull/1#issuecomment-123");
+    expect(requestUrl).toBe("https://api.github.com/repos/codepawl/codepawl/issues/1/comments");
+    expect(postedBody).toContain("# ");
+    expect(postedBody).toContain(result.runId);
+    expect(postedBody).not.toContain("${runId}");
   });
 });
