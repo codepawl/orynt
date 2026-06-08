@@ -1,0 +1,12 @@
+{
+  "action": "labeled",
+  "issue": {
+    "number": 201
+  },
+  "label": {
+    "name": "openpawl"
+  },
+  "repository": {
+    "full_name": "codepawl/openpawl"
+  }
+}

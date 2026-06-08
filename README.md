@@ -278,10 +278,22 @@ Current known limitations:
 ## CI/CD Integration
 
 See [`.github/workflows/openpawl.yml`](.github/workflows/openpawl.yml) for a reusable GitHub Actions workflow that:
-- Runs Openpawl on pull requests in dry-run mode
-- Runs manually with `workflow_dispatch`
-- Uploads all generated files under `.codepawl/runs/<run-id>/`
-- Posts `report.md` as a non-destructive PR comment for same-repository pull requests when comment permissions are available
+- Runs Openpawl on PRs in dry-run mode by default
+- Runs manually with `workflow_dispatch` (`dry-run` or `write`)
+- Runs from issue comments with safe commands:
+  - `/openpawl review`
+  - `/openpawl add tests`
+- Runs when a PR or issue is labeled `openpawl`
+- Uploads all generated files under `.codepawl/runs/<run-id>/` as `openpawl-artifacts-<run-id>`
+- Posts `report.md` as a GitHub issue/PR comment when permissions and repository policy allow it
+
+Safety model:
+- Comment and label triggers are **dry-run only**.
+- Forked PRs are skipped for reporting to avoid privilege escalation risk.
+- Write mode is only available from manual `workflow_dispatch`.
+
+Local trigger behavior is covered by fixture-driven tests under
+`packages/cli/src/__tests__/fixtures/github-events/`.
 
 Manual run inputs:
 - `task`: coding task for Openpawl, defaulting to `review changes and suggest improvements`

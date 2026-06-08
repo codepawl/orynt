@@ -1,0 +1,12 @@
+{
+  "action": "created",
+  "comment": {
+    "body": "/openpawl add tests"
+  },
+  "issue": {
+    "number": 102
+  },
+  "repository": {
+    "full_name": "codepawl/openpawl"
+  }
+}

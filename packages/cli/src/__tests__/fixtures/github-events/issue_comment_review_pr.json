@@ -1,0 +1,13 @@
+{
+  "action": "created",
+  "comment": {
+    "body": "/openpawl review"
+  },
+  "issue": {
+    "number": 101,
+    "pull_request": {}
+  },
+  "repository": {
+    "full_name": "codepawl/openpawl"
+  }
+}

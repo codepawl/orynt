@@ -1,0 +1,14 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": 204,
+    "head": {
+      "repo": {
+        "full_name": "octo-org/forked-repo"
+      }
+    }
+  },
+  "repository": {
+    "full_name": "codepawl/openpawl"
+  }
+}
