@@ -207,6 +207,123 @@ describe("runAgent — dry-run mode", () => {
     expect(report).toContain(task);
   });
 
+  it("report.md includes a Context Pack section with compaction metadata", async () => {
+    const result = await runAgent({
+      query: "implement fixes for current repository changes",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+      contextMaxFiles: 2,
+    });
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+
+    expect(report).toContain("## 🧩 Context Pack");
+    expect(report).toContain("Included file count:");
+    expect(report).toContain("Omitted file count:");
+    expect(report).toContain("Context compacted:");
+    expect(report).toContain("Context budget:");
+    expect(report).toContain("Full prompts are not stored");
+  });
+
+  it("records context-compaction metrics and prompt char counts in trace", async () => {
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+      contextMaxFiles: 1,
+    });
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    const traceRaw = await fs.readFile(path.join(runDir, "trace.json"), "utf-8");
+    const trace = JSON.parse(traceRaw) as {
+      events: Array<{ type: string; name: string; payload: Record<string, unknown> }>;
+    };
+
+    const contextPackEvent = trace.events.find((event) => event.name === "context_pack_created");
+    expect(contextPackEvent?.payload).toBeDefined();
+    expect(contextPackEvent?.payload.inputScannedFiles).toBeTypeOf("number");
+    expect(contextPackEvent?.payload.candidateFiles).toBeTypeOf("number");
+    expect(contextPackEvent?.payload.compactionReason).toBeTypeOf("string");
+
+    const scopeCall = trace.events.find((event) => event.type === "llm_call" && event.name === "scope_analysis");
+    const patchCall = trace.events.find((event) => event.type === "llm_call" && event.name === "patch_plan");
+
+    expect(scopeCall?.payload.promptChars).toBeTypeOf("number");
+    expect((scopeCall?.payload.promptChars as number)).toBeGreaterThan(0);
+    expect(patchCall?.payload.promptChars).toBeTypeOf("number");
+    expect((patchCall?.payload.promptChars as number)).toBeGreaterThan(0);
+
+    const scopeResponse = trace.events.find((event) => event.name === "scope_analysis_response");
+    expect(scopeResponse?.payload.tokenUsage).toBeTruthy();
+  });
+
+  it("uses compact context markers in provider prompts, not raw repo-scan messages", async () => {
+    const compactFixturePath = path.join(tmpDir, "compact-prompt-fixture.json");
+    await fs.writeFile(
+      compactFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope is focused.",
+              affectedModules: ["packages/core"],
+              proposedModifications: [],
+              proposedCreations: [],
+            }),
+            usage: { inputTokens: 6, outputTokens: 8 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "No-op metadata plan.",
+              chunks: [],
+            }),
+            usage: { inputTokens: 4, outputTokens: 3 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "implement focused fixes for current repository changes",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: compactFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.scopeAnalysisResult?.rationale).toBe("Scope is focused.");
+  });
+
+  it("keeps mock provider deterministic with identical inputs and context budgets", async () => {
+    const options = {
+      query: "implement focused fixes for current repository changes",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+      contextMaxFiles: 8,
+      contextMaxChars: 10_000,
+    } satisfies Parameters<typeof runAgent>[0];
+
+    const first = await runAgent(options);
+    const second = await runAgent(options);
+
+    expect(second.state.scopeAnalysisResult).toEqual(first.state.scopeAnalysisResult);
+    expect(second.state.patchPlan).toEqual(first.state.patchPlan);
+    expect(second.traceSummary.tokenUsage.total).toBe(first.traceSummary.tokenUsage.total);
+  });
+
   it("report.md Next Suggested Human Action references concrete patch-plan path and run ID", async () => {
     const result = await runAgent({
       query: "review current repository changes",
@@ -273,11 +390,11 @@ describe("runAgent — dry-run mode", () => {
 describe("runAgent — write mode safety guardrails", () => {
   it("aborts and writes artifacts when patch targets a lockfile", async () => {
     // Fixture using matchLastMessage to distinguish scope_analysis vs patch_plan calls:
-    // scope_analysis messages contain "Repository Scan Result"
-    // patch_plan messages contain "Selected Files Content"
+    // scope_analysis messages contain "Scope Context Pack"
+    // patch_plan messages contain "Patch Context Pack"
     const dangerousFixture = [
       {
-        matchLastMessage: "Repository Scan Result",
+        matchLastMessage: "Scope Context Pack",
         response: {
           content: JSON.stringify({
             rationale: "Scope: create a safe new file",
@@ -289,7 +406,7 @@ describe("runAgent — write mode safety guardrails", () => {
         },
       },
       {
-        matchLastMessage: "Selected Files Content",
+        matchLastMessage: "Patch Context Pack",
         response: {
           content: JSON.stringify({
             rationale: "Dangerous patch targeting lockfile",
@@ -332,6 +449,135 @@ describe("runAgent — write mode safety guardrails", () => {
 });
 
 describe("runAgent — error handling", () => {
+  it("real-provider workflow path is exercised with mocked fetch", async () => {
+    const originalFetch = globalThis.fetch;
+    const requestBodies: Array<Record<string, unknown>> = [];
+
+    const sequence: string[] = [
+      JSON.stringify({
+        rationale: "Scope plan for mocked real provider run.",
+        affectedModules: ["packages/core"],
+        proposedFilesToModify: [],
+        proposedFilesToCreate: [],
+      }),
+      JSON.stringify({
+        rationale: "Mocked patch metadata-only plan.",
+        chunks: [],
+      }),
+    ];
+
+    try {
+      globalThis.fetch = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const request = new Request(input, init);
+        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
+        requestBodies.push(body);
+        const responseContent = sequence.shift();
+        if (responseContent === undefined) {
+          return new Response(
+            JSON.stringify({
+              choices: [{ message: { content: sequence[0] ?? "{}" } }],
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: responseContent } }],
+          }),
+          { status: 200 }
+        );
+      };
+
+      const result = await runAgent({
+        query: "implement fixes for current repository changes",
+        workspaceDir: tmpDir,
+        dryRun: true,
+        provider: "openai-compatible",
+        model: "test-model",
+        apiKey: "test-key",
+        mockFixturePath: FIXTURE_PATH,
+      });
+
+    expect(result.success).toBe(true);
+    expect(requestBodies.length).toBeGreaterThanOrEqual(2);
+    expect(requestBodies[0]).toHaveProperty("model", "test-model");
+    expect(requestBodies[1]).toHaveProperty("model", "test-model");
+    expect(requestBodies[0]).toHaveProperty("messages");
+    expect(requestBodies[1]).toHaveProperty("messages");
+    expect(requestBodies[0]).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "scope_analysis",
+          strict: true,
+        },
+      },
+    });
+    expect(requestBodies[1]).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "patch_plan",
+          strict: true,
+        },
+      },
+    });
+  } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("uses json_object response format when explicitly configured", async () => {
+    const originalFetch = globalThis.fetch;
+    const requestBodies: Array<Record<string, unknown>> = [];
+
+    const sequence: string[] = [
+      JSON.stringify({
+        rationale: "Schema override scope response.",
+        affectedModules: ["packages/core"],
+        proposedModifications: [],
+        proposedCreations: ["packages/core/src/__tests__/trace-ledger.test.ts"],
+      }),
+      JSON.stringify({
+        rationale: "Schema override patch metadata-only plan.",
+        chunks: [],
+      }),
+    ];
+
+    try {
+      globalThis.fetch = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const request = new Request(input, init);
+        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
+        requestBodies.push(body);
+        const responseContent = sequence.shift();
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: responseContent ?? "{}" } }],
+          }),
+          { status: 200 }
+        );
+      };
+
+      const result = await runAgent({
+        query: "add tests for current repository changes",
+        workspaceDir: tmpDir,
+        dryRun: true,
+        provider: "openai-compatible",
+        model: "test-model",
+        apiKey: "test-key",
+        structuredOutputMode: "json_object",
+        mockFixturePath: FIXTURE_PATH,
+      });
+
+      expect(result.success).toBe(true);
+      expect(requestBodies.length).toBeGreaterThanOrEqual(2);
+      expect(requestBodies[0]).toMatchObject({ response_format: { type: "json_object" } });
+      expect(requestBodies[1]).toMatchObject({ response_format: { type: "json_object" } });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("fails fast when openai-compatible provider is missing an API key", async () => {
     await expect(
       runAgent({
@@ -396,7 +642,7 @@ describe("runAgent — error handling", () => {
       invalidFixturePath,
       JSON.stringify([
         {
-          matchLastMessage: "Repository Scan Result",
+          matchLastMessage: "Scope Context Pack",
           response: {
             content: JSON.stringify({ unexpected: "shape" }),
             usage: { inputTokens: 3, outputTokens: 2 },
@@ -445,7 +691,7 @@ describe("runAgent — error handling", () => {
       retryFixturePath,
       JSON.stringify([
         {
-          matchLastMessage: "Repository Scan Result",
+          matchLastMessage: "Scope Context Pack",
           response: {
             content: "{ \"rationale\": The user requests tests }",
             finishReason: "stop",
@@ -466,7 +712,7 @@ describe("runAgent — error handling", () => {
           },
         },
         {
-          matchLastMessage: "Selected Files Content",
+          matchLastMessage: "Patch Context Pack",
           response: {
             content: JSON.stringify({ rationale: "No code chunks in dry-run.", chunks: [] }),
             usage: { inputTokens: 3, outputTokens: 2 },
@@ -496,13 +742,70 @@ describe("runAgent — error handling", () => {
     expect(response?.payload.retryAttempt).toBe(1);
   });
 
+  it("retries non-JSON scope_analysis output once and then succeeds", async () => {
+    const nonJsonFixturePath = path.join(tmpDir, "non-json-then-valid-scope.json");
+    await fs.writeFile(
+      nonJsonFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: "We are given a task and will now explain what to do next.",
+            finishReason: "stop",
+            usage: { inputTokens: 10, outputTokens: 6 },
+          },
+        },
+        {
+          matchLastMessage: "Structured Output Retry",
+          response: {
+            content: JSON.stringify({
+              rationale: "Retry returned valid scope.",
+              affectedModules: ["packages/core"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["packages/core/src/__tests__/trace-ledger.test.ts"],
+            }),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 6 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({ rationale: "No code changes in dry-run.", chunks: [] }),
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for the Openpawl trace ledger",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: nonJsonFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.scopeAnalysisResult?.rationale).toBe("Retry returned valid scope.");
+
+    const traceRaw = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "trace.json"), "utf-8");
+    const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: Record<string, unknown> }> };
+    const retry = trace.events.find((event) => event.name === "provider_structured_retry");
+    const response = trace.events.find((event) => event.name === "scope_analysis_response");
+    expect(retry?.payload.parseCategory).toBe("non_json_output");
+    expect(response?.payload.retryAttempt).toBe(1);
+    expect(response?.payload.retryAttempted).toBe(true);
+    expect(response?.payload.retrySucceeded).toBe(true);
+  });
+
   it("retries schema-invalid patch_plan once and succeeds", async () => {
     const retryFixturePath = path.join(tmpDir, "schema-then-valid-patch.json");
     await fs.writeFile(
       retryFixturePath,
       JSON.stringify([
         {
-          matchLastMessage: "Repository Scan Result",
+          matchLastMessage: "Scope Context Pack",
           response: {
             content: JSON.stringify({
               rationale: "Scope trace tests.",
@@ -514,7 +817,7 @@ describe("runAgent — error handling", () => {
           },
         },
         {
-          matchLastMessage: "Selected Files Content",
+          matchLastMessage: "Patch Context Pack",
           response: {
             content: JSON.stringify({
               rationale: "Missing chunk description.",
@@ -570,7 +873,7 @@ describe("runAgent — error handling", () => {
       retryFailureFixturePath,
       JSON.stringify([
         {
-          matchLastMessage: "Repository Scan Result",
+          matchLastMessage: "Scope Context Pack",
           response: {
             content: "{ \"rationale\": The user requests tests }",
             finishReason: "stop",
@@ -608,6 +911,14 @@ describe("runAgent — error handling", () => {
     expect(response?.payload.finishReason).toBe("stop");
     expect(response?.payload.contentLength).toBeGreaterThan(0);
     expect(response?.payload.responseFormatRequested).toBe(true);
+    expect(response?.payload.retryAttempt).toBe(1);
+    expect(response?.payload.retryAttempted).toBe(true);
+    expect(response?.payload.retrySucceeded).toBe(false);
+    expect(trace.events.some((event) => event.name === "provider_structured_retry_failed")).toBe(true);
+
+    const report = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md"), "utf-8");
+    expect(report).toContain("## Error");
+    expect(report).toContain("malformed_json");
   });
 
   it("does not write full prompts or secrets to trace metadata", async () => {
@@ -617,7 +928,7 @@ describe("runAgent — error handling", () => {
       secretFixturePath,
       JSON.stringify([
         {
-          matchLastMessage: "Repository Scan Result",
+          matchLastMessage: "Scope Context Pack",
           response: {
             content: `{ "rationale": ${secret} }`,
             finishReason: "stop",
@@ -638,7 +949,7 @@ describe("runAgent — error handling", () => {
           },
         },
         {
-          matchLastMessage: "Selected Files Content",
+          matchLastMessage: "Patch Context Pack",
           response: {
             content: JSON.stringify({ rationale: "No file changes.", chunks: [] }),
             usage: { inputTokens: 3, outputTokens: 2 },
@@ -658,7 +969,6 @@ describe("runAgent — error handling", () => {
     expect(result.success).toBe(true);
     const traceRaw = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "trace.json"), "utf-8");
     expect(traceRaw).not.toContain(secret);
-    expect(traceRaw).not.toContain("Repository Scan Result");
     expect(traceRaw).not.toContain("Return JSON object only");
     expect(traceRaw).toContain("sk-[REDACTED]");
   });
@@ -669,7 +979,7 @@ describe("runAgent — error handling", () => {
       repairFixturePath,
       JSON.stringify([
         {
-          matchLastMessage: "Repository Scan Result",
+          matchLastMessage: "Scope Context Pack",
           response: {
             content: JSON.stringify({
               rationale: "Scope existing trace file.",
@@ -681,7 +991,7 @@ describe("runAgent — error handling", () => {
           },
         },
         {
-          matchLastMessage: "Selected Files Content",
+          matchLastMessage: "Patch Context Pack",
           response: {
             content: JSON.stringify({
               rationale: "Create a trace ledger test.",
@@ -726,5 +1036,324 @@ describe("runAgent — error handling", () => {
       JSON.stringify(event.payload).includes("\"alias\":\"path\"") &&
       JSON.stringify(event.payload).includes("\"alias\":\"summary\"")
     )).toBe(true);
+  });
+
+  it("rejects natural-language scope proposals as ungrounded and keeps valid paths", async () => {
+    const groundingFixturePath = path.join(tmpDir, "grounding-scope-fallback.json");
+    const groundedScopeFixtureFile = path.join(tmpDir, "packages/core/src/__tests__/trace-ledger.test.ts");
+    await fs.mkdir(path.dirname(groundedScopeFixtureFile), { recursive: true });
+    await fs.writeFile(
+      groundedScopeFixtureFile,
+      "export const marker = true;",
+      "utf-8"
+    );
+    await fs.writeFile(
+      groundingFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope for tests with mixed proposals.",
+              affectedModules: ["packages/core/src"],
+              proposedModifications: [
+                "packages/core/src/__tests__/trace-ledger.test.ts",
+                "This is not a file path and should be filtered out.",
+              ],
+              proposedCreations: [
+                "tests/python/test_trace_ledger.py",
+                "packages/core/src/__tests__/trace-learn.test.ts",
+              ],
+            }),
+            usage: { inputTokens: 12, outputTokens: 10 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "No patch changes required.",
+              chunks: [],
+            }),
+            usage: { inputTokens: 6, outputTokens: 4 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: groundingFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.scopeAnalysisResult?.proposedFilesToModify).toEqual([
+      "packages/core/src/__tests__/trace-ledger.test.ts",
+    ]);
+    expect(result.state.scopeAnalysisResult?.proposedFilesToCreate).toEqual([
+      "packages/core/src/__tests__/trace-learn.test.ts",
+    ]);
+    expect(result.state.scopeAnalysisResult?.rejectedProposedFilesToModify).toHaveLength(1);
+    expect(result.state.scopeAnalysisResult?.rejectedProposedFilesToCreate).toHaveLength(1);
+
+    const report = await fs.readFile(
+      path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md"),
+      "utf-8"
+    );
+    expect(report).toContain("Rejected/un-grounded scope proposals");
+    expect(report).toContain("- modify:");
+    expect(report).toContain("This is not a file path");
+  });
+
+  it("fails scope grounding with ungrounded_provider_output when proposals are too far from repo", async () => {
+    const groundingFixturePath = path.join(tmpDir, "grounding-scope-ungrounded.json");
+    const contextFile = path.join(tmpDir, "packages/core/src/__tests__/trace-ledger.test.ts");
+    await fs.mkdir(path.dirname(contextFile), { recursive: true });
+    await fs.writeFile(contextFile, "export const marker = true;", "utf-8");
+
+    const readmePath = path.join(tmpDir, "README.md");
+    await fs.writeFile(readmePath, "# Openpawl fixture", "utf-8");
+
+    await fs.writeFile(
+      groundingFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope contains invented paths only.",
+              affectedModules: ["packages/core/src"],
+              proposedFilesToModify: [
+                "a completely unrelated and invented description",
+                "tests/python/test_trace_ledger.py",
+              ],
+              proposedFilesToCreate: [],
+            }),
+            usage: { inputTokens: 8, outputTokens: 4 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "No-op metadata plan.",
+              chunks: [],
+            }),
+            usage: { inputTokens: 6, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      mockFixturePath: groundingFixturePath,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("category=ungrounded_provider_output");
+    expect(result.error).toContain("purpose=scope_analysis");
+  });
+
+  it("falls back to ContextPack candidates for ungrounded scope proposals in dry-run", async () => {
+    const groundingFixturePath = path.join(tmpDir, "grounding-scope-ungrounded.json");
+    const groundedFixture = path.join(tmpDir, "packages/core/src/__tests__/trace-ledger.test.ts");
+    await fs.mkdir(path.dirname(groundedFixture), { recursive: true });
+    await fs.writeFile(groundedFixture, "export const marker = true;", "utf-8");
+
+    const sharedHelperPath = path.join(tmpDir, "packages/core/src/shared-helper.ts");
+    await fs.mkdir(path.dirname(sharedHelperPath), { recursive: true });
+    await fs.writeFile(sharedHelperPath, "export const helper = true;", "utf-8");
+
+    await fs.writeFile(
+      groundingFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope with only ungrounded suggestions.",
+              affectedModules: ["packages/core/src"],
+              proposedFilesToModify: [
+                "a completely unrelated and invented description",
+                "this is not a path at all",
+              ],
+              proposedFilesToCreate: [
+                "tests/python/test_trace_ledger.py",
+              ],
+            }),
+            usage: { inputTokens: 8, outputTokens: 4 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "No-op metadata plan.",
+              chunks: [],
+            }),
+            usage: { inputTokens: 6, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: groundingFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.scopeAnalysisResult?.groundingFallbackUsed).toBe(true);
+    expect(result.state.scopeAnalysisResult?.proposedFilesToModify).toContain(
+      "packages/core/src/__tests__/trace-ledger.test.ts"
+    );
+    expect(result.state.scopeAnalysisResult?.groundingFallbackFiles?.length).toBeGreaterThan(0);
+
+    const report = await fs.readFile(
+      path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md"),
+      "utf-8"
+    );
+    expect(report).toContain("fallback context file(s) were used");
+    expect(report).toContain("Rejected/un-grounded scope proposals");
+  });
+
+  it("fails when patch_plan only contains ungrounded chunks", async () => {
+    const groundingPatchFixturePath = path.join(tmpDir, "grounding-patch-all-ungrounded.json");
+    const existingFile = path.join(tmpDir, "packages/core/src/shared-helper.ts");
+    await fs.mkdir(path.dirname(existingFile), { recursive: true });
+    await fs.writeFile(existingFile, "export const helper = true;", "utf-8");
+
+    await fs.writeFile(
+      groundingPatchFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope contains a grounded file.",
+              affectedModules: ["packages/core/src"],
+              proposedModifications: ["packages/core/src/shared-helper.ts"],
+              proposedCreations: [],
+            }),
+            usage: { inputTokens: 6, outputTokens: 6 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Unusable model patch suggestion.",
+              chunks: [
+                {
+                  type: "create",
+                  file: "tests/shell/run_trace_ledger_tests.sh",
+                  description: "Invalid invented test runner script path.",
+                },
+              ],
+            }),
+            usage: { inputTokens: 6, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: groundingPatchFixturePath,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("category=ungrounded_provider_output");
+    expect(result.error).toContain("purpose=patch_plan");
+
+    const report = await fs.readFile(
+      path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md"),
+      "utf-8"
+    );
+    expect(report).toContain("Error in node \"patch_plan\"");
+  });
+
+  it("accepts plausible new test file chunks and rejects non-allowed grounded patch paths", async () => {
+    const groundingPatchFixturePath = path.join(tmpDir, "grounding-patch-filters.json");
+    const groundedPatchFixtureFile = path.join(tmpDir, "packages/core/src/__tests__/trace-ledger.test.ts");
+    await fs.mkdir(path.dirname(groundedPatchFixtureFile), { recursive: true });
+    await fs.writeFile(
+      groundedPatchFixtureFile,
+      "export const marker = true;",
+      "utf-8"
+    );
+    await fs.writeFile(
+      groundingPatchFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope with one existing relevant file.",
+              affectedModules: ["packages/core/src"],
+              proposedModifications: ["packages/core/src/__tests__/trace-ledger.test.ts"],
+              proposedCreations: [],
+            }),
+            usage: { inputTokens: 9, outputTokens: 7 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Create one allowed and one invalid patch chunk.",
+              chunks: [
+                {
+                  type: "create",
+                  file: "packages/core/src/__tests__/trace-ledger.generated.test.ts",
+                  description: "Create generated test file near affected module.",
+                },
+                {
+                  type: "create",
+                  file: "tests/shell/run_trace_ledger_tests.sh",
+                  description: "Invalid invented shell script path.",
+                },
+              ],
+            }),
+            usage: { inputTokens: 8, outputTokens: 5 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: groundingPatchFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.patchPlan?.chunks.map((chunk) => chunk.file)).toEqual([
+      "packages/core/src/__tests__/trace-ledger.generated.test.ts",
+    ]);
+    expect(result.state.patchPlan?.rejectedChunks).toHaveLength(1);
+    expect(result.state.patchPlan?.rejectedChunks?.[0]?.file).toBe("tests/shell/run_trace_ledger_tests.sh");
+
+    const report = await fs.readFile(
+      path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md"),
+      "utf-8"
+    );
+    expect(report).toContain("Rejected/un-grounded patch chunks");
+    expect(report).toContain("tests/shell/run_trace_ledger_tests.sh");
   });
 });

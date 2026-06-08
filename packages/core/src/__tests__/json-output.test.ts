@@ -18,6 +18,13 @@ const cleanScope = {
   proposedFilesToCreate: [],
 };
 
+const cleanScopeWithSchemaNames = {
+  rationale: "Scope schema-rationale",
+  affectedModules: ["packages/core"],
+  proposedModifications: ["packages/core/src/agent/nodes.ts"],
+  proposedCreations: ["packages/core/src/__tests__/scope-schema.test.ts"],
+};
+
 const patchContext = {
   provider: "openai-compatible",
   model: "test-model",
@@ -38,6 +45,15 @@ const validPatchPlan = {
 describe("provider JSON output parsing", () => {
   it("parses clean JSON content", () => {
     expect(parseScopeAnalysisResponse(JSON.stringify(cleanScope), context)).toEqual(cleanScope);
+  });
+
+  it("parses scope analysis JSON with schema field names", () => {
+    expect(parseScopeAnalysisResponse(JSON.stringify(cleanScopeWithSchemaNames), context)).toEqual({
+      rationale: cleanScopeWithSchemaNames.rationale,
+      affectedModules: cleanScopeWithSchemaNames.affectedModules,
+      proposedFilesToModify: cleanScopeWithSchemaNames.proposedModifications,
+      proposedFilesToCreate: cleanScopeWithSchemaNames.proposedCreations,
+    });
   });
 
   it("parses JSON with leading and trailing whitespace", () => {
@@ -75,6 +91,35 @@ describe("provider JSON output parsing", () => {
     expect.assertions(2);
     try {
       parseScopeAnalysisResponse("{\"rationale\": Missing quoted string}", {
+        ...context,
+        finishReason: "stop",
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderJsonOutputError);
+      expect((err as ProviderJsonOutputError).category).toBe("malformed_json");
+    }
+  });
+
+  it("classifies finish_reason stop + natural language as non_json_output", () => {
+    expect.assertions(2);
+    try {
+      parseScopeAnalysisResponse(
+        "We are given a task to update the repository and should run tests next.",
+        {
+          ...context,
+          finishReason: "stop",
+        }
+      );
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderJsonOutputError);
+      expect((err as ProviderJsonOutputError).category).toBe("non_json_output");
+    }
+  });
+
+  it("does not classify prose-like stop output as truncated_output without truncation evidence", () => {
+    expect.assertions(2);
+    try {
+      parseScopeAnalysisResponse("Task update: {\"rationale\": The user requests tests }", {
         ...context,
         finishReason: "stop",
       });

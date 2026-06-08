@@ -7,13 +7,19 @@ import {
   AgentMessage,
   AgentNode,
   RepoScanResult,
+  ContextPack,
   ScopeAnalysisResult,
   FileSelectionResult,
   PatchPlan,
   ValidationResult,
   ReportResult,
 } from "../state/schema";
-import { LlmCompletionResult, LlmProvider } from "../providers/llm";
+import { createContextPack, compactContextForPrompt } from "./context";
+import {
+  LlmCompletionResult,
+  LlmProvider,
+  ProviderResponseShapeError,
+} from "../providers/llm";
 import {
   ProviderJsonOutputError,
   parsePatchPlanResponse,
@@ -39,8 +45,104 @@ const BINARY_FILE_EXTENSION_RE =
 const PLACEHOLDER_VALIDATION_COMMAND = "echo placeholder validation skipped";
 const DEFAULT_SCOPE_ANALYSIS_MAX_TOKENS = 1200;
 const DEFAULT_PATCH_PLAN_MAX_TOKENS = 1600;
-const SCOPE_ANALYSIS_JSON_SCHEMA = `{"rationale":"string","affectedModules":["string"],"proposedFilesToModify":["relative/path"],"proposedFilesToCreate":["relative/path"]}`;
-const PATCH_PLAN_JSON_SCHEMA = `{"rationale":"string","chunks":[{"type":"create|modify|delete","file":"relative/path","description":"string"}]}`;
+const SCOPE_CONTEXT_PROMPT_MARKER = "Scope Context Pack";
+const PATCH_CONTEXT_PROMPT_MARKER = "Patch Context Pack";
+const PROMPT_METADATA_MAX_CHARS = 12_000;
+const PATCH_FILE_EXCERPT_CHARS = 240;
+const UNCLOSED_PATH_SEGMENTS = new Set([".", "..", ""]);
+const TEST_DIR_SEGMENTS = new Set(["test", "tests", "__tests__"]);
+const TEST_FILE_NAME_MARKERS = new Set(["test", "tests", "spec"]);
+const MAX_UNGROUNDED_ABSOLUTE = 3;
+const MAX_UNGROUNDED_RATIO = 0.6;
+const SCOPE_ANALYSIS_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    rationale: { type: "string" },
+    affectedModules: {
+      type: "array",
+      items: { type: "string" },
+    },
+    proposedModifications: {
+      type: "array",
+      items: { type: "string" },
+    },
+    proposedCreations: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
+  required: ["rationale", "affectedModules", "proposedModifications", "proposedCreations"],
+  additionalProperties: false,
+};
+const PATCH_PLAN_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    rationale: { type: "string" },
+    chunks: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["create", "modify", "delete"] },
+          file: { type: "string" },
+          description: { type: "string" },
+        },
+        required: ["type", "file", "description"],
+        additionalProperties: false,
+      },
+      minItems: 0,
+      maxItems: 5,
+    },
+  },
+  required: ["rationale", "chunks"],
+  additionalProperties: false,
+};
+
+const SCOPE_ANALYSIS_JSON_SCHEMA_PROMPT = JSON.stringify(SCOPE_ANALYSIS_JSON_SCHEMA, null, 2);
+const PATCH_PLAN_JSON_SCHEMA_PROMPT = JSON.stringify(PATCH_PLAN_JSON_SCHEMA, null, 2);
+
+function resolveStructuredOutputFormatMode(state: AgentState): "json_schema" | "json_object" {
+  return state.context.structuredOutputMode === "json_object"
+    ? "json_object"
+    : "json_schema";
+}
+
+function buildStructuredResponseFormatForSchema(
+  purpose: "scope_analysis" | "patch_plan",
+  responseFormat: "json_schema" | "json_object",
+  schema: Record<string, unknown>
+): { type: "json_object" } | { type: "json_schema"; name: string; schema: Record<string, unknown>; strict: boolean } {
+  if (responseFormat === "json_object") {
+    return { type: "json_object" };
+  }
+
+  return {
+    type: "json_schema",
+    name: purpose,
+    schema,
+    strict: true,
+  };
+}
+
+function sanitizeForPromptMetrics(messages: ReadonlyArray<{ content: string }>): number {
+  return Math.min(
+    PROMPT_METADATA_MAX_CHARS,
+    messages.reduce((sum, message) => sum + message.content.length, 0)
+  );
+}
+
+function createPromptMetadata(messages: ReadonlyArray<{ content: string }>): {
+  messageCount: number;
+  totalChars: number;
+  bounded: boolean;
+} {
+  const unbounded = messages.reduce((sum, message) => sum + message.content.length, 0);
+  return {
+    messageCount: messages.length,
+    totalChars: Math.min(PROMPT_METADATA_MAX_CHARS, unbounded),
+    bounded: unbounded > PROMPT_METADATA_MAX_CHARS,
+  };
+}
 
 function isBinaryFilePath(filePath: string): boolean {
   return BINARY_FILE_EXTENSION_RE.test(filePath);
@@ -53,6 +155,472 @@ function isReviewOnlyTask(query: string): boolean {
   return hasReviewIntent && !hasChangeIntent;
 }
 
+function isRepoRelativePathLike(rawPath: string): string | null {
+  const normalizedInput = rawPath.trim().replace(/\\/g, "/");
+  if (!normalizedInput.length) {
+    return null;
+  }
+  if (normalizedInput.includes("\0") || /[<>:"|?*]/.test(normalizedInput)) {
+    return null;
+  }
+  if (normalizedInput.startsWith(".") && normalizedInput !== "." && normalizedInput.startsWith("../")) {
+    return null;
+  }
+  if (path.win32.isAbsolute(normalizedInput) || path.posix.isAbsolute(normalizedInput)) {
+    return null;
+  }
+  if (normalizedInput.includes(" ")) {
+    return null;
+  }
+  if (!/[A-Za-z0-9_./@-]/.test(normalizedInput)) {
+    return null;
+  }
+
+  const normalized = path.posix.normalize(normalizedInput);
+  const segments = normalized.split("/");
+  if (segments.some((segment) => UNCLOSED_PATH_SEGMENTS.has(segment))) {
+    return null;
+  }
+  if (segments.includes("..") || normalized.startsWith("../") || normalized.startsWith("./")) {
+    return null;
+  }
+  return normalized;
+}
+
+function toAbsolutePath(repoRoot: string, normalizedPath: string): string {
+  return path.resolve(repoRoot, normalizedPath);
+}
+
+function isRepoPathWithinRoot(repoRoot: string, candidate: string): boolean {
+  const absolute = toAbsolutePath(repoRoot, candidate);
+  const relative = path.relative(repoRoot, absolute);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function isAllowedCandidateSegment(segment: string): boolean {
+  return !SCAN_IGNORED_DIRS.has(segment) && segment !== ".codepawl" && segment !== ".git";
+}
+
+function isAllowedPathByRepoRules(repoRoot: string, candidate: string): boolean {
+  const normalized = isRepoRelativePathLike(candidate);
+  if (!normalized) {
+    return false;
+  }
+  if (!isRepoPathWithinRoot(repoRoot, normalized)) {
+    return false;
+  }
+  const segments = normalized.split("/");
+  if (segments.some((segment) => !isAllowedCandidateSegment(segment))) {
+    return false;
+  }
+  if (isBinaryFilePath(normalized) || isSecretFile(normalized)) {
+    return false;
+  }
+  return true;
+}
+
+function shouldFailUngrounded(total: number, rejected: number): boolean {
+  if (total <= 0) {
+    return false;
+  }
+  if (rejected >= MAX_UNGROUNDED_ABSOLUTE) {
+    return true;
+  }
+  return rejected / total >= MAX_UNGROUNDED_RATIO;
+}
+
+function isLikelyFileDescription(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return true;
+  }
+  if (trimmed.includes(" ")) {
+    return true;
+  }
+  return !/^[A-Za-z0-9._\-\/]+$/.test(trimmed);
+}
+
+function isTestFilePath(filePath: string): boolean {
+  const normalized = path.posix.normalize(filePath.replace(/\\/g, "/"));
+  const segments = normalized.split("/");
+  if (!segments.some((segment) => TEST_DIR_SEGMENTS.has(segment))) {
+    return false;
+  }
+  const baseName = segments[segments.length - 1] ?? "";
+  const lowered = baseName.toLowerCase();
+  if (!/\.[A-Za-z0-9]+$/.test(baseName)) {
+    return false;
+  }
+  const hasTestToken = lowered.includes("test") || lowered.includes("spec");
+  const isAllowedExtension = /\.(ts|tsx|js|jsx|py|rs|go|java|cpp|c|cs|sh|md|yml|yaml|json|txt)$/.test(baseName);
+  return hasTestToken && isAllowedExtension;
+}
+
+function isNearRelevantModule(filePath: string, affectedModules: ReadonlyArray<string>): boolean {
+  if (affectedModules.length === 0) {
+    return false;
+  }
+  return affectedModules.some((modulePath) => {
+    const normalizedModule = path.posix.normalize(modulePath.replace(/\\/g, "/"));
+    if (!normalizedModule || normalizedModule === ".") {
+      return false;
+    }
+    return filePath === normalizedModule || filePath.startsWith(`${normalizedModule}/`);
+  });
+}
+
+function isAllowedNewTestFile(
+  filePath: string,
+  repoRoot: string,
+  affectedModules: ReadonlyArray<string>
+): boolean {
+  if (!isAllowedPathByRepoRules(repoRoot, filePath)) {
+    return false;
+  }
+  if (!isTestFilePath(filePath)) {
+    return false;
+  }
+  return affectedModules.length === 0 || isNearRelevantModule(filePath, affectedModules);
+}
+
+function extractFallbackCandidateFiles(
+  candidateFiles: ReadonlyArray<string>,
+  repoRoot: string,
+  affectedModules: ReadonlyArray<string>,
+  exclude: ReadonlySet<string>,
+  limit = 2,
+  preferTestFiles = false
+): string[] {
+  const filtered = candidateFiles.filter(
+    (candidatePath) => !exclude.has(candidatePath) && isAllowedPathByRepoRules(repoRoot, candidatePath)
+  );
+
+  if (preferTestFiles) {
+    const testCandidates = filtered.filter(
+      (candidatePath) => isTestFilePath(candidatePath)
+        && (affectedModules.length === 0 || isNearRelevantModule(candidatePath, affectedModules))
+    );
+    if (testCandidates.length > 0) {
+      return testCandidates.slice(0, limit);
+    }
+  }
+
+  const relevantCandidates = filtered.filter(
+    (candidatePath) => affectedModules.length === 0 || isNearRelevantModule(candidatePath, affectedModules)
+  );
+  if (relevantCandidates.length > 0) {
+    return relevantCandidates.slice(0, limit);
+  }
+
+  return filtered.slice(0, limit);
+}
+
+async function resolveContextPack(state: AgentState): Promise<ContextPack> {
+  if (state.contextPack) {
+    return state.contextPack;
+  }
+  if (!state.repoScanResult) {
+    throw new Error("ContextPack requires repoScanResult from the repo_scan node.");
+  }
+
+  return createContextPack({
+    workspaceRoot: state.context.workspaceDir,
+    task: state.query,
+    repoScan: state.repoScanResult,
+    maxFiles: state.context.contextMaxFiles,
+    maxBytes: state.context.contextMaxBytes,
+      maxChars: state.context.contextMaxChars,
+    testCommand: state.context.testCommand,
+  });
+}
+
+interface GroundedScopeResult {
+  readonly accepted: {
+    readonly proposedFilesToModify: string[];
+    readonly proposedFilesToCreate: string[];
+  };
+  readonly rejected: {
+    readonly proposedFilesToModify: ReadonlyArray<{ readonly file: string; readonly reason: string }>;
+    readonly proposedFilesToCreate: ReadonlyArray<{ readonly file: string; readonly reason: string }>;
+  };
+  readonly groundingNotes: string[];
+  readonly fallbackUsed: boolean;
+  readonly fallbackFiles: ReadonlyArray<string>;
+}
+
+function applyScopeGrounding(
+  state: AgentState,
+  scopeAnalysisResult: ScopeAnalysisResult,
+  contextPack: ContextPack
+): GroundedScopeResult {
+  const repoRoot = state.context.workspaceDir;
+  const repoFiles = new Set(
+    (state.repoScanResult?.files ?? [])
+      .filter((file) => !file.isDir)
+      .map((file) => file.path)
+  );
+  const candidateSet = new Set(contextPack.candidateFiles);
+  const groundingNotes: string[] = [];
+  const rejectedModify: { file: string; reason: string }[] = [];
+  const rejectedCreate: { file: string; reason: string }[] = [];
+  const acceptedModify: string[] = [];
+  const acceptedCreate: string[] = [];
+  const isTestTask = /(\btest\b|\btests\b)/i.test(state.query);
+  const fallbackLimit = 2;
+  let fallbackFiles: string[] = [];
+
+  const addIfGrounded = (
+    rawPath: string,
+    kind: "modify" | "create"
+  ): void => {
+    if (isLikelyFileDescription(rawPath)) {
+      (kind === "modify" ? rejectedModify : rejectedCreate).push({
+        file: rawPath,
+        reason: "value does not look like a repo-relative file path",
+      });
+      return;
+    }
+
+    const pathReason = isRepoRelativePathLike(rawPath);
+    if (!pathReason) {
+      (kind === "modify" ? rejectedModify : rejectedCreate).push({
+        file: rawPath,
+        reason: "path is not a valid repo-relative file path",
+      });
+      return;
+    }
+    const normalizedPath = pathReason;
+    if (!isAllowedPathByRepoRules(repoRoot, normalizedPath)) {
+      (kind === "modify" ? rejectedModify : rejectedCreate).push({
+        file: rawPath,
+        reason: "path is outside repository root or not allowed",
+      });
+      return;
+    }
+
+    if (repoFiles.has(normalizedPath) || candidateSet.has(normalizedPath)) {
+      (kind === "modify" ? acceptedModify : acceptedCreate).push(normalizedPath);
+      return;
+    }
+
+    if (
+      kind === "create" &&
+      (isTestTask
+        ? isAllowedNewTestFile(
+          normalizedPath,
+          repoRoot,
+          scopeAnalysisResult.affectedModules
+        )
+        : isAllowedPathByRepoRules(repoRoot, normalizedPath))
+    ) {
+      acceptedCreate.push(normalizedPath);
+      return;
+    }
+
+    (kind === "modify" ? rejectedModify : rejectedCreate).push({
+      file: rawPath,
+      reason: "path is not present in repo scan and not an accepted new path",
+    });
+  };
+
+  scopeAnalysisResult.proposedFilesToModify.forEach((p) => addIfGrounded(p, "modify"));
+  scopeAnalysisResult.proposedFilesToCreate.forEach((p) => addIfGrounded(p, "create"));
+
+  const totalProposals =
+    scopeAnalysisResult.proposedFilesToModify.length + scopeAnalysisResult.proposedFilesToCreate.length;
+  const totalRejected = rejectedModify.length + rejectedCreate.length;
+  const hasAcceptedCandidates = acceptedModify.length + acceptedCreate.length > 0;
+  const canFallback = state.context.dryRun && totalRejected > 0;
+  const fallbackUsed = canFallback && !hasAcceptedCandidates;
+  const fallbackExclude = new Set([
+    ...acceptedModify,
+    ...acceptedCreate,
+    ...rejectedModify.map((item) => item.file),
+    ...rejectedCreate.map((item) => item.file),
+  ]);
+
+  if (fallbackUsed) {
+    fallbackFiles = extractFallbackCandidateFiles(
+      contextPack.candidateFiles,
+      repoRoot,
+      scopeAnalysisResult.affectedModules,
+      fallbackExclude,
+      fallbackLimit,
+      isTestTask
+    );
+    for (const fallback of fallbackFiles) {
+      acceptedModify.push(fallback);
+      groundingNotes.push(`Fallback: using existing relevant context file from context pack: ${fallback}`);
+    }
+  }
+
+  if (!state.context.dryRun && shouldFailUngrounded(totalProposals, totalRejected)) {
+    throw new ProviderJsonOutputError(
+      {
+        provider: state.context.providerName ?? "mock",
+        model: state.context.modelName ?? "deterministic-mock",
+        purpose: "scope_analysis",
+      },
+      "ungrounded_provider_output",
+      "Ungrounded path proposals were rejected as not repo-grounded.",
+      `rejected proposal count=${totalRejected} out of ${totalProposals}`,
+      null,
+      0,
+      {
+        retryAttempt: 0,
+        retryAttempted: false,
+        retrySucceeded: false,
+      }
+    );
+  }
+
+  for (const item of rejectedModify) {
+    groundingNotes.push(`Rejected scope modify proposal: ${item.file} (${item.reason})`);
+  }
+  for (const item of rejectedCreate) {
+    groundingNotes.push(`Rejected scope create proposal: ${item.file} (${item.reason})`);
+  }
+
+  return {
+    accepted: {
+      proposedFilesToModify: acceptedModify,
+      proposedFilesToCreate: acceptedCreate,
+    },
+    rejected: {
+      proposedFilesToModify: rejectedModify,
+      proposedFilesToCreate: rejectedCreate,
+    },
+    groundingNotes,
+    fallbackUsed,
+    fallbackFiles,
+  };
+}
+
+interface GroundedPatchResult {
+  readonly acceptedChunks: PatchPlan["chunks"];
+  readonly rejectedChunks: ReadonlyArray<{ index: number; file: string; reason: string }>;
+  readonly groundingNotes: string[];
+}
+
+type PatchChunk = PatchPlan["chunks"][number];
+
+function applyPatchGrounding(
+  state: AgentState,
+  patchPlan: PatchPlan,
+  contextPack: ContextPack
+): GroundedPatchResult {
+  const repoRoot = state.context.workspaceDir;
+  const repoFiles = new Set(
+    (state.repoScanResult?.files ?? [])
+      .filter((file) => !file.isDir)
+      .map((file) => file.path)
+  );
+  const groundingNotes: string[] = [];
+  const acceptedChunks: PatchChunk[] = [];
+  const rejectedChunks: { index: number; file: string; reason: string }[] = [];
+  const affectedModules = state.scopeAnalysisResult?.affectedModules ?? [];
+
+  patchPlan.chunks.forEach((chunk, index) => {
+    if (isLikelyFileDescription(chunk.file)) {
+      rejectedChunks.push({
+        index,
+        file: chunk.file,
+        reason: "chunk file does not look like a repo-relative file path",
+      });
+      return;
+    }
+
+    const normalizedPath = isRepoRelativePathLike(chunk.file);
+    if (!normalizedPath) {
+      rejectedChunks.push({
+        index,
+        file: chunk.file,
+        reason: "chunk file is not a repo-relative path",
+      });
+      return;
+    }
+    if (!isAllowedPathByRepoRules(repoRoot, normalizedPath)) {
+      rejectedChunks.push({
+        index,
+        file: chunk.file,
+        reason: "chunk file is outside repo root or uses disallowed path",
+      });
+      return;
+    }
+    if (repoFiles.has(normalizedPath)) {
+      acceptedChunks.push({
+        ...chunk,
+        file: normalizedPath,
+      });
+      return;
+    }
+    if (chunk.type === "create" && isAllowedNewTestFile(normalizedPath, repoRoot, affectedModules)) {
+      acceptedChunks.push({
+        ...chunk,
+        file: normalizedPath,
+      });
+      return;
+    }
+    rejectedChunks.push({
+      index,
+      file: chunk.file,
+      reason: "chunk file was neither an existing repo file nor a plausible new test file",
+    });
+  });
+
+  const totalChunks = patchPlan.chunks.length;
+  const totalRejected = rejectedChunks.length;
+  if (shouldFailUngrounded(totalChunks, totalRejected)) {
+    groundingNotes.push(`Ungrounded patch chunks: ${totalRejected} of ${totalChunks} were rejected.`);
+    throw new ProviderJsonOutputError(
+      {
+        provider: state.context.providerName ?? "mock",
+        model: state.context.modelName ?? "deterministic-mock",
+        purpose: "patch_plan",
+      },
+      "ungrounded_provider_output",
+      "Ungrounded patch chunks were rejected as not repo-grounded.",
+      `rejected chunk count=${totalRejected} out of ${totalChunks}`,
+      null,
+      0,
+      {
+        retryAttempt: 0,
+        retryAttempted: false,
+        retrySucceeded: false,
+      }
+    );
+  }
+
+  for (const rejected of rejectedChunks) {
+    groundingNotes.push(`Rejected patch chunk: ${rejected.file} (#${rejected.index}, ${rejected.reason})`);
+  }
+
+  return {
+    acceptedChunks,
+    rejectedChunks,
+    groundingNotes,
+  };
+}
+
+function summarizePatchSelectionForPrompt(files: ReadonlyArray<{ path: string; reason: string; content: string }>): Array<{
+  readonly file: string;
+  readonly reason: string;
+  readonly chars: number;
+  readonly excerpt: string;
+}> {
+  return files.map((file) => {
+    const excerpt = file.content
+      ? `${file.content.replace(/\s+/g, " ").trim().slice(0, PATCH_FILE_EXCERPT_CHARS)}...`
+      : "";
+    return {
+      file: file.path,
+      reason: file.reason,
+      chars: file.content.length,
+      excerpt,
+    };
+  });
+}
+
 function shouldUsePlaceholderValidation(state: AgentState): boolean {
   return state.context.dryRun && !state.context.testCommand;
 }
@@ -61,19 +629,12 @@ function isPlaceholderValidationCommand(command: string): boolean {
   return command === PLACEHOLDER_VALIDATION_COMMAND;
 }
 
-function promptMetadata(messages: ReadonlyArray<{ content: string }>): { messageCount: number; totalChars: number } {
-  return {
-    messageCount: messages.length,
-    totalChars: messages.reduce((sum, message) => sum + message.content.length, 0),
-  };
-}
-
 function providerPayload(
   state: AgentState,
   llm: LlmProvider,
   purpose: string,
   messages?: ReadonlyArray<{ content: string }>,
-  responseFormat: "json_object" | "text" = "json_object",
+  responseFormat: "json_schema" | "json_object" = "json_schema",
   maxTokens?: number
 ): Record<string, unknown> {
   return {
@@ -81,10 +642,12 @@ function providerPayload(
     model: llm.modelName,
     purpose,
     responseFormat,
-    responseFormatRequested: responseFormat === "json_object",
+    responseFormatRequested: responseFormat === "json_object" || responseFormat === "json_schema",
+    responseFormatType: responseFormat,
     maxTokens: maxTokens ?? null,
+    promptChars: messages ? sanitizeForPromptMetrics(messages) : 0,
     ...(state.context.includePromptMetadata && messages
-      ? { promptMetadata: promptMetadata(messages) }
+      ? { promptMetadata: createPromptMetadata(messages) }
       : {}),
   };
 }
@@ -96,13 +659,28 @@ function providerErrorPayload(
   tokenUsage?: { readonly inputTokens: number; readonly outputTokens: number },
   finishReason?: string,
   contentLength?: number,
-  responseFormatRequested: boolean = true
+  responseFormatRequested: boolean = true,
+  responseFormat: "json_schema" | "json_object" = "json_schema",
+  retryAttempt: number = 0,
+  retryAttempted: boolean = false,
+  retrySucceeded: boolean = false,
+  responseShape?: {
+    readonly hasContent: boolean;
+    readonly hasReasoningContent: boolean;
+    readonly contentLength: number;
+    readonly reasoningContentLength: number;
+  }
 ): Record<string, unknown> {
+  const parseCategory = err instanceof ProviderJsonOutputError
+    ? err.category
+    : err instanceof ProviderResponseShapeError
+      ? err.issue
+      : "unknown";
   return {
     provider: llm.providerName,
     model: llm.modelName,
     purpose,
-    parseCategory: err instanceof ProviderJsonOutputError ? err.category : "unknown",
+    parseCategory,
     schemaValidationPath: err instanceof ProviderJsonOutputError ? err.schemaValidationPath : null,
     validationStatus: err instanceof ProviderJsonOutputError && err.category === "schema_validation"
       ? "schema_invalid"
@@ -110,7 +688,12 @@ function providerErrorPayload(
     contentPreview: err instanceof ProviderJsonOutputError ? err.preview : null,
     finishReason: finishReason ?? (err instanceof ProviderJsonOutputError ? err.finishReason ?? null : null),
     contentLength: contentLength ?? (err instanceof ProviderJsonOutputError ? err.contentLength : null),
+    responseShape: responseShape ?? null,
     responseFormatRequested,
+    responseFormatType: responseFormat,
+    retryAttempt,
+    retryAttempted,
+    retrySucceeded,
     error: err instanceof Error ? err.message : String(err),
     tokenUsage: tokenUsage ?? null,
   };
@@ -118,16 +701,68 @@ function providerErrorPayload(
 
 function isStructuredRetryable(err: unknown): err is ProviderJsonOutputError {
   return err instanceof ProviderJsonOutputError &&
-    (err.category === "malformed_json" || err.category === "schema_validation");
+    (err.category === "malformed_json" ||
+      err.category === "non_json_output" ||
+      err.category === "provider_reasoning_without_content" ||
+      err.category === "schema_validation");
 }
 
-function compactStructuredMessages(purpose: string, schema: string, previousError: ProviderJsonOutputError, taskSummary: unknown): AgentMessage[] {
+function mapProviderShapeError(
+  llm: LlmProvider,
+  purpose: "scope_analysis" | "patch_plan",
+  err: ProviderResponseShapeError
+): ProviderJsonOutputError {
+  const category = err.issue === "provider_reasoning_without_content"
+    ? "provider_reasoning_without_content"
+    : "empty_content";
+
+  return new ProviderJsonOutputError(
+    {
+      provider: llm.providerName,
+      model: llm.modelName,
+      purpose,
+    },
+    category,
+    "",
+    err.message,
+    null,
+    err.responseShape.contentLength
+  );
+}
+
+interface StructuredRetryMetadata {
+  readonly retryAttempt: number;
+  readonly retryAttempted: boolean;
+  readonly retrySucceeded: boolean;
+}
+
+function cloneProviderJsonOutputError(
+  err: ProviderJsonOutputError,
+  metadata: StructuredRetryMetadata
+): ProviderJsonOutputError {
+  return new ProviderJsonOutputError(
+    {
+      provider: err.provider,
+      model: err.model,
+      purpose: err.purpose,
+      finishReason: err.finishReason,
+    },
+    err.category,
+    err.preview,
+    err.detail,
+    err.schemaValidationPath,
+    err.contentLength,
+    metadata
+  );
+}
+
+function compactStructuredMessages(purpose: string, schema: Record<string, unknown>, previousError: ProviderJsonOutputError, taskSummary: unknown): AgentMessage[] {
   const now = new Date().toISOString();
   return [
     {
       id: crypto.randomUUID(),
       role: "system",
-      content: `Return JSON object only. No markdown. No prose. Match this schema exactly: ${schema}`,
+      content: `Return JSON object only. No markdown. No prose. Match this schema exactly: ${JSON.stringify(schema, null, 2)}`,
       timestamp: now,
     },
     {
@@ -152,22 +787,172 @@ async function generateStructuredWithRetry<T>(
   purpose: "scope_analysis" | "patch_plan",
   messages: AgentMessage[],
   maxTokens: number,
-  schema: string,
+  schema: Record<string, unknown>,
+  responseFormat: "json_schema" | "json_object",
   retryTaskSummary: unknown,
   parse: (completion: LlmCompletionResult) => T
-): Promise<{ parsed: T; completion: LlmCompletionResult; retryAttempt: number }> {
+): Promise<{
+  parsed: T;
+  completion: LlmCompletionResult;
+  retryAttempt: number;
+  retryAttempted: boolean;
+  retrySucceeded: boolean;
+}> {
   const ledger = activeLedgers.get(state.context.sessionId);
-  const options = { responseFormat: { type: "json_object" as const }, temperature: state.context.temperature, maxTokens };
-  const firstCompletion = await llm.generateCompletion(messages, options);
-  if (ledger && firstCompletion.usage) {
-    ledger.addTokenUsage(firstCompletion.usage.inputTokens, firstCompletion.usage.outputTokens);
+  const options = {
+    responseFormat: buildStructuredResponseFormatForSchema(
+      purpose,
+      responseFormat,
+      schema
+    ),
+    temperature: state.context.temperature,
+    maxTokens,
+  };
+  let firstCompletion: LlmCompletionResult;
+
+  try {
+    firstCompletion = await llm.generateCompletion(messages, options);
+    if (ledger && firstCompletion.usage) {
+      ledger.addTokenUsage(firstCompletion.usage.inputTokens, firstCompletion.usage.outputTokens);
+    }
+  } catch (err: unknown) {
+    if (!(err instanceof ProviderResponseShapeError)) {
+      throw err;
+    }
+
+    const shapedError = mapProviderShapeError(llm, purpose, err);
+    if (!isStructuredRetryable(shapedError)) {
+      throw shapedError;
+    }
+
+    const retryMessages = compactStructuredMessages(purpose, schema, shapedError, retryTaskSummary);
+    if (ledger) {
+      ledger.recordEvent("system", "provider_structured_retry", "warning", {
+        ...providerErrorPayload(
+          llm,
+          purpose,
+          shapedError,
+          err.usage,
+          undefined,
+          err.responseShape.contentLength,
+          true,
+          responseFormat,
+          1,
+          true,
+          false,
+          err.responseShape
+        ),
+        retryPrompt: {
+          messageCount: retryMessages.length,
+          totalChars: retryMessages.reduce((sum, message) => sum + message.content.length, 0),
+        },
+      });
+    }
+
+    let retryCompletion: LlmCompletionResult;
+    try {
+      retryCompletion = await llm.generateCompletion(retryMessages, options);
+    } catch (retryErr: unknown) {
+      if (retryErr instanceof ProviderResponseShapeError) {
+        const mappedRetry = mapProviderShapeError(llm, purpose, retryErr);
+        if (ledger) {
+          ledger.recordEvent("system", "provider_structured_retry_failed", "error", {
+            ...providerErrorPayload(
+              llm,
+              purpose,
+              mappedRetry,
+              retryErr.usage,
+              undefined,
+              retryErr.responseShape.contentLength,
+              true,
+              responseFormat,
+              1,
+              true,
+              false,
+              retryErr.responseShape
+            ),
+            retryPrompt: {
+              messageCount: retryMessages.length,
+              totalChars: retryMessages.reduce((sum, message) => sum + message.content.length, 0),
+            },
+          });
+        }
+
+        throw cloneProviderJsonOutputError(mappedRetry, {
+          retryAttempt: 1,
+          retryAttempted: true,
+          retrySucceeded: false,
+        });
+      }
+      throw retryErr;
+    }
+
+    if (ledger && retryCompletion.usage) {
+      ledger.addTokenUsage(retryCompletion.usage.inputTokens, retryCompletion.usage.outputTokens);
+    }
+
+    try {
+      return {
+        parsed: parse(retryCompletion),
+        completion: retryCompletion,
+        retryAttempt: 1,
+        retryAttempted: true,
+        retrySucceeded: true,
+      };
+    } catch (retryErr: unknown) {
+      if (retryErr instanceof ProviderJsonOutputError) {
+        if (ledger) {
+          ledger.recordEvent("system", "provider_structured_retry_failed", "error", {
+            ...providerErrorPayload(
+              llm,
+              purpose,
+              retryErr,
+              retryCompletion.usage,
+              retryCompletion.finishReason,
+              retryCompletion.content.length,
+              true,
+              responseFormat,
+              1,
+              true,
+              false,
+              retryCompletion.responseShape
+            ),
+            retryPrompt: {
+              messageCount: retryMessages.length,
+              totalChars: retryMessages.reduce((sum, message) => sum + message.content.length, 0),
+            },
+          });
+        }
+
+        throw cloneProviderJsonOutputError(retryErr, {
+          retryAttempt: 1,
+          retryAttempted: true,
+          retrySucceeded: false,
+        });
+      }
+
+      throw retryErr;
+    }
   }
 
   try {
-    return { parsed: parse(firstCompletion), completion: firstCompletion, retryAttempt: 0 };
+    return {
+      parsed: parse(firstCompletion),
+      completion: firstCompletion,
+      retryAttempt: 0,
+      retryAttempted: false,
+      retrySucceeded: false,
+    };
   } catch (err: unknown) {
-    if (!isStructuredRetryable(err)) {
+    if (!(err instanceof ProviderJsonOutputError)) {
       throw err;
+    }
+    if (!isStructuredRetryable(err)) {
+      throw cloneProviderJsonOutputError(err, {
+        retryAttempt: 0,
+        retryAttempted: false,
+        retrySucceeded: false,
+      });
     }
 
     const retryMessages = compactStructuredMessages(purpose, schema, err, retryTaskSummary);
@@ -179,9 +964,14 @@ async function generateStructuredWithRetry<T>(
           err,
           firstCompletion.usage,
           firstCompletion.finishReason,
-          firstCompletion.content.length
+          firstCompletion.content.length,
+          true,
+          responseFormat,
+          1,
+          true,
+          false,
+          firstCompletion.responseShape
         ),
-        retryAttempt: 1,
         retryPrompt: {
           messageCount: retryMessages.length,
           totalChars: retryMessages.reduce((sum, message) => sum + message.content.length, 0),
@@ -189,11 +979,90 @@ async function generateStructuredWithRetry<T>(
       });
     }
 
-    const retryCompletion = await llm.generateCompletion(retryMessages, options);
+    let retryCompletion: LlmCompletionResult;
+    try {
+      retryCompletion = await llm.generateCompletion(retryMessages, options);
+    } catch (retryErr: unknown) {
+      if (retryErr instanceof ProviderResponseShapeError) {
+        const mappedRetry = mapProviderShapeError(llm, purpose, retryErr);
+        if (ledger) {
+          ledger.recordEvent("system", "provider_structured_retry_failed", "error", {
+            ...providerErrorPayload(
+              llm,
+              purpose,
+              mappedRetry,
+              retryErr.usage,
+              undefined,
+              retryErr.responseShape.contentLength,
+              true,
+              responseFormat,
+              1,
+              true,
+              false,
+              retryErr.responseShape
+            ),
+            retryPrompt: {
+              messageCount: retryMessages.length,
+              totalChars: retryMessages.reduce((sum, message) => sum + message.content.length, 0),
+            },
+          });
+        }
+
+        throw cloneProviderJsonOutputError(mappedRetry, {
+          retryAttempt: 1,
+          retryAttempted: true,
+          retrySucceeded: false,
+        });
+      }
+      throw retryErr;
+    }
+
     if (ledger && retryCompletion.usage) {
       ledger.addTokenUsage(retryCompletion.usage.inputTokens, retryCompletion.usage.outputTokens);
     }
-    return { parsed: parse(retryCompletion), completion: retryCompletion, retryAttempt: 1 };
+
+    try {
+      return {
+        parsed: parse(retryCompletion),
+        completion: retryCompletion,
+        retryAttempt: 1,
+        retryAttempted: true,
+        retrySucceeded: true,
+      };
+    } catch (retryErr: unknown) {
+      if (retryErr instanceof ProviderJsonOutputError) {
+        if (ledger) {
+          ledger.recordEvent("system", "provider_structured_retry_failed", "error", {
+            ...providerErrorPayload(
+              llm,
+              purpose,
+              retryErr,
+              retryCompletion.usage,
+              retryCompletion.finishReason,
+              retryCompletion.content.length,
+              true,
+              responseFormat,
+              1,
+              true,
+              false,
+              retryCompletion.responseShape
+            ),
+            retryPrompt: {
+              messageCount: retryMessages.length,
+              totalChars: retryMessages.reduce((sum, message) => sum + message.content.length, 0),
+            },
+          });
+        }
+
+        throw cloneProviderJsonOutputError(retryErr, {
+          retryAttempt: 1,
+          retryAttempted: true,
+          retrySucceeded: false,
+        });
+      }
+
+      throw retryErr;
+    }
   }
 }
 
@@ -338,8 +1207,41 @@ export function createRepoScanNode(): AgentNode {
       packageConfigs,
     };
 
+  const contextPack = await createContextPack({
+      workspaceRoot: workspaceDir,
+      task: state.query,
+      repoScan: repoScanResult,
+      maxFiles: state.context.contextMaxFiles,
+      maxBytes: state.context.contextMaxBytes,
+      maxChars: state.context.contextMaxChars,
+      testCommand: state.context.testCommand,
+      safetyExclusions: [
+        `ignored directories: ${Array.from(SCAN_IGNORED_DIRS).sort().join(", ")}`,
+        "secret-like files excluded from repo scan",
+        "binary-like files excluded from compaction",
+        ...state.context.testCommand ? [`test command: ${state.context.testCommand}`] : [],
+      ],
+    });
+
+    if (ledger) {
+      ledger.recordEvent("system", "context_pack_created", "info", {
+        inputScannedFiles: contextPack.metrics.inputScannedFiles,
+        candidateFiles: contextPack.metrics.candidateFiles,
+        includedFiles: contextPack.metrics.includedFiles,
+        omittedFiles: contextPack.metrics.omittedFiles,
+        scannedBytes: contextPack.metrics.scannedBytes,
+        includedBytes: contextPack.metrics.includedBytes,
+        omittedBytes: contextPack.metrics.omittedBytes,
+        estimatedContextChars: contextPack.metrics.estimatedContextChars,
+        compactionReason: contextPack.metrics.compactionReason,
+        budget: contextPack.budget,
+        compacted: contextPack.metrics.compactionReason !== "none",
+      });
+    }
+
     return {
       repoScanResult,
+      contextPack,
     };
   };
 }
@@ -381,15 +1283,15 @@ export function createScopeAnalysisNode(llm: LlmProvider): AgentNode {
       };
     }
 
+    const contextPack = await resolveContextPack(state);
+    const compactContext = compactContextForPrompt(contextPack);
     const systemPrompt = `Return JSON object only. No markdown. No prose.
-Schema: ${SCOPE_ANALYSIS_JSON_SCHEMA}
-Example: {"rationale":"Add focused tests for trace ledger behavior.","affectedModules":["packages/core"],"proposedFilesToModify":[],"proposedFilesToCreate":["packages/core/src/__tests__/trace-ledger.test.ts"]}`;
-    const repoFiles = state.repoScanResult?.files.map((f) => ({ path: f.path, isDir: f.isDir })).slice(0, SCAN_MAX_FILES) ?? [];
-    const userMessage = `Repository Scan Result Summary:
+Schema: ${SCOPE_ANALYSIS_JSON_SCHEMA_PROMPT}
+Example: {"rationale":"Add focused tests for trace ledger behavior.","affectedModules":["packages/core"],"proposedModifications":[],"proposedCreations":["packages/core/src/__tests__/trace-ledger.test.ts"]}`;
+    const userMessage = `${SCOPE_CONTEXT_PROMPT_MARKER}:
 ${JSON.stringify({
   task: state.query,
-  root: state.repoScanResult?.rootDir,
-  files: repoFiles,
+  context: compactContext,
 })}`;
 
     const messages: AgentMessage[] = [
@@ -409,19 +1311,22 @@ ${JSON.stringify({
     ];
 
     const maxTokens = state.context.scopeAnalysisMaxTokens ?? DEFAULT_SCOPE_ANALYSIS_MAX_TOKENS;
+    const responseFormat = resolveStructuredOutputFormatMode(state);
 
     if (ledger) {
       ledger.recordEvent(
         "llm_call",
         "scope_analysis",
         "info",
-        providerPayload(state, llm, "scope_analysis", messages, "json_object", maxTokens)
+        providerPayload(state, llm, "scope_analysis", messages, responseFormat, maxTokens)
       );
     }
 
     let scopeAnalysisResult: ScopeAnalysisResult;
     let completion: LlmCompletionResult | undefined;
     let retryAttempt = 0;
+    let retryAttempted = false;
+    let retrySucceeded = false;
     try {
       const structured = await generateStructuredWithRetry(
         state,
@@ -430,9 +1335,11 @@ ${JSON.stringify({
         messages,
         maxTokens,
         SCOPE_ANALYSIS_JSON_SCHEMA,
+        responseFormat,
         {
           task: state.query,
-          fileCount: repoFiles.length,
+          contextCandidateFiles: compactContext.candidateFiles.length,
+          contextIncludedFiles: compactContext.compactFileSummaries.length,
           detectedLanguages: state.repoScanResult?.detectedLanguages ?? [],
         },
         (candidate) => parseScopeAnalysisResponse(candidate.content, {
@@ -445,6 +1352,22 @@ ${JSON.stringify({
       scopeAnalysisResult = structured.parsed;
       completion = structured.completion;
       retryAttempt = structured.retryAttempt;
+      retryAttempted = structured.retryAttempted;
+      retrySucceeded = structured.retrySucceeded;
+      const groundedScope = applyScopeGrounding(state, scopeAnalysisResult, contextPack);
+      scopeAnalysisResult = {
+        ...scopeAnalysisResult,
+        proposedFilesToModify: groundedScope.accepted.proposedFilesToModify,
+        proposedFilesToCreate: groundedScope.accepted.proposedFilesToCreate,
+        groundingNotes: [
+          ...(scopeAnalysisResult.groundingNotes ?? []),
+          ...groundedScope.groundingNotes,
+        ],
+        groundingFallbackUsed: groundedScope.fallbackUsed,
+        groundingFallbackFiles: groundedScope.fallbackFiles,
+        rejectedProposedFilesToModify: groundedScope.rejected.proposedFilesToModify,
+        rejectedProposedFilesToCreate: groundedScope.rejected.proposedFilesToCreate,
+      };
       if (ledger) {
         ledger.recordEvent("tool_response", "scope_analysis_response", "info", {
           provider: llm.providerName,
@@ -455,12 +1378,24 @@ ${JSON.stringify({
           validationStatus: "valid",
           finishReason: completion.finishReason ?? null,
           contentLength: completion.content.length,
+          responseShape: completion.responseShape ?? null,
           responseFormatRequested: true,
+          responseFormatType: responseFormat,
           retryAttempt,
+          retryAttempted,
+          retrySucceeded,
+          groundingNotes: groundedScope.groundingNotes,
+          groundingFallbackUsed: groundedScope.fallbackUsed,
+          groundingFallbackFiles: groundedScope.fallbackFiles,
+          rejectedProposedFilesToModifyCount: groundedScope.rejected.proposedFilesToModify.length,
+          rejectedProposedFilesToCreateCount: groundedScope.rejected.proposedFilesToCreate.length,
           tokenUsage: completion.usage ?? null,
         });
       }
     } catch (err: unknown) {
+      const providerError = err instanceof ProviderJsonOutputError
+        ? err
+        : null;
       if (ledger) {
         ledger.recordEvent(
           "tool_response",
@@ -472,7 +1407,13 @@ ${JSON.stringify({
             err,
             completion?.usage,
             completion?.finishReason,
-            completion?.content.length
+            completion?.content.length,
+            true,
+            responseFormat,
+            providerError?.retryAttempt ?? retryAttempt,
+            providerError?.retryAttempted ?? retryAttempted,
+            providerError?.retrySucceeded ?? retrySucceeded,
+            completion?.responseShape,
           )
         );
       }
@@ -611,20 +1552,24 @@ export function createPatchPlanNode(llm: LlmProvider): AgentNode {
     }
 
     const systemPrompt = `Return JSON object only. No markdown. No prose.
-Schema: ${PATCH_PLAN_JSON_SCHEMA}
+Schema: ${PATCH_PLAN_JSON_SCHEMA_PROMPT}
 Example: {"rationale":"Add trace ledger tests.","chunks":[{"type":"create","file":"packages/core/src/__tests__/trace-ledger.test.ts","description":"Create focused trace ledger tests."}]}
 Rules:
 - Do not include code, diffs, content, targetContent, markdown, or extra fields.
 - Use at most 5 chunks.
 - If no file changes are appropriate, return {"rationale":"...","chunks":[]}.`;
-    const selectedFilesSummary = (state.fileSelectionResult?.selectedFiles ?? []).map((file) => ({
-      file: file.path,
-      reason: file.reason,
-      chars: file.content.length,
-    }));
-    const userMessage = `Selected Files Content Summary:
+    const contextPack = await resolveContextPack(state);
+    const compactContext = compactContextForPrompt(contextPack);
+    const selectedFilesSummary = summarizePatchSelectionForPrompt(state.fileSelectionResult?.selectedFiles ?? []);
+    const userMessage = `${PATCH_CONTEXT_PROMPT_MARKER}:
 ${JSON.stringify({
   task: state.query,
+  context: compactContext,
+  scopeAnalysisResult: {
+    rationale: state.scopeAnalysisResult?.rationale ?? null,
+    proposedFilesToModify: state.scopeAnalysisResult?.proposedFilesToModify ?? [],
+    proposedFilesToCreate: state.scopeAnalysisResult?.proposedFilesToCreate ?? [],
+  },
   selectedFiles: selectedFilesSummary,
   validationSuccess: state.validationResult?.success ?? null,
   validationErrors: state.validationResult?.errors.slice(0, 3) ?? [],
@@ -647,19 +1592,22 @@ ${JSON.stringify({
     ];
 
     const maxTokens = state.context.patchPlanMaxTokens ?? DEFAULT_PATCH_PLAN_MAX_TOKENS;
+    const responseFormat = resolveStructuredOutputFormatMode(state);
 
     if (ledger) {
       ledger.recordEvent(
         "llm_call",
         "patch_plan",
         "info",
-        providerPayload(state, llm, "patch_plan", messages, "json_object", maxTokens)
+        providerPayload(state, llm, "patch_plan", messages, responseFormat, maxTokens)
       );
     }
 
     let patchPlan: PatchPlan;
     let completion: LlmCompletionResult | undefined;
     let retryAttempt = 0;
+    let retryAttempted = false;
+    let retrySucceeded = false;
     try {
       const structured = await generateStructuredWithRetry(
         state,
@@ -668,9 +1616,12 @@ ${JSON.stringify({
         messages,
         maxTokens,
         PATCH_PLAN_JSON_SCHEMA,
+        responseFormat,
         {
           task: state.query,
           selectedFiles: selectedFilesSummary.map((file) => file.file),
+          contextCandidateFiles: compactContext.candidateFiles.length,
+          contextIncludedFiles: compactContext.compactFileSummaries.length,
         },
         (candidate) => parsePatchPlanResponse(candidate.content, {
           provider: llm.providerName,
@@ -682,7 +1633,17 @@ ${JSON.stringify({
       const parsedPatchPlan = structured.parsed;
       completion = structured.completion;
       retryAttempt = structured.retryAttempt;
-      patchPlan = parsedPatchPlan.patchPlan;
+      retryAttempted = structured.retryAttempted;
+      retrySucceeded = structured.retrySucceeded;
+      const groundedPatch = applyPatchGrounding(state, parsedPatchPlan.patchPlan, contextPack);
+      patchPlan = {
+        ...parsedPatchPlan.patchPlan,
+        chunks: groundedPatch.acceptedChunks,
+        groundingNotes: [
+          ...groundedPatch.groundingNotes,
+        ],
+        rejectedChunks: groundedPatch.rejectedChunks,
+      };
       if (ledger && parsedPatchPlan.repairs.length > 0) {
         ledger.recordEvent("system", "provider_schema_repaired", "warning", {
           provider: llm.providerName,
@@ -701,13 +1662,22 @@ ${JSON.stringify({
           validationStatus: "valid",
           finishReason: completion.finishReason ?? null,
           contentLength: completion.content.length,
+          responseShape: completion.responseShape ?? null,
           responseFormatRequested: true,
+          responseFormatType: responseFormat,
           retryAttempt,
+          retryAttempted,
+          retrySucceeded,
+          groundingNotes: groundedPatch.groundingNotes,
+          rejectedChunkCount: groundedPatch.rejectedChunks.length,
           schemaRepairCount: parsedPatchPlan.repairs.length,
           tokenUsage: completion.usage ?? null,
         });
       }
     } catch (err: unknown) {
+      const providerError = err instanceof ProviderJsonOutputError
+        ? err
+        : null;
       if (ledger) {
         ledger.recordEvent(
           "tool_response",
@@ -719,7 +1689,13 @@ ${JSON.stringify({
             err,
             completion?.usage,
             completion?.finishReason,
-            completion?.content.length
+            completion?.content.length,
+            true,
+            responseFormat,
+            providerError?.retryAttempt ?? retryAttempt,
+            providerError?.retryAttempted ?? retryAttempted,
+            providerError?.retrySucceeded ?? retrySucceeded,
+            completion?.responseShape,
           )
         );
       }
@@ -891,6 +1867,16 @@ export function createReportExportNode(): AgentNode {
     const validationSuccess = state.validationResult?.success ?? false;
     const patchApplied = !state.context.dryRun && (state.patchPlan?.chunks.length ?? 0) > 0;
     const patchPlanPath = `.codepawl/runs/${runId}/patch-plan.json`;
+    const rejectedScopeModifications = state.scopeAnalysisResult?.rejectedProposedFilesToModify ?? [];
+    const rejectedScopeCreations = state.scopeAnalysisResult?.rejectedProposedFilesToCreate ?? [];
+    const rejectedPatchChunks = state.patchPlan?.rejectedChunks ?? [];
+    const scopeRejections = [
+      ...rejectedScopeModifications.map((entry) => `modify: ${entry.file} (${entry.reason})`),
+      ...rejectedScopeCreations.map((entry) => `create: ${entry.file} (${entry.reason})`),
+    ];
+    const patchRejections = rejectedPatchChunks.map(
+      (chunk) => `#${chunk.index + 1} ${chunk.file} (${chunk.reason})`
+    );
 
     let durationMs = 0;
     let tokenUsage = { input: 0, output: 0, total: 0 };
@@ -925,6 +1911,18 @@ export function createReportExportNode(): AgentNode {
     if (state.error) {
       riskNotes.push(`Agent encountered an error: ${state.error}`);
     }
+    if (scopeRejections.length > 0) {
+      riskNotes.push(`Scope analysis filtered ${scopeRejections.length} ungrounded path proposal(s).`);
+    }
+    if (state.scopeAnalysisResult?.groundingFallbackUsed) {
+      const fallbackFiles = state.scopeAnalysisResult.groundingFallbackFiles ?? [];
+      riskNotes.push(
+        `Provider proposed ungrounded scope paths; fallback context file(s) were used: ${fallbackFiles.join(", ") || "none available"}`
+      );
+    }
+    if (patchRejections.length > 0) {
+      riskNotes.push(`Patch plan filtered ${patchRejections.length} ungrounded chunk(s).`);
+    }
     if (!validationSuccess) {
       riskNotes.push("Validation failed — review errors before merging.");
     }
@@ -955,6 +1953,21 @@ export function createReportExportNode(): AgentNode {
           .join("\n")
       : "_No trace events._";
 
+    const contextSection = state.contextPack
+      ? `## 🧩 Context Pack
+
+**Included file count:** ${state.contextPack.metrics.includedFiles}
+**Omitted file count:** ${state.contextPack.metrics.omittedFiles}
+**Context budget:** files <= ${state.contextPack.budget.maxFiles}, bytes <= ${state.contextPack.budget.maxBytes}, chars <= ${state.contextPack.budget.maxChars}
+**Context compacted:** ${state.contextPack.metrics.compactionReason === "none" ? "No (within budget)" : "Yes"}
+**Candidate file count:** ${state.contextPack.metrics.candidateFiles}
+
+Safety exclusions:
+- ${state.contextPack.safetyExclusions.length > 0 ? state.contextPack.safetyExclusions.join("\\n- ") : "None"}
+
+_Full prompts are not stored by default in trace or report; only compact metrics and bounded metadata are recorded._`
+      : "## 🧩 Context Pack\n\nContext pack was not generated for this run.";
+
     const reportMd = `# 🐾 Openpawl Agent Run Report
 
 > **Run ID:** \`${runId}\`
@@ -973,6 +1986,10 @@ ${state.scopeAnalysisResult ? `**Scope Rationale:** ${state.scopeAnalysisResult.
 
 ---
 
+${contextSection}
+
+---
+
 ## 📁 Scope Summary
 
 ${
@@ -986,6 +2003,14 @@ ${state.scopeAnalysisResult.proposedFilesToModify.map((f) => `- \`${f}\``).join(
 **Proposed Creations:**
 ${state.scopeAnalysisResult.proposedFilesToCreate.map((f) => `- \`${f}\``).join("\n") || "_None_"}`
     : "_Scope analysis not available._"
+}
+
+${
+  scopeRejections.length > 0
+    ? `### Rejected/un-grounded scope proposals
+
+${scopeRejections.map((entry) => `- ${entry}`).join("\n")}`
+    : ""
 }
 
 ---
@@ -1016,6 +2041,14 @@ ${state.patchPlan.chunks.map((c, i) => `| ${i + 1} | \`${c.type}\` | \`${c.file}
 
 **Applied:** ${patchApplied ? "✅ Yes" : "⏭️ No (dry-run or no chunks)"}`
     : "_No patch plan generated._"
+}
+
+${
+  patchRejections.length > 0
+    ? `### Rejected/un-grounded patch chunks
+
+${patchRejections.map((entry) => `- ${entry}`).join("\n")}`
+    : ""
 }
 
 ---

@@ -5,11 +5,13 @@ const PREVIEW_MAX_CHARS = 240;
 
 export type ProviderParseCategory =
   | "empty_content"
+  | "provider_reasoning_without_content"
   | "truncated_output"
   | "malformed_json"
-  | "no_json_object"
+  | "non_json_output"
   | "ambiguous_json_objects"
-  | "schema_validation";
+  | "schema_validation"
+  | "ungrounded_provider_output";
 
 export interface ProviderOutputContext {
   readonly provider: string;
@@ -39,6 +41,9 @@ export class ProviderJsonOutputError extends Error {
   public readonly schemaValidationPath: string | null;
   public readonly contentLength: number;
   public readonly finishReason: string | undefined;
+  public readonly retryAttempt: number;
+  public readonly retryAttempted: boolean;
+  public readonly retrySucceeded: boolean;
 
   constructor(
     context: ProviderOutputContext,
@@ -46,7 +51,12 @@ export class ProviderJsonOutputError extends Error {
     preview: string,
     detail: string,
     schemaValidationPath: string | null = null,
-    contentLength: number = 0
+    contentLength: number = 0,
+    retryMetadata?: {
+      retryAttempt?: number;
+      retryAttempted?: boolean;
+      retrySucceeded?: boolean;
+    }
   ) {
     super(
       `Provider response parse failed. provider=${context.provider} model=${context.model} ` +
@@ -64,14 +74,17 @@ export class ProviderJsonOutputError extends Error {
     this.schemaValidationPath = schemaValidationPath;
     this.contentLength = contentLength;
     this.finishReason = context.finishReason;
+    this.retryAttempt = retryMetadata?.retryAttempt ?? 0;
+    this.retryAttempted = retryMetadata?.retryAttempted ?? false;
+    this.retrySucceeded = retryMetadata?.retrySucceeded ?? false;
   }
 }
 
 const ScopeAnalysisSchema = z.object({
   rationale: z.string(),
   affectedModules: z.array(z.string()),
-  proposedFilesToModify: z.array(z.string()),
-  proposedFilesToCreate: z.array(z.string()),
+  proposedModifications: z.array(z.string()),
+  proposedCreations: z.array(z.string()),
 }).strict();
 
 const PatchChunkSchema = z.object({
@@ -101,6 +114,37 @@ function formatZodPath(pathParts: ReadonlyArray<PropertyKey>): string {
     .map((part) => typeof part === "number" ? `[${part}]` : String(part))
     .join(".")
     .replace(/\.\[/g, "[") || "<root>";
+}
+
+function normalizeScopeAnalysisResponse(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  const parsed = value as Record<string, unknown>;
+  const normalized: Record<string, unknown> = { ...parsed };
+
+  if (
+    !Array.isArray(normalized["proposedModifications"]) &&
+    Array.isArray(parsed["proposedFilesToModify"])
+  ) {
+    normalized["proposedModifications"] = parsed["proposedFilesToModify"];
+  }
+  if (Object.hasOwn(normalized, "proposedFilesToModify")) {
+    delete normalized["proposedFilesToModify"];
+  }
+
+  if (
+    !Array.isArray(normalized["proposedCreations"]) &&
+    Array.isArray(parsed["proposedFilesToCreate"])
+  ) {
+    normalized["proposedCreations"] = parsed["proposedFilesToCreate"];
+  }
+  if (Object.hasOwn(normalized, "proposedFilesToCreate")) {
+    delete normalized["proposedFilesToCreate"];
+  }
+
+  return normalized;
 }
 
 function redactPreview(content: string): string {
@@ -168,14 +212,34 @@ function findBalancedObjectCandidates(content: string): string[] {
   return candidates;
 }
 
-function hasUnbalancedJsonObject(content: string): boolean {
+function parseJsonCandidate(candidate: string): unknown | null {
+  try {
+    return JSON.parse(candidate) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function parseObjectCandidate(candidate: string): Record<string, unknown> | null {
+  const parsed = parseJsonCandidate(candidate);
+  if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return null;
+}
+
+interface JsonScanState {
+  readonly depth: number;
+  readonly inString: boolean;
+}
+
+function scanJsonState(content: string): JsonScanState {
   let depth = 0;
   let inString = false;
   let escaped = false;
 
   for (let i = 0; i < content.length; i++) {
     const char = content[i];
-
     if (inString) {
       if (escaped) {
         escaped = false;
@@ -193,25 +257,36 @@ function hasUnbalancedJsonObject(content: string): boolean {
     }
     if (char === "{") depth++;
     if (char === "}" && depth > 0) depth--;
+    if (char === "[") depth++;
+    if (char === "]" && depth > 0) depth--;
   }
 
+  return { depth, inString };
+}
+
+function hasUnbalancedJsonObject(content: string): boolean {
+  const { depth, inString } = scanJsonState(content);
   return depth > 0 || inString;
 }
 
-function parseJsonCandidate(candidate: string): unknown | null {
-  try {
-    return JSON.parse(candidate) as unknown;
-  } catch {
-    return null;
-  }
+function isLikelyTruncatedJson(content: string): boolean {
+  const trimmed = content.trim();
+  if (!/^[\s]*[{\[]/.test(trimmed)) return false;
+  if (!hasUnbalancedJsonObject(content)) return false;
+
+  const state = scanJsonState(trimmed);
+  if (trimmed.endsWith("}") || trimmed.endsWith("]")) return false;
+  if (trimmed.endsWith("\"")) return false;
+  if (trimmed.endsWith(",")) return true;
+  if (trimmed.endsWith(":")) return true;
+  if (trimmed.endsWith("{") || trimmed.endsWith("[")) return true;
+
+  return state.depth > 0 || state.inString;
 }
 
-function parseObjectCandidate(candidate: string): Record<string, unknown> | null {
-  const parsed = parseJsonCandidate(candidate);
-  if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-    return parsed as Record<string, unknown>;
-  }
-  return null;
+function isTruncationFinishReason(finishReason: string | undefined): boolean {
+  if (!finishReason) return false;
+  return finishReason === "length" || finishReason === "content_filter";
 }
 
 export function extractProviderJsonObject(content: string, context: ProviderOutputContext): unknown {
@@ -227,12 +302,12 @@ export function extractProviderJsonObject(content: string, context: ProviderOutp
       content.length
     );
   }
-  if (context.finishReason === "length") {
+  if (isTruncationFinishReason(context.finishReason)) {
     throw new ProviderJsonOutputError(
       context,
       "truncated_output",
       preview,
-      "provider reported finish_reason=length",
+      `provider reported finish_reason=${context.finishReason}`,
       null,
       content.length
     );
@@ -250,6 +325,7 @@ export function extractProviderJsonObject(content: string, context: ProviderOutp
     .filter((candidate): candidate is Record<string, unknown> => candidate !== null);
 
   const unique = new Map(parsed.map((candidate) => [JSON.stringify(candidate), candidate]));
+  const hasJsonCandidates = candidates.length > 0;
   if (unique.size === 1) {
     return [...unique.values()][0];
   }
@@ -264,9 +340,9 @@ export function extractProviderJsonObject(content: string, context: ProviderOutp
     );
   }
 
-  const category: ProviderParseCategory = hasUnbalancedJsonObject(content)
+  const category: ProviderParseCategory = isLikelyTruncatedJson(content)
     ? "truncated_output"
-    : content.includes("{") ? "malformed_json" : "no_json_object";
+    : hasJsonCandidates || /^\s*[{\[]/.test(trimmed) ? "malformed_json" : "non_json_output";
   throw new ProviderJsonOutputError(
     context,
     category,
@@ -279,7 +355,8 @@ export function extractProviderJsonObject(content: string, context: ProviderOutp
 
 export function parseScopeAnalysisResponse(content: string, context: ProviderOutputContext): ScopeAnalysisResult {
   const parsed = extractProviderJsonObject(content, context);
-  const result = ScopeAnalysisSchema.safeParse(parsed);
+  const normalized = normalizeScopeAnalysisResponse(parsed);
+  const result = ScopeAnalysisSchema.safeParse(normalized);
   if (!result.success) {
     throw new ProviderJsonOutputError(
       context,
@@ -290,7 +367,12 @@ export function parseScopeAnalysisResponse(content: string, context: ProviderOut
       content.length
     );
   }
-  return result.data;
+  return {
+    rationale: result.data.rationale,
+    affectedModules: result.data.affectedModules,
+    proposedFilesToModify: result.data.proposedModifications,
+    proposedFilesToCreate: result.data.proposedCreations,
+  };
 }
 
 function repairPatchPlanAliases(value: unknown): { value: unknown; repairs: ProviderSchemaRepair[] } {

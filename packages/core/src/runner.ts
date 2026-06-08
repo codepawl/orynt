@@ -4,6 +4,7 @@ import { StateGraph } from "./agent/orchestration";
 import { TraceLedger } from "./ledger/trace";
 import { createLlmProvider, resolveProviderConfig } from "./providers/llm";
 import { activeLedgers } from "./agent/nodes";
+import { resolveContextBudgets } from "./agent/context";
 import {
   createIntakeNode,
   createRepoScanNode,
@@ -56,6 +57,10 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     maxTokens,
     scopeAnalysisMaxTokens,
     patchPlanMaxTokens,
+    contextMaxFiles,
+    contextMaxBytes,
+    contextMaxChars,
+    structuredOutputMode,
   } = options;
 
   // Resolve workspace directory
@@ -85,7 +90,16 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     maxTokens,
     scopeAnalysisMaxTokens,
     patchPlanMaxTokens,
+    structuredOutputMode,
   });
+  const contextBudget = resolveContextBudgets(
+    { maxFiles: contextMaxFiles, maxBytes: contextMaxBytes, maxChars: contextMaxChars },
+    {
+      OPENPAWL_CONTEXT_MAX_FILES: process.env["OPENPAWL_CONTEXT_MAX_FILES"],
+      OPENPAWL_CONTEXT_MAX_BYTES: process.env["OPENPAWL_CONTEXT_MAX_BYTES"],
+      OPENPAWL_CONTEXT_MAX_CHARS: process.env["OPENPAWL_CONTEXT_MAX_CHARS"],
+    }
+  );
   const llm = createLlmProvider(providerConfig, fixturePath);
 
   // Set up trace ledger after startup validation/config resolution succeeds.
@@ -134,6 +148,10 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       includePromptMetadata,
       scopeAnalysisMaxTokens: providerConfig.scopeAnalysisMaxTokens,
       patchPlanMaxTokens: providerConfig.patchPlanMaxTokens,
+      contextMaxFiles: contextBudget.maxFiles,
+      contextMaxBytes: contextBudget.maxBytes,
+      contextMaxChars: contextBudget.maxChars,
+      structuredOutputMode: providerConfig.structuredOutputMode,
     },
     nextNode: null,
     isComplete: false,

@@ -58,6 +58,42 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 
 **Scope:** `.github/workflows/openpawl.yml`, README documentation, and this walkthrough were changed. `apps/web` and `apps/api` were not modified.
 
+### 2026-06-08 Structured-output Retry and Classification Hardening
+
+**Goal:** Improve real-provider reliability when output is not strict JSON and strengthen auditability when retries are used.
+
+**Fixes:**
+- Added explicit `non_json_output` parsing classification for plain-language provider responses.
+- Kept `truncated_output` only for explicit truncation signals (for example, `finish_reason=length`/`content_filter` or clearly incomplete JSON starts).
+- Mapped remaining invalid-but-JSON-like outputs to `malformed_json` unless truncation is strongly indicated.
+- Added retry metadata fields in trace and response events (`retryAttempt`, `retryAttempted`, `retrySucceeded`).
+- Added `provider_structured_retry_failed` trace events so failed retries remain clearly visible.
+- Added `json_schema` transport support for OpenAI-compatible providers:
+  - Openpai-compatible calls for `scope_analysis` and `patch_plan` now send `response_format: { type: "json_schema", json_schema: { name, strict: true, schema } }`.
+  - `OPENPAWL_RESPONSE_FORMAT` / `--response-format` still allows fallback to `json_object`.
+  - Scope schema now prefers `proposedModifications` and `proposedCreations` while retaining compatibility with legacy `proposedFilesToModify`/`proposedFilesToCreate` parsing for existing fixtures.
+
+**Scope:** `packages/core/src/providers/json-output.ts`, `packages/core/src/agent/nodes.ts`, and provider/runner tests were updated. `apps/web` and `apps/api` were not modified.
+
+### 2026-06-08 Repo-grounded proposal filtering
+
+**Goal:** Reduce hallucinated or invented file targets in model output and preserve auditable failure visibility when outputs are not repo-grounded.
+
+**Fixes:**
+- Added grounding helpers for `scope_analysis` proposals and `patch_plan` chunks:
+  - scope `proposedModifications` / `proposedCreations` must parse as repo-relative file paths
+  - natural-language descriptions are rejected as non-path content
+  - test-task scope proposals prefer existing relevant files from context candidates when direct matches are missing
+  - patch chunks must be existing repo files or plausible new test files near affected modules
+- Added clear rejections metadata:
+  - `rejectedProposedFilesToModify`, `rejectedProposedFilesToCreate` on scope results
+  - `rejectedChunks` on patch plans
+  - `groundingNotes` and rejected counts on trace events
+- If grounding rejections are too high, runs fail with `category=ungrounded_provider_output` instead of silently accepting model hallucinations.
+- Report output now includes rejected/un-grounded scope proposals and patch chunks.
+
+**Scope:** `packages/core/src/agent/nodes.ts`, `packages/core/src/state/schema.ts`, and runner tests were updated. `apps/web` and `apps/api` were not modified.
+
 ---
 
 ## What Was Built
@@ -401,7 +437,7 @@ Real-provider validation follow-up (DeepInfra/Nemotron):
 - `patch-plan.json` validated as valid metadata-only contract output.
 - No structured-output retry was needed.
 - `validationStatus` was `valid` for provider model responses.
-- Remaining token cost for this smoke is around `6k` total (shared run-specific variance).
+- Observed token cost for this smoke stayed in the single-thousands range; with compact context the `context_pack_created` and `llm_call` prompt metrics should be lower than the prior broad-scan payload.
 - Placeholder validation behavior still defaults on dry-run without `--test-cmd`, including real-provider runs.
 
 ---
@@ -480,6 +516,31 @@ bun run dev:cli -- run \
   --test-cmd "bun test"
 ```
 
+### Context compaction and prompt-cost control
+
+Real-provider smoke now sends compact context instead of raw scan dumps.
+
+Behavior:
+- Openpawl creates a `ContextPack` for each run from repo scan results.
+- `ContextPack` contains task summary, repository root, selected candidate files, compact file summaries, package/workspace hints, test-command hints, safety exclusions, and compact metrics.
+- Prompt payloads for `scope_analysis` and `patch_plan` now include `Scope Context Pack` / `Patch Context Pack` and pass `compactContextForPrompt` data.
+- Budget caps are enforced:
+  - `OPENPAWL_CONTEXT_MAX_FILES` (default `60`)
+  - `OPENPAWL_CONTEXT_MAX_BYTES` (default `64_000`)
+  - `OPENPAWL_CONTEXT_MAX_CHARS` (default `12_000`)
+- CLI equivalents:
+  - `--context-max-files`
+  - `--context-max-bytes`
+  - `--context-max-chars`
+- `context_pack_created` trace event records compaction metadata:
+  - scanned/candidate/included/omitted counts
+  - estimated context bytes/chars
+  - compaction reason
+  - configured budget
+- `llm_call` events record bounded `promptChars` per purpose (`scope_analysis`, `patch_plan`) and token usage when the provider returns it.
+- Full prompts are still omitted from trace/report by default; only bounded prompt metrics are recorded.
+- Safe response-shape metadata is now tracked as part of structured output diagnostics: `hasContent`, `hasReasoningContent`, `contentLength`, `reasoningContentLength`.
+
 Observed real-provider failure before parse hardening:
 - Provider call succeeded with `provider=openai-compatible`.
 - Model: `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B`.
@@ -489,11 +550,13 @@ Observed real-provider failure before parse hardening:
 Hardening fix:
 - JSON parsing now handles fenced JSON and single balanced JSON objects embedded in surrounding text.
 - Provider-specific fields such as `reasoning_content` are ignored and are not treated as output content.
+- OpenAI-compatible output extraction reads only `choices[0].message.content`; when that field is empty and `reasoning_content` is present, categorization is `provider_reasoning_without_content`.
 - If JSON cannot be extracted, the error includes provider, model, purpose, parse category, schema validation path when available, finish reason, content length, and a capped redacted content preview.
 - If provider output is likely truncated, such as `finish_reason=length` or unbalanced JSON ending mid-object, the parse category is `truncated_output`.
 - If `finish_reason=stop` still returns invalid JSON, the parse category remains `malformed_json`.
 - If JSON parses but fails schema validation, the run fails clearly without coercing the content into a valid shape.
 - A one-time structured retry is recorded as `provider_structured_retry`.
+- Real-provider failures from DeepInfra/Nemotron-style outputs that include reasoning-only payloads are now separated from generic non-JSON output with `provider_reasoning_without_content`.
 
 Patch-plan contract hardening:
 - `patch_plan` is metadata-only in the current MVP: `rationale` plus up to five `{ type, file, description }` chunks.
@@ -553,6 +616,13 @@ In `--write` mode:
 6. **Binary detection is conservative** — File selection skips known binary extensions; it does not inspect every file's bytes for binary content.
 7. **Ignore handling is hardcoded** — Known generated and dependency directories are skipped, but repo-specific `.gitignore` rules are not parsed yet.
 8. **GitHub posting requires API token and PR context** — Without them, `github-comment` prints the report to stdout instead of posting.
+
+## Context Compaction Limitations
+
+1. No AST-aware semantic memory yet.
+2. No production write-mode patch application is implemented in this milestone.
+3. No `.gitignore` parsing (hardcoded ignore list remains).
+4. No retry loop for failed validation; single-pass planning/validation only.
 
 ---
 

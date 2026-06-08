@@ -45,6 +45,56 @@ export interface AgentContext {
   readonly includePromptMetadata?: boolean;
   readonly scopeAnalysisMaxTokens?: number;
   readonly patchPlanMaxTokens?: number;
+  readonly contextMaxFiles?: number;
+  readonly contextMaxBytes?: number;
+  readonly contextMaxChars?: number;
+  readonly structuredOutputMode?: "json_schema" | "json_object";
+}
+
+export interface ContextPackBudget {
+  readonly maxFiles: number;
+  readonly maxBytes: number;
+  readonly maxChars: number;
+}
+
+export interface ContextPackTestHints {
+  readonly commands: ReadonlyArray<string>;
+  readonly defaultFallback: string;
+}
+
+export interface ContextPackFileSummary {
+  readonly path: string;
+  readonly sizeBytes: number;
+  readonly language: string;
+  readonly reason: string;
+  readonly excerpt: string;
+  readonly isExcerptTruncated: boolean;
+}
+
+export interface ContextPackMetrics {
+  readonly inputScannedFiles: number;
+  readonly candidateFiles: number;
+  readonly includedFiles: number;
+  readonly omittedFiles: number;
+  readonly scannedBytes: number;
+  readonly includedBytes: number;
+  readonly omittedBytes: number;
+  readonly estimatedContextChars: number;
+  readonly compactionReason: string;
+}
+
+export interface ContextPack {
+  readonly taskSummary: string;
+  readonly repositoryRoot: string;
+  readonly candidateFiles: ReadonlyArray<string>;
+  readonly compactFileSummaries: ReadonlyArray<ContextPackFileSummary>;
+  readonly packageHints: ReadonlyArray<{ readonly type: string; readonly path: string }>;
+  readonly workspaceHints: ReadonlyArray<string>;
+  readonly testCommandHints: ReadonlyArray<string>;
+  readonly safetyExclusions: ReadonlyArray<string>;
+  readonly omittedContextNotes: ReadonlyArray<string>;
+  readonly budget: ContextPackBudget;
+  readonly metrics: ContextPackMetrics;
 }
 
 /**
@@ -70,6 +120,7 @@ export interface AgentState {
 
   // Milestone 1 Node Results
   readonly repoScanResult?: RepoScanResult;
+  readonly contextPack?: ContextPack;
   readonly scopeAnalysisResult?: ScopeAnalysisResult;
   readonly fileSelectionResult?: FileSelectionResult;
   readonly patchPlan?: PatchPlan;
@@ -105,6 +156,10 @@ export interface RunOptions {
   readonly maxTokens?: number;
   readonly scopeAnalysisMaxTokens?: number;
   readonly patchPlanMaxTokens?: number;
+  readonly contextMaxFiles?: number;
+  readonly contextMaxBytes?: number;
+  readonly contextMaxChars?: number;
+  readonly structuredOutputMode?: "json_schema" | "json_object";
 }
 
 export interface RunResult {
@@ -136,6 +191,17 @@ export interface ScopeAnalysisResult {
   readonly affectedModules: ReadonlyArray<string>;
   readonly proposedFilesToModify: ReadonlyArray<string>;
   readonly proposedFilesToCreate: ReadonlyArray<string>;
+  readonly groundingNotes?: ReadonlyArray<string>;
+  readonly groundingFallbackUsed?: boolean;
+  readonly groundingFallbackFiles?: ReadonlyArray<string>;
+  readonly rejectedProposedFilesToModify?: ReadonlyArray<{
+    readonly file: string;
+    readonly reason: string;
+  }>;
+  readonly rejectedProposedFilesToCreate?: ReadonlyArray<{
+    readonly file: string;
+    readonly reason: string;
+  }>;
 }
 
 export interface FileSelectionResult {
@@ -155,6 +221,12 @@ export interface PatchChunk {
 export interface PatchPlan {
   readonly chunks: ReadonlyArray<PatchChunk>;
   readonly rationale: string;
+  readonly groundingNotes?: ReadonlyArray<string>;
+  readonly rejectedChunks?: ReadonlyArray<{
+    readonly index: number;
+    readonly file: string;
+    readonly reason: string;
+  }>;
 }
 
 export interface ValidationResult {

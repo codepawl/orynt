@@ -76,6 +76,31 @@ bun run dev:cli -- github-comment \
   --pr 42
 ```
 
+### 7. Context compaction (token/cost control)
+
+Openpawl now compacts scan context before every provider call.
+
+- compact task summary and repository root
+- candidate file list with path, size, language, brief excerpt, and reason for inclusion
+- package/workspace hints
+- test command hints
+- safety exclusion list
+- candidate/included/omitted metrics and budget metadata
+
+Default caps (conservative for CI and real-provider smoke):
+
+- `OPENPAWL_CONTEXT_MAX_FILES` (default `60`)
+- `OPENPAWL_CONTEXT_MAX_BYTES` (default `64000`)
+- `OPENPAWL_CONTEXT_MAX_CHARS` (default `12000`)
+
+CLI equivalents:
+
+- `--context-max-files`
+- `--context-max-bytes`
+- `--context-max-chars`
+
+Report output includes a `Context Pack` section with file counts, compaction status, and budget. Trace output includes the `context_pack_created` event plus per-purpose prompt-character counts, without storing raw prompt text.
+
 ---
 
 ## How It Works
@@ -141,9 +166,33 @@ bun run dev:cli -- run \
   --dry-run
 ```
 
-You can also pass `--provider openai-compatible --model <model>` on `codepawl run`. Missing `OPENPAWL_MODEL` or `OPENPAWL_API_KEY` fails fast with a clear error. Provider calls request JSON output, apply structured-output token caps with `OPENPAWL_MAX_TOKENS` plus optional `OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS` and `OPENPAWL_PATCH_PLAN_MAX_TOKENS`, extract common JSON object formats such as fenced JSON, and validate response schemas before using them. On malformed JSON or schema validation failure, Openpawl performs one compact structured-output retry that includes only the expected schema, previous error category/path, and task summary. Trace artifacts record provider name, model, request purpose, response-format request status, parse/validation status, schema validation path, finish reason, content length, a small redacted content preview on parse errors, and token usage when available; they do not record API keys or full prompts by default. Use `--include-prompt-metadata` to record only redacted prompt counts and sizes.
+You can also pass `--provider openai-compatible --model <model>` on `codepawl run`. Missing `OPENPAWL_MODEL` or `OPENPAWL_API_KEY` fails fast with a clear error. Openpawl requests structured output as:
+- `json_schema` (default, strict: true) for both `scope_analysis` and `patch_plan`
+- `json_object` only when `OPENPAWL_RESPONSE_FORMAT=json_object` (or `--response-format json_object`) is explicitly configured
 
-OpenAI-compatible transport does not guarantee schema adherence for every model. Some models may need the structured retry, lower temperature, or a different model with stronger JSON-mode behavior.
+Token caps are controlled by `OPENPAWL_MAX_TOKENS` plus optional `OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS` and `OPENPAWL_PATCH_PLAN_MAX_TOKENS`. Responses are parsed from common JSON object formats (fenced JSON etc.), then schema-validated. On malformed JSON, non-JSON output, or schema validation failure, Openpawl performs one compact structured-output retry using the same mode.
+
+OpenAI-compatible responses are parsed only from `choices[0].message.content`.
+If `content` is missing/empty but `reasoning_content` exists, Openpawl fails with `provider_reasoning_without_content`, includes safe response-shape metadata, and still attempts one structured retry.
+
+Context compaction does reduce prompt and context bytes in real-provider smoke runs, but model JSON adherence can still fail (for example, plain prose with `finish_reason=stop`). In that case the retry path captures both the parse category and retry outcome in trace metadata so failures remain auditable without dumping full prompts.
+
+DeepInfra/Nemotron-class models may emit `reasoning_content`; Openpawl ignores this field for output extraction.
+The `reasoning_content` field may still appear when the model is not compliant with schema mode, so non-JSON/shape failures can still occur even with compacted context and schema enforcement.
+
+Trace artifacts record provider name, model, request purpose, response-format request status, parse/validation status, schema validation path, finish reason, content length, a small redacted content preview on parse errors, retry status (`retryAttempted`, `retryAttempt`, `retrySucceeded`), and token usage when available. They do not record API keys or full prompts by default. Use `--include-prompt-metadata` to record only redacted prompt counts and sizes.
+Safe response-shape metadata is also recorded (`hasContent`, `hasReasoningContent`, `contentLength`, `reasoningContentLength`).
+
+Openpawl now additionally grounds provider-file proposals after each structured output parse:
+
+- `scope_analysis` proposals are filtered to existing repo files and context-pack candidates; natural-language descriptions are rejected.
+- On test-related tasks, preferred fallback uses existing relevant test files from context when direct modify proposals are missing.
+- `patch_plan` chunks must reference either an existing repo file or a plausible new test file under a relevant test directory.
+- If grounding rejection is high (`>=60%` rejected or `>=3` rejected), Openpawl fails with `category=ungrounded_provider_output`.
+
+When grounding drops paths, the full report includes "Rejected/un-grounded scope proposals" and "Rejected/un-grounded patch chunks" sections.
+
+OpenAI-compatible transport does not guarantee schema adherence for every model. Some models may need the structured retry, lower temperature, or a different model with stronger JSON-mode behavior. DeepInfra/Nemotron-class models may emit `reasoning_content`; that field is intentionally ignored for output extraction and can still lead to non-JSON/shape failures even with compact context.
 
 `patch_plan` is metadata-only in the current MVP. Its JSON contains only `rationale` and up to five chunks shaped as `{ "type": "...", "file": "...", "description": "..." }`; it does not include code diffs or replacement content.
 
@@ -162,6 +211,10 @@ bun run dev:cli -- run \
 ```
 
 Real provider integration is experimental in v0. It does not imply production autonomous coding, and it does not loosen dry-run defaults, write-mode opt-in, or path safety guardrails.
+
+Current known limitations:
+- No AST-aware deep semantic memory yet (no cross-file code graph reasoning beyond selected file summaries).
+- No production write-mode patching beyond metadata-only patch plans in this milestone.
 
 ---
 

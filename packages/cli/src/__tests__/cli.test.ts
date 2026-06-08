@@ -359,27 +359,27 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
     // Use a fixture that generates a metadata-only create plan.
     const writeFixture = [
       {
-        matchLastMessage: "Repository Scan Result",
+        matchLastMessage: "Scope Context Pack",
         response: {
           content: JSON.stringify({
-            rationale: "Scope: create new file",
+            rationale: "Scope: add hello test helper",
             affectedModules: ["src"],
             proposedFilesToModify: [],
-            proposedFilesToCreate: ["src/hello.ts"],
+            proposedFilesToCreate: ["src/__tests__/hello.test.ts"],
           }),
           usage: { inputTokens: 10, outputTokens: 10 },
         },
       },
       {
-        matchLastMessage: "Selected Files Content",
+        matchLastMessage: "Patch Context Pack",
         response: {
           content: JSON.stringify({
-            rationale: "Create hello.ts",
+            rationale: "Create hello test file",
             chunks: [
               {
                 type: "create",
-                file: "src/hello.ts",
-                description: "Create hello.ts",
+                file: "src/__tests__/hello.test.ts",
+                description: "Create hello test file",
               },
             ],
           }),
@@ -389,17 +389,16 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
     ];
     const fixturePath = path.join(tmpDir, "write-fixture.json");
     await fs.writeFile(fixturePath, JSON.stringify(writeFixture), "utf-8");
-    await fs.mkdir(path.join(tmpDir, "src"), { recursive: true });
 
     const result = await runMockAgent({
-      query: "create hello file",
+      query: "add tests for hello file",
       workspaceDir: tmpDir,
       dryRun: false,
       testCommand: "echo ok",
       mockFixturePath: fixturePath,
     });
 
-    const createdFile = path.join(tmpDir, "src", "hello.ts");
+    const createdFile = path.join(tmpDir, "src", "__tests__", "hello.test.ts");
     const exists = await fs.stat(createdFile).catch(() => null);
     expect(exists, "metadata-only write mode must not create files").toBeNull();
     expect(result.success).toBe(false);

@@ -93,6 +93,19 @@ function readStringFlag(
   return value;
 }
 
+function readPositiveIntFlag(
+  flags: Record<string, string | boolean>,
+  name: string
+): number | undefined {
+  const value = readStringFlag(flags, name);
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    die(`--${name} must be a positive integer.`);
+  }
+  return parsed;
+}
+
 type GithubFetch = (
   input: Parameters<typeof fetch>[0],
   init?: Parameters<typeof fetch>[1]
@@ -195,7 +208,18 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   const testCmd = readStringFlag(flags, "test-cmd");
   const provider = readStringFlag(flags, "provider");
   const model = readStringFlag(flags, "model");
+  const structuredOutputModeRaw = readStringFlag(flags, "response-format");
+  const structuredOutputMode = structuredOutputModeRaw === undefined
+    ? undefined
+    : structuredOutputModeRaw === "json_schema" || structuredOutputModeRaw === "json_object"
+      ? structuredOutputModeRaw
+      : die(
+        `--response-format must be \"json_schema\" or \"json_object\" (got: ${structuredOutputModeRaw}).`
+      );
   const includePromptMetadata = flags["include-prompt-metadata"] === true;
+  const contextMaxFiles = readPositiveIntFlag(flags, "context-max-files");
+  const contextMaxBytes = readPositiveIntFlag(flags, "context-max-bytes");
+  const contextMaxChars = readPositiveIntFlag(flags, "context-max-chars");
 
   if (!task || task.trim().length === 0) {
     die("--task is required and must not be empty. e.g. --task \"add tests for shared helpers\"");
@@ -231,6 +255,10 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
       provider,
       model,
       includePromptMetadata,
+      structuredOutputMode,
+      contextMaxFiles,
+      contextMaxBytes,
+      contextMaxChars,
     });
   } catch (err: unknown) {
     die(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
@@ -481,6 +509,11 @@ Run options:
   --test-cmd <cmd>       Validation command; review-only dry-runs use placeholder validation when omitted
   --provider <name>      Provider override: mock or openai-compatible (default: OPENPAWL_PROVIDER or mock)
   --model <model>        Model override for openai-compatible provider
+  --context-max-files <n> Optional context compaction file budget (env: OPENPAWL_CONTEXT_MAX_FILES)
+  --context-max-bytes <n> Optional context compaction byte budget (env: OPENPAWL_CONTEXT_MAX_BYTES)
+  --context-max-chars <n> Optional context compaction char budget (env: OPENPAWL_CONTEXT_MAX_CHARS)
+  --response-format <json_schema|json_object>
+                         Response format mode for OpenAI-compatible provider (env: OPENPAWL_RESPONSE_FORMAT)
   --include-prompt-metadata
                          Record redacted prompt metadata in trace; never records API keys
 
@@ -520,6 +553,11 @@ Options:
   --test-cmd <cmd>       Validation command; review-only dry-runs use placeholder validation when omitted
   --provider <name>      mock or openai-compatible (env: OPENPAWL_PROVIDER)
   --model <model>        Provider model override (env: OPENPAWL_MODEL)
+  --response-format <json_schema|json_object>
+                         OpenAI-compatible response format override (env: OPENPAWL_RESPONSE_FORMAT)
+  --context-max-files <n> Optional context compaction file budget (env: OPENPAWL_CONTEXT_MAX_FILES)
+  --context-max-bytes <n> Optional context compaction byte budget (env: OPENPAWL_CONTEXT_MAX_BYTES)
+  --context-max-chars <n> Optional context compaction char budget (env: OPENPAWL_CONTEXT_MAX_CHARS)
   --include-prompt-metadata
                          Record prompt counts/size metadata in trace, not prompt text
 
@@ -529,10 +567,18 @@ Provider env:
   OPENPAWL_API_KEY       Required for openai-compatible; never printed
   OPENPAWL_BASE_URL      Optional OpenAI-compatible base URL
   OPENPAWL_MAX_TOKENS    Optional structured-output token cap
+  OPENPAWL_CONTEXT_MAX_FILES
+                         Optional context compaction file budget
+  OPENPAWL_CONTEXT_MAX_BYTES
+                         Optional context compaction byte budget
+  OPENPAWL_CONTEXT_MAX_CHARS
+                         Optional context compaction char budget
   OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS
                          Optional scope_analysis token cap override
   OPENPAWL_PATCH_PLAN_MAX_TOKENS
                          Optional patch_plan token cap override
+  OPENPAWL_RESPONSE_FORMAT
+                         Optional response format mode: json_schema (default) or json_object
 
 Examples:
   codepawl run --repo . --task "review current repository changes" --dry-run

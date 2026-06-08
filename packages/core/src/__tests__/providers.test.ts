@@ -4,6 +4,7 @@ import {
   OpenAiCompatibleProvider,
   ProviderConfigurationError,
   ProviderResponseValidationError,
+  ProviderResponseShapeError,
   resolveProviderConfig,
 } from "../providers/llm";
 
@@ -32,6 +33,7 @@ describe("provider config resolution", () => {
       maxTokens: 2000,
       scopeAnalysisMaxTokens: 2000,
       patchPlanMaxTokens: 2000,
+      structuredOutputMode: "json_schema",
     });
   });
 
@@ -47,6 +49,18 @@ describe("provider config resolution", () => {
 
     expect(config.scopeAnalysisMaxTokens).toBe(1200);
     expect(config.patchPlanMaxTokens).toBe(1600);
+  });
+
+  it("resolves response format override", () => {
+    const config = resolveProviderConfig({}, {
+      OPENPAWL_PROVIDER: "openai-compatible",
+      OPENPAWL_MODEL: "test-model",
+      OPENPAWL_API_KEY: "secret-key",
+      OPENPAWL_BASE_URL: "https://example.test/v1",
+      OPENPAWL_RESPONSE_FORMAT: "json_object",
+    });
+
+    expect(config.structuredOutputMode).toBe("json_object");
   });
 
   it("fails clearly when openai-compatible env is incomplete", () => {
@@ -111,6 +125,51 @@ describe("OpenAI-compatible provider", () => {
     expect(body.max_tokens).toBe(1600);
   });
 
+  it("uses json_schema response format when requested", async () => {
+    let requestBody: unknown = null;
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const request = new Request(input, init);
+      requestBody = await request.json();
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "{\"ok\":true}" }, finish_reason: "stop" }],
+      }), { status: 200 });
+    };
+
+    const provider = new OpenAiCompatibleProvider({
+      model: "test-model",
+      apiKey: "secret-key",
+      baseUrl: "https://example.test/v1",
+      fetchImpl,
+    });
+
+    const schema = {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+      },
+      required: ["ok"],
+      additionalProperties: false,
+    };
+
+    await provider.generateCompletion([
+      {
+        id: "msg-1",
+        role: "user",
+        content: "Return JSON",
+        timestamp: "2026-06-08T00:00:00.000Z",
+      },
+    ], { responseFormat: { type: "json_schema", name: "scope_analysis", schema, strict: true } });
+
+    expect((requestBody as { response_format: { type: string; json_schema?: unknown } }).response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "scope_analysis",
+        strict: true,
+        schema,
+      },
+    });
+  });
+
   it("passes max_completion_tokens when requested", async () => {
     let requestBody: unknown = null;
     const provider = new OpenAiCompatibleProvider({
@@ -149,9 +208,66 @@ describe("OpenAI-compatible provider", () => {
       }), { status: 200 }),
     });
 
-    await expect(provider.generateCompletion([])).rejects.toThrow(
-      "choices[0].message.content"
-    );
+    await expect(provider.generateCompletion([])).rejects.toMatchObject({
+      name: "ProviderResponseShapeError",
+      issue: "provider_reasoning_without_content",
+    });
+  });
+
+  it("uses message.content when reasoning_content is also present", async () => {
+    const provider = new OpenAiCompatibleProvider({
+      model: "test-model",
+      apiKey: "secret-key",
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{
+          message: {
+            content: "{\"rationale\":\"ok\",\"chunks\":[]}",
+            reasoning_content: "{\"rationale\":\"should be ignored\",\"chunks\":[]}",
+          },
+        }],
+      }), { status: 200 }),
+    });
+
+    const result = await provider.generateCompletion([]);
+
+    expect(result.content).toBe('{"rationale":"ok","chunks":[]}');
+    expect(result.responseShape).toEqual({
+      hasContent: true,
+      hasReasoningContent: true,
+      contentLength: '{"rationale":"ok","chunks":[]}'.length,
+      reasoningContentLength: '{"rationale":"should be ignored","chunks":[]}'.length,
+    });
+  });
+
+  it("throws provider_reasoning_without_content when content is empty but reasoning_content exists", async () => {
+    const provider = new OpenAiCompatibleProvider({
+      model: "test-model",
+      apiKey: "secret-key",
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{
+          message: {
+            content: "   \t\n",
+            reasoning_content: "{\"rationale\":\"hidden\"}",
+          },
+          finish_reason: "stop",
+        }],
+      }), { status: 200 }),
+    });
+
+    try {
+      await provider.generateCompletion([]);
+      throw new Error("expected failure");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderResponseShapeError);
+      expect((err as ProviderResponseShapeError).issue).toBe("provider_reasoning_without_content");
+      expect((err as ProviderResponseShapeError).responseShape).toEqual({
+        hasContent: false,
+        hasReasoningContent: true,
+        contentLength: "   \t\n".length,
+        reasoningContentLength: "{\"rationale\":\"hidden\"}".length,
+      });
+      expect((err as Error).message).toContain("reasoning_content");
+    }
   });
 });
 

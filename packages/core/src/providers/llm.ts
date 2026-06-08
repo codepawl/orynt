@@ -7,13 +7,22 @@ export interface LlmCompletionOptions {
   readonly temperature?: number;
   readonly maxTokens?: number;
   readonly maxCompletionTokens?: number;
-  readonly responseFormat?: { type: "json_object" | "text" };
+  readonly responseFormat?:
+    | { type: "json_object" }
+    | { type: "text" }
+    | { type: "json_schema"; name: string; schema: Record<string, unknown>; strict: boolean };
   readonly systemPrompt?: string;
 }
 
 export interface LlmCompletionResult {
   readonly content: string;
   readonly finishReason?: string;
+  readonly responseShape?: {
+    readonly hasContent: boolean;
+    readonly hasReasoningContent: boolean;
+    readonly contentLength: number;
+    readonly reasoningContentLength: number;
+  };
   readonly usage?: {
     readonly inputTokens: number;
     readonly outputTokens: number;
@@ -37,6 +46,7 @@ export interface ProviderConfigInput {
   readonly maxTokens?: number;
   readonly scopeAnalysisMaxTokens?: number;
   readonly patchPlanMaxTokens?: number;
+  readonly structuredOutputMode?: "json_schema" | "json_object";
 }
 
 export interface ResolvedProviderConfig {
@@ -47,6 +57,7 @@ export interface ResolvedProviderConfig {
   readonly maxTokens?: number;
   readonly scopeAnalysisMaxTokens?: number;
   readonly patchPlanMaxTokens?: number;
+  readonly structuredOutputMode?: "json_schema" | "json_object";
 }
 
 export interface OpenAiCompatibleProviderOptions {
@@ -65,6 +76,24 @@ function parsePositiveInteger(value: string | number | undefined, label: string)
   return parsed;
 }
 
+function parseStructuredOutputMode(
+  value: string | undefined,
+  label: string = "OPENPAWL_RESPONSE_FORMAT"
+): "json_schema" | "json_object" {
+  if (!value) {
+    return "json_schema";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "json_schema" || normalized === "json_object") {
+    return normalized;
+  }
+
+  throw new ProviderConfigurationError(
+    `${label} must be either "json_schema" or "json_object".`
+  );
+}
+
 export interface MockCompletionRule {
   readonly matchQuery?: string;
   readonly matchLastMessage?: string;
@@ -76,6 +105,17 @@ export interface MockCompletionRule {
       readonly outputTokens: number;
     };
   };
+}
+
+export type ProviderResponseShapeIssue =
+  | "provider_reasoning_without_content"
+  | "provider_empty_content";
+
+export interface OpenAiCompatibleResponseShape {
+  readonly hasContent: boolean;
+  readonly hasReasoningContent: boolean;
+  readonly contentLength: number;
+  readonly reasoningContentLength: number;
 }
 
 export class MockLlmProvider implements LlmProvider {
@@ -108,6 +148,7 @@ export class MockLlmProvider implements LlmProvider {
 
     const lastMessage = messages[messages.length - 1]?.content ?? "";
     const firstMessage = messages.find(m => m.role === "user")?.content ?? "";
+    const firstLineOfLastMessage = lastMessage.trimStart().split(/\r?\n/, 2)[0] ?? "";
 
     for (const rule of this.rules) {
       if (rule.matchQuery) {
@@ -135,13 +176,17 @@ export class MockLlmProvider implements LlmProvider {
         let isMatch = false;
         try {
           const regex = new RegExp(pattern);
-          if (regex.test(lastMessage)) {
+          if (regex.test(firstLineOfLastMessage)) {
             isMatch = true;
           }
         } catch (e) {
           // Ignore regex parsing error
         }
-        if (lastMessage.includes(pattern)) {
+        if (
+          firstLineOfLastMessage === pattern ||
+          firstLineOfLastMessage.startsWith(`${pattern}:`) ||
+          firstLineOfLastMessage.startsWith(`${pattern} `)
+        ) {
           isMatch = true;
         }
 
@@ -173,6 +218,28 @@ export class ProviderResponseValidationError extends Error {
   }
 }
 
+export class ProviderResponseShapeError extends ProviderResponseValidationError {
+  public readonly issue: ProviderResponseShapeIssue;
+  public readonly responseShape: OpenAiCompatibleResponseShape;
+  public readonly usage?: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+  };
+
+  constructor(
+    message: string,
+    issue: ProviderResponseShapeIssue,
+    responseShape: OpenAiCompatibleResponseShape,
+    usage?: { readonly inputTokens: number; readonly outputTokens: number }
+  ) {
+    super(message);
+    this.name = "ProviderResponseShapeError";
+    this.issue = issue;
+    this.responseShape = responseShape;
+    this.usage = usage;
+  }
+}
+
 export function resolveProviderConfig(
   input: ProviderConfigInput = {},
   env: Record<string, string | undefined> = process.env
@@ -201,10 +268,14 @@ export function resolveProviderConfig(
     input.scopeAnalysisMaxTokens ?? env["OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS"],
     "OPENPAWL_SCOPE_ANALYSIS_MAX_TOKENS"
   ) ?? maxTokens;
-  const patchPlanMaxTokens = parsePositiveInteger(
+    const patchPlanMaxTokens = parsePositiveInteger(
     input.patchPlanMaxTokens ?? env["OPENPAWL_PATCH_PLAN_MAX_TOKENS"],
     "OPENPAWL_PATCH_PLAN_MAX_TOKENS"
   ) ?? maxTokens;
+  const structuredOutputMode = parseStructuredOutputMode(
+    input.structuredOutputMode ?? env["OPENPAWL_RESPONSE_FORMAT"],
+    "OPENPAWL_RESPONSE_FORMAT"
+  );
   const missing: string[] = [];
   if (!model) missing.push("OPENPAWL_MODEL");
   if (!apiKey) missing.push("OPENPAWL_API_KEY");
@@ -218,13 +289,14 @@ export function resolveProviderConfig(
   return {
     provider: "openai-compatible",
     model,
-    apiKey,
-    baseUrl,
-    maxTokens,
-    scopeAnalysisMaxTokens,
-    patchPlanMaxTokens,
-  };
-}
+      apiKey,
+      baseUrl,
+      maxTokens,
+      scopeAnalysisMaxTokens,
+      patchPlanMaxTokens,
+      structuredOutputMode,
+    };
+  }
 
 export class OpenAiCompatibleProvider implements LlmProvider {
   public readonly providerName = "openai-compatible" as const;
@@ -261,7 +333,16 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         max_completion_tokens: options?.maxCompletionTokens,
         response_format: options?.responseFormat?.type === "json_object"
           ? { type: "json_object" }
-          : undefined,
+          : options?.responseFormat?.type === "json_schema"
+            ? {
+              type: "json_schema",
+              json_schema: {
+                name: options.responseFormat.name,
+                strict: options.responseFormat.strict,
+                schema: options.responseFormat.schema,
+              },
+            }
+            : undefined,
       }),
     });
 
@@ -271,26 +352,61 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
+      choices?: Array<{
+        message?: {
+          content?: unknown;
+          reasoning_content?: unknown;
+        };
+        finish_reason?: unknown;
+      }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     };
+
+    const usage = data.usage
+      ? {
+          inputTokens: data.usage.prompt_tokens ?? 0,
+          outputTokens: data.usage.completion_tokens ?? 0,
+        }
+      : undefined;
+
     const firstChoice = data.choices?.[0];
-    const content = firstChoice?.message?.content;
-    if (typeof content !== "string" || content.trim().length === 0) {
-      throw new ProviderResponseValidationError(
-        "OpenAI-compatible provider response did not include choices[0].message.content."
+    const message: { content?: unknown; reasoning_content?: unknown } =
+      typeof firstChoice?.message === "object" && firstChoice.message !== null
+        ? (firstChoice.message as { content?: unknown; reasoning_content?: unknown })
+        : {};
+
+    const content = typeof message.content === "string" ? message.content : "";
+    const reasoningContent = typeof message.reasoning_content === "string" ? message.reasoning_content : "";
+    const responseShape = {
+      hasContent: content.trim().length > 0,
+      hasReasoningContent: reasoningContent.trim().length > 0,
+      contentLength: content.length,
+      reasoningContentLength: reasoningContent.length,
+    };
+
+    if (!responseShape.hasContent) {
+      if (responseShape.hasReasoningContent) {
+        throw new ProviderResponseShapeError(
+          "OpenAI-compatible provider response contained reasoning_content but no usable message content.",
+          "provider_reasoning_without_content",
+          responseShape,
+          usage
+        );
+      }
+
+      throw new ProviderResponseShapeError(
+        "OpenAI-compatible provider response did not include choices[0].message.content.",
+        "provider_empty_content",
+        responseShape,
+        usage
       );
     }
 
     return {
       content,
+      responseShape,
       finishReason: typeof firstChoice?.finish_reason === "string" ? firstChoice.finish_reason : undefined,
-      usage: data.usage
-        ? {
-            inputTokens: data.usage.prompt_tokens ?? 0,
-            outputTokens: data.usage.completion_tokens ?? 0,
-          }
-        : undefined,
+      usage,
     };
   }
 }
