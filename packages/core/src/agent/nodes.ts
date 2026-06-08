@@ -30,8 +30,25 @@ export const activeLedgers = new Map<string, TraceLedger>();
 const BINARY_FILE_EXTENSION_RE =
   /\.(png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot|otf|mp4|webm|mp3|pdf|zip|tar|gz|rar|bin|exe|dll|so|dylib)$/i;
 
+const PLACEHOLDER_VALIDATION_COMMAND = "echo placeholder validation skipped";
+
 function isBinaryFilePath(filePath: string): boolean {
   return BINARY_FILE_EXTENSION_RE.test(filePath);
+}
+
+function isReviewOnlyTask(query: string): boolean {
+  const normalized = query.toLowerCase();
+  const hasReviewIntent = /\b(review|analyse|analyze|inspect|audit)\b/.test(normalized);
+  const hasChangeIntent = /\b(add|create|implement|fix|modify|update|delete|remove|refactor|write|generate)\b/.test(normalized);
+  return hasReviewIntent && !hasChangeIntent;
+}
+
+function shouldUsePlaceholderValidation(state: AgentState): boolean {
+  return state.context.dryRun && !state.context.testCommand && isReviewOnlyTask(state.query);
+}
+
+function isPlaceholderValidationCommand(command: string): boolean {
+  return command === PLACEHOLDER_VALIDATION_COMMAND;
 }
 
 export function createIntakeNode(): AgentNode {
@@ -184,6 +201,39 @@ export function createRepoScanNode(): AgentNode {
 export function createScopeAnalysisNode(llm: LlmProvider): AgentNode {
   return async (state) => {
     const ledger = activeLedgers.get(state.context.sessionId);
+
+    if (isReviewOnlyTask(state.query)) {
+      const changedFiles = process.env["CODEPAWL_CHANGED_FILES"]
+        ?.split(/\r?\n/)
+        .map((file) => file.trim())
+        .filter(Boolean) ?? [];
+      const scopeAnalysisResult: ScopeAnalysisResult = {
+        rationale: changedFiles.length > 0
+          ? "Review-only task detected. Scope is limited to changed files provided by the current context."
+          : "Review-only task detected. No changed files available in current context.",
+        affectedModules: changedFiles.length > 0 ? changedFiles : ["No changed files available in current context"],
+        proposedFilesToModify: changedFiles,
+        proposedFilesToCreate: [],
+      };
+
+      if (ledger) {
+        ledger.recordEvent("system", "review_only_scope", "info", {
+          changedFileCount: changedFiles.length,
+        });
+      }
+
+      return {
+        scopeAnalysisResult,
+        messages: [
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Scope Analysis:\nRationale: ${scopeAnalysisResult.rationale}\nProposed Files to Modify: ${scopeAnalysisResult.proposedFilesToModify.join(", ")}\nProposed Files to Create: `,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+    }
 
     const systemPrompt = `You are an expert repository scope analyzer. Analyze the repository structure and user query to identify which files must be modified or created.
 Respond ONLY with a JSON object matching this schema:
@@ -348,6 +398,31 @@ export function createFileSelectionNode(): AgentNode {
 export function createPatchPlanNode(llm: LlmProvider): AgentNode {
   return async (state) => {
     const ledger = activeLedgers.get(state.context.sessionId);
+
+    if (isReviewOnlyTask(state.query)) {
+      const patchPlan: PatchPlan = {
+        rationale: "Review-only dry-run: no file changes are proposed by the deterministic mock provider.",
+        chunks: [],
+      };
+
+      if (ledger) {
+        ledger.recordEvent("system", "review_only_patch_plan", "info", {
+          chunkCount: 0,
+        });
+      }
+
+      return {
+        patchPlan,
+        messages: [
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Patch Plan:\nRationale: ${patchPlan.rationale}\nChunks:\n`,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+    }
 
     const systemPrompt = `You are an expert programmer. Generate a precise patch plan (list of creations, modifications, and deletions of files) to solve the user query based on the selected files and validation errors if any.
 For modifications, provide 'targetContent' (the exact block of lines to search for) and 'content' (the replacement code). Make targetContent unique and precise.
@@ -536,21 +611,27 @@ export function createOptionalPatchApplyNode(): AgentNode {
 
 export function createValidationNode(): AgentNode {
   return async (state) => {
-    const testCommand = state.context.testCommand ?? detectTestCommand();
+    const testCommand = shouldUsePlaceholderValidation(state)
+      ? PLACEHOLDER_VALIDATION_COMMAND
+      : state.context.testCommand ?? detectTestCommand();
     const startTime = Date.now();
     let stdout = "";
     let stderr = "";
     let exitCode = 0;
 
-    try {
-      const result = await execAsync(testCommand, { cwd: state.context.workspaceDir });
-      stdout = result.stdout;
-      stderr = result.stderr;
-    } catch (err: unknown) {
-      const execErr = err as { code?: number; stdout?: string; stderr?: string };
-      exitCode = execErr.code ?? 1;
-      stdout = execErr.stdout ?? "";
-      stderr = execErr.stderr ?? "";
+    if (isPlaceholderValidationCommand(testCommand)) {
+      stdout = "placeholder validation skipped\n";
+    } else {
+      try {
+        const result = await execAsync(testCommand, { cwd: state.context.workspaceDir });
+        stdout = result.stdout;
+        stderr = result.stderr;
+      } catch (err: unknown) {
+        const execErr = err as { code?: number; stdout?: string; stderr?: string };
+        exitCode = execErr.code ?? 1;
+        stdout = execErr.stdout ?? "";
+        stderr = execErr.stderr ?? "";
+      }
     }
 
     const durationMs = Date.now() - startTime;
@@ -675,12 +756,16 @@ export function createReportExportNode(): AgentNode {
     const validationSection = state.validationResult
       ? state.validationResult.commandsRun
           .map(
-            (cmd) =>
-              `**Command:** \`${cmd.command}\`\n` +
+            (cmd) => {
+              const label = isPlaceholderValidationCommand(cmd.command)
+                ? "Placeholder validation"
+                : "Validation command";
+              return `**${label}:** \`${cmd.command}\`\n` +
               `- Exit Code: ${cmd.exitCode}\n` +
               `- Duration: ${cmd.durationMs}ms\n` +
               (cmd.stdout ? `- Stdout:\n\`\`\`\n${cmd.stdout.slice(0, 2000)}\n\`\`\`\n` : "") +
-              (cmd.stderr ? `- Stderr:\n\`\`\`\n${cmd.stderr.slice(0, 2000)}\n\`\`\`\n` : "")
+              (cmd.stderr ? `- Stderr:\n\`\`\`\n${cmd.stderr.slice(0, 2000)}\n\`\`\`\n` : "");
+            }
           )
           .join("\n")
       : "_No validation commands run._";

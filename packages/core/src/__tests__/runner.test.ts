@@ -128,6 +128,28 @@ describe("runAgent — dry-run mode", () => {
     await expectRequiredArtifacts(runDir);
   });
 
+  it("uses placeholder validation for review-only dry-runs without an explicit command", async () => {
+    const result = await runAgent({
+      query: "review current repository changes",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeNull();
+    expect(result.state.validationResult?.success).toBe(true);
+    expect(result.state.validationResult?.commandsRun[0]?.command).toBe("echo placeholder validation skipped");
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("Placeholder validation");
+    expect(report).toContain("No changed files available in current context");
+    expect(report).not.toContain("auth-helpers.test.ts");
+  });
+
   it("report.md contains task, run ID, and mode information", async () => {
     const task = "add tests for auth helpers";
     const result = await runAgent({

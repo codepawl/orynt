@@ -254,7 +254,7 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     ]);
 
     expect(result.exitCode).toBe(1);
-    expect(result.stdout).toContain("Status:  ❌ FAILED");
+    expect(result.stdout).toContain("Status:  FAILED");
     expect(result.stdout).toContain("Error:   Validation command failed.");
 
     const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
@@ -264,6 +264,32 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
       const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
       expect(stat, `${file} should exist after validation failure`).not.toBeNull();
     }
+  });
+
+  it("exits zero for review-only dry-run smoke without explicit validation command", async () => {
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      tmpDir,
+      "--task",
+      "review current repository changes",
+      "--dry-run",
+    ]);
+
+    expect(result.exitCode, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout).toContain("Status:  SUCCESS");
+
+    const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
+    expect(runId, result.stdout).toBeTruthy();
+    const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+      const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
+      expect(stat, `${file} should exist after review dry-run smoke`).not.toBeNull();
+    }
+
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("Placeholder validation");
+    expect(report).not.toContain("auth-helpers.test.ts");
   });
 });
 

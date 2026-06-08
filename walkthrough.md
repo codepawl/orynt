@@ -345,6 +345,48 @@ patch-plan.json  report.md  run.json  selected-files.json  trace.json
 
 ---
 
+### RC Smoke Validation Fix
+
+Issue found before re-tagging `v0.1.0-alpha.1`:
+```bash
+bun run dev:cli -- run --repo . --task "review current repository changes" --dry-run
+```
+
+The run produced all five artifacts but exited `1` because the validation node defaulted to `bun test` when no explicit `--test-cmd` was provided. That made deterministic review-only release smoke checks depend on unrelated local test state.
+
+Fix:
+- Review-only dry-runs without an explicit validation command now use safe placeholder validation.
+- The placeholder is recorded as `echo placeholder validation skipped`.
+- The generated report labels it as `Placeholder validation`.
+- Explicit validation commands still run normally and still fail the run when they exit non-zero.
+- Validation failures after a run starts still preserve all five artifacts.
+- Review-only deterministic output no longer proposes `auth-helpers.test.ts`.
+
+Acceptance verification:
+```bash
+rm -rf .codepawl packages/cli/.codepawl
+bun run dev:cli -- run --repo . --task "review current repository changes" --dry-run
+find .codepawl/runs -maxdepth 2 -type f | sort
+```
+
+Result:
+```
+.codepawl/runs/run_1780893153729_gksksf/patch-plan.json
+.codepawl/runs/run_1780893153729_gksksf/report.md
+.codepawl/runs/run_1780893153729_gksksf/run.json
+.codepawl/runs/run_1780893153729_gksksf/selected-files.json
+.codepawl/runs/run_1780893153729_gksksf/trace.json
+```
+
+Report verification:
+```
+**Placeholder validation:** `echo placeholder validation skipped`
+```
+
+✅ **PASS** — Review-only RC smoke now exits `0` and produces all five artifacts under the target repo root.
+
+---
+
 ## Dry-Run Mode
 
 In `--dry-run` mode:

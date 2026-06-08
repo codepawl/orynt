@@ -50,6 +50,10 @@ supabase/.branches/
 *.log
 *.pid
 
+# Openpawl generated run artifacts
+.codepawl/
+**/.codepawl/
+
 # Claude Code per-user settings
 .claude/
 

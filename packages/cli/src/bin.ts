@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * @codepawl/cli — Openpawl command-line interface
+ * @codepawl/cli - Openpawl command-line interface
  *
  * Commands:
  *   run --repo <path> --task <string> [--dry-run | --write] [--out-dir <path>] [--mock-fixture <path>] [--test-cmd <cmd>]
@@ -14,16 +14,16 @@ import * as path from "path";
 import { runAgent } from "@codepawl/core";
 import type { RunResult } from "@codepawl/core";
 
-// ─── Banner ────────────────────────────────────────────────────────────────
+// Banner
 
 const BANNER = `
-  ╔═══════════════════════════════════════╗
-  ║   🐾  Openpawl  •  codepawl/core     ║
-  ║   Server-side coding-agent workflow   ║
-  ╚═══════════════════════════════════════╝
+  [>.-] Openpawl
+        codepawl/core server-side coding-agent workflow
 `;
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+const COMPACT_LOGO = ">.-";
+
+// Helpers
 
 function parseArgs(argv: string[]): Record<string, string | boolean> {
   const result: Record<string, string | boolean> = {};
@@ -49,12 +49,12 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
 }
 
 function die(msg: string): never {
-  console.error(`\n❌ Error: ${msg}\n`);
+  console.error(`\nError: ${msg}\n`);
   process.exit(1);
 }
 
 function ok(msg: string): void {
-  console.log(`✅ ${msg}`);
+  console.log(`${COMPACT_LOGO} ${msg}`);
 }
 
 async function findWorkspaceRoot(startDir: string): Promise<string | null> {
@@ -109,7 +109,7 @@ async function assertDirectory(dirPath: string, label: string): Promise<void> {
   }
 }
 
-// ─── run command ───────────────────────────────────────────────────────────
+// run command
 
 async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   const repo = readStringFlag(flags, "repo") ?? ".";
@@ -124,16 +124,16 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   const testCmd = readStringFlag(flags, "test-cmd");
 
   if (!task || task.trim().length === 0) {
-    die("--task is required and must not be empty. e.g. --task \"add tests for auth helpers\"");
+    die("--task is required and must not be empty. e.g. --task \"add tests for shared helpers\"");
   }
   await assertDirectory(resolvedRepo, "Repository path");
 
   console.log(BANNER);
-  console.log(`🚀 Starting Openpawl run`);
+  console.log(`${COMPACT_LOGO} Starting Openpawl run`);
   console.log(`   Repo:    ${resolvedRepo}`);
   if (resolvedOutDir) console.log(`   OutDir:  ${resolvedOutDir}`);
   console.log(`   Task:    ${task}`);
-  console.log(`   Mode:    ${dryRun ? "🔍 dry-run (no files modified)" : "✏️  write"}`);
+  console.log(`   Mode:    ${dryRun ? "dry-run (no files modified)" : "write"}`);
   if (testCmd) console.log(`   TestCmd: ${testCmd}`);
   console.log();
 
@@ -151,27 +151,26 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
     die(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  console.log("─".repeat(60));
-  console.log(`📊 Run complete`);
+  console.log(`${COMPACT_LOGO} Run complete`);
   console.log(`   Run ID:  ${result.runId}`);
-  console.log(`   Status:  ${result.success ? "✅ SUCCESS" : "❌ FAILED"}`);
+  console.log(`   Status:  ${result.success ? "SUCCESS" : "FAILED"}`);
   if (result.error) {
     console.log(`   Error:   ${result.error}`);
   }
   console.log(`   Steps:   ${result.traceSummary.stepCount}`);
   console.log(`   Tokens:  ${result.traceSummary.tokenUsage.total}`);
   if (result.reportPath) {
-    console.log(`\n📄 Report: ${result.reportPath}`);
+    console.log(`\n   Report: ${result.reportPath}`);
   }
   if (result.tracePath) {
-    console.log(`📜 Trace:  ${result.tracePath}`);
+    console.log(`   Trace:  ${result.tracePath}`);
   }
   console.log();
 
   process.exit(result.success ? 0 : 1);
 }
 
-// ─── trace command ─────────────────────────────────────────────────────────
+// trace command
 
 async function cmdTrace(flags: Record<string, string | boolean>): Promise<void> {
   const input = readStringFlag(flags, "input");
@@ -203,7 +202,7 @@ async function cmdTrace(flags: Record<string, string | boolean>): Promise<void> 
 
   // Markdown format
   const md = [
-    `# 📜 Trace — \`${trace.traceId}\``,
+    `# Trace: \`${trace.traceId}\``,
     ``,
     `| Field | Value |`,
     `|-------|-------|`,
@@ -234,11 +233,11 @@ async function cmdTrace(flags: Record<string, string | boolean>): Promise<void> 
   console.log(md);
 }
 
-// ─── doctor command ─────────────────────────────────────────────────────────
+// doctor command
 
 async function cmdDoctor(): Promise<void> {
   console.log(BANNER);
-  console.log("🩺 Openpawl Doctor — system health check\n");
+  console.log("Openpawl Doctor - system health check\n");
 
   const checks: Array<{ label: string; ok: boolean; detail?: string }> = [];
 
@@ -265,7 +264,7 @@ async function cmdDoctor(): Promise<void> {
   checks.push({
     label: "LLM Provider",
     ok: true,
-    detail: llmProvider ? `${llmProvider} (via CODEPAWL_LLM_PROVIDER)` : "mock (default — no API key required)",
+    detail: llmProvider ? `${llmProvider} (via CODEPAWL_LLM_PROVIDER)` : "mock (default, no API key required)",
   });
 
   // Check GITHUB_TOKEN env
@@ -273,27 +272,27 @@ async function cmdDoctor(): Promise<void> {
   checks.push({
     label: "GitHub Token",
     ok: true,
-    detail: ghToken ? "✅ present (GITHUB_TOKEN)" : "⚠️  not set (required for github-comment)",
+    detail: ghToken ? "present (GITHUB_TOKEN)" : "not set (required only for github-comment)",
   });
 
   // Display results
   let allOk = true;
   for (const check of checks) {
-    const icon = check.ok ? "✅" : "❌";
-    console.log(`  ${icon} ${check.label}${check.detail ? ` — ${check.detail}` : ""}`);
+    const mark = check.ok ? "[ok]" : "[fail]";
+    console.log(`  ${mark} ${check.label}${check.detail ? ` - ${check.detail}` : ""}`);
     if (!check.ok) allOk = false;
   }
 
   console.log();
   if (allOk) {
-    console.log("✅ All checks passed. Openpawl is ready to run.");
+    console.log(`${COMPACT_LOGO} All checks passed. Openpawl is ready to run.`);
   } else {
-    console.log("⚠️  Some checks failed. Review above and fix before running.");
+    console.log("Some checks failed. Review above and fix before running.");
     process.exit(1);
   }
 }
 
-// ─── github-comment command ─────────────────────────────────────────────────
+// github-comment command
 
 async function cmdGithubComment(flags: Record<string, string | boolean>): Promise<void> {
   const reportPath = readStringFlag(flags, "report");
@@ -311,11 +310,9 @@ async function cmdGithubComment(flags: Record<string, string | boolean>): Promis
   }
 
   if (!token || !repoSlug || !prNumber) {
-    // No token/repo/PR — print the report to stdout (useful in CI without permissions)
-    console.log("ℹ️  No GitHub token, repo, or PR number provided. Printing report to stdout:\n");
-    console.log("─".repeat(60));
+    // No token/repo/PR: print the report to stdout for CI without permissions.
+    console.log("No GitHub token, repo, or PR number provided. Printing report to stdout:\n");
     console.log(reportContent);
-    console.log("─".repeat(60));
     console.log(
       "\nTo post to GitHub, provide: --token <token> --repo <owner/repo> --pr <number>"
     );
@@ -329,7 +326,7 @@ async function cmdGithubComment(flags: Record<string, string | boolean>): Promis
   const url = `https://api.github.com/repos/${owner}/${repoName}/issues/${prNumber}/comments`;
   const body = JSON.stringify({ body: reportContent });
 
-  console.log(`💬 Posting report as PR comment to ${url}...`);
+  console.log(`${COMPACT_LOGO} Posting report as PR comment to ${url}...`);
 
   const response = await fetch(url, {
     method: "POST",
@@ -351,7 +348,7 @@ async function cmdGithubComment(flags: Record<string, string | boolean>): Promis
   }
 }
 
-// ─── help ────────────────────────────────────────────────────────────────────
+// help
 
 function showHelp(): void {
   console.log(BANNER);
@@ -367,10 +364,10 @@ Run options:
   --repo <path>          Path to the target repository (default: .)
   --task <string>        Coding task description (required)
   --out-dir <path>       Artifact output directory (default: <repo>/.codepawl/runs/<run-id>)
-  --dry-run              Scan and plan only — no files are modified (default)
+  --dry-run              Scan and plan only; no files are modified (default)
   --write                Apply the generated patch to the repository
   --mock-fixture <path>  Path to a JSON LLM mock fixture file
-  --test-cmd <cmd>       Validation command to run (default: bun test)
+  --test-cmd <cmd>       Validation command; review-only dry-runs use placeholder validation when omitted
 
 Trace options:
   --input <path>         Path to trace.json (required)
@@ -383,7 +380,8 @@ GitHub comment options:
   --pr <number>          Pull request number
 
 Examples:
-  codepawl run --repo . --task "add tests for auth helpers" --dry-run
+  codepawl run --repo . --task "add tests for shared helpers" --dry-run
+  codepawl run --repo . --task "Review and analyse this PR" --dry-run
   codepawl run --repo . --task "fix failing unit test" --write
   codepawl trace --input .codepawl/runs/run_123/trace.json --format markdown
   codepawl doctor
@@ -391,7 +389,7 @@ Examples:
 `);
 }
 
-// ─── Entry point ─────────────────────────────────────────────────────────────
+// Entry point
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
