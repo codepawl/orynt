@@ -12,6 +12,7 @@ function makeState(overrides: Partial<AgentState> = {}): AgentState {
   const context: AgentContext = {
     sessionId: "test-session",
     workspaceDir: tmpDir,
+    outputDir: path.join(tmpDir, ".codepawl", "runs", "test-session"),
     dryRun: true,
     maxIterations: 10,
     temperature: 0.0,

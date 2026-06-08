@@ -3,7 +3,7 @@
  * @codepawl/cli — Openpawl command-line interface
  *
  * Commands:
- *   run --repo <path> --task <string> [--dry-run | --write] [--mock-fixture <path>] [--test-cmd <cmd>]
+ *   run --repo <path> --task <string> [--dry-run | --write] [--out-dir <path>] [--mock-fixture <path>] [--test-cmd <cmd>]
  *   trace --input <trace.json> [--format markdown|json]
  *   doctor
  *   github-comment --report <report.md> [--token <gh-token>] [--repo <owner/repo>] [--pr <number>]
@@ -57,20 +57,54 @@ function ok(msg: string): void {
   console.log(`✅ ${msg}`);
 }
 
+async function findWorkspaceRoot(startDir: string): Promise<string | null> {
+  let current = path.resolve(startDir);
+  while (true) {
+    try {
+      const packageJson = JSON.parse(
+        await fs.readFile(path.join(current, "package.json"), "utf-8")
+      ) as { workspaces?: unknown };
+      if (Array.isArray(packageJson.workspaces)) {
+        return current;
+      }
+    } catch {
+      // Keep walking until the filesystem root.
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+async function getResolutionBase(): Promise<string> {
+  return process.env["INIT_CWD"] ?? (await findWorkspaceRoot(process.cwd())) ?? process.cwd();
+}
+
+function resolveFromBase(input: string, baseDir: string): string {
+  return path.resolve(baseDir, input);
+}
+
 // ─── run command ───────────────────────────────────────────────────────────
 
 async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   const repo = (flags["repo"] as string | undefined) ?? ".";
+  const resolutionBase = await getResolutionBase();
+  const resolvedRepo = resolveFromBase(repo, resolutionBase);
+  const outDir = flags["out-dir"] as string | undefined;
+  const resolvedOutDir = outDir ? resolveFromBase(outDir, resolutionBase) : undefined;
   const task = flags["task"] as string | undefined;
   const dryRun = flags["dry-run"] === true || flags["write"] !== true;
   const mockFixture = flags["mock-fixture"] as string | undefined;
+  const resolvedMockFixture = mockFixture ? resolveFromBase(mockFixture, resolutionBase) : undefined;
   const testCmd = flags["test-cmd"] as string | undefined;
 
   if (!task) die("--task is required. e.g. --task \"add tests for auth helpers\"");
 
   console.log(BANNER);
   console.log(`🚀 Starting Openpawl run`);
-  console.log(`   Repo:    ${path.resolve(repo)}`);
+  console.log(`   Repo:    ${resolvedRepo}`);
+  if (resolvedOutDir) console.log(`   OutDir:  ${resolvedOutDir}`);
   console.log(`   Task:    ${task}`);
   console.log(`   Mode:    ${dryRun ? "🔍 dry-run (no files modified)" : "✏️  write"}`);
   if (testCmd) console.log(`   TestCmd: ${testCmd}`);
@@ -80,10 +114,11 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   try {
     result = await runAgent({
       query: task,
-      workspaceDir: path.resolve(repo),
+      workspaceDir: resolvedRepo,
+      outDir: resolvedOutDir,
       dryRun,
       testCommand: testCmd,
-      mockFixturePath: mockFixture,
+      mockFixturePath: resolvedMockFixture,
     });
   } catch (err: unknown) {
     die(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
@@ -304,6 +339,7 @@ Commands:
 Run options:
   --repo <path>          Path to the target repository (default: .)
   --task <string>        Coding task description (required)
+  --out-dir <path>       Artifact output directory (default: <repo>/.codepawl/runs/<run-id>)
   --dry-run              Scan and plan only — no files are modified (default)
   --write                Apply the generated patch to the repository
   --mock-fixture <path>  Path to a JSON LLM mock fixture file

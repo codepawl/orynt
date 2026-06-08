@@ -555,7 +555,7 @@ export function createTraceExportNode(): AgentNode {
     const runId = state.context.sessionId;
     const ledger = activeLedgers.get(runId);
 
-    const runDir = path.join(state.context.workspaceDir, ".codepawl", "runs", runId);
+    const runDir = state.context.outputDir;
     await fs.mkdir(runDir, { recursive: true });
 
     // Write patch-plan.json
@@ -618,7 +618,7 @@ export function createReportExportNode(): AgentNode {
       tokenUsage,
     };
 
-    const runDir = path.join(state.context.workspaceDir, ".codepawl", "runs", runId);
+    const runDir = state.context.outputDir;
     await fs.mkdir(runDir, { recursive: true });
 
     // Risk notes

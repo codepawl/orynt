@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
+import { spawn } from "child_process";
 import { runAgent } from "@codepawl/core";
 
 // Path to the mock LLM fixture shipped with core
@@ -16,6 +17,8 @@ const FIXTURE_PATH = path.join(
   "fixtures",
   "mock-llm.json"
 );
+const CLI_DIR = path.join(new URL(".", import.meta.url).pathname, "..", "..");
+const WORKSPACE_ROOT = path.resolve(CLI_DIR, "..", "..");
 
 let tmpDir: string;
 
@@ -26,6 +29,34 @@ beforeEach(async () => {
 afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
+
+function runCliFromPackageDir(args: string[], invocationCwd?: string): Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+}> {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    if (invocationCwd) {
+      env["INIT_CWD"] = invocationCwd;
+    } else {
+      delete env["INIT_CWD"];
+    }
+    const child = spawn("bun", ["src/bin.ts", ...args], {
+      cwd: CLI_DIR,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf-8");
+    child.stderr.setEncoding("utf-8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (exitCode) => resolve({ stdout, stderr, exitCode }));
+  });
+}
 
 /**
  * These tests exercise the CLI by calling the runAgent() API that the CLI wraps,
@@ -65,6 +96,67 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report.length).toBeGreaterThan(100);
     expect(report).toContain(result.runId);
+  });
+
+  it("writes default artifacts under --repo when the CLI process cwd is different", async () => {
+    const result = await runCliFromPackageDir(
+      [
+        "run",
+        "--repo",
+        tmpDir,
+        "--task",
+        "add tests for shared helpers",
+        "--dry-run",
+        "--mock-fixture",
+        FIXTURE_PATH,
+        "--test-cmd",
+        "echo ok",
+      ]
+    );
+
+    expect(result.exitCode, result.stderr || result.stdout).toBe(0);
+    const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
+    expect(runId, result.stdout).toBeTruthy();
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+      const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
+      expect(stat, `${file} should exist under the target repo`).not.toBeNull();
+    }
+
+    expect(result.stdout).toContain(path.join(runDir, "report.md"));
+    expect(result.stdout).toContain(path.join(runDir, "trace.json"));
+
+    const wrongRunDir = path.join(CLI_DIR, ".codepawl", "runs", runId as string);
+    const wrongDirStat = await fs.stat(wrongRunDir).catch(() => null);
+    expect(wrongDirStat).toBeNull();
+  });
+
+  it("resolves --repo . to the workspace root when launched from a package cwd", async () => {
+    const outDir = path.join(tmpDir, "artifacts");
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      ".",
+      "--out-dir",
+      outDir,
+      "--task",
+      "add tests for shared helpers",
+      "--dry-run",
+      "--mock-fixture",
+      FIXTURE_PATH,
+      "--test-cmd",
+      "echo ok",
+    ]);
+
+    expect(result.exitCode, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout).toContain(`Repo:    ${WORKSPACE_ROOT}`);
+    expect(result.stdout).toContain(`Report: ${path.join(outDir, "report.md")}`);
+
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+      const stat = await fs.stat(path.join(outDir, file)).catch(() => null);
+      expect(stat, `${file} should exist under explicit outDir`).not.toBeNull();
+    }
   });
 });
 

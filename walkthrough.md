@@ -10,6 +10,16 @@
 
 This walkthrough documents the implementation of the Openpawl MVP — a complete, locally-runnable and CI/CD-ready server-side coding-agent workflow for GitHub repositories. All work is in the `codepawl` monorepo under `packages/core` and `packages/cli`.
 
+### 2026-06-08 Artifact Path Regression Fix
+
+**Bug:** `bun run dev:cli -- run --repo . --task "add tests for shared helpers" --dry-run` was writing run artifacts under `packages/cli/.codepawl/runs/<run-id>/` because Bun workspace filtering starts the CLI with `process.cwd()` set to `packages/cli`.
+
+**Fix:** The CLI now resolves `--repo` to an absolute path at the command boundary. When launched from a workspace package, relative repo paths resolve against the workspace root, so `--repo .` targets the repository root for `bun run dev:cli`. The resolved absolute repo path is passed into `@codepawl/core`, and core carries a resolved `outputDir` through the run state for artifact export.
+
+**Override:** `codepawl run` now accepts `--out-dir <path>`. When provided, core writes artifacts directly to that resolved directory. Without `--out-dir`, artifacts are written to `<repo>/.codepawl/runs/<run-id>/`.
+
+**Scope:** Only `packages/core`, `packages/cli`, and tests/docs were changed. `apps/web` and `apps/api` were not modified.
+
 ---
 
 ## What Was Built
@@ -27,6 +37,7 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
   - `createOptionalPatchApplyNode()` calls `assertWriteSafe()` before any write; throws `SafetyViolationError` on violation (aborts run)
   - `createTraceExportNode()` now writes `patch-plan.json` and `selected-files.json`
   - `createReportExportNode()` produces full GitHub-ready Markdown with all required sections
+- [`packages/core/src/state/schema.ts`](packages/core/src/state/schema.ts) — Adds `outputDir` to agent context and optional `outDir` to run options for artifact path control
 - [`packages/core/src/index.ts`](packages/core/src/index.ts) — Exports `runAgent`, `SafetyViolationError`, `assertWriteSafe`, all new types
 
 **Test files:**
@@ -42,10 +53,11 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 
 **Modified files:**
 - [`packages/cli/src/bin.ts`](packages/cli/src/bin.ts) — Full rewrite with 4 commands:
-  - `codepawl run --repo <path> --task <string> [--dry-run | --write]`
+  - `codepawl run --repo <path> --task <string> [--dry-run | --write] [--out-dir <path>]`
   - `codepawl trace --input <trace.json> --format [markdown|json]`
   - `codepawl doctor`
   - `codepawl github-comment --report <report.md> [--token] [--repo] [--pr]`
+  - Normalizes `--repo`, `--out-dir`, and `--mock-fixture` before calling `@codepawl/core`
 
 **Test files:**
 - [`packages/cli/src/__tests__/cli.test.ts`](packages/cli/src/__tests__/cli.test.ts) — 6 tests
@@ -82,27 +94,57 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 
 ### `bun run typecheck`
 ```
-@codepawl/shared typecheck: Done in 288 ms
-@codepawl/core typecheck:   Done in 715 ms
-@codepawl/cli typecheck:    Done in 711 ms
-@codepawl/web typecheck:    Done in 3.40 s
+$ bun typecheck:shared && bun typecheck:core && bun typecheck:cli && bun typecheck:web
+@codepawl/shared typecheck: Exited with code 0
+@codepawl/core typecheck:   Exited with code 0
+@codepawl/cli typecheck:    Exited with code 0
+@codepawl/web typecheck:    Exited with code 0
 ```
 ✅ **PASS** — All 4 packages
 
 ### `bun run test`
 ```
-@codepawl/core:
-  ✓ safety.test.ts    (15 tests)
-  ✓ trace.test.ts     (7 tests)
-  ✓ nodes.test.ts     (7 tests)
-  ✓ runner.test.ts    (8 tests)
-  Test Files 4 passed | Tests 37 passed
-
-@codepawl/cli:
-  ✓ cli.test.ts       (6 tests)
-  Test Files 1 passed | Tests 6 passed
+$ bun --filter @codepawl/core test && bun --filter @codepawl/cli test
+@codepawl/core test: Exited with code 0
+@codepawl/cli test:  Exited with code 0
 ```
-✅ **PASS** — 43/43 tests
+✅ **PASS**
+
+### Artifact Path Regression Verification
+
+Command run from repository root:
+```bash
+bun run dev:cli -- run --repo . --task "add tests for shared helpers" --dry-run
+```
+
+Output confirmed the normalized repo root and root artifact paths:
+```
+Repo:    /home/annx9/Code/Personal/codepawl
+Run ID:  run_1780889202298_qevayj
+Report: /home/annx9/Code/Personal/codepawl/.codepawl/runs/run_1780889202298_qevayj/report.md
+Trace:  /home/annx9/Code/Personal/codepawl/.codepawl/runs/run_1780889202298_qevayj/trace.json
+```
+
+Required artifact listing:
+```bash
+find .codepawl/runs -maxdepth 2 -type f | sort
+```
+
+Result:
+```
+.codepawl/runs/run_1780889202298_qevayj/patch-plan.json
+.codepawl/runs/run_1780889202298_qevayj/report.md
+.codepawl/runs/run_1780889202298_qevayj/run.json
+.codepawl/runs/run_1780889202298_qevayj/selected-files.json
+.codepawl/runs/run_1780889202298_qevayj/trace.json
+```
+
+Check against the previous bad location:
+```
+find: 'packages/cli/.codepawl/runs/run_1780889202298_qevayj': No such file or directory
+```
+
+✅ **PASS** — The run artifacts were written to `.codepawl/runs/<run-id>/` at the target repo root, and the reported paths match the written files.
 
 ### CLI Smoke Test
 

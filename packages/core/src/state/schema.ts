@@ -36,6 +36,7 @@ export interface AgentContext {
   readonly maxIterations: number;
   readonly temperature: number;
   readonly workspaceDir: string;
+  readonly outputDir: string;
   readonly dryRun: boolean;
   readonly testCommand?: string;
   readonly mockFixturePath?: string;
@@ -84,6 +85,7 @@ export type AgentEdgeRouter = (state: AgentState) => string | Promise<string>;
 export interface RunOptions {
   readonly query: string;
   readonly workspaceDir: string;
+  readonly outDir?: string;
   readonly dryRun: boolean;
   readonly maxIterations?: number;
   readonly temperature?: number;

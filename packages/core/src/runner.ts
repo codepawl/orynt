@@ -47,10 +47,14 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     temperature = 0.2,
     testCommand,
     mockFixturePath,
+    outDir,
   } = options;
 
   // Resolve workspace directory
   const resolvedWorkspaceDir = path.resolve(workspaceDir);
+  const resolvedOutputDir = outDir
+    ? path.resolve(outDir)
+    : path.join(resolvedWorkspaceDir, ".codepawl", "runs", runId);
 
   // Validate workspace exists
   try {
@@ -100,6 +104,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     context: {
       sessionId: runId,
       workspaceDir: resolvedWorkspaceDir,
+      outputDir: resolvedOutputDir,
       dryRun,
       maxIterations,
       temperature,
@@ -124,7 +129,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   }
 
   // Always attempt best-effort artifact export — even on failure
-  const runDir = path.join(resolvedWorkspaceDir, ".codepawl", "runs", runId);
+  const runDir = resolvedOutputDir;
   if (!finalState) {
     try {
       await fs.mkdir(runDir, { recursive: true });

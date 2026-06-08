@@ -52,6 +52,30 @@ describe("runAgent — dry-run mode", () => {
     }
   });
 
+  it("writes artifacts to an explicit outDir when provided", async () => {
+    const outDir = path.join(tmpDir, "custom-artifacts");
+    const result = await runAgent({
+      query: "add tests for auth helpers",
+      workspaceDir: tmpDir,
+      outDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.reportPath).toBe(path.join(outDir, "report.md"));
+    expect(result.tracePath).toBe(path.join(outDir, "trace.json"));
+
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+      const stat = await fs.stat(path.join(outDir, file)).catch(() => null);
+      expect(stat, `Expected artifact ${file} to exist in explicit outDir`).not.toBeNull();
+    }
+
+    const defaultRunDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    const defaultDirStat = await fs.stat(defaultRunDir).catch(() => null);
+    expect(defaultDirStat).toBeNull();
+  });
+
   it("does NOT modify any files in the workspace in dry-run mode", async () => {
     // Create a marker file we can track
     const markerPath = path.join(tmpDir, "src", "existing.ts");
