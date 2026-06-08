@@ -125,6 +125,7 @@ export interface AgentState {
   readonly fileSelectionResult?: FileSelectionResult;
   readonly patchPlan?: PatchPlan;
   readonly validationResult?: ValidationResult;
+  readonly writeResult?: WriteResult;
   readonly reportResult?: ReportResult;
 }
 
@@ -204,6 +205,18 @@ export interface ScopeAnalysisResult {
   }>;
 }
 
+export interface WriteChunkFileResult {
+  readonly file: string;
+  readonly reason: string;
+}
+
+export interface WriteResult {
+  readonly attempted: number;
+  readonly created: ReadonlyArray<string>;
+  readonly skipped: ReadonlyArray<WriteChunkFileResult>;
+  readonly rejected: ReadonlyArray<WriteChunkFileResult>;
+}
+
 export interface FileSelectionResult {
   readonly selectedFiles: ReadonlyArray<{
     readonly path: string;
@@ -244,6 +257,9 @@ export interface ValidationResult {
 export interface ReportResult {
   readonly summary: string;
   readonly filesModified: ReadonlyArray<string>;
+  readonly filesCreated: ReadonlyArray<string>;
+  readonly filesSkipped: ReadonlyArray<WriteChunkFileResult>;
+  readonly filesRejected: ReadonlyArray<WriteChunkFileResult>;
   readonly patchApplied: boolean;
   readonly validationSuccess: boolean;
   readonly durationMs: number;

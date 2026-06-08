@@ -100,6 +100,15 @@ const PATCH_PLAN_JSON_SCHEMA = {
 
 const SCOPE_ANALYSIS_JSON_SCHEMA_PROMPT = JSON.stringify(SCOPE_ANALYSIS_JSON_SCHEMA, null, 2);
 const PATCH_PLAN_JSON_SCHEMA_PROMPT = JSON.stringify(PATCH_PLAN_JSON_SCHEMA, null, 2);
+const PLACEHOLDER_TEST_FILE_CONTENT = {
+  ts: "export {};\n",
+  tsx: "export {};\n",
+  js: "\n",
+  jsx: "\n",
+  sh: "#!/usr/bin/env sh\nset -e\n\n# TODO: add test command\n",
+  py: "# TODO: implement test\n\n\n",
+  rs: "#[cfg(test)]\nmod tests {\n  // TODO: implement placeholder test\n}\n",
+};
 
 function resolveStructuredOutputFormatMode(state: AgentState): "json_schema" | "json_object" {
   return state.context.structuredOutputMode === "json_object"
@@ -283,6 +292,13 @@ function isAllowedNewTestFile(
   return affectedModules.length === 0 || isNearRelevantModule(filePath, affectedModules);
 }
 
+function buildPlaceholderTestFileContent(filePath: string, description: string): string {
+  const ext = path.extname(filePath).toLowerCase().replace(/^\./, "");
+  const normalizedDescription = description ? `\n// Task: ${description}\n` : "\n";
+  const body = PLACEHOLDER_TEST_FILE_CONTENT[ext as keyof typeof PLACEHOLDER_TEST_FILE_CONTENT] ?? `// TODO: implement test file\n${normalizedDescription}`;
+  return `${body}${normalizedDescription}`;
+}
+
 function extractFallbackCandidateFiles(
   candidateFiles: ReadonlyArray<string>,
   repoRoot: string,
@@ -346,6 +362,8 @@ interface GroundedScopeResult {
   readonly groundingNotes: string[];
   readonly fallbackUsed: boolean;
   readonly fallbackFiles: ReadonlyArray<string>;
+  readonly shouldFail: boolean;
+  readonly failureReason: string | null;
 }
 
 function applyScopeGrounding(
@@ -454,26 +472,6 @@ function applyScopeGrounding(
     }
   }
 
-  if (!state.context.dryRun && shouldFailUngrounded(totalProposals, totalRejected)) {
-    throw new ProviderJsonOutputError(
-      {
-        provider: state.context.providerName ?? "mock",
-        model: state.context.modelName ?? "deterministic-mock",
-        purpose: "scope_analysis",
-      },
-      "ungrounded_provider_output",
-      "Ungrounded path proposals were rejected as not repo-grounded.",
-      `rejected proposal count=${totalRejected} out of ${totalProposals}`,
-      null,
-      0,
-      {
-        retryAttempt: 0,
-        retryAttempted: false,
-        retrySucceeded: false,
-      }
-    );
-  }
-
   for (const item of rejectedModify) {
     groundingNotes.push(`Rejected scope modify proposal: ${item.file} (${item.reason})`);
   }
@@ -493,6 +491,10 @@ function applyScopeGrounding(
     groundingNotes,
     fallbackUsed,
     fallbackFiles,
+    shouldFail: !state.context.dryRun && shouldFailUngrounded(totalProposals, totalRejected),
+    failureReason: shouldFailUngrounded(totalProposals, totalRejected)
+      ? `rejected proposal count=${totalRejected} out of ${totalProposals}`
+      : null,
   };
 }
 
@@ -1354,22 +1356,74 @@ ${JSON.stringify({
       retryAttempt = structured.retryAttempt;
       retryAttempted = structured.retryAttempted;
       retrySucceeded = structured.retrySucceeded;
-      const groundedScope = applyScopeGrounding(state, scopeAnalysisResult, contextPack);
-      scopeAnalysisResult = {
-        ...scopeAnalysisResult,
-        proposedFilesToModify: groundedScope.accepted.proposedFilesToModify,
-        proposedFilesToCreate: groundedScope.accepted.proposedFilesToCreate,
-        groundingNotes: [
-          ...(scopeAnalysisResult.groundingNotes ?? []),
-          ...groundedScope.groundingNotes,
-        ],
-        groundingFallbackUsed: groundedScope.fallbackUsed,
-        groundingFallbackFiles: groundedScope.fallbackFiles,
-        rejectedProposedFilesToModify: groundedScope.rejected.proposedFilesToModify,
-        rejectedProposedFilesToCreate: groundedScope.rejected.proposedFilesToCreate,
-      };
+    const groundedScope = applyScopeGrounding(state, scopeAnalysisResult, contextPack);
+    scopeAnalysisResult = {
+      ...scopeAnalysisResult,
+      proposedFilesToModify: groundedScope.accepted.proposedFilesToModify,
+      proposedFilesToCreate: groundedScope.accepted.proposedFilesToCreate,
+      groundingNotes: [
+        ...(scopeAnalysisResult.groundingNotes ?? []),
+        ...groundedScope.groundingNotes,
+      ],
+      groundingFallbackUsed: groundedScope.fallbackUsed,
+      groundingFallbackFiles: groundedScope.fallbackFiles,
+      rejectedProposedFilesToModify: groundedScope.rejected.proposedFilesToModify,
+      rejectedProposedFilesToCreate: groundedScope.rejected.proposedFilesToCreate,
+    };
+
+    if (groundedScope.shouldFail) {
+      const groundedError = new ProviderJsonOutputError(
+        {
+          provider: state.context.providerName ?? "mock",
+          model: state.context.modelName ?? "deterministic-mock",
+          purpose: "scope_analysis",
+        },
+        "ungrounded_provider_output",
+        "Ungrounded path proposals were rejected as not repo-grounded.",
+        groundedScope.failureReason ?? "rejected proposals exceeded safe grounding ratio",
+        null,
+        completion.content.length,
+      );
       if (ledger) {
-        ledger.recordEvent("tool_response", "scope_analysis_response", "info", {
+        ledger.recordEvent("tool_response", "scope_analysis_response", "error", {
+          ...providerErrorPayload(
+            llm,
+            "scope_analysis",
+            groundedError,
+            completion.usage,
+            completion.finishReason,
+            completion.content.length,
+            true,
+            responseFormat,
+            groundedError.retryAttempt,
+            groundedError.retryAttempted,
+            groundedError.retrySucceeded,
+            completion.responseShape
+          ),
+          groundingNotes: groundedScope.groundingNotes,
+          groundingFallbackUsed: groundedScope.fallbackUsed,
+          groundingFallbackFiles: groundedScope.fallbackFiles,
+          rejectedProposedFilesToModifyCount: groundedScope.rejected.proposedFilesToModify.length,
+          rejectedProposedFilesToCreateCount: groundedScope.rejected.proposedFilesToCreate.length,
+          tokenUsage: completion.usage ?? null,
+        });
+      }
+      return {
+        scopeAnalysisResult,
+        error: groundedError.message,
+        messages: [
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Scope Analysis:\nRationale: ${scopeAnalysisResult.rationale}\nProposed Files to Modify: ${scopeAnalysisResult.proposedFilesToModify.join(", ")}\nProposed Files to Create: ${scopeAnalysisResult.proposedFilesToCreate.join(", ")}`,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+    }
+
+    if (ledger) {
+      ledger.recordEvent("tool_response", "scope_analysis_response", "info", {
           provider: llm.providerName,
           model: llm.modelName,
           purpose: "scope_analysis",
@@ -1721,26 +1775,52 @@ export function createOptionalPatchApplyNode(): AgentNode {
     const ledger = activeLedgers.get(state.context.sessionId);
     const dryRun = state.context.dryRun;
     const patchPlan = state.patchPlan;
+    const scopeAnalysis = state.scopeAnalysisResult;
+    const chunks = patchPlan?.chunks ?? [];
+    const writeResult = {
+      attempted: chunks.length,
+      created: [] as string[],
+      skipped: [] as Array<{ readonly file: string; readonly reason: string }>,
+      rejected: [] as Array<{ readonly file: string; readonly reason: string }>,
+    };
 
-    if (!patchPlan || !patchPlan.chunks || patchPlan.chunks.length === 0) {
-      return {};
+    if (!patchPlan || chunks.length === 0) {
+      if (ledger) {
+        ledger.recordEvent("system", "patch_write_summary", "info", {
+          dryRun,
+          chunksAttempted: 0,
+          created: 0,
+          skipped: 0,
+          rejected: 0,
+        });
+      }
+
+      return {
+        writeResult,
+      };
     }
 
     if (dryRun) {
       if (ledger) {
         ledger.recordEvent("system", "dry_run_patch_apply", "info", {
           rationale: patchPlan.rationale,
-          chunks: patchPlan.chunks,
+          chunks,
           message: "Dry-run mode: no files modified.",
         });
       }
-      return {};
+
+      return {
+        writeResult,
+      };
     }
 
-    // Safety check: validate ALL paths before any writes
-    const allPaths = patchPlan.chunks.map((c) => c.file);
+    const repoRoot = state.context.workspaceDir;
+    const affectedModules = scopeAnalysis?.affectedModules ?? [];
+
+    // Safety check: validate ALL grounded paths before any writes.
+    const allPaths = chunks.map((chunk) => chunk.file);
     try {
-      assertWriteSafe(state.context.workspaceDir, allPaths);
+      assertWriteSafe(repoRoot, allPaths);
     } catch (err: unknown) {
       if (err instanceof SafetyViolationError) {
         if (ledger) {
@@ -1749,16 +1829,107 @@ export function createOptionalPatchApplyNode(): AgentNode {
             reason: err.reason,
           });
         }
-        // Re-throw to abort the run
+        // Re-throw to abort the run.
         throw err;
       }
       throw err;
     }
 
-    throw new Error(
-      "Patch application is disabled for metadata-only patch plans in the current Openpawl MVP. " +
-      "Run with --dry-run to review planning metadata."
-    );
+    let writeFailed = false;
+    for (const chunk of chunks) {
+      if (chunk.type !== "create") {
+        writeResult.rejected.push({
+          file: chunk.file,
+          reason: `chunk type ${chunk.type} is not supported in write mode v0; only create chunks are applied`,
+        });
+        continue;
+      }
+
+      const normalizedPath = isRepoRelativePathLike(chunk.file);
+      if (!normalizedPath) {
+        writeResult.rejected.push({
+          file: chunk.file,
+          reason: "not a valid repo-relative path",
+        });
+        continue;
+      }
+
+      if (!isAllowedNewTestFile(normalizedPath, repoRoot, affectedModules)) {
+        writeResult.rejected.push({
+          file: chunk.file,
+          reason: "only new test files under test paths are allowed in write mode v0",
+        });
+        continue;
+      }
+
+      const targetPath = path.join(repoRoot, normalizedPath);
+      try {
+        const existing = await fs.stat(targetPath);
+        if (existing.isFile()) {
+          writeResult.skipped.push({
+            file: normalizedPath,
+            reason: "target file already exists",
+          });
+        } else {
+          writeResult.rejected.push({
+            file: normalizedPath,
+            reason: "target path exists and is not a regular file",
+          });
+          writeFailed = true;
+        }
+        continue;
+      } catch (err: unknown) {
+        const code = typeof err === "object" && err !== null && "code" in err
+          ? String((err as { code?: unknown }).code)
+          : "unknown";
+        if (code !== "ENOENT") {
+          writeResult.rejected.push({
+            file: normalizedPath,
+            reason: `target path is not accessible (${code})`,
+          });
+          writeFailed = true;
+          continue;
+        }
+      }
+
+      try {
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.writeFile(
+          targetPath,
+          buildPlaceholderTestFileContent(normalizedPath, chunk.description),
+          "utf-8"
+        );
+        writeResult.created.push(normalizedPath);
+      } catch (err: unknown) {
+        writeResult.rejected.push({
+          file: normalizedPath,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+        writeFailed = true;
+      }
+    }
+
+    if (ledger) {
+      ledger.recordEvent("system", "patch_write_summary", "info", {
+        dryRun,
+        attempted: writeResult.attempted,
+        createdCount: writeResult.created.length,
+        skippedCount: writeResult.skipped.length,
+        rejectedCount: writeResult.rejected.length,
+      });
+    }
+
+    if (writeFailed) {
+      throw new Error("Write mode failed while applying patch chunks. Review rejected files in report and rerun after adjustments.");
+    }
+
+    if (writeResult.attempted > 0 && writeResult.created.length === 0) {
+      throw new Error("No new files were created in write mode because all patch chunks were skipped or rejected.");
+    }
+
+    return {
+      writeResult,
+    };
   };
 }
 
@@ -1845,6 +2016,19 @@ export function createTraceExportNode(): AgentNode {
       "utf-8"
     );
 
+    // Write applied-files.json
+    const writeResult = state.writeResult ?? {
+      attempted: 0,
+      created: [],
+      skipped: [],
+      rejected: [],
+    };
+    await fs.writeFile(
+      path.join(runDir, "applied-files.json"),
+      JSON.stringify(writeResult, null, 2),
+      "utf-8"
+    );
+
     if (ledger) {
       const summary = ledger.getSummary();
       await fs.writeFile(
@@ -1863,9 +2047,15 @@ export function createReportExportNode(): AgentNode {
     const runId = state.context.sessionId;
     const ledger = activeLedgers.get(runId);
 
-    const filesModified = state.patchPlan?.chunks.map((c) => c.file) ?? [];
+    const writeResult = state.writeResult ?? {
+      attempted: 0,
+      created: [],
+      skipped: [],
+      rejected: [],
+    };
+    const filesModified = writeResult.created;
     const validationSuccess = state.validationResult?.success ?? false;
-    const patchApplied = !state.context.dryRun && (state.patchPlan?.chunks.length ?? 0) > 0;
+    const patchApplied = !state.context.dryRun && writeResult.created.length > 0;
     const patchPlanPath = `.codepawl/runs/${runId}/patch-plan.json`;
     const rejectedScopeModifications = state.scopeAnalysisResult?.rejectedProposedFilesToModify ?? [];
     const rejectedScopeCreations = state.scopeAnalysisResult?.rejectedProposedFilesToCreate ?? [];
@@ -1894,6 +2084,9 @@ export function createReportExportNode(): AgentNode {
     const reportResult: ReportResult = {
       summary: `Agent run finished with status: ${validationSuccess ? "success" : "failed"}.`,
       filesModified,
+      filesCreated: writeResult.created,
+      filesSkipped: writeResult.skipped,
+      filesRejected: writeResult.rejected,
       patchApplied,
       validationSuccess,
       durationMs,
@@ -1907,6 +2100,12 @@ export function createReportExportNode(): AgentNode {
     const riskNotes: string[] = [];
     if (!state.context.dryRun && filesModified.length > 0) {
       riskNotes.push("Write mode was active — files may have been modified.");
+    }
+    if (!state.context.dryRun && writeResult.skipped.length > 0) {
+      riskNotes.push(`Write mode skipped ${writeResult.skipped.length} chunk(s) without creating files.`);
+    }
+    if (!state.context.dryRun && writeResult.rejected.length > 0) {
+      riskNotes.push(`Write mode rejected ${writeResult.rejected.length} chunk(s) due to write policy.`);
     }
     if (state.error) {
       riskNotes.push(`Agent encountered an error: ${state.error}`);
@@ -1986,6 +2185,8 @@ ${state.scopeAnalysisResult ? `**Scope Rationale:** ${state.scopeAnalysisResult.
 
 ---
 
+${state.error ? `## Error\n\n\`\`\`\n${state.error}\n\`\`\`\n\n---\n\n` : ""}
+
 ${contextSection}
 
 ---
@@ -2043,6 +2244,26 @@ ${state.patchPlan.chunks.map((c, i) => `| ${i + 1} | \`${c.type}\` | \`${c.file}
     : "_No patch plan generated._"
 }
 
+### File write summary
+
+${
+  state.context.dryRun
+    ? "No files written in dry-run mode."
+    : `**Attempted chunks:** ${writeResult.attempted}
+**Created:** ${writeResult.created.length}
+**Skipped:** ${writeResult.skipped.length}
+**Rejected:** ${writeResult.rejected.length}
+
+Created files:
+${writeResult.created.map((file) => `- \`${file}\``).join("\n") || "_None_"}
+
+Skipped files:
+${writeResult.skipped.map((item) => `- \`${item.file}\` (${item.reason})`).join("\n") || "_None_"}
+
+Rejected files:
+${writeResult.rejected.map((item) => `- \`${item.file}\` (${item.reason})`).join("\n") || "_None_"}`
+}
+
 ${
   patchRejections.length > 0
     ? `### Rejected/un-grounded patch chunks
@@ -2079,12 +2300,12 @@ ${riskNotes.length > 0 ? riskNotes.map((n) => `- ${n}`).join("\n") : "_No risk n
 
 ${
   state.error
-      ? `1. Review the error: \`${state.error}\`\n2. Fix the underlying issue and re-run.`
-      : validationSuccess
-        ? patchApplied
-          ? "1. Review the applied patch in the run artifacts.\n2. Run your full test suite.\n3. Open a pull request if satisfied."
-          : `1. This was a dry-run. Review the patch plan in \`${patchPlanPath}\`.\n2. Re-run with \`--write\` to apply the patch.`
-        : "1. Review validation errors above.\n2. Inspect the patch plan and adjust if needed.\n3. Re-run after fixing the issues."
+        ? `1. Review the error: \`${state.error}\`\n2. Fix the underlying issue and re-run.`
+        : validationSuccess
+          ? patchApplied
+            ? "1. Review the applied patch in the run artifacts.\n2. Run your full test suite.\n3. Open a pull request if satisfied."
+            : `1. This was a dry-run or no files were created. Review the patch plan in \`${patchPlanPath}\`.\n2. Re-run with \`--write\` after adjusting write-safe targets.`
+          : "1. Review validation errors above.\n2. Inspect the patch plan and adjust if needed.\n3. Re-run after fixing the issues."
 }
 
 ---
