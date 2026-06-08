@@ -1,5 +1,23 @@
 # Product
 
+## Openpawl release maturity (CLI agent engine)
+
+- **Alpha history**
+  - `v0.1.0-alpha.1`: Foundation, deterministic mock provider, local dry-run, PR workflow verification, metadata-only patch planning.
+  - `v0.1.0-alpha.2`: Experimental provider integration, structured-output retry/failure diagnostics, safe trace metadata.
+  - `v0.1.0-alpha.3`: `json_schema` strict provider mode, context compaction, grounding/rejection of invented paths, and dry-run scope fallback.
+
+- **Current publish posture**
+  - Keep GitHub Releases as the release mechanism for alpha.
+  - Do not publish to npm until package metadata, license, exports, and install path are fully verified.
+  - NPM alpha publish is acceptable only after clean install from a packed tarball in a temporary repo.
+  - Stable publish should wait for safe write-mode and broader real-repo validations.
+
+- **Next maturity gates**
+  - Beta: safe write-mode v0, explicit test command, non-overwrite guarantees.
+  - RC: multiple real repositories validated, provider compatibility matrix completed.
+  - 0.1.0 stable: complete external release confidence and documented security guardrails.
+
 ## What we are building
 
 CodePawl is a server-side coding-agent ecosystem designed for autonomous software development. The core product is **Openpawl**, an open-source autonomous agent engine. Internally, it relies on advanced **Trace Ledger** and **Memory** modules to coordinate agent execution and maintain state history. The project also houses a product catalog (supporting tools like Featcat, HebbMem, TurboQuant, Cachepawl, and KStudio), curated AI/ML research, technical documentation, and waitlist signups.

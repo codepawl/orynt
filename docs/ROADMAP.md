@@ -1,5 +1,37 @@
 # Roadmap
 
+## Openpawl Release Roadmap
+
+### Release history snapshot
+
+- `v0.1.0-alpha.1`: Mock-first monorepo foundation, local dry-run, metadata-only patch plans, and PR workflow verification without production write mode.
+- `v0.1.0-alpha.2`: Experimental OpenAI-compatible provider, structured-output retry, safer diagnostics, and GitHub workflow hardening.
+- `v0.1.0-alpha.3`: `json_schema` strict mode, context compaction with budgets, grounding/rejection of provider paths, and dry-run scope fallback.
+
+### Maturity plan
+
+- **Alpha (current):** CLI + dry-run + trace + CI verified; real-provider runs are experimental.
+- **Beta:** safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
+- **RC:** validate on multiple real repositories, publish provider compatibility matrix, and stabilize failure/retry behavior.
+- **0.1.0 stable:** safe write-mode and release packaging readiness for external users.
+
+### Publishing guidance
+
+- Prefer GitHub Releases for current alpha tags.
+- Do not publish to npm yet until package metadata, exports, bin entrypoint, files, license, README, and install path are verified.
+- NPM alpha publish becomes appropriate only after the CLI works from a packed tarball in a temp repo.
+- Stable publish requires safe write mode and at least **3** real-repo dry-run validations.
+
+### Pre-publish checklist
+
+- Run `npm pack` dry-run for package artifacts.
+- Install CLI in a temporary repository and run `codepawl doctor`.
+- Run `codepawl run --repo . --task "review current repository changes" --dry-run`.
+- Confirm all expected artifacts and deterministic reports are produced.
+- Confirm traces/reports include context-pack and compaction metrics and no secrets.
+- Confirm GitHub Action docs still match workflow behavior.
+- Confirm license and package metadata are explicit and consistent.
+
 8 phases to MVP. Execute in order unless explicitly marked parallel. Each phase is a standalone Claude Code prompt with its own context, requirements, and verification.
 
 Before starting any phase, read `CLAUDE.md` and the files listed in `<context>` for that phase.

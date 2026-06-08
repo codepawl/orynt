@@ -1,5 +1,65 @@
 # Openpawl MVP — Implementation Walkthrough
 
+## Openpawl Release Progression
+
+### v0.1.0-alpha.1
+
+- Bun monorepo foundation.
+- `@codepawl/core` and `@codepawl/cli` scaffolding.
+- Deterministic mock provider.
+- Local dry-run execution.
+- Artifact pipeline with five run artifacts.
+- `workflow_dispatch` dry-run.
+- Pull request dry-run with report comment.
+- Metadata-only patch plans.
+- No production write mode.
+
+### v0.1.0-alpha.2
+
+- Experimental OpenAI-compatible provider path.
+- DeepInfra/Nemotron smoke coverage.
+- Provider diagnostics and failure category improvements.
+- Structured-output retry handling.
+- Safe trace metadata and bounded artifact behavior.
+- Mock provider remained the default.
+
+### v0.1.0-alpha.3
+
+- DeepInfra `json_schema` strict provider path.
+- Context compaction with budget controls and candidate/omitted tracking.
+- Provider prompt size reduction and scope for token governance.
+- Provider output grounding for scope and patch paths.
+- Ungrounded proposals surfaced and rejected.
+- Real-provider dry-run smoke success.
+- Patch planning remains metadata-only.
+- Dry-run provider scope proposals now fallback to context candidates instead of hard-failing.
+
+## Maturity Plan
+
+| Stage | Target | Completion criteria |
+| --- | --- | --- |
+| Alpha | `v0.1.0-alpha.x` | CLI + dry-run + trace + CI verified; real-provider support experimental; no trusted write mode |
+| Beta | `v0.1.0-beta.x` | Safe write-mode v0, explicit test command required, no source overwrite outside allowed paths, PR workflow verified |
+| RC | Release candidate | Multiple real repos tested, provider compatibility matrix published, failure behavior stable under structured-output retries |
+| Stable 0.1.0 | `v0.1.0` | External package install path validated, security guardrails documented, CI green, publishing checks complete |
+
+### Publishing guidance
+
+- Use GitHub Releases for alpha distribution now.
+- Avoid full npm release until packaging and install surfaces are complete.
+- NPM alpha publish is acceptable after `codepawl` can be installed and executed from a packed tarball in a temporary repository.
+- Stable npm publish should not happen until safe write mode is in place and at least three real repository dry-run validations are complete.
+
+### Readiness checklist (recommended before any publish)
+
+- `npm pack` dry-run for distributable package outputs.
+- Install CLI in a fresh temporary repo and run `codepawl doctor`.
+- Run `codepawl run --dry-run` with a repository task.
+- Verify artifacts exist: `trace.json`, `run.json`, `report.md`, `patch-plan.json`, `selected-files.json`.
+- Verify no secrets or raw prompts in trace/report output by default.
+- Verify GitHub Action docs and matrix docs describe current workflow and permissions.
+- Verify package metadata/licensing and export surfaces are complete.
+
 > **Date:** 2026-06-08
 > **Status:** ✅ Complete
 > **Sprint:** MVP v0.1.0

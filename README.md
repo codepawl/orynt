@@ -11,6 +11,40 @@ This project is organized as a Bun-powered monorepo containing:
 - **`packages/cli`** (`@codepawl/cli`): The command-line interface for running Openpawl locally and in CI.
 - **`packages/shared`** (`@codepawl/shared`): Shared TypeScript types and interfaces.
 
+## Openpawl Alpha History and Maturity Plan
+
+Openpawl currently targets **v0.1.0-alpha.3**.
+
+### Release history
+
+- [0.1.0-alpha.1](CHANGELOG.md): Bun monorepo foundation, deterministic mock provider, local and CI dry-runs, metadata-only patch plans, and PR report workflow without production write mode.
+- [0.1.0-alpha.2](CHANGELOG.md): OpenAI-compatible provider experiments, provider diagnostics, structured-output retrying, safe trace metadata, and GitHub comment workflow hardening.
+- [0.1.0-alpha.3](CHANGELOG.md): `json_schema` strict output, context compaction with budget controls, grounding and rejection of invented paths, and dry-run scope fallback for ungrounded proposals.
+
+### Maturity targets
+
+- Alpha: CLI + dry-run + trace + CI behavior verified; real provider smoke is experimental; no trusted write mode.
+- Beta: safe write-mode v0 with explicit test command and verified PR workflow behavior.
+- RC: multiple real repositories validated and provider compatibility matrix documented.
+- 0.1.0 stable: safe write-mode default path with broad smoke confidence, complete release package metadata, and external docs/install validation.
+
+### Publishing guidance (current)
+
+- Do not publish to npm yet unless package metadata, exports, bin/entrypoint, license, README, and installation path are verified.
+- GitHub Release is the appropriate mechanism for current alpha tags.
+- npm alpha publishing becomes appropriate after the CLI can be installed and invoked from a packed tarball in a fresh repo.
+- Stable publish should wait for safe write-mode and at least **3** real-repository dry-run validations.
+
+### Readiness checklist
+
+- `npm pack` dry-run for core/cli packages.
+- Install CLI in a temporary repo and run `codepawl doctor`.
+- Run `codepawl run --repo . --task "review current repository changes" --dry-run`.
+- Verify `.codepawl/runs/<run-id>/` artifacts include report, trace, run JSON, patch plan, and selected files.
+- Verify traces/reports do not contain secrets or full prompts.
+- Verify GitHub Action docs and workflow comments still align with repository policy.
+- Verify package metadata and licenses are explicit and consistent (`package.json`, `license`, `README`, bin exports).
+
 ---
 
 ## [>.-] Openpawl CLI Quick Start
