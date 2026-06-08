@@ -1,5 +1,8 @@
 name: Openpawl CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -126,7 +129,7 @@ jobs:
         if: always() && steps.openpawl.outputs.run_dir != ''
         uses: actions/upload-artifact@v4
         with:
-          name: openpawl-run-${{ steps.openpawl.outputs.run_id }}
+          name: openpawl-artifacts-${{ steps.openpawl.outputs.run_id }}
           path: ${{ steps.openpawl.outputs.run_dir }}/**
           if-no-files-found: error
           retention-days: 30

@@ -43,8 +43,10 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 - The workflow calls the current monorepo CLI script: `bun run dev:cli -- run ...`.
 - The Openpawl step captures its exit code instead of hiding it with `|| true`, allowing artifact upload and PR comment attempts before a final failure gate.
 - Generated files under `.codepawl/runs/<run-id>/` are uploaded with `actions/upload-artifact@v4`.
+- Artifact names use `openpawl-artifacts-<run-id>`.
 - PR comments are non-destructive: the workflow creates a new comment and does not delete previous comments.
 - Forked pull requests skip the comment step; the comment step also uses `continue-on-error: true` so missing comment permissions do not fail the workflow by themselves.
+- The workflow opts JavaScript actions into Node 24 with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` after a hosted run warned about Node 20 action deprecation.
 
 **Scope:** `.github/workflows/openpawl.yml`, README documentation, and this walkthrough were changed. `apps/web` and `apps/api` were not modified.
 
@@ -100,7 +102,7 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
   - Triggers: `pull_request` and `workflow_dispatch`
   - Runs Openpawl CLI via `bun run dev:cli -- run`
   - Runs dry-run on PRs; `workflow_dispatch` supports `dry-run` and `write`
-  - Uploads `.codepawl/runs/<run-id>/` as an artifact
+  - Uploads `.codepawl/runs/<run-id>/` as `openpawl-artifacts-<run-id>`
   - Posts `report.md` as a non-destructive PR comment for same-repository PRs when permissions are available
   - Runs unit tests (core + cli)
 
@@ -187,7 +189,7 @@ Manual workflow usage:
    - `task`: coding task for Openpawl
    - `repo_path`: target path from checkout root, usually `.`
    - `mode`: `dry-run` or `write`
-5. Download the `openpawl-run-<run-id>` artifact after the run completes.
+5. Download the `openpawl-artifacts-<run-id>` artifact after the run completes.
 
 Pull request behavior:
 - `pull_request` always runs Openpawl in dry-run mode.
@@ -195,6 +197,60 @@ Pull request behavior:
 - Same-repository PRs attempt to post `report.md` as a PR comment.
 - Forked PRs skip commenting to avoid permission failures.
 - Comment posting is `continue-on-error`, so unavailable comment permissions do not fail the workflow by themselves.
+
+### Real GitHub Actions Result
+
+Latest inspected run:
+- Workflow: `Openpawl CI`
+- Run ID: `27114856365`
+- Event: `workflow_dispatch`
+- Branch: `main`
+- Created: `2026-06-08T03:48:27Z`
+- Conclusion: `success`
+- Jobs: `Openpawl Agent Run` success, `Unit Tests (core + cli)` success
+
+Hosted Openpawl configuration from logs:
+```
+Task: add tests for shared helpers
+Repo path: .
+Mode: dry-run
+```
+
+Hosted Openpawl command from logs:
+```bash
+bun run dev:cli -- run --repo . --task "add tests for shared helpers" --dry-run --test-cmd "echo skip"
+```
+
+Hosted Openpawl result:
+```
+Repo:    /home/runner/work/codepawl/codepawl
+Run ID:  run_1780890531380_cbvky5
+Status:  SUCCESS
+Report: /home/runner/work/codepawl/codepawl/.codepawl/runs/run_1780890531380_cbvky5/report.md
+Trace:  /home/runner/work/codepawl/codepawl/.codepawl/runs/run_1780890531380_cbvky5/trace.json
+```
+
+Artifact upload evidence:
+```
+Artifact name: openpawl-run-run_1780890531380_cbvky5
+Files uploaded: 5
+Artifact ID: 7471270052
+Final size: 12278 bytes
+```
+
+Downloaded artifact contents:
+```
+patch-plan.json
+report.md
+run.json
+selected-files.json
+trace.json
+```
+
+CI-only follow-up from this run:
+- The artifact name was redundant as `openpawl-run-run_<id>`, so the workflow now uses `openpawl-artifacts-<run-id>`.
+- The hosted runner emitted a Node.js 20 action deprecation warning for JavaScript actions, so the workflow now sets `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`.
+- PR commenting was not verified by this run because it was a `workflow_dispatch` run, not a pull request run.
 
 ### Artifact Path Regression Verification
 

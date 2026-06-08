@@ -113,7 +113,7 @@ To run it manually in GitHub:
 2. Select **Openpawl CI**.
 3. Choose **Run workflow**.
 4. Set `task`, `repo_path`, and `mode`.
-5. Download the `openpawl-run-<run-id>` artifact from the completed workflow run.
+5. Download the `openpawl-artifacts-<run-id>` artifact from the completed workflow run.
 
 ---
 
