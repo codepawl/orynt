@@ -751,3 +751,37 @@ In `--write` mode:
 | P2 | Multi-repo workspace support |
 | P3 | Web dashboard integration for run history (KStudio integration) |
 | P3 | `codepawl watch` mode for file-change-triggered runs |
+
+### 2026-06-08 Openpawl GitHub trigger UX smoke verification (gh CLI)
+
+**Scope**: Real GitHub CLI verification of `workflow_dispatch`, `issue_comment`, issues label, PR comment, and PR label triggers.
+
+**Commands and outcomes**:
+- `gh auth status` -> authenticated successfully.
+- `gh repo view codepawl/codepawl --json nameWithOwner` -> `{"nameWithOwner":"codepawl/codepawl"}`.
+- `gh workflow run openpawl.yml -f task="add tests for the Openpawl trace ledger" -f repo_path="." -f mode="dry-run"` -> failed with `HTTP 422: Workflow does not have 'workflow_dispatch' trigger` (despite workflow YAML showing `workflow_dispatch` in this branch).
+- `gh issue create --title "Openpawl trigger smoke test" --body "Temporary issue for Openpawl trigger verification. Safe to close."` -> created issue `#38`.
+- `gh issue comment 38 --body "/openpawl add tests"` -> comment posted, no matching new run appeared.
+- `gh issue edit 38 --add-label openpawl` -> label applied, no matching new run appeared.
+- Temporary branch created and pushed:
+  - Branch: `test/openpawl-gh-trigger-smoke`
+  - Commit: `9b9d6b6` with docs-only change (`README.md`)
+  - PR: `#39`
+- `gh pr comment 39 --body "/openpawl review"` -> comment posted, no matching new run appeared.
+- `gh pr edit 39 --add-label openpawl` -> label applied, no matching new run appeared.
+- `gh run watch 27155500638 --exit-status --compact` for the push-triggered run -> already completed as `failure`.
+
+**Observed run IDs**:
+- `27155500638` (`push`, completed failure, commit `test/openpawl-gh-trigger-smoke`)
+- pre-existing openpawl run IDs with prior manual history: `27115519310`, `27115442371`, `27115097632` (`pull_request`, success) and `27114856365` (`workflow_dispatch`, success).
+
+**Verification result**:
+- `workflow_dispatch`: blocked by API 422 in this environment/session.
+- issue comment/issue label/PR comment/PR label trigger runs did not appear in run history after posting events.
+- cleanup completed:
+  - closed PR `#39` and deleted branch
+  - closed issue `#38`
+
+**Limitations**:
+- Could not claim fork PR behavior was verified (no fork PR created).
+- Could not verify report comment targeting for issue/PR comment or label events because corresponding runs were not emitted by GitHub Actions for the posted events.
