@@ -177,6 +177,27 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 - Emitted readiness status in traces, `run.json`, and the report (`## 🚦 Readiness Gate`).
 - CLI now reports readiness outcome directly in run summary output.
 
+### 2026-06-08 Scoped Validation Intelligence
+
+**Goal:** Infer safe scoped validation commands from repository context before defaulting to placeholder.
+
+**Fixes:**
+- Added validation source tracking to `validationResult.validationDecision` with:
+  - `source` (`explicit`, `inferred`, `placeholder`, `unavailable`)
+  - `confidence`
+  - `reason`
+  - `command`
+- Added command selection rules:
+  - `packages/core/*` -> `bun --filter @codepawl/core test`
+  - `packages/cli/*` -> `bun --filter @codepawl/cli test`
+  - `packages/shared/*` -> `bun --filter @codepawl/shared typecheck`
+  - `apps/web/*` -> `bun --filter @codepawl/web typecheck`
+- `--test-cmd` remains highest priority when provided.
+- Inference uses actual target files in priority order: created/applied files, patch-plan chunks, then selected files.
+- Dry-runs fall back to placeholder validation when no scoped command can be inferred from those targets.
+- Write mode fails before executing validation if no safe inferred command is available from those targets.
+- Validation command decision is persisted in trace/report/run artifacts.
+
 **Scope:** `packages/core/src/agent/nodes.ts`, `packages/core/src/runner.ts`, `packages/core/src/__tests__/runner.test.ts`, `packages/cli/src/bin.ts`, `packages/cli/src/__tests__/cli.test.ts`, and docs updates. `apps/web` and `apps/api` were not modified.
 
 ---

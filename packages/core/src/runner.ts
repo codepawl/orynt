@@ -246,6 +246,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       await traceExportNode(finalState);
       await reportExportNode(finalState);
       const finalReadiness = finalState.readinessGateResult;
+      const finalValidationDecision = finalState.validationResult?.validationDecision;
       await fs.writeFile(
         path.join(runDir, "run.json"),
         JSON.stringify(
@@ -254,6 +255,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
             success: false,
             error: runError,
             readiness: finalReadiness,
+            validationDecision: finalValidationDecision,
           },
           null,
           2

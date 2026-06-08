@@ -241,7 +241,7 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   if (testCmd) {
     console.log(`   TestCmd: ${testCmd}`);
   } else {
-    console.log(`   TestCmd: ${dryRun ? "omitted (dry-run default placeholder)" : "omitted (write mode will be blocked by readiness gate)"}`);
+    console.log(`   TestCmd: ${dryRun ? "omitted (dry-run placeholder fallback)" : "omitted (write mode attempts scoped inference)"}`);
   }
   console.log(`   Provider: ${providerConfig.provider}`);
   console.log(`   Model:   ${providerConfig.model ?? "deterministic-mock"}`);
@@ -521,9 +521,9 @@ Run options:
   --task <string>        Coding task description (required)
   --out-dir <path>       Artifact output directory (default: <repo>/.codepawl/runs/<run-id>)
   --dry-run              Scan and plan only; no files are modified (default)
-  --write                Apply safe test-file patch chunks, then validate (requires --test-cmd)
+  --write                Apply safe test-file patch chunks, then validate (scoped default inference; blocked in write mode if no safe command is found)
   --mock-fixture <path>  Path to a JSON LLM mock fixture file
-  --test-cmd <cmd>       Validation command; review-only dry-runs use placeholder validation when omitted
+  --test-cmd <cmd>       Optional validation command; explicit command always takes precedence
   --provider <name>      Provider override: mock or openai-compatible (default: OPENPAWL_PROVIDER or mock)
   --model <model>        Model override for openai-compatible provider
   --context-max-files <n> Optional context compaction file budget (env: OPENPAWL_CONTEXT_MAX_FILES)
@@ -565,9 +565,9 @@ Options:
   --task <string>        Coding or review task (required)
   --out-dir <path>       Artifact directory (default: <repo>/.codepawl/runs/<run-id>)
   --dry-run              Plan and report without modifying files (default)
-  --write                Apply safe test-file patch chunks, then validate (requires --test-cmd)
+  --write                Apply safe test-file patch chunks, then validate (scoped default inference; write mode fails if no safe command found)
   --mock-fixture <path>  Optional deterministic mock fixture
-  --test-cmd <cmd>       Required for write mode; review-only dry-runs use placeholder validation when omitted
+  --test-cmd <cmd>       Optional validation command; explicit command always takes precedence
   --provider <name>      mock or openai-compatible (env: OPENPAWL_PROVIDER)
   --model <model>        Provider model override (env: OPENPAWL_MODEL)
   --response-format <json_schema|json_object>

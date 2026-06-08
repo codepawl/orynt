@@ -258,6 +258,12 @@ export interface PatchPlan {
 
 export interface ValidationResult {
   readonly success: boolean;
+  readonly validationDecision: {
+    readonly source: "explicit" | "inferred" | "placeholder" | "unavailable";
+    readonly confidence: number;
+    readonly reason: string;
+    readonly command: string;
+  };
   readonly commandsRun: ReadonlyArray<{
     readonly command: string;
     readonly stdout: string;
@@ -281,6 +287,12 @@ export interface ReportResult {
     readonly input: number;
     readonly output: number;
     readonly total: number;
+  };
+  readonly validationDecision?: {
+    readonly source: "explicit" | "inferred" | "placeholder" | "unavailable";
+    readonly confidence: number;
+    readonly reason: string;
+    readonly command: string;
   };
   readonly readiness?: ReadinessGateResult;
 }

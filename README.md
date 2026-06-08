@@ -77,7 +77,7 @@ Artifacts will appear in `.codepawl/runs/<run-id>/`:
 - `selected-files.json`: files selected for the task
 - `applied-files.json`: write-mode summary of attempted/skipped/rejected chunks (empty in dry-run)
 
-Dry-runs use placeholder validation when `--test-cmd` is omitted, so smoke checks do not run unrelated repo-wide tests. Pass `--test-cmd "<command>"` to run real validation; a non-zero command still fails the run and preserves artifacts.
+Dry-runs use placeholder validation when no explicit or inferred scoped command can be found, so smoke checks do not run unrelated repo-wide tests. Pass `--test-cmd "<command>"` to override inference; a non-zero command still fails the run and preserves artifacts.
 
 ### 3. Run in write mode (applies patch)
 
@@ -153,11 +153,19 @@ intake → repo_scan → readiness_gate → scope_analysis → file_selection �
   → optional_patch_apply → validation → trace_export → report_export
 ```
 
-The new `readiness_gate` checks for task clarity, support, repo scan context, write safety, and validation-command presence before planning.
+The new `readiness_gate` checks for task clarity, support, repo scan context, write safety, and task clarity before planning.
 
 Blocked readiness now prevents all provider planning calls:
 - `needs_clarification` tasks are rejected before planning in both dry-run and write mode.
 - `unsafe` and `unsupported` tasks are also rejected before planning.
+- Scoped validation command inference now runs after planning in dry-run and write mode:
+  - explicit `--test-cmd` has highest priority;
+  - scoped inference comes from actual target files in priority order:
+    - created/applied files,
+    - patch-plan chunks,
+    - selected files;
+  - dry-run falls back to placeholder validation when no scoped command is inferred;
+  - write mode fails before validation when no safe scoped command is inferred.
 
 - **Dry-run mode**: Scans the repo, analyses scope, generates a patch plan, validates, and exports all artifacts — **without modifying any files**.
 - **Write mode**: Performs all of the above, then applies the patch (after safety validation), runs your test suite, and exports results.

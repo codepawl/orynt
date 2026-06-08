@@ -64,11 +64,22 @@ All notable changes for Openpawl.
 
 - Issue/PR readiness gate added to core runner before scope analysis:
   - new readiness status classes (`ready`, `needs_clarification`, `unsafe`, `unsupported`)
-  - checks for task clarity, repository/path/context signal, task type support, destructive intent, and write-mode validation command presence
+  - checks for task clarity, repository/path/context signal, task type support, and destructive intent
   - `needs_clarification` and `unsafe` tasks now always fail before planning in both dry-run and write mode
   - unsafe intent now includes deletion/cleanup patterns for env/secret/token/lock-like targets and repo-wide destructive actions
   - readiness result persisted in trace, `run.json`, and report
   - rejected runs report blockers and note that no provider calls were made due readiness gate
+- Scoped validation intelligence added for command selection:
+  - explicit `--test-cmd` remains highest priority
+  - inferred scoped defaults for:
+    - `packages/core/*` -> `bun --filter @codepawl/core test`
+    - `packages/cli/*` -> `bun --filter @codepawl/cli test`
+    - `packages/shared/*` -> `bun --filter @codepawl/shared typecheck`
+    - `apps/web/*` -> `bun --filter @codepawl/web typecheck`
+  - decision metadata persisted as `{source,confidence,reason,command}` in validation/result artifacts
+  - dry-runs fallback to placeholder validation if no scoped command is inferred
+  - write mode fails before validation when no safe command can be inferred
+- Scoped command inference now uses only actual target files (created files, patch-plan chunks, selected files), not broad context candidates.
 - CLI outputs readiness status on run completion, including rejected run summary lines.
 - Safe Write Mode v1 scaffolding:
   - write-mode now generates deterministic TypeScript/Vitest test scaffolds when grounded create chunks contain only intent metadata.

@@ -118,6 +118,10 @@ async function runMockAgent(
   return runAgent({ ...options, provider: "mock" });
 }
 
+async function writeJsonFixture(filePath: string, payload: unknown): Promise<void> {
+  await fs.writeFile(filePath, JSON.stringify(payload), "utf-8");
+}
+
 /**
  * These tests exercise the CLI by calling the runAgent() API that the CLI wraps,
  * plus directly testing the utility functions used by CLI commands (trace formatting,
@@ -472,21 +476,54 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
   });
 
   it("fails when write mode is used without an explicit test command", async () => {
+    const writeNoInferenceFixture = path.join(tmpDir, "write-no-inference.json");
+    await writeJsonFixture(writeNoInferenceFixture, [
+      {
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Scope fixture for non-inferred validation in write mode.",
+            affectedModules: ["src"],
+            proposedFilesToCreate: ["src/__tests__/cli-no-inference.test.ts"],
+            proposedFilesToModify: [],
+          }),
+          usage: { inputTokens: 8, outputTokens: 8 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Write fixture with no scoped validation fallback.",
+            chunks: [
+              {
+                type: "create",
+                file: "src/__tests__/cli-no-inference.test.ts",
+                description: "Create test file requiring write validation.",
+              },
+            ],
+          }),
+          usage: { inputTokens: 8, outputTokens: 8 },
+        },
+      },
+    ]);
+
     const result = await runCliFromPackageDir([
       "run",
       "--repo",
       tmpDir,
       "--task",
-      "add tests for hello file",
+      "add safe tests",
       "--write",
+      "--mock-fixture",
+      writeNoInferenceFixture,
     ]);
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).toContain("Status:  FAILED");
-    expect(result.stdout).toContain("Readiness: unsafe");
-    expect(result.stdout).toContain("Readiness gate blocked this run: unsafe");
-    expect(result.stdout).toContain("Blockers:");
-    expect(result.stdout).toContain("Provider calls: 0 (blocked by readiness check)");
+    expect(result.stdout).toContain("Readiness: ready");
+    expect(result.stdout).toContain("No explicit or inferred scoped validation command was found");
+    expect(result.stdout).not.toContain("Provider calls: 0 (blocked by readiness check)");
 
     const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
     expect(runId, result.stdout).toBeTruthy();

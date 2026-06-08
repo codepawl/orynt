@@ -30,6 +30,35 @@ async function expectRequiredArtifacts(runDir: string): Promise<void> {
   }
 }
 
+async function writeJsonFixture(filePath: string, payload: unknown): Promise<void> {
+  await fs.writeFile(filePath, JSON.stringify(payload), "utf-8");
+}
+
+async function writeScopedWorkspace(packagePath: string, script: string, command: string): Promise<void> {
+  const packageDir = path.join(tmpDir, packagePath);
+  await fs.mkdir(packageDir, { recursive: true });
+  await fs.writeFile(
+    path.join(tmpDir, "package.json"),
+    JSON.stringify({
+      name: "openpawl-scope-fixture",
+      private: true,
+      workspaces: ["packages/*", "apps/*"],
+    }),
+    "utf-8"
+  );
+
+  await fs.writeFile(
+    path.join(packageDir, "package.json"),
+    JSON.stringify({
+      name: `@codepawl/${packagePath.split("/")[1] ?? packagePath}`,
+      private: true,
+      scripts: { [script]: command },
+      version: "1.0.0",
+    }),
+    "utf-8"
+  );
+}
+
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpawl-test-"));
   originalProviderEnv = {
@@ -215,6 +244,12 @@ describe("runAgent — dry-run mode", () => {
       "bun test --preload ./missing-openpawl-preload.ts"
     );
     expect(result.state.validationResult?.commandsRun[0]?.exitCode).not.toBe(0);
+    expect(result.state.validationResult?.validationDecision).toMatchObject({
+      source: "explicit",
+      confidence: 1,
+      command: "bun test --preload ./missing-openpawl-preload.ts",
+    });
+    expect(result.state.validationResult?.validationDecision?.reason).toContain("Explicit --test-cmd");
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
@@ -234,6 +269,12 @@ describe("runAgent — dry-run mode", () => {
     expect(result.error).toBeNull();
     expect(result.state.validationResult?.success).toBe(true);
     expect(result.state.validationResult?.commandsRun[0]?.command).toBe("echo placeholder validation skipped");
+    expect(result.state.validationResult?.validationDecision).toMatchObject({
+      source: "placeholder",
+      confidence: 1,
+      command: "echo placeholder validation skipped",
+    });
+    expect(result.state.validationResult?.validationDecision?.reason).toContain("placeholder");
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
@@ -241,6 +282,267 @@ describe("runAgent — dry-run mode", () => {
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("Placeholder validation");
     expect(result.state.validationResult?.commandsRun[0]?.stdout).toContain("placeholder validation skipped");
+    expect(report).toContain("**Validation Decision:** placeholder");
+  });
+
+  it("uses placeholder validation in review-only dry-runs with no target files", async () => {
+    const noTargetFixturePath = path.join(tmpDir, "inference-no-target.json");
+    await writeJsonFixture(noTargetFixturePath, [
+      {
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Review dry-run has no target file proposals.",
+            affectedModules: ["src"],
+            proposedFilesToCreate: [],
+            proposedFilesToModify: [],
+          }),
+          usage: { inputTokens: 9, outputTokens: 7 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "No-op dry-run should keep no target files.",
+            chunks: [],
+          }),
+          usage: { inputTokens: 4, outputTokens: 3 },
+        },
+      },
+    ]);
+
+    const result = await runAgent({
+      query: "review current repository changes",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: noTargetFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.validationResult?.validationDecision?.source).toBe("placeholder");
+    expect(result.state.validationResult?.validationDecision?.command).toBe("echo placeholder validation skipped");
+  });
+
+  it("infers @codepawl/core test from created core test file", async () => {
+    await writeScopedWorkspace("packages/core", "test", "echo ok");
+
+    const fixturePath = path.join(tmpDir, "inference-core-created.json");
+    const inferredFile = "packages/core/__tests__/scope-inference-core-created.test.ts";
+    const query = "add core tests with created-file inference";
+    await writeJsonFixture(fixturePath, [
+      {
+        matchQuery: query,
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Core scope inference fixture for created file priority.",
+            affectedModules: ["packages/core"],
+            proposedFilesToCreate: [inferredFile],
+            proposedFilesToModify: [],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Create core test file for inference.",
+            chunks: [
+              {
+                type: "create",
+                file: inferredFile,
+                description: "Create core inference scaffold.",
+              },
+            ],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+    ]);
+
+    const result = await runAgent({
+      query,
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: fixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.validationResult?.validationDecision?.source).toBe("inferred");
+    expect(result.state.validationResult?.validationDecision?.command).toBe("bun --filter @codepawl/core test");
+    expect(result.state.validationResult?.commandsRun?.[0]?.command).toBe("bun --filter @codepawl/core test");
+  });
+
+  it.each([
+    ["cli", "packages/cli", "test", "bun --filter @codepawl/cli test"],
+    ["shared", "packages/shared", "typecheck", "bun --filter @codepawl/shared typecheck"],
+    ["web", "apps/web", "typecheck", "bun --filter @codepawl/web typecheck"],
+  ])("infers %s scoped validation command in dry-run", async (
+    label: string,
+    packagePath: string,
+    script: string,
+    expectedCommand: string
+  ) => {
+    await writeScopedWorkspace(packagePath, script, "echo ok");
+
+    const fixturePath = path.join(tmpDir, `inference-${label}.json`);
+    const inferredFile = `${packagePath}/__tests__/scope-inference-${label}.test.ts`;
+    const query = `add ${label} tests with inferred validation`;
+    await writeJsonFixture(fixturePath, [
+      {
+        matchQuery: query,
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: `Scope inference fixture for ${label}.`,
+            affectedModules: [packagePath],
+            proposedFilesToCreate: [inferredFile],
+            proposedFilesToModify: [],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: `Patch plan for ${label} validation inference test.`,
+            chunks: [
+              {
+                type: "create",
+                file: inferredFile,
+                description: `Create ${label} inference scaffold.`,
+              },
+            ],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+    ]);
+
+    const result = await runAgent({
+      query,
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: fixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.validationResult?.validationDecision?.source).toBe("inferred");
+    expect(result.state.validationResult?.validationDecision?.command).toBe(expectedCommand);
+    expect(result.state.validationResult?.validationDecision?.confidence).toBeGreaterThan(0);
+    const report = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md"), "utf-8");
+    expect(result.state.validationResult?.validationDecision?.reason).toContain("Inferred");
+    expect(result.state.validationResult?.commandsRun?.[0]?.command).toBe(expectedCommand);
+    expect(report).toContain("**Validation Decision:** inferred");
+  });
+
+  it("uses explicit --test-cmd when inference is possible", async () => {
+    await writeScopedWorkspace("packages/core", "test", "echo ok");
+    const fixturePath = path.join(tmpDir, "inference-explicit-override.json");
+    const inferredFile = "packages/core/__tests__/scope-inference-explicit.test.ts";
+    const query = "add core tests with explicit command override";
+    await writeJsonFixture(fixturePath, [
+      {
+        matchQuery: query,
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Scope inference fixture with explicit command.",
+            affectedModules: ["packages/core"],
+            proposedFilesToCreate: [inferredFile],
+            proposedFilesToModify: [],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Explicit override patch plan test.",
+            chunks: [
+              {
+                type: "create",
+                file: inferredFile,
+                description: "Create core explicit command override scaffold.",
+              },
+            ],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+    ]);
+
+    const explicitCommand = "echo explicit-validation";
+    const result = await runAgent({
+      query,
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: fixturePath,
+      testCommand: explicitCommand,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.validationResult?.validationDecision).toMatchObject({
+      source: "explicit",
+      confidence: 1,
+      command: explicitCommand,
+    });
+    expect(result.state.validationResult?.commandsRun?.[0]?.command).toBe(explicitCommand);
+  });
+
+  it("does not infer from unrelated workspace context candidate packages", async () => {
+    await writeScopedWorkspace("packages/core", "test", "echo ok");
+    await writeScopedWorkspace("packages/cli", "test", "echo ok");
+
+    const fixturePath = path.join(tmpDir, "inference-unrelated-context.json");
+    const inferredFile = "packages/core/src/__tests__/scope-inference-noise.test.ts";
+    const query = "add core tests with cli context";
+    await writeJsonFixture(fixturePath, [
+      {
+        matchQuery: query,
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Core task should prefer core patch target over cli package context.",
+            affectedModules: ["packages/core"],
+            proposedFilesToCreate: [inferredFile],
+            proposedFilesToModify: [],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Core scope with noisy context.",
+            chunks: [
+              {
+                type: "create",
+                file: inferredFile,
+                description: "Create core inference scaffold.",
+              },
+            ],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+    ]);
+
+    const result = await runAgent({
+      query,
+      workspaceDir: tmpDir,
+      dryRun: true,
+      mockFixturePath: fixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.validationResult?.validationDecision?.source).toBe("inferred");
+    expect(result.state.validationResult?.validationDecision?.command).toBe("bun --filter @codepawl/core test");
   });
 
   it("report.md contains task, run ID, and mode information", async () => {
@@ -550,19 +852,107 @@ describe("runAgent — readiness gate", () => {
     await expectRequiredArtifacts(runDir);
   });
 
-  it("blocks write-mode runs without explicit validation command", async () => {
+  it("supports write mode without explicit validation command when a scoped command is inferred", async () => {
+    await writeScopedWorkspace("packages/core", "test", "echo ok");
+
+    const fixturePath = path.join(tmpDir, "write-inferred.json");
+    const inferredFile = "packages/core/__tests__/inferred-write.test.ts";
+    await writeJsonFixture(fixturePath, [
+      {
+        matchQuery: "write with inferred command",
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Scope fixture for write-mode inference.",
+            affectedModules: ["packages/core"],
+            proposedFilesToCreate: [inferredFile],
+            proposedFilesToModify: [],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Write fixture for scoped inference.",
+            chunks: [
+              {
+                type: "create",
+                file: inferredFile,
+                description: "Create test fixture file.",
+              },
+            ],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+    ]);
+
     const result = await runAgent({
-      query: "add tests for shared helpers",
+      query: "write with inferred command",
       workspaceDir: tmpDir,
       dryRun: false,
-      mockFixturePath: FIXTURE_PATH,
+      mockFixturePath: fixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.validationResult?.validationDecision?.source).toBe("inferred");
+    expect(result.state.validationResult?.validationDecision?.command).toBe("bun --filter @codepawl/core test");
+    expect(result.state.readinessGateResult?.status).toBe("ready");
+  });
+
+  it("fails write mode when scoped command is not inferable and no explicit test command is provided", async () => {
+    const unavailableFixturePath = path.join(tmpDir, "write-inference-unavailable.json");
+    await writeJsonFixture(unavailableFixturePath, [
+      {
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Scope fixture for write mode unavailable validation.",
+            affectedModules: ["src"],
+            proposedFilesToCreate: ["src/__tests__/no-inference.test.ts"],
+            proposedFilesToModify: [],
+          }),
+          usage: { inputTokens: 8, outputTokens: 8 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Write no-inference validation fixture.",
+            chunks: [
+              {
+                type: "create",
+                file: "src/__tests__/no-inference.test.ts",
+                description: "Create test file without scoped validation command.",
+              },
+            ],
+          }),
+          usage: { inputTokens: 8, outputTokens: 8 },
+        },
+      },
+    ]);
+
+    const result = await runAgent({
+      query: "add an integration safety test",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      mockFixturePath: unavailableFixturePath,
     });
 
     expect(result.success).toBe(false);
-    expect(result.state.readinessGateResult?.status).toBe("unsafe");
-    expect(result.state.readinessGateResult?.blockers.join(" ")).toContain("validation command");
-    expect(result.traceSummary.llmCallsCount).toBe(0);
-    expect(result.error).toContain("Readiness gate blocked this run: unsafe");
+    expect(result.state.readinessGateResult?.status).toBe("ready");
+    expect(result.state.validationResult?.validationDecision).toMatchObject({
+      source: "unavailable",
+      confidence: 0,
+      command: "",
+    });
+    expect(result.state.validationResult?.commandsRun).toEqual([]);
+    expect(result.state.validationResult?.errors).toContain(
+      "No explicit or inferred scoped validation command was found and write mode requires a safe validation command."
+    );
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
@@ -1041,8 +1431,8 @@ describe("runAgent — write mode safety guardrails", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.state.readinessGateResult?.status).toBe("unsafe");
-    expect(result.error).toContain("Readiness gate blocked this run: unsafe");
+    expect(result.state.readinessGateResult?.status).toBe("ready");
+    expect(result.error).toContain("No safe create chunks available in write mode.");
   });
 
   it("preserves artifacts and surfaces failure when validation fails after write mode file creation", async () => {
