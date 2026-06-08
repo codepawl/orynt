@@ -83,6 +83,19 @@ export interface ContextPackMetrics {
   readonly compactionReason: string;
 }
 
+export type ReadinessGateStatus =
+  | "ready"
+  | "needs_clarification"
+  | "unsafe"
+  | "unsupported";
+
+export interface ReadinessGateResult {
+  readonly status: ReadinessGateStatus;
+  readonly reasons: ReadonlyArray<string>;
+  readonly blockers: ReadonlyArray<string>;
+  readonly warnings: ReadonlyArray<string>;
+}
+
 export interface ContextPack {
   readonly taskSummary: string;
   readonly repositoryRoot: string;
@@ -121,6 +134,7 @@ export interface AgentState {
   // Milestone 1 Node Results
   readonly repoScanResult?: RepoScanResult;
   readonly contextPack?: ContextPack;
+  readonly readinessGateResult?: ReadinessGateResult;
   readonly scopeAnalysisResult?: ScopeAnalysisResult;
   readonly fileSelectionResult?: FileSelectionResult;
   readonly patchPlan?: PatchPlan;
@@ -268,4 +282,5 @@ export interface ReportResult {
     readonly output: number;
     readonly total: number;
   };
+  readonly readiness?: ReadinessGateResult;
 }

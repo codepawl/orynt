@@ -8,6 +8,7 @@ import { resolveContextBudgets } from "./agent/context";
 import {
   createIntakeNode,
   createRepoScanNode,
+  createReadinessGateNode,
   createScopeAnalysisNode,
   createFileSelectionNode,
   createPatchPlanNode,
@@ -63,12 +64,6 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     structuredOutputMode,
   } = options;
 
-  if (!dryRun && !testCommand) {
-    throw new Error(
-      "Write mode requires an explicit test command. Pass --test-cmd (or set testCommand) to run write mode safely."
-    );
-  }
-
   // Resolve workspace directory
   const resolvedWorkspaceDir = path.resolve(workspaceDir);
   const resolvedOutputDir = outDir
@@ -117,6 +112,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
 
   graph.addNode("intake", createIntakeNode());
   graph.addNode("repo_scan", createRepoScanNode());
+  graph.addNode("readiness_gate", createReadinessGateNode());
   graph.addNode("scope_analysis", createScopeAnalysisNode(llm));
   graph.addNode("file_selection", createFileSelectionNode());
   graph.addNode("patch_plan", createPatchPlanNode(llm));
@@ -126,7 +122,8 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   graph.addNode("report_export", createReportExportNode());
 
   graph.addEdge("intake", "repo_scan");
-  graph.addEdge("repo_scan", "scope_analysis");
+  graph.addEdge("repo_scan", "readiness_gate");
+  graph.addEdge("readiness_gate", "scope_analysis");
   graph.addEdge("scope_analysis", "file_selection");
   graph.addEdge("file_selection", "patch_plan");
   graph.addEdge("patch_plan", "optional_patch_apply");
@@ -191,7 +188,21 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       await fs.writeFile(path.join(runDir, "report.md"), errorReport, "utf-8");
       await fs.writeFile(
         path.join(runDir, "run.json"),
-        JSON.stringify({ runId, success: false, error: runError }, null, 2),
+        JSON.stringify(
+          {
+            runId,
+            success: false,
+            error: runError,
+            readiness: {
+              status: "unsupported",
+              reasons: ["Run aborted before graph execution."],
+              blockers: ["Runner initialization failed before execution"],
+              warnings: [],
+            },
+          },
+          null,
+          2
+        ),
         "utf-8"
       );
       await fs.writeFile(
@@ -234,9 +245,19 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       const reportExportNode = createReportExportNode();
       await traceExportNode(finalState);
       await reportExportNode(finalState);
+      const finalReadiness = finalState.readinessGateResult;
       await fs.writeFile(
         path.join(runDir, "run.json"),
-        JSON.stringify({ runId, success: false, error: runError }, null, 2),
+        JSON.stringify(
+          {
+            runId,
+            success: false,
+            error: runError,
+            readiness: finalReadiness,
+          },
+          null,
+          2
+        ),
         "utf-8"
       );
     } catch { /* best-effort */ }

@@ -206,9 +206,6 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   const mockFixture = readStringFlag(flags, "mock-fixture");
   const resolvedMockFixture = mockFixture ? resolveFromBase(mockFixture, resolutionBase) : undefined;
   const testCmd = readStringFlag(flags, "test-cmd");
-  if (flags["write"] === true && !testCmd) {
-    die("Write mode requires --test-cmd (for example: --write --test-cmd \"bun test\" ).");
-  }
   const provider = readStringFlag(flags, "provider");
   const model = readStringFlag(flags, "model");
   const structuredOutputModeRaw = readStringFlag(flags, "response-format");
@@ -241,10 +238,10 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   if (resolvedOutDir) console.log(`   OutDir:  ${resolvedOutDir}`);
   console.log(`   Task:    ${task}`);
   console.log(`   Mode:    ${dryRun ? "dry-run (no files modified)" : "write"}`);
-  if (!dryRun && testCmd) {
+  if (testCmd) {
     console.log(`   TestCmd: ${testCmd}`);
   } else {
-    console.log("   TestCmd: omitted (dry-run default placeholder)");
+    console.log(`   TestCmd: ${dryRun ? "omitted (dry-run default placeholder)" : "omitted (write mode will be blocked by readiness gate)"}`);
   }
   console.log(`   Provider: ${providerConfig.provider}`);
   console.log(`   Model:   ${providerConfig.model ?? "deterministic-mock"}`);
@@ -274,6 +271,19 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   console.log(`${renderCompactLogo()} Run complete`);
   console.log(`   Run ID:  ${result.runId}`);
   console.log(`   Status:  ${result.success ? "SUCCESS" : "FAILED"}`);
+  if (result.state.readinessGateResult) {
+    const readiness = result.state.readinessGateResult;
+    console.log(`   Readiness: ${readiness.status}`);
+    if (readiness.status !== "ready") {
+      const readinessBlockers = readiness.blockers.length > 0
+        ? readiness.blockers
+        : readiness.reasons;
+      console.log(`   Blockers: ${readinessBlockers.join("; ") || "No explicit blockers."}`);
+      if (result.traceSummary.llmCallsCount === 0) {
+        console.log(`   Provider calls: 0 (blocked by readiness check)`);
+      }
+    }
+  }
   if (result.error) {
     console.log(`   Error:   ${result.error}`);
   }

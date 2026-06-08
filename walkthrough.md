@@ -162,6 +162,23 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 
 **Scope:** `packages/core/src/agent/nodes.ts`, `packages/core/src/state/schema.ts`, and runner tests were updated. `apps/web` and `apps/api` were not modified.
 
+### 2026-06-08 Issue/PR Readiness Gate
+
+**Goal:** Prevent provider planning on ambiguous, unsupported, or unsafe requests in all modes before any provider calls.
+
+**Fixes:**
+- Added a `readiness_gate` node between `repo_scan` and `scope_analysis`.
+- Introduced readiness classifications: `ready`, `needs_clarification`, `unsafe`, and `unsupported`.
+- Added check list for objective clarity, task support, scan-derived context sufficiency, explicit write-mode validation command, and unsafe intent.
+- Enforced behavior:
+  - `unsafe`/`unsupported` always fail before planning.
+  - `needs_clarification` now blocks before planning in both modes.
+  - `ready` continues in both modes.
+- Emitted readiness status in traces, `run.json`, and the report (`## 🚦 Readiness Gate`).
+- CLI now reports readiness outcome directly in run summary output.
+
+**Scope:** `packages/core/src/agent/nodes.ts`, `packages/core/src/runner.ts`, `packages/core/src/__tests__/runner.test.ts`, `packages/cli/src/bin.ts`, `packages/cli/src/__tests__/cli.test.ts`, and docs updates. `apps/web` and `apps/api` were not modified.
+
 ---
 
 ## What Was Built

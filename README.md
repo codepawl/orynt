@@ -43,6 +43,7 @@ Openpawl currently targets **v0.1.0-alpha.4**.
 - Install CLI in a temporary repo and run `codepawl doctor`.
 - Run `codepawl run --repo . --task "review current repository changes" --dry-run`.
 - Verify `.codepawl/runs/<run-id>/` artifacts include report, trace, run JSON, patch plan, selected files, and `applied-files.json`.
+- Verify `report.md` includes `## 🚦 Readiness Gate` for rejected or ambiguous tasks and `run.json` includes the readiness payload.
 - Verify traces/reports do not contain secrets or full prompts.
 - Verify GitHub Action docs and workflow comments still align with repository policy.
 - Verify package metadata and licenses are explicit and consistent (`package.json`, `license`, `README`, bin exports).
@@ -145,12 +146,18 @@ Report output includes a `Context Pack` section with file counts, compaction sta
 
 ## How It Works
 
-Openpawl runs a bounded **9-node state machine**:
+Openpawl runs a bounded **10-node state machine**:
 
 ```
-intake → repo_scan → scope_analysis → file_selection → patch_plan
+intake → repo_scan → readiness_gate → scope_analysis → file_selection → patch_plan
   → optional_patch_apply → validation → trace_export → report_export
 ```
+
+The new `readiness_gate` checks for task clarity, support, repo scan context, write safety, and validation-command presence before planning.
+
+Blocked readiness now prevents all provider planning calls:
+- `needs_clarification` tasks are rejected before planning in both dry-run and write mode.
+- `unsafe` and `unsupported` tasks are also rejected before planning.
 
 - **Dry-run mode**: Scans the repo, analyses scope, generates a patch plan, validates, and exports all artifacts — **without modifying any files**.
 - **Write mode**: Performs all of the above, then applies the patch (after safety validation), runs your test suite, and exports results.

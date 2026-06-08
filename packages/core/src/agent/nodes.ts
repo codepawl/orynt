@@ -6,6 +6,8 @@ import {
   AgentState,
   AgentMessage,
   AgentNode,
+  ReadinessGateResult,
+  ReadinessGateStatus,
   RepoScanResult,
   ContextPack,
   ScopeAnalysisResult,
@@ -45,6 +47,7 @@ const BINARY_FILE_EXTENSION_RE =
 const PLACEHOLDER_VALIDATION_COMMAND = "echo placeholder validation skipped";
 const DEFAULT_SCOPE_ANALYSIS_MAX_TOKENS = 1200;
 const DEFAULT_PATCH_PLAN_MAX_TOKENS = 1600;
+const MIN_CONTEXTUAL_QUERY_WORDS = 3;
 const SCOPE_CONTEXT_PROMPT_MARKER = "Scope Context Pack";
 const PATCH_CONTEXT_PROMPT_MARKER = "Patch Context Pack";
 const PROMPT_METADATA_MAX_CHARS = 12_000;
@@ -154,6 +157,146 @@ function isReviewOnlyTask(query: string): boolean {
   const hasReviewIntent = /\b(review|analyse|analyze|inspect|audit)\b/.test(normalized);
   const hasChangeIntent = /\b(add|create|implement|fix|modify|update|delete|remove|refactor|write|generate)\b/.test(normalized);
   return hasReviewIntent && !hasChangeIntent;
+}
+
+function tokenizeWords(value: string): string[] {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9_-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+}
+
+function isSupportedTask(query: string): boolean {
+  const normalized = query.toLowerCase();
+  if (!normalized.trim()) {
+    return false;
+  }
+  if (/\b(poem|essay|song|music|image|video|presentation|marketing|finance|invest|purchase|buy|cook|travel|vacation|design\s+(a\s+)?logo)\b/.test(normalized)) {
+    return false;
+  }
+
+  return /\b(add|create|implement|fix|update|remove|refactor|generate|write|test|tests|review|analyse|analyze|inspect|audit|document|scan|validate|lint|run|migrate|rename|improve|cleanup)\b/.test(normalized);
+}
+
+function isLikelyClearObjective(query: string): boolean {
+  const tokens = tokenizeWords(query);
+  if (tokens.length <= 1) {
+    return false;
+  }
+  if (tokens.length >= MIN_CONTEXTUAL_QUERY_WORDS) {
+    return true;
+  }
+  const hasContextHint = /\b(file|files|function|module|component|package|tests?|bug|error|readme|config|docs?|endpoint|api|route|class|type|script)\b/.test(query.toLowerCase());
+  const hasRepoPathHint = /(?:\b(?:src|packages|tests?|lib|app)\b|\/[\w.-]+|\.[jt]s[x]?|\.[cm]?[px]?h?pp?)/.test(query.toLowerCase());
+  return hasContextHint || hasRepoPathHint;
+}
+
+function hasEnoughContext(query: string, contextPack: ContextPack | undefined): boolean {
+  if (query.toLowerCase().includes("--") || query.toLowerCase().includes("/bin/")) {
+    return false;
+  }
+  const candidateCount = contextPack?.metrics?.candidateFiles ?? 0;
+  if (tokenizeWords(query).length === 1) {
+    return false;
+  }
+  if (candidateCount >= 1) {
+    return true;
+  }
+  return isLikelyClearObjective(query);
+}
+
+function isUnsafeWriteIntent(query: string): boolean {
+  const normalized = query.toLowerCase();
+  const destructiveVerbs = /\b(delete|remove|modify|destroy|erase|wipe|purge|drop|truncate|rewrite|rebase|nuke|expose|reveal)\b/;
+  const destructiveQualifiers = /\b(all|entire|whole|every|everything|all of)\b/;
+  const sensitiveTargets = /\b(env|\.env|environment file|environment files|environment variable|environment variables|secret|secrets|token|tokens|api key|apikey|api-key|credential|credentials|lock|locks|lockfile|lockfiles|password|passwords|key|keys)\b/;
+  const repoTargets = /\b(file|files|repo|repository|project|codebase|directory|directories|dir|dirs)\b/;
+
+  if (!destructiveVerbs.test(normalized)) {
+    return false;
+  }
+
+  if (sensitiveTargets.test(normalized)) {
+    return true;
+  }
+
+  if (destructiveQualifiers.test(normalized) && repoTargets.test(normalized)) {
+    return true;
+  }
+
+  if (repoTargets.test(normalized) && /\b(repo|repository|project|codebase)\b/.test(normalized)) {
+    return true;
+  }
+
+  return /\b(delete|remove|expose|reveal)\b/.test(normalized) && /(?:\b(file|files)\b.*\b(all|entire|whole|every|everything)\b|\b(all|entire|whole|every|everything)\b.*\b(file|files)\b)/.test(normalized);
+}
+
+function evaluateReadiness(state: AgentState): ReadinessGateResult {
+  const query = state.query;
+  const reasons: string[] = [];
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+
+  let status: ReadinessGateStatus = "ready";
+
+  if (!state.context.workspaceDir || state.context.workspaceDir.length === 0 || !state.repoScanResult) {
+    blockers.push("Repository path does not appear to be valid for scanning.");
+    status = "unsafe";
+  }
+
+  if (!isSupportedTask(query)) {
+    blockers.push("Task intent appears unsupported for the Openpawl code workflow.");
+    status = "unsupported";
+  }
+
+  if (!isLikelyClearObjective(query)) {
+    reasons.push("Task objective is too vague; include what file, module, behavior, or feature is targeted.");
+    if (status === "ready") {
+      status = "needs_clarification";
+    }
+  }
+
+  if (!hasEnoughContext(query, state.contextPack)) {
+    reasons.push("Task may not provide enough repository context for confident planning.");
+    if (status === "ready") {
+      status = "needs_clarification";
+    }
+  }
+
+  if (state.context.dryRun === false && !state.context.testCommand) {
+    blockers.push("Write mode requires an explicit validation command (--test-cmd). Use write-safe mode only with a command.");
+    status = "unsafe";
+  }
+
+  if (isUnsafeWriteIntent(query)) {
+    blockers.push("Request appears unsafe or destructive.");
+    status = "unsafe";
+  }
+
+  if (status === "ready") {
+    reasons.push("Task appears clear, supported, and safely scoped for this run.");
+  } else if (status === "needs_clarification") {
+    warnings.push("Task is likely actionable but needs better context before execution.");
+  }
+
+  return {
+    status,
+    reasons,
+    blockers,
+    warnings,
+  };
+}
+
+function readinessSeverity(status: ReadinessGateStatus): "info" | "warning" | "error" {
+  switch (status) {
+    case "ready":
+      return "info";
+    case "needs_clarification":
+      return "warning";
+    default:
+      return "error";
+  }
 }
 
 function isRepoRelativePathLike(rawPath: string): string | null {
@@ -1109,6 +1252,41 @@ export function createIntakeNode(): AgentNode {
     }
     return {
       messages,
+    };
+  };
+}
+
+export function createReadinessGateNode(): AgentNode {
+  return async (state) => {
+    const ledger = activeLedgers.get(state.context.sessionId);
+    const readiness = evaluateReadiness(state);
+
+    if (ledger) {
+      ledger.recordEvent("system", "readiness_gate", readinessSeverity(readiness.status), {
+        status: readiness.status,
+        reasons: readiness.reasons,
+        blockers: readiness.blockers,
+        warnings: readiness.warnings,
+        writeMode: state.context.dryRun ? "dry-run" : "write",
+      });
+    }
+
+    if (
+      readiness.status === "unsupported" ||
+      readiness.status === "unsafe" ||
+      readiness.status === "needs_clarification"
+    ) {
+      const blockingReasons = readiness.blockers.length > 0
+        ? readiness.blockers
+        : readiness.reasons;
+      return {
+        readinessGateResult: readiness,
+        error: `Readiness gate blocked this run: ${readiness.status}${blockingReasons.length > 0 ? ` - ${blockingReasons.join("; ")}` : ""}`,
+      };
+    }
+
+    return {
+      readinessGateResult: readiness,
     };
   };
 }
@@ -2125,6 +2303,8 @@ export function createReportExportNode(): AgentNode {
       };
     }
 
+    const readiness = state.readinessGateResult;
+
     const reportResult: ReportResult = {
       summary: `Agent run finished with status: ${validationSuccess ? "success" : "failed"}.`,
       filesModified,
@@ -2135,6 +2315,7 @@ export function createReportExportNode(): AgentNode {
       validationSuccess,
       durationMs,
       tokenUsage,
+      readiness,
     };
 
     const runDir = state.context.outputDir;
@@ -2162,6 +2343,18 @@ export function createReportExportNode(): AgentNode {
       riskNotes.push(
         `Provider proposed ungrounded scope paths; fallback context file(s) were used: ${fallbackFiles.join(", ") || "none available"}`
       );
+    }
+    if (readiness?.status === "unsupported") {
+      riskNotes.push("Readiness gate rejected this task as unsupported for this workflow.");
+    }
+    if (readiness?.status === "unsafe") {
+      riskNotes.push("Readiness gate blocked execution for unsafe or destructive intent.");
+    }
+    if (readiness?.status === "needs_clarification") {
+      riskNotes.push("Readiness gate blocked execution because the task is under-specified.");
+    }
+    if (readiness && readiness.status !== "ready") {
+      riskNotes.push("Readiness gate blocked the run before provider planning; no provider calls were made.");
     }
     if (patchRejections.length > 0) {
       riskNotes.push(`Patch plan filtered ${patchRejections.length} ungrounded chunk(s).`);
@@ -2218,6 +2411,16 @@ Safety exclusions:
 _Full prompts are not stored by default in trace or report; only compact metrics and bounded metadata are recorded._`
       : "## 🧩 Context Pack\n\nContext pack was not generated for this run.";
 
+    const readinessSection = readiness
+      ? `## 🚦 Readiness Gate
+
+**Status:** ${readiness.status}
+
+${readiness.reasons.length > 0 ? `**Reasons:**\n${readiness.reasons.map((reason) => `- ${reason}`).join("\n")}` : "_No specific reasons._"}
+${readiness.blockers.length > 0 ? `**Blockers:**\n${readiness.blockers.map((blocker) => `- ${blocker}`).join("\n")}` : ""}
+${readiness.warnings.length > 0 ? `**Warnings:**\n${readiness.warnings.map((warning) => `- ${warning}`).join("\n")}` : ""}`
+      : "## 🚦 Readiness Gate\n\n_Ready check did not run for this execution._";
+
     const reportMd = `# 🐾 Openpawl Agent Run Report
 
 > **Run ID:** \`${runId}\`
@@ -2233,6 +2436,8 @@ _Full prompts are not stored by default in trace or report; only compact metrics
 **Task:** ${state.query}
 
 ${state.scopeAnalysisResult ? `**Scope Rationale:** ${state.scopeAnalysisResult.rationale}` : ""}
+
+${readinessSection}
 
 ---
 

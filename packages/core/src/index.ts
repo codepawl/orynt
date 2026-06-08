@@ -9,6 +9,8 @@ export type {
   AgentState,
   AgentNode,
   AgentEdgeRouter,
+  ReadinessGateResult,
+  ReadinessGateStatus,
   RunOptions,
   RunResult,
   RepoScanResult,

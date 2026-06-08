@@ -361,6 +361,26 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     expect(report).toContain("Placeholder validation");
   });
 
+  it("blocks vague tasks in dry-run and reports readiness blockers with no provider calls", async () => {
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      tmpDir,
+      "--task",
+      "fix stuff",
+      "--dry-run",
+      "--mock-fixture",
+      FIXTURE_PATH,
+      "--test-cmd",
+      "echo ok",
+    ]);
+
+    expect(result.exitCode, result.stderr || result.stdout).toBe(1);
+    expect(result.stdout).toContain("Readiness: needs_clarification");
+    expect(result.stdout).toContain("Readiness gate blocked this run: needs_clarification");
+    expect(result.stdout).toContain("Provider calls: 0 (blocked by readiness check)");
+  });
+
   it("fails clearly when openai-compatible provider is missing an API key", async () => {
     const result = await runCliFromPackageDir([
       "run",
@@ -452,39 +472,6 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
   });
 
   it("fails when write mode is used without an explicit test command", async () => {
-    const writeFixture = [
-      {
-        matchLastMessage: "Scope Context Pack",
-        response: {
-          content: JSON.stringify({
-            rationale: "Scope: add hello test helper",
-            affectedModules: ["src"],
-            proposedFilesToModify: [],
-            proposedFilesToCreate: ["src/__tests__/hello.test.ts"],
-          }),
-          usage: { inputTokens: 10, outputTokens: 10 },
-        },
-      },
-      {
-        matchLastMessage: "Patch Context Pack",
-        response: {
-          content: JSON.stringify({
-            rationale: "Create hello test file",
-            chunks: [
-              {
-                type: "create",
-                file: "src/__tests__/hello.test.ts",
-                description: "Create hello test file",
-              },
-            ],
-          }),
-          usage: { inputTokens: 20, outputTokens: 20 },
-        },
-      },
-    ];
-    const fixturePath = path.join(tmpDir, "write-fixture-missing-cmd.json");
-    await fs.writeFile(fixturePath, JSON.stringify(writeFixture), "utf-8");
-
     const result = await runCliFromPackageDir([
       "run",
       "--repo",
@@ -492,12 +479,22 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
       "--task",
       "add tests for hello file",
       "--write",
-      "--mock-fixture",
-      fixturePath,
     ]);
 
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("Write mode requires --test-cmd");
+    expect(result.stdout).toContain("Status:  FAILED");
+    expect(result.stdout).toContain("Readiness: unsafe");
+    expect(result.stdout).toContain("Readiness gate blocked this run: unsafe");
+    expect(result.stdout).toContain("Blockers:");
+    expect(result.stdout).toContain("Provider calls: 0 (blocked by readiness check)");
+
+    const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
+    expect(runId, result.stdout).toBeTruthy();
+    const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
+    await expect(
+      await fs.stat(path.join(runDir, "report.md")).then(() => true).catch(() => false),
+      `report.md should exist in ${runDir}`
+    ).toBe(true);
   });
 });
 

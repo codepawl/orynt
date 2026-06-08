@@ -441,6 +441,160 @@ describe("runAgent — dry-run mode", () => {
   });
 });
 
+describe("runAgent — readiness gate", () => {
+  it("classifies a clear task as ready in dry-run", async () => {
+    const result = await runAgent({
+      query: "add tests for auth helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state.readinessGateResult?.status).toBe("ready");
+    expect(result.state.readinessGateResult?.reasons).toContain(
+      "Task appears clear, supported, and safely scoped for this run."
+    );
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+
+    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
+      readiness?: {
+        status: string;
+      };
+    };
+    expect(runArtifact.readiness?.status).toBe("ready");
+  });
+
+  it("blocks vague tasks as needs clarification with no provider calls", async () => {
+    const result = await runAgent({
+      query: "fix stuff",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.state.readinessGateResult?.status).toBe("needs_clarification");
+    expect(result.traceSummary.llmCallsCount).toBe(0);
+    expect(result.error).toContain("Readiness gate blocked this run: needs_clarification");
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("## 🚦 Readiness Gate");
+    expect(report).toContain("**Status:** needs_clarification");
+    expect(report).toContain("Readiness gate blocked execution because the task is under-specified.");
+    await expectRequiredArtifacts(runDir);
+  });
+
+  it("blocks unsupported tasks and persists artifacts", async () => {
+    const result = await runAgent({
+      query: "write a poem about repo maintenance",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.state.readinessGateResult?.status).toBe("unsupported");
+    expect(result.traceSummary.llmCallsCount).toBe(0);
+    expect(result.error).toContain("Readiness gate blocked this run: unsupported");
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+
+    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
+      readiness?: {
+        status: string;
+      };
+    };
+    expect(runArtifact.readiness?.status).toBe("unsupported");
+  });
+
+  it("blocks unsafe write requests before planning", async () => {
+    const result = await runAgent({
+      query: "delete all env files",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.state.readinessGateResult?.status).toBe("unsafe");
+    expect(result.error).toContain("Readiness gate blocked this run: unsafe");
+    expect(result.traceSummary.llmCallsCount).toBe(0);
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+  });
+
+  it("blocks destructive repo wipe requests before provider calls", async () => {
+    const result = await runAgent({
+      query: "wipe repo",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.state.readinessGateResult?.status).toBe("unsafe");
+    expect(result.error).toContain("Readiness gate blocked this run: unsafe");
+    expect(result.traceSummary.llmCallsCount).toBe(0);
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+  });
+
+  it("blocks write-mode runs without explicit validation command", async () => {
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.state.readinessGateResult?.status).toBe("unsafe");
+    expect(result.state.readinessGateResult?.blockers.join(" ")).toContain("validation command");
+    expect(result.traceSummary.llmCallsCount).toBe(0);
+    expect(result.error).toContain("Readiness gate blocked this run: unsafe");
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+  });
+
+  it("preserves all 6 artifacts when readiness rejects in write mode", async () => {
+    const result = await runAgent({
+      query: "write a poem about the architecture",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.state.readinessGateResult?.status).toBe("unsupported");
+    expect(result.traceSummary.llmCallsCount).toBe(0);
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+
+    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
+      readiness?: {
+        status: string;
+      };
+      error: string;
+    };
+    expect(runArtifact.readiness?.status).toBe("unsupported");
+    expect(runArtifact.error).toContain("Readiness gate blocked this run: unsupported");
+  });
+});
+
 describe("runAgent — write mode safety guardrails", () => {
   it("aborts and writes artifacts when patch targets a lockfile", async () => {
     // Fixture using matchLastMessage to distinguish scope_analysis vs patch_plan calls:
@@ -879,13 +1033,16 @@ describe("runAgent — write mode safety guardrails", () => {
   });
 
   it("requires explicit test command in write mode", async () => {
-    const noTestCommandResult = runAgent({
+    const result = await runAgent({
       query: "add tests for shared helpers",
       workspaceDir: tmpDir,
       dryRun: false,
       mockFixturePath: FIXTURE_PATH,
     });
-    await expect(noTestCommandResult).rejects.toThrow(/explicit test command/i);
+
+    expect(result.success).toBe(false);
+    expect(result.state.readinessGateResult?.status).toBe("unsafe");
+    expect(result.error).toContain("Readiness gate blocked this run: unsafe");
   });
 
   it("preserves artifacts and surfaces failure when validation fails after write mode file creation", async () => {
