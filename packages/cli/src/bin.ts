@@ -1,233 +1,370 @@
 #!/usr/bin/env bun
-import { 
-  StateGraph, 
-  TraceLedger, 
-  AgentState, 
-  AgentMessage, 
-  LocalSessionMemoryStore, 
-  LocalSemanticMemoryStore,
-  MemoryManager
-} from "@codepawl/core";
+/**
+ * @codepawl/cli — Openpawl command-line interface
+ *
+ * Commands:
+ *   run --repo <path> --task <string> [--dry-run | --write] [--mock-fixture <path>] [--test-cmd <cmd>]
+ *   trace --input <trace.json> [--format markdown|json]
+ *   doctor
+ *   github-comment --report <report.md> [--token <gh-token>] [--repo <owner/repo>] [--pr <number>]
+ */
 
-// Print logo and welcome
-const showBanner = () => {
-  console.log(`
-   ___                       ___                  _ 
-  / _ \\ _ __   ___ _ __     / _ \\__ ___      _| |
- | | | | '_ \\ / _ \\ '_ \\   / /_)/ _\` \\ \\ /\\ / / |
- | |_| | |_) |  __/ | | | / ___/ (_| |\\ V  V /| |
-  \\___/| .__/ \\___|_| |_| \\/    \\__,_| \\_/\\_/ |_|
-       |_|                                          
-  CodePawl Server-Side Coding-Agent Ecosystem CLI
-  `);
-};
+import * as fs from "fs/promises";
+import * as path from "path";
+import { runAgent } from "@codepawl/core";
+import type { RunResult } from "@codepawl/core";
 
-const showHelp = () => {
-  showBanner();
-  console.log(`Usage: codepawl [command] [options]
+// ─── Banner ────────────────────────────────────────────────────────────────
 
-Commands:
-  run <query>       Execute an agent workflow with a user prompt
-  test-memory       Verify short-term and long-term memory operations
-  help, -h, --help  Display this help menu
-  -v, --version     Display version info
+const BANNER = `
+  ╔═══════════════════════════════════════╗
+  ║   🐾  Openpawl  •  codepawl/core     ║
+  ║   Server-side coding-agent workflow   ║
+  ╚═══════════════════════════════════════╝
+`;
 
-Examples:
-  bun dev:cli run "Refactor utility functions in shared package"
-  bun dev:cli test-memory
-`);
-};
+// ─── Helpers ───────────────────────────────────────────────────────────────
 
-// Define a sample LangGraph agent workflow for demonstration
-async function executeAgentWorkflow(query: string) {
-  console.log(`\n🤖 Launching Openpawl agent loop for query: "${query}"...\n`);
-  
-  const ledger = new TraceLedger(`trace_${Date.now()}`);
-  const graph = new StateGraph();
-
-  // Define Nodes
-  graph.addNode("planner", async (state) => {
-    const message: AgentMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `[Planner Node] Creating plan for query: "${state.query}"`,
-      timestamp: new Date().toISOString(),
-    };
-    
-    // Simulate thinking/planning
-    return {
-      messages: [message],
-      nextNode: "executor",
-    };
-  });
-
-  graph.addNode("executor", async (state) => {
-    const message: AgentMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `[Executor Node] Simulating task execution for: "${state.query}"`,
-      timestamp: new Date().toISOString(),
-    };
-    
-    // Add token usage trace in ledger
-    ledger.addTokenUsage(150, 80);
-    
-    return {
-      messages: [message],
-      // We'll let a conditional router decide what to do next
-    };
-  });
-
-  graph.addNode("reporter", async (state) => {
-    const message: AgentMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `[Reporter Node] Task complete! Successfully executed workflow for query: "${state.query}"`,
-      timestamp: new Date().toISOString(),
-    };
-    
-    return {
-      messages: [message],
-      isComplete: true,
-    };
-  });
-
-  // Define edges & conditional router
-  graph.addEdge("planner", "executor");
-  
-  // Router from executor: if query contains "error", route to complete with error, else reporter
-  graph.addConditionalEdge(
-    "executor",
-    (state: AgentState) => {
-      if (state.query.toLowerCase().includes("error")) {
-        return "fail";
+function parseArgs(argv: string[]): Record<string, string | boolean> {
+  const result: Record<string, string | boolean> = {};
+  let i = 0;
+  while (i < argv.length) {
+    const arg = argv[i];
+    if (arg === undefined) { i++; continue; }
+    if (arg.startsWith("--")) {
+      const key = arg.slice(2);
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        result[key] = next;
+        i += 2;
+      } else {
+        result[key] = true;
+        i++;
       }
-      return "success";
-    },
-    {
-      success: "reporter",
-      fail: "reporter", // Or we could route to a failure node, for now report the error
+    } else {
+      i++;
     }
-  );
+  }
+  return result;
+}
 
-  graph.setEntryPoint("planner");
+function die(msg: string): never {
+  console.error(`\n❌ Error: ${msg}\n`);
+  process.exit(1);
+}
 
-  const initialState = {
-    query,
-    messages: [
-      {
-        id: crypto.randomUUID(),
-        role: "user" as const,
-        content: query,
-        timestamp: new Date().toISOString(),
-      },
-    ],
-    context: {
-      sessionId: `session_${Date.now()}`,
-      maxIterations: 5,
-      temperature: 0.2,
-    },
+function ok(msg: string): void {
+  console.log(`✅ ${msg}`);
+}
+
+// ─── run command ───────────────────────────────────────────────────────────
+
+async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
+  const repo = (flags["repo"] as string | undefined) ?? ".";
+  const task = flags["task"] as string | undefined;
+  const dryRun = flags["dry-run"] === true || flags["write"] !== true;
+  const mockFixture = flags["mock-fixture"] as string | undefined;
+  const testCmd = flags["test-cmd"] as string | undefined;
+
+  if (!task) die("--task is required. e.g. --task \"add tests for auth helpers\"");
+
+  console.log(BANNER);
+  console.log(`🚀 Starting Openpawl run`);
+  console.log(`   Repo:    ${path.resolve(repo)}`);
+  console.log(`   Task:    ${task}`);
+  console.log(`   Mode:    ${dryRun ? "🔍 dry-run (no files modified)" : "✏️  write"}`);
+  if (testCmd) console.log(`   TestCmd: ${testCmd}`);
+  console.log();
+
+  let result: RunResult;
+  try {
+    result = await runAgent({
+      query: task,
+      workspaceDir: path.resolve(repo),
+      dryRun,
+      testCommand: testCmd,
+      mockFixturePath: mockFixture,
+    });
+  } catch (err: unknown) {
+    die(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  console.log("─".repeat(60));
+  console.log(`📊 Run complete`);
+  console.log(`   Run ID:  ${result.runId}`);
+  console.log(`   Status:  ${result.success ? "✅ SUCCESS" : "❌ FAILED"}`);
+  if (result.error) {
+    console.log(`   Error:   ${result.error}`);
+  }
+  console.log(`   Steps:   ${result.traceSummary.stepCount}`);
+  console.log(`   Tokens:  ${result.traceSummary.tokenUsage.total}`);
+  if (result.reportPath) {
+    console.log(`\n📄 Report: ${result.reportPath}`);
+  }
+  if (result.tracePath) {
+    console.log(`📜 Trace:  ${result.tracePath}`);
+  }
+  console.log();
+
+  process.exit(result.success ? 0 : 1);
+}
+
+// ─── trace command ─────────────────────────────────────────────────────────
+
+async function cmdTrace(flags: Record<string, string | boolean>): Promise<void> {
+  const input = flags["input"] as string | undefined;
+  const format = (flags["format"] as string | undefined) ?? "markdown";
+
+  if (!input) die("--input is required. e.g. --input .codepawl/runs/<run-id>/trace.json");
+
+  let raw: string;
+  try {
+    raw = await fs.readFile(input, "utf-8");
+  } catch {
+    die(`Cannot read trace file: ${input}`);
+  }
+
+  const trace = JSON.parse(raw) as {
+    traceId: string;
+    totalDurationMs: number;
+    stepCount: number;
+    llmCallsCount: number;
+    tokenUsage: { input: number; output: number; total: number };
+    events: Array<{ timestamp: string; type: string; name: string; severity: string; payload?: unknown }>;
+    steps: Array<{ nodeName: string; action: string; durationMs: number; timestamp: string }>;
   };
 
+  if (format === "json") {
+    console.log(raw);
+    return;
+  }
+
+  // Markdown format
+  const md = [
+    `# 📜 Trace — \`${trace.traceId}\``,
+    ``,
+    `| Field | Value |`,
+    `|-------|-------|`,
+    `| Duration | ${trace.totalDurationMs}ms |`,
+    `| Steps | ${trace.stepCount} |`,
+    `| LLM Calls | ${trace.llmCallsCount} |`,
+    `| Tokens In | ${trace.tokenUsage.input} |`,
+    `| Tokens Out | ${trace.tokenUsage.output} |`,
+    `| Tokens Total | ${trace.tokenUsage.total} |`,
+    ``,
+    `## Steps`,
+    ``,
+    `| # | Node | Action | Duration |`,
+    `|---|------|--------|----------|`,
+    ...trace.steps.map(
+      (s, i) => `| ${i + 1} | \`${s.nodeName}\` | ${s.action} | ${s.durationMs}ms |`
+    ),
+    ``,
+    `## Events`,
+    ``,
+    `| Timestamp | Type | Name | Severity |`,
+    `|-----------|------|------|----------|`,
+    ...trace.events.map(
+      (e) => `| ${e.timestamp} | \`${e.type}\` | ${e.name} | ${e.severity} |`
+    ),
+  ].join("\n");
+
+  console.log(md);
+}
+
+// ─── doctor command ─────────────────────────────────────────────────────────
+
+async function cmdDoctor(): Promise<void> {
+  console.log(BANNER);
+  console.log("🩺 Openpawl Doctor — system health check\n");
+
+  const checks: Array<{ label: string; ok: boolean; detail?: string }> = [];
+
+  // Check bun availability
   try {
-    const finalState = await graph.compileAndRun(initialState, ledger);
-    
-    console.log("--------------------------------------------------");
-    console.log("✨ Execution State Summary:");
-    console.log(`Status:   ${finalState.error ? "❌ FAILED" : "✅ SUCCESS"}`);
-    console.log(`Steps Run: ${finalState.steps.length}`);
-    if (finalState.error) {
-      console.log(`Error:    ${finalState.error}`);
-    }
-    console.log("--------------------------------------------------");
-    console.log("\n📜 Messages History:");
-    finalState.messages.forEach(msg => {
-      console.log(`[${msg.role.toUpperCase()}] ${msg.content}`);
-    });
-    
-    console.log("\n📊 Trace Ledger Logs:");
-    console.log(ledger.formatLog());
-    
-  } catch (err: unknown) {
-    console.error("Fatal error running workflow:", err);
+    const { execSync } = await import("child_process");
+    const version = execSync("bun --version", { encoding: "utf-8" }).trim();
+    checks.push({ label: "Bun runtime", ok: true, detail: `v${version}` });
+  } catch {
+    checks.push({ label: "Bun runtime", ok: false, detail: "not found in PATH" });
+  }
+
+  // Check git availability
+  try {
+    const { execSync } = await import("child_process");
+    const version = execSync("git --version", { encoding: "utf-8" }).trim();
+    checks.push({ label: "Git", ok: true, detail: version });
+  } catch {
+    checks.push({ label: "Git", ok: false, detail: "not found in PATH" });
+  }
+
+  // Check CODEPAWL_LLM_PROVIDER env
+  const llmProvider = process.env["CODEPAWL_LLM_PROVIDER"];
+  checks.push({
+    label: "LLM Provider",
+    ok: true,
+    detail: llmProvider ? `${llmProvider} (via CODEPAWL_LLM_PROVIDER)` : "mock (default — no API key required)",
+  });
+
+  // Check GITHUB_TOKEN env
+  const ghToken = process.env["GITHUB_TOKEN"];
+  checks.push({
+    label: "GitHub Token",
+    ok: true,
+    detail: ghToken ? "✅ present (GITHUB_TOKEN)" : "⚠️  not set (required for github-comment)",
+  });
+
+  // Display results
+  let allOk = true;
+  for (const check of checks) {
+    const icon = check.ok ? "✅" : "❌";
+    console.log(`  ${icon} ${check.label}${check.detail ? ` — ${check.detail}` : ""}`);
+    if (!check.ok) allOk = false;
+  }
+
+  console.log();
+  if (allOk) {
+    console.log("✅ All checks passed. Openpawl is ready to run.");
+  } else {
+    console.log("⚠️  Some checks failed. Review above and fix before running.");
+    process.exit(1);
   }
 }
 
-// Memory verification command
-async function testMemory() {
-  console.log("🧠 Testing short-term and long-term memory operations...\n");
-  
-  const manager = new MemoryManager(
-    new LocalSessionMemoryStore(),
-    new LocalSemanticMemoryStore()
-  );
+// ─── github-comment command ─────────────────────────────────────────────────
 
-  const sessionId = "session_test_123";
-  console.log("1. Writing session state memory...");
-  await manager.getSessions().set(sessionId, { currentFile: "index.ts", line: 42 });
-  const sessionData = await manager.getSessions().get(sessionId);
-  console.log("Read session data:", sessionData);
+async function cmdGithubComment(flags: Record<string, string | boolean>): Promise<void> {
+  const reportPath = flags["report"] as string | undefined;
+  const token = (flags["token"] as string | undefined) ?? process.env["GITHUB_TOKEN"];
+  const repoSlug = flags["repo"] as string | undefined;
+  const prNumber = flags["pr"] as string | undefined;
 
-  console.log("\n2. Writing long-term semantic memory documents...");
-  await manager.getSemanticStore().save({
-    id: "doc_1",
-    content: "Openpawl is an open-source framework for autonomous developer agents.",
-    metadata: { tags: ["agent", "open-source"] },
-    timestamp: new Date().toISOString()
+  if (!reportPath) die("--report is required. e.g. --report .codepawl/runs/<run-id>/report.md");
+
+  let reportContent: string;
+  try {
+    reportContent = await fs.readFile(reportPath, "utf-8");
+  } catch {
+    die(`Cannot read report file: ${reportPath}`);
+  }
+
+  if (!token || !repoSlug || !prNumber) {
+    // No token/repo/PR — print the report to stdout (useful in CI without permissions)
+    console.log("ℹ️  No GitHub token, repo, or PR number provided. Printing report to stdout:\n");
+    console.log("─".repeat(60));
+    console.log(reportContent);
+    console.log("─".repeat(60));
+    console.log(
+      "\nTo post to GitHub, provide: --token <token> --repo <owner/repo> --pr <number>"
+    );
+    return;
+  }
+
+  // Post comment to GitHub PR via REST API
+  const [owner, repoName] = repoSlug.split("/");
+  if (!owner || !repoName) die("--repo must be in format owner/repo");
+
+  const url = `https://api.github.com/repos/${owner}/${repoName}/issues/${prNumber}/comments`;
+  const body = JSON.stringify({ body: reportContent });
+
+  console.log(`💬 Posting report as PR comment to ${url}...`);
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    body,
   });
-  await manager.getSemanticStore().save({
-    id: "doc_2",
-    content: "Trace ledger is used to record steps and audit token usage in agents.",
-    metadata: { tags: ["trace", "audit"] },
-    timestamp: new Date().toISOString()
-  });
 
-  console.log("Querying semantic memory for 'agent':");
-  const queryResult1 = await manager.getSemanticStore().query("agent");
-  console.log(JSON.stringify(queryResult1, null, 2));
-
-  console.log("\nQuerying semantic memory for 'token usage':");
-  const queryResult2 = await manager.getSemanticStore().query("token usage");
-  console.log(JSON.stringify(queryResult2, null, 2));
-  
-  console.log("\nMemory test completed successfully!");
+  if (response.ok) {
+    const data = (await response.json()) as { html_url: string };
+    ok(`Comment posted: ${data.html_url}`);
+  } else {
+    const errText = await response.text();
+    die(`GitHub API error (${response.status}): ${errText}`);
+  }
 }
 
-// Main execution CLI router
-const main = async () => {
-  const args = process.argv.slice(2);
-  const command = args[0];
+// ─── help ────────────────────────────────────────────────────────────────────
+
+function showHelp(): void {
+  console.log(BANNER);
+  console.log(`Usage: codepawl <command> [options]
+
+Commands:
+  run          Execute the Openpawl agent workflow
+  trace        Pretty-print a trace.json file
+  doctor       Check system readiness
+  github-comment  Post a run report as a GitHub PR comment
+
+Run options:
+  --repo <path>          Path to the target repository (default: .)
+  --task <string>        Coding task description (required)
+  --dry-run              Scan and plan only — no files are modified (default)
+  --write                Apply the generated patch to the repository
+  --mock-fixture <path>  Path to a JSON LLM mock fixture file
+  --test-cmd <cmd>       Validation command to run (default: bun test)
+
+Trace options:
+  --input <path>         Path to trace.json (required)
+  --format <format>      Output format: markdown (default) or json
+
+GitHub comment options:
+  --report <path>        Path to report.md (required)
+  --token <token>        GitHub token (or set GITHUB_TOKEN env var)
+  --repo <owner/repo>    Repository slug (e.g. codepawl/codepawl)
+  --pr <number>          Pull request number
+
+Examples:
+  codepawl run --repo . --task "add tests for auth helpers" --dry-run
+  codepawl run --repo . --task "fix failing unit test" --write
+  codepawl trace --input .codepawl/runs/run_123/trace.json --format markdown
+  codepawl doctor
+  codepawl github-comment --report .codepawl/runs/run_123/report.md
+`);
+}
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  const command = argv[0];
 
   if (!command || command === "help" || command === "-h" || command === "--help") {
     showHelp();
     return;
   }
 
-  if (command === "-v" || command === "--version") {
-    console.log("codepawl-cli v0.1.0 (Openpawl direction)");
+  if (command === "--version" || command === "-v") {
+    console.log("codepawl v0.1.0 (Openpawl MVP)");
     return;
   }
 
-  if (command === "run") {
-    const query = args.slice(1).join(" ");
-    if (!query) {
-      console.error("Error: Please provide a query to run. e.g. run 'Fix bug'");
-      process.exit(1);
-    }
-    await executeAgentWorkflow(query);
-    return;
+  const flags = parseArgs(argv.slice(1));
+
+  switch (command) {
+    case "run":
+      await cmdRun(flags);
+      break;
+    case "trace":
+      await cmdTrace(flags);
+      break;
+    case "doctor":
+      await cmdDoctor();
+      break;
+    case "github-comment":
+      await cmdGithubComment(flags);
+      break;
+    default:
+      die(`Unknown command: "${command}". Run "codepawl --help" for usage.`);
   }
+}
 
-  if (command === "test-memory") {
-    await testMemory();
-    return;
-  }
-
-  console.error(`Unknown command: "${command}". Run "codepawl --help" for usage.`);
-  process.exit(1);
-};
-
-main().catch(err => {
-  console.error(err);
+main().catch((err: unknown) => {
+  console.error("Fatal:", err instanceof Error ? err.message : err);
   process.exit(1);
 });

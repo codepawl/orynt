@@ -57,10 +57,17 @@ Bun workspaces drives the JS side. Python lives in `apps/api/` with its own `pyp
 - Lint web: `bun --filter @codepawl/web lint`
 - Lint API: `cd apps/api && uv run ruff check .`
 - Format API: `cd apps/api && uv run ruff format .`
-- Test web: `bun --filter @codepawl/web test`
+- Test all (core + cli): `bun run test`
+- Test core only: `bun run test:core`
+- Test CLI only: `bun run test:cli`
+- Test web: `bun run test:web`
 - Test API: `cd apps/api && uv run pytest`
 - Build web: `bun --filter @codepawl/web build`
 - Migrate DB: `cd apps/api && uv run supabase migration up`
+- Run Openpawl (dry-run): `bun packages/cli/src/bin.ts run --repo . --task "..." --dry-run --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json`
+- Run Openpawl (write): `bun packages/cli/src/bin.ts run --repo . --task "..." --write --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json`
+- Openpawl doctor: `bun packages/cli/src/bin.ts doctor`
+- Openpawl trace: `bun packages/cli/src/bin.ts trace --input .codepawl/runs/<id>/trace.json --format markdown`
 
 ## Conventions
 

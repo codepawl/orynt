@@ -9,6 +9,15 @@ export type {
   AgentState,
   AgentNode,
   AgentEdgeRouter,
+  RunOptions,
+  RunResult,
+  RepoScanResult,
+  ScopeAnalysisResult,
+  FileSelectionResult,
+  PatchChunk,
+  PatchPlan,
+  ValidationResult,
+  ReportResult,
 } from "./state/schema";
 
 // Export Trace Ledger auditing tools
@@ -26,3 +35,18 @@ export type {
   SemanticMemoryStore,
   SessionMemoryStore,
 } from "./memory/index";
+
+// Export LLM provider abstraction
+export { MockLlmProvider } from "./providers/llm";
+export type {
+  LlmProvider,
+  LlmCompletionOptions,
+  LlmCompletionResult,
+  MockCompletionRule,
+} from "./providers/llm";
+
+// Export safety utilities
+export { SafetyViolationError, isDisallowedPath, isSecretFile, assertWriteSafe } from "./safety";
+
+// Export top-level agent runner
+export { runAgent } from "./runner";

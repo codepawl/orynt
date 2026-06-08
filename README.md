@@ -5,55 +5,145 @@ CodePawl is a server-side coding-agent ecosystem designed for autonomous develop
 ## Project Structure
 
 This project is organized as a Bun-powered monorepo containing:
-- **`apps/web`**: The public-facing website and product surface built on Next.js 16.
+- **`apps/web`**: The public-facing website built on Next.js 16.
 - **`apps/api`**: FastAPI gateway backend service.
-- **`packages/core`** (`@codepawl/core`): The core Openpawl engine featuring LangGraph agent orchestration, trace ledger, and memory management interfaces.
-- **`packages/cli`** (`@codepawl/cli`): The command-line interface for executing and testing coding agents.
-- **`packages/shared`** (`@codepawl/shared`): Shared TypeScript definitions and interfaces.
+- **`packages/core`** (`@codepawl/core`): The Openpawl agent engine — state machine workflow, trace ledger, safety guardrails, LLM provider abstraction, and memory modules.
+- **`packages/cli`** (`@codepawl/cli`): The command-line interface for running Openpawl locally and in CI.
+- **`packages/shared`** (`@codepawl/shared`): Shared TypeScript types and interfaces.
 
-## Quick Start
+---
 
-### 1. Installation
+## 🐾 Openpawl CLI — Quick Start
 
-Install JavaScript/TypeScript dependencies at the root and Python dependencies for the API:
+### 1. Install dependencies
+
 ```bash
-# Install JS workspace dependencies
+bun install
+```
+
+### 2. Run a dry-run (no files modified)
+
+```bash
+bun packages/cli/src/bin.ts run \
+  --repo . \
+  --task "add tests for auth helpers" \
+  --dry-run \
+  --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json \
+  --test-cmd "echo skip"
+```
+
+Artifacts will appear in `.codepawl/runs/<run-id>/`:
+- `trace.json` — full event timeline and token usage
+- `report.md` — GitHub-ready Markdown report
+- `run.json` — structured run result
+- `patch-plan.json` — the generated patch plan
+- `selected-files.json` — files selected for the task
+
+### 3. Run in write mode (applies patch)
+
+```bash
+bun packages/cli/src/bin.ts run \
+  --repo . \
+  --task "fix failing unit test" \
+  --write \
+  --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json
+```
+
+> ⚠️ Write mode validates all target paths before applying any changes. Disallowed paths (lockfiles, env files, .git, migrations, build artifacts) will cause the run to abort with a `SafetyViolationError`.
+
+### 4. Inspect the trace
+
+```bash
+bun packages/cli/src/bin.ts trace \
+  --input .codepawl/runs/<run-id>/trace.json \
+  --format markdown
+```
+
+### 5. Check system readiness
+
+```bash
+bun packages/cli/src/bin.ts doctor
+```
+
+### 6. Post report to GitHub PR
+
+```bash
+bun packages/cli/src/bin.ts github-comment \
+  --report .codepawl/runs/<run-id>/report.md \
+  --token $GITHUB_TOKEN \
+  --repo owner/repo \
+  --pr 42
+```
+
+---
+
+## 🤖 How It Works
+
+Openpawl runs a bounded **9-node state machine**:
+
+```
+intake → repo_scan → scope_analysis → file_selection → patch_plan
+  → optional_patch_apply → validation → trace_export → report_export
+```
+
+- **Dry-run mode**: Scans the repo, analyses scope, generates a patch plan, validates, and exports all artifacts — **without modifying any files**.
+- **Write mode**: Performs all of the above, then applies the patch (after safety validation), runs your test suite, and exports results.
+
+### LLM Provider
+
+The default provider is a **mock LLM** that reads rules from a JSON fixture file. This means Openpawl works completely offline and without API keys. To use a real LLM, set `CODEPAWL_LLM_PROVIDER` and the relevant API key environment variables (real providers are a future extension).
+
+---
+
+## CI/CD Integration
+
+See [`.github/workflows/openpawl.yml`](.github/workflows/openpawl.yml) for a reusable GitHub Actions workflow that:
+- Runs Openpawl on pull requests (dry-run) and `workflow_dispatch` (configurable)
+- Uploads all run artifacts
+- Posts the `report.md` as a PR comment (when `GITHUB_TOKEN` is available)
+
+---
+
+## Development Commands
+
+```bash
+# Install JS deps
 bun install
 
-# Install Python dependencies for the API
-cd apps/api && uv sync && cd ../..
+# Typecheck all packages
+bun run typecheck
+
+# Run all tests (core + CLI)
+bun run test
+
+# Run core tests only
+bun run test:core
+
+# Run CLI tests only
+bun run test:cli
+
+# Run web app
+bun dev
+
+# Run API
+bun dev:api
+
+# Run Openpawl CLI (dev mode)
+bun dev:cli
 ```
 
-### 2. Copy Environment Template
-```bash
-cp .env.example .env.local
-```
-
-### 3. Run Development Servers
-
-- **Frontend (Next.js)**:
-  ```bash
-  bun dev
-  ```
-- **API (FastAPI)**:
-  ```bash
-  bun dev:api
-  ```
-- **Agent CLI (Openpawl)**:
-  ```bash
-  bun dev:cli run "Plan a code refactoring task"
-  ```
-
-Web runs on `http://localhost:3000`, API on `http://localhost:8000`.
+---
 
 ## Documentation
 
-Specs and architecture details live in the `docs/` folder:
-- [PRODUCT.md](file:///z:/home/nxank4/personal/codepawl/docs/PRODUCT.md) - Product definition and roadmap.
-- [ARCHITECTURE.md](file:///z:/home/nxank4/personal/codepawl/docs/ARCHITECTURE.md) - System design and package details.
-- [CLAUDE.md](file:///z:/home/nxank4/personal/codepawl/CLAUDE.md) - Guidelines for working on this repository.
+| File | Description |
+|------|-------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, state machine, contracts |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Execution plan and milestones |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Architecture Decision Records |
+| [CLAUDE.md](CLAUDE.md) | Rules for AI coding agents working in this repo |
+| [walkthrough.md](walkthrough.md) | MVP implementation summary and test results |
 
 ## License
 
 TBD.
-

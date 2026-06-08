@@ -1,6 +1,6 @@
 {
   "name": "@codepawl/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -10,7 +10,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "dev": "bun ./src/bin.ts"
+    "dev": "bun ./src/bin.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@codepawl/core": "workspace:*",
@@ -18,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.5.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.0"
   }
 }

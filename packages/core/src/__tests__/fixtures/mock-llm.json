@@ -1,0 +1,16 @@
+[
+  {
+    "matchLastMessage": "Repository Scan Result",
+    "response": {
+      "content": "{\"rationale\": \"The task requires adding tests for authentication helpers. Based on the repository scan, the relevant module is in packages/core/src.\", \"affectedModules\": [\"packages/core/src\"], \"proposedFilesToModify\": [], \"proposedFilesToCreate\": [\"packages/core/src/__tests__/auth-helpers.test.ts\"]}",
+      "usage": { "inputTokens": 120, "outputTokens": 80 }
+    }
+  },
+  {
+    "matchLastMessage": "Selected Files Content",
+    "response": {
+      "content": "{\"rationale\": \"Generating patch based on selected files.\", \"chunks\": []}",
+      "usage": { "inputTokens": 150, "outputTokens": 50 }
+    }
+  }
+]
