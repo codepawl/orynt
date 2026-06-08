@@ -664,6 +664,8 @@ In `--write` mode:
 - Disallowed paths abort the entire run with `SafetyViolationError` or are rejected before applying.
 - Protected paths include: `.env*`, lockfiles, `.git/`, migrations, `node_modules`, build artifacts, files outside the repo root
 - Only new test-file creation chunks are applied; non-test or non-create chunks are rejected.
+- If no safe create chunks are available (including empty patch plans), write mode fails immediately.
+- No validation runs after a no-op write failure; report and trace artifacts are still exported with failed status.
 - Validation command runs after patching; trace and report are exported regardless of validation outcome
 
 ---

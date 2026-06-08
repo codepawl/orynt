@@ -1795,6 +1795,13 @@ export function createOptionalPatchApplyNode(): AgentNode {
         });
       }
 
+      if (!dryRun) {
+        return {
+          writeResult,
+          error: "No safe create chunks available in write mode.",
+        };
+      }
+
       return {
         writeResult,
       };
@@ -1836,6 +1843,7 @@ export function createOptionalPatchApplyNode(): AgentNode {
     }
 
     let writeFailed = false;
+    let safeCreateChunks = 0;
     for (const chunk of chunks) {
       if (chunk.type !== "create") {
         writeResult.rejected.push({
@@ -1861,6 +1869,7 @@ export function createOptionalPatchApplyNode(): AgentNode {
         });
         continue;
       }
+      safeCreateChunks += 1;
 
       const targetPath = path.join(repoRoot, normalizedPath);
       try {
@@ -1920,11 +1929,17 @@ export function createOptionalPatchApplyNode(): AgentNode {
     }
 
     if (writeFailed) {
-      throw new Error("Write mode failed while applying patch chunks. Review rejected files in report and rerun after adjustments.");
+      return {
+        writeResult,
+        error: "Write mode failed while applying patch chunks. Review rejected files in report and rerun after adjustments.",
+      };
     }
 
-    if (writeResult.attempted > 0 && writeResult.created.length === 0) {
-      throw new Error("No new files were created in write mode because all patch chunks were skipped or rejected.");
+    if (safeCreateChunks === 0 || writeResult.created.length === 0) {
+      return {
+        writeResult,
+        error: "No safe create chunks available in write mode.",
+      };
     }
 
     return {
@@ -2054,6 +2069,7 @@ export function createReportExportNode(): AgentNode {
       rejected: [],
     };
     const filesModified = writeResult.created;
+    const validationAttempted = state.validationResult !== undefined;
     const validationSuccess = state.validationResult?.success ?? false;
     const patchApplied = !state.context.dryRun && writeResult.created.length > 0;
     const patchPlanPath = `.codepawl/runs/${runId}/patch-plan.json`;
@@ -2122,12 +2138,19 @@ export function createReportExportNode(): AgentNode {
     if (patchRejections.length > 0) {
       riskNotes.push(`Patch plan filtered ${patchRejections.length} ungrounded chunk(s).`);
     }
-    if (!validationSuccess) {
+    const writeModeNoSafeCreateFailure =
+      !state.context.dryRun && state.error?.includes("No safe create chunks available in write mode.") === true;
+
+    if (writeModeNoSafeCreateFailure) {
+      riskNotes.push("Write mode failed before validation because no safe create chunks were available.");
+    } else if (!validationAttempted && state.error) {
+      riskNotes.push("Validation was not run.");
+    } else if (!validationSuccess) {
       riskNotes.push("Validation failed — review errors before merging.");
     }
 
     // GitHub-ready Markdown report
-    const validationSection = state.validationResult
+    const validationSection = validationAttempted
       ? state.validationResult.commandsRun
           .map(
             (cmd) => {
@@ -2142,7 +2165,7 @@ export function createReportExportNode(): AgentNode {
             }
           )
           .join("\n")
-      : "_No validation commands run._";
+      : "_Not run._";
 
     const traceTimeline = ledger
       ? ledger
@@ -2276,7 +2299,7 @@ ${patchRejections.map((entry) => `- ${entry}`).join("\n")}`
 
 ## ✅ Validation Result
 
-**Overall:** ${validationSuccess ? "✅ PASSED" : "❌ FAILED"}
+**Overall:** ${validationAttempted ? (validationSuccess ? "✅ PASSED" : "❌ FAILED") : "Not run"}
 
 ${validationSection}
 
