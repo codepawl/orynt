@@ -37,12 +37,23 @@ export type {
 } from "./memory/index";
 
 // Export LLM provider abstraction
-export { MockLlmProvider } from "./providers/llm";
+export {
+  MockLlmProvider,
+  OpenAiCompatibleProvider,
+  ProviderConfigurationError,
+  ProviderResponseValidationError,
+  createLlmProvider,
+  resolveProviderConfig,
+} from "./providers/llm";
 export type {
   LlmProvider,
   LlmCompletionOptions,
   LlmCompletionResult,
   MockCompletionRule,
+  OpenpawlProviderName,
+  OpenAiCompatibleProviderOptions,
+  ProviderConfigInput,
+  ResolvedProviderConfig,
 } from "./providers/llm";
 
 // Export safety utilities

@@ -13,7 +13,7 @@ This project is organized as a Bun-powered monorepo containing:
 
 ---
 
-## 🐾 Openpawl CLI — Quick Start
+## [>.-] Openpawl CLI Quick Start
 
 ### 1. Install dependencies
 
@@ -24,29 +24,27 @@ bun install
 ### 2. Run a dry-run (no files modified)
 
 ```bash
-bun packages/cli/src/bin.ts run \
+bun run dev:cli -- run \
   --repo . \
-  --task "add tests for auth helpers" \
+  --task "review current repository changes" \
   --dry-run \
-  --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json \
-  --test-cmd "echo skip"
+  --test-cmd "echo placeholder validation skipped"
 ```
 
 Artifacts will appear in `.codepawl/runs/<run-id>/`:
-- `trace.json` — full event timeline and token usage
-- `report.md` — GitHub-ready Markdown report
-- `run.json` — structured run result
-- `patch-plan.json` — the generated patch plan
-- `selected-files.json` — files selected for the task
+- `trace.json`: full event timeline and token usage
+- `report.md`: GitHub-ready Markdown report
+- `run.json`: structured run result
+- `patch-plan.json`: the generated patch plan
+- `selected-files.json`: files selected for the task
 
 ### 3. Run in write mode (applies patch)
 
 ```bash
-bun packages/cli/src/bin.ts run \
+bun run dev:cli -- run \
   --repo . \
   --task "fix failing unit test" \
-  --write \
-  --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json
+  --write
 ```
 
 > ⚠️ Write mode validates all target paths before applying any changes. Disallowed paths (lockfiles, env files, .git, migrations, build artifacts) will cause the run to abort with a `SafetyViolationError`.
@@ -54,7 +52,7 @@ bun packages/cli/src/bin.ts run \
 ### 4. Inspect the trace
 
 ```bash
-bun packages/cli/src/bin.ts trace \
+bun run dev:cli -- trace \
   --input .codepawl/runs/<run-id>/trace.json \
   --format markdown
 ```
@@ -62,13 +60,13 @@ bun packages/cli/src/bin.ts trace \
 ### 5. Check system readiness
 
 ```bash
-bun packages/cli/src/bin.ts doctor
+bun run dev:cli -- doctor
 ```
 
 ### 6. Post report to GitHub PR
 
 ```bash
-bun packages/cli/src/bin.ts github-comment \
+bun run dev:cli -- github-comment \
   --report .codepawl/runs/<run-id>/report.md \
   --token $GITHUB_TOKEN \
   --repo owner/repo \
@@ -77,7 +75,7 @@ bun packages/cli/src/bin.ts github-comment \
 
 ---
 
-## 🤖 How It Works
+## How It Works
 
 Openpawl runs a bounded **9-node state machine**:
 
@@ -91,7 +89,25 @@ intake → repo_scan → scope_analysis → file_selection → patch_plan
 
 ### LLM Provider
 
-The default provider is a **mock LLM** that reads rules from a JSON fixture file. This means Openpawl works completely offline and without API keys. To use a real LLM, set `CODEPAWL_LLM_PROVIDER` and the relevant API key environment variables (real providers are a future extension).
+The default provider is deterministic mock mode. It works offline, requires no API key, and remains the verified path for tests, CI, and release smoke.
+
+Experimental OpenAI-compatible provider mode is available for local dry-runs:
+
+```bash
+export OPENPAWL_PROVIDER=openai-compatible
+export OPENPAWL_MODEL=<model>
+export OPENPAWL_API_KEY=<key>
+export OPENPAWL_BASE_URL=<optional base url>
+
+bun run dev:cli -- run \
+  --repo . \
+  --task "add tests for shared helpers" \
+  --dry-run
+```
+
+You can also pass `--provider openai-compatible --model <model>` on `codepawl run`. Missing `OPENPAWL_MODEL` or `OPENPAWL_API_KEY` fails fast with a clear error. Provider calls request JSON output and validate response schemas before using them. Trace artifacts record provider name, model, request purpose, response validation status, and token usage when available; they do not record API keys or full prompts by default. Use `--include-prompt-metadata` to record only redacted prompt counts and sizes.
+
+Real provider integration is experimental in v0. It does not imply production autonomous coding, and it does not loosen dry-run defaults, write-mode opt-in, or path safety guardrails.
 
 ---
 

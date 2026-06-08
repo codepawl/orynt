@@ -46,6 +46,10 @@ function runCliFromPackageDir(
     } else {
       delete env["INIT_CWD"];
     }
+    delete env["OPENPAWL_PROVIDER"];
+    delete env["OPENPAWL_MODEL"];
+    delete env["OPENPAWL_API_KEY"];
+    delete env["OPENPAWL_BASE_URL"];
     for (const [key, value] of Object.entries(envOverrides)) {
       if (value === undefined) {
         delete env[key];
@@ -290,6 +294,25 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("Placeholder validation");
     expect(report).not.toContain("auth-helpers.test.ts");
+  });
+
+  it("fails clearly when openai-compatible provider is missing an API key", async () => {
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      tmpDir,
+      "--task",
+      "add tests for shared helpers",
+      "--dry-run",
+      "--provider",
+      "openai-compatible",
+      "--model",
+      "test-model",
+    ]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("OPENPAWL_API_KEY");
+    expect(result.stderr).not.toContain("test-model");
   });
 });
 

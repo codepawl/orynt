@@ -2,7 +2,7 @@ import * as path from "path";
 import * as fs from "fs/promises";
 import { StateGraph } from "./agent/orchestration";
 import { TraceLedger } from "./ledger/trace";
-import { MockLlmProvider } from "./providers/llm";
+import { createLlmProvider, resolveProviderConfig } from "./providers/llm";
 import { activeLedgers } from "./agent/nodes";
 import {
   createIntakeNode,
@@ -48,6 +48,11 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     testCommand,
     mockFixturePath,
     outDir,
+    provider,
+    model,
+    apiKey,
+    baseUrl,
+    includePromptMetadata = false,
   } = options;
 
   // Resolve workspace directory
@@ -67,15 +72,14 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     throw new Error(`Workspace path is not a directory: ${resolvedWorkspaceDir}`);
   }
 
-  // Set up trace ledger
+  // Set up LLM provider. Mock remains the default unless explicitly configured.
+  const fixturePath = mockFixturePath ?? DEFAULT_MOCK_FIXTURE_PATH;
+  const providerConfig = resolveProviderConfig({ provider, model, apiKey, baseUrl });
+  const llm = createLlmProvider(providerConfig, fixturePath);
+
+  // Set up trace ledger after startup validation/config resolution succeeds.
   const ledger = new TraceLedger(runId);
   activeLedgers.set(runId, ledger);
-
-  // Set up LLM provider
-  // Real providers can be added here via environment variable checks:
-  //   CODEPAWL_LLM_PROVIDER=openai => use OpenAI provider (not included in MVP)
-  const fixturePath = mockFixturePath ?? DEFAULT_MOCK_FIXTURE_PATH;
-  const llm = new MockLlmProvider(fixturePath);
 
   // Build the state machine graph
   const graph = new StateGraph();
@@ -114,6 +118,9 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       temperature,
       testCommand,
       mockFixturePath: fixturePath,
+      providerName: llm.providerName,
+      modelName: llm.modelName,
+      includePromptMetadata,
     },
     nextNode: null,
     isComplete: false,

@@ -4,15 +4,17 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import {
   AgentState,
+  AgentMessage,
   AgentNode,
   RepoScanResult,
   ScopeAnalysisResult,
   FileSelectionResult,
   PatchPlan,
+  PatchChunk,
   ValidationResult,
   ReportResult,
 } from "../state/schema";
-import { LlmProvider } from "../providers/llm";
+import { LlmProvider, ProviderResponseValidationError } from "../providers/llm";
 import { TraceLedger } from "../ledger/trace";
 import {
   SafetyViolationError,
@@ -49,6 +51,105 @@ function shouldUsePlaceholderValidation(state: AgentState): boolean {
 
 function isPlaceholderValidationCommand(command: string): boolean {
   return command === PLACEHOLDER_VALIDATION_COMMAND;
+}
+
+function promptMetadata(messages: ReadonlyArray<{ content: string }>): { messageCount: number; totalChars: number } {
+  return {
+    messageCount: messages.length,
+    totalChars: messages.reduce((sum, message) => sum + message.content.length, 0),
+  };
+}
+
+function providerPayload(
+  state: AgentState,
+  llm: LlmProvider,
+  purpose: string,
+  messages?: ReadonlyArray<{ content: string }>,
+  responseFormat: "json_object" | "text" = "json_object"
+): Record<string, unknown> {
+  return {
+    provider: llm.providerName,
+    model: llm.modelName,
+    purpose,
+    responseFormat,
+    ...(state.context.includePromptMetadata && messages
+      ? { promptMetadata: promptMetadata(messages) }
+      : {}),
+  };
+}
+
+function parseJsonObject(content: string, purpose: string): unknown {
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]) as unknown;
+      } catch {
+        // Fall through to the normalized validation error.
+      }
+    }
+  }
+
+  throw new ProviderResponseValidationError(`${purpose} provider response was not valid JSON.`);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function validateScopeAnalysis(value: unknown): ScopeAnalysisResult {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as { rationale?: unknown }).rationale !== "string" ||
+    !isStringArray((value as { affectedModules?: unknown }).affectedModules) ||
+    !isStringArray((value as { proposedFilesToModify?: unknown }).proposedFilesToModify) ||
+    !isStringArray((value as { proposedFilesToCreate?: unknown }).proposedFilesToCreate)
+  ) {
+    throw new ProviderResponseValidationError(
+      "scope_analysis provider response failed schema validation."
+    );
+  }
+
+  const result = value as ScopeAnalysisResult;
+  return {
+    rationale: result.rationale,
+    affectedModules: result.affectedModules,
+    proposedFilesToModify: result.proposedFilesToModify,
+    proposedFilesToCreate: result.proposedFilesToCreate,
+  };
+}
+
+function validatePatchPlan(value: unknown): PatchPlan {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as { rationale?: unknown }).rationale !== "string" ||
+    !Array.isArray((value as { chunks?: unknown }).chunks)
+  ) {
+    throw new ProviderResponseValidationError("patch_plan provider response failed schema validation.");
+  }
+
+  const chunks = (value as { chunks: unknown[] }).chunks.map((chunk) => {
+    if (
+      typeof chunk !== "object" ||
+      chunk === null ||
+      !["create", "modify", "delete"].includes(String((chunk as { type?: unknown }).type)) ||
+      typeof (chunk as { path?: unknown }).path !== "string" ||
+      typeof (chunk as { description?: unknown }).description !== "string"
+    ) {
+      throw new ProviderResponseValidationError("patch_plan chunk failed schema validation.");
+    }
+
+    return chunk as PatchChunk;
+  });
+
+  return {
+    rationale: (value as { rationale: string }).rationale,
+    chunks,
+  };
 }
 
 export function createIntakeNode(): AgentNode {
@@ -249,48 +350,59 @@ Root: ${state.repoScanResult?.rootDir}
 Files:
 ${JSON.stringify(state.repoScanResult?.files.map((f) => ({ path: f.path, isDir: f.isDir })))}`;
 
+    const messages: AgentMessage[] = [
+      ...state.messages,
+      {
+        id: crypto.randomUUID(),
+        role: "system",
+        content: systemPrompt,
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: userMessage,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
     if (ledger) {
-      ledger.recordEvent("llm_call", "scope_analysis", "info", { prompt: userMessage });
+      ledger.recordEvent("llm_call", "scope_analysis", "info", providerPayload(state, llm, "scope_analysis", messages));
     }
 
     const completion = await llm.generateCompletion(
-      [
-        ...state.messages,
-        {
-          id: crypto.randomUUID(),
-          role: "system",
-          content: systemPrompt,
-          timestamp: new Date().toISOString(),
-        },
-        {
-          id: crypto.randomUUID(),
-          role: "user",
-          content: userMessage,
-          timestamp: new Date().toISOString(),
-        },
-      ],
+      messages,
       { responseFormat: { type: "json_object" }, temperature: state.context.temperature }
     );
 
-    if (ledger) {
-      ledger.recordEvent("tool_response", "scope_analysis_response", "info", {
-        response: completion.content,
-      });
-      if (completion.usage) {
-        ledger.addTokenUsage(completion.usage.inputTokens, completion.usage.outputTokens);
-      }
-    }
-
     let scopeAnalysisResult: ScopeAnalysisResult;
     try {
-      scopeAnalysisResult = JSON.parse(completion.content) as ScopeAnalysisResult;
-    } catch {
-      const jsonMatch = completion.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        scopeAnalysisResult = JSON.parse(jsonMatch[0]) as ScopeAnalysisResult;
-      } else {
-        throw new Error(`Failed to parse scope analysis JSON response: ${completion.content}`);
+      scopeAnalysisResult = validateScopeAnalysis(parseJsonObject(completion.content, "scope_analysis"));
+      if (ledger) {
+        ledger.recordEvent("tool_response", "scope_analysis_response", "info", {
+          provider: llm.providerName,
+          model: llm.modelName,
+          purpose: "scope_analysis",
+          validationStatus: "valid",
+          tokenUsage: completion.usage ?? null,
+        });
       }
+    } catch (err: unknown) {
+      if (ledger) {
+        ledger.recordEvent("tool_response", "scope_analysis_response", "error", {
+          provider: llm.providerName,
+          model: llm.modelName,
+          purpose: "scope_analysis",
+          validationStatus: "invalid",
+          error: err instanceof Error ? err.message : String(err),
+          tokenUsage: completion.usage ?? null,
+        });
+      }
+      throw err;
+    }
+
+    if (ledger && completion.usage) {
+      ledger.addTokenUsage(completion.usage.inputTokens, completion.usage.outputTokens);
     }
 
     return {
@@ -445,53 +557,59 @@ ${JSON.stringify(state.fileSelectionResult?.selectedFiles)}
 Validation Result from previous run (if any):
 ${JSON.stringify(state.validationResult)}`;
 
+    const messages: AgentMessage[] = [
+      ...state.messages,
+      {
+        id: crypto.randomUUID(),
+        role: "system",
+        content: systemPrompt,
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: userMessage,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
     if (ledger) {
-      ledger.recordEvent("llm_call", "patch_plan", "info", { prompt: userMessage });
+      ledger.recordEvent("llm_call", "patch_plan", "info", providerPayload(state, llm, "patch_plan", messages));
     }
 
     const completion = await llm.generateCompletion(
-      [
-        ...state.messages,
-        {
-          id: crypto.randomUUID(),
-          role: "system",
-          content: systemPrompt,
-          timestamp: new Date().toISOString(),
-        },
-        {
-          id: crypto.randomUUID(),
-          role: "user",
-          content: userMessage,
-          timestamp: new Date().toISOString(),
-        },
-      ],
+      messages,
       { responseFormat: { type: "json_object" }, temperature: state.context.temperature }
     );
 
-    if (ledger) {
-      ledger.recordEvent("tool_response", "patch_plan_response", "info", {
-        response: completion.content,
-      });
-      if (completion.usage) {
-        ledger.addTokenUsage(completion.usage.inputTokens, completion.usage.outputTokens);
-      }
-    }
-
     let patchPlan: PatchPlan;
     try {
-      patchPlan = JSON.parse(completion.content) as PatchPlan;
-    } catch {
-      const jsonMatch = completion.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        patchPlan = JSON.parse(jsonMatch[0]) as PatchPlan;
-      } else {
-        throw new Error(`Failed to parse patch plan JSON response: ${completion.content}`);
+      patchPlan = validatePatchPlan(parseJsonObject(completion.content, "patch_plan"));
+      if (ledger) {
+        ledger.recordEvent("tool_response", "patch_plan_response", "info", {
+          provider: llm.providerName,
+          model: llm.modelName,
+          purpose: "patch_plan",
+          validationStatus: "valid",
+          tokenUsage: completion.usage ?? null,
+        });
       }
+    } catch (err: unknown) {
+      if (ledger) {
+        ledger.recordEvent("tool_response", "patch_plan_response", "error", {
+          provider: llm.providerName,
+          model: llm.modelName,
+          purpose: "patch_plan",
+          validationStatus: "invalid",
+          error: err instanceof Error ? err.message : String(err),
+          tokenUsage: completion.usage ?? null,
+        });
+      }
+      throw err;
     }
 
-    // Defensive: ensure chunks is always an array
-    if (!Array.isArray(patchPlan.chunks)) {
-      patchPlan = { rationale: patchPlan.rationale ?? "No rationale.", chunks: [] };
+    if (ledger && completion.usage) {
+      ledger.addTokenUsage(completion.usage.inputTokens, completion.usage.outputTokens);
     }
 
     return {

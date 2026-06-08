@@ -387,6 +387,47 @@ Report verification:
 
 ---
 
+### Experimental OpenAI-Compatible Provider Integration
+
+Status:
+- Mock provider remains the default for tests, CI, GitHub Actions, and release smoke.
+- Optional real-provider mode is available with `OPENPAWL_PROVIDER=openai-compatible`.
+- Supported env vars:
+  - `OPENPAWL_PROVIDER=mock | openai-compatible`
+  - `OPENPAWL_MODEL=<model>`
+  - `OPENPAWL_API_KEY=<key>`
+  - `OPENPAWL_BASE_URL=<optional base url>`
+- CLI overrides:
+  - `--provider mock|openai-compatible`
+  - `--model <model>`
+  - `--include-prompt-metadata`
+
+Behavior:
+- `OPENPAWL_PROVIDER` defaults to `mock`.
+- `openai-compatible` requires `OPENPAWL_MODEL` and `OPENPAWL_API_KEY`.
+- Missing required provider config fails fast before a run starts.
+- Real provider requests use chat completions with JSON response format.
+- Scope and patch-plan outputs are schema-validated before use.
+- Invalid provider output produces a clear validation error and preserves artifacts when the run has started.
+- Trace records provider name, model name, request purpose, response validation status, and token usage when available.
+- Trace does not record API keys, secrets, or full prompt content by default.
+- `--include-prompt-metadata` records only redacted prompt counts and character sizes.
+
+Verification added:
+- Provider config resolution defaults to mock.
+- Missing `OPENPAWL_API_KEY` for `openai-compatible` fails clearly.
+- OpenAI-compatible client tests use mocked `fetch` only.
+- Invalid provider-shaped output is covered with a local mock fixture and still writes all five artifacts.
+- Existing deterministic mock behavior remains covered.
+
+Known limitations:
+- Real provider mode is experimental for v0.
+- GitHub Actions do not use a real provider by default.
+- No production autonomous coding claim is made.
+- Path safety, dry-run default, and explicit `--write` behavior remain unchanged.
+
+---
+
 ## Dry-Run Mode
 
 In `--dry-run` mode:
@@ -408,7 +449,7 @@ In `--write` mode:
 
 ## Current Limitations
 
-1. **No real LLM integration** — The MVP ships only with a mock LLM provider. Real provider support (OpenAI, Anthropic, etc.) requires adding adapters gated by `CODEPAWL_LLM_PROVIDER`.
+1. **Real provider mode is experimental** — The verified path remains deterministic mock mode. OpenAI-compatible mode is available only when configured with `OPENPAWL_*` env vars.
 2. **No `.gitignore` parsing** — The scan uses a hardcoded exclusion list. A proper `.gitignore` parser would improve accuracy.
 3. **No retry loop** — The state machine runs once (no re-plan loop if validation fails).
 4. **No interactive write confirmation** — Write mode applies all approved patches atomically; there is no interactive per-chunk confirmation in this MVP.
@@ -423,7 +464,7 @@ In `--write` mode:
 
 | Priority | Milestone |
 |----------|-----------|
-| P0 | Real LLM provider integration (OpenAI / Anthropic gated by env var) |
+| P0 | Harden experimental real-provider mode with broader provider adapters and fixtures |
 | P0 | `.gitignore` parsing via `ignore` npm package |
 | P1 | Retry loop (re-run scope analysis if validation fails) |
 | P1 | `codepawl init` command to generate project `.codepawl/config.json` |

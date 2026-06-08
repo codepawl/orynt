@@ -11,7 +11,7 @@
 
 import * as fs from "fs/promises";
 import * as path from "path";
-import { runAgent } from "@codepawl/core";
+import { resolveProviderConfig, runAgent } from "@codepawl/core";
 import type { RunResult } from "@codepawl/core";
 
 // Banner
@@ -55,6 +55,10 @@ function die(msg: string): never {
 
 function ok(msg: string): void {
   console.log(`${COMPACT_LOGO} ${msg}`);
+}
+
+function hasHelpFlag(argv: string[]): boolean {
+  return argv.includes("--help") || argv.includes("-h") || argv.includes("help");
 }
 
 async function findWorkspaceRoot(startDir: string): Promise<string | null> {
@@ -112,6 +116,11 @@ async function assertDirectory(dirPath: string, label: string): Promise<void> {
 // run command
 
 async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
+  if (flags["help"] === true) {
+    showRunHelp();
+    return;
+  }
+
   const repo = readStringFlag(flags, "repo") ?? ".";
   const resolutionBase = await getResolutionBase();
   const resolvedRepo = resolveFromBase(repo, resolutionBase);
@@ -122,11 +131,20 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   const mockFixture = readStringFlag(flags, "mock-fixture");
   const resolvedMockFixture = mockFixture ? resolveFromBase(mockFixture, resolutionBase) : undefined;
   const testCmd = readStringFlag(flags, "test-cmd");
+  const provider = readStringFlag(flags, "provider");
+  const model = readStringFlag(flags, "model");
+  const includePromptMetadata = flags["include-prompt-metadata"] === true;
 
   if (!task || task.trim().length === 0) {
     die("--task is required and must not be empty. e.g. --task \"add tests for shared helpers\"");
   }
   await assertDirectory(resolvedRepo, "Repository path");
+  let providerConfig;
+  try {
+    providerConfig = resolveProviderConfig({ provider, model });
+  } catch (err: unknown) {
+    die(err instanceof Error ? err.message : String(err));
+  }
 
   console.log(BANNER);
   console.log(`${COMPACT_LOGO} Starting Openpawl run`);
@@ -134,6 +152,8 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   if (resolvedOutDir) console.log(`   OutDir:  ${resolvedOutDir}`);
   console.log(`   Task:    ${task}`);
   console.log(`   Mode:    ${dryRun ? "dry-run (no files modified)" : "write"}`);
+  console.log(`   Provider: ${providerConfig.provider}`);
+  console.log(`   Model:   ${providerConfig.model ?? "deterministic-mock"}`);
   if (testCmd) console.log(`   TestCmd: ${testCmd}`);
   console.log();
 
@@ -146,6 +166,9 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
       dryRun,
       testCommand: testCmd,
       mockFixturePath: resolvedMockFixture,
+      provider,
+      model,
+      includePromptMetadata,
     });
   } catch (err: unknown) {
     die(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
@@ -259,12 +282,45 @@ async function cmdDoctor(): Promise<void> {
     checks.push({ label: "Git", ok: false, detail: "not found in PATH" });
   }
 
-  // Check CODEPAWL_LLM_PROVIDER env
-  const llmProvider = process.env["CODEPAWL_LLM_PROVIDER"];
+  const providerName = process.env["OPENPAWL_PROVIDER"] ?? "mock";
+  const modelName = process.env["OPENPAWL_MODEL"];
+  const apiKeyPresent = Boolean(process.env["OPENPAWL_API_KEY"]);
+  const baseUrl = process.env["OPENPAWL_BASE_URL"];
+  try {
+    const providerConfig = resolveProviderConfig();
+    checks.push({
+      label: "Openpawl Provider",
+      ok: true,
+      detail: providerConfig.provider,
+    });
+    checks.push({
+      label: "Openpawl Model",
+      ok: true,
+      detail: providerConfig.model ?? "deterministic-mock",
+    });
+  } catch (err: unknown) {
+    checks.push({
+      label: "Openpawl Provider",
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    checks.push({
+      label: "Openpawl Model",
+      ok: Boolean(modelName),
+      detail: modelName ? "configured" : "missing OPENPAWL_MODEL",
+    });
+  }
   checks.push({
-    label: "LLM Provider",
+    label: "Openpawl API Key",
+    ok: providerName === "mock" || apiKeyPresent,
+    detail: providerName === "mock"
+      ? "not required for mock provider"
+      : apiKeyPresent ? "present (OPENPAWL_API_KEY)" : "missing OPENPAWL_API_KEY",
+  });
+  checks.push({
+    label: "Openpawl Base URL",
     ok: true,
-    detail: llmProvider ? `${llmProvider} (via CODEPAWL_LLM_PROVIDER)` : "mock (default, no API key required)",
+    detail: baseUrl ? "configured (OPENPAWL_BASE_URL)" : "default OpenAI-compatible base URL",
   });
 
   // Check GITHUB_TOKEN env
@@ -368,6 +424,10 @@ Run options:
   --write                Apply the generated patch to the repository
   --mock-fixture <path>  Path to a JSON LLM mock fixture file
   --test-cmd <cmd>       Validation command; review-only dry-runs use placeholder validation when omitted
+  --provider <name>      Provider override: mock or openai-compatible (default: OPENPAWL_PROVIDER or mock)
+  --model <model>        Model override for openai-compatible provider
+  --include-prompt-metadata
+                         Record redacted prompt metadata in trace; never records API keys
 
 Trace options:
   --input <path>         Path to trace.json (required)
@@ -382,10 +442,42 @@ GitHub comment options:
 Examples:
   codepawl run --repo . --task "add tests for shared helpers" --dry-run
   codepawl run --repo . --task "Review and analyse this PR" --dry-run
+  codepawl run --repo . --task "add tests" --provider openai-compatible --model gpt-4.1-mini --dry-run
   codepawl run --repo . --task "fix failing unit test" --write
   codepawl trace --input .codepawl/runs/run_123/trace.json --format markdown
   codepawl doctor
   codepawl github-comment --report .codepawl/runs/run_123/report.md
+`);
+}
+
+function showRunHelp(): void {
+  console.log(`Usage: codepawl run --repo <path> --task <string> [options]
+
+Execute the Openpawl workflow against a target repository. Dry-run is the default.
+
+Options:
+  --repo <path>          Target repository path (default: .)
+  --task <string>        Coding or review task (required)
+  --out-dir <path>       Artifact directory (default: <repo>/.codepawl/runs/<run-id>)
+  --dry-run              Plan and report without modifying files (default)
+  --write                Apply safe patch chunks, then validate
+  --mock-fixture <path>  Optional deterministic mock fixture
+  --test-cmd <cmd>       Validation command; review-only dry-runs use placeholder validation when omitted
+  --provider <name>      mock or openai-compatible (env: OPENPAWL_PROVIDER)
+  --model <model>        Provider model override (env: OPENPAWL_MODEL)
+  --include-prompt-metadata
+                         Record prompt counts/size metadata in trace, not prompt text
+
+Provider env:
+  OPENPAWL_PROVIDER      mock | openai-compatible
+  OPENPAWL_MODEL         Required for openai-compatible
+  OPENPAWL_API_KEY       Required for openai-compatible; never printed
+  OPENPAWL_BASE_URL      Optional OpenAI-compatible base URL
+
+Examples:
+  codepawl run --repo . --task "review current repository changes" --dry-run
+  codepawl run --repo . --task "add tests for shared helpers" --dry-run
+  codepawl run --repo . --task "add tests" --provider openai-compatible --model gpt-4.1-mini --dry-run
 `);
 }
 
@@ -405,7 +497,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  const flags = parseArgs(argv.slice(1));
+  const commandArgs = argv.slice(1);
+  const flags = parseArgs(commandArgs);
+  if (hasHelpFlag(commandArgs)) {
+    flags["help"] = true;
+  }
 
   switch (command) {
     case "run":

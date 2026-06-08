@@ -13,6 +13,7 @@ const FIXTURE_PATH = path.join(
 );
 
 let tmpDir: string;
+let originalProviderEnv: Record<string, string | undefined>;
 
 const REQUIRED_ARTIFACTS = [
   "trace.json",
@@ -31,10 +32,27 @@ async function expectRequiredArtifacts(runDir: string): Promise<void> {
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpawl-test-"));
+  originalProviderEnv = {
+    OPENPAWL_PROVIDER: process.env["OPENPAWL_PROVIDER"],
+    OPENPAWL_MODEL: process.env["OPENPAWL_MODEL"],
+    OPENPAWL_API_KEY: process.env["OPENPAWL_API_KEY"],
+    OPENPAWL_BASE_URL: process.env["OPENPAWL_BASE_URL"],
+  };
+  delete process.env["OPENPAWL_PROVIDER"];
+  delete process.env["OPENPAWL_MODEL"];
+  delete process.env["OPENPAWL_API_KEY"];
+  delete process.env["OPENPAWL_BASE_URL"];
 });
 
 afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
+  for (const [key, value] of Object.entries(originalProviderEnv)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 });
 
 describe("runAgent — dry-run mode", () => {
@@ -184,6 +202,30 @@ describe("runAgent — dry-run mode", () => {
     expect(trace.traceId).toBe(result.runId);
     expect(Array.isArray(trace.events)).toBe(true);
   });
+
+  it("trace records provider metadata without raw prompt content", async () => {
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    const traceRaw = await fs.readFile(path.join(runDir, "trace.json"), "utf-8");
+    const trace = JSON.parse(traceRaw) as {
+      events: Array<{ type: string; name: string; payload: Record<string, unknown> }>;
+    };
+    const llmCall = trace.events.find((event) => event.type === "llm_call" && event.name === "scope_analysis");
+    const response = trace.events.find((event) => event.name === "scope_analysis_response");
+
+    expect(llmCall?.payload.provider).toBe("mock");
+    expect(llmCall?.payload.model).toBe("deterministic-mock");
+    expect(llmCall?.payload.purpose).toBe("scope_analysis");
+    expect(llmCall?.payload).not.toHaveProperty("prompt");
+    expect(response?.payload.validationStatus).toBe("valid");
+  });
 });
 
 describe("runAgent — write mode safety guardrails", () => {
@@ -250,6 +292,19 @@ describe("runAgent — write mode safety guardrails", () => {
 });
 
 describe("runAgent — error handling", () => {
+  it("fails fast when openai-compatible provider is missing an API key", async () => {
+    await expect(
+      runAgent({
+        query: "add tests",
+        workspaceDir: tmpDir,
+        dryRun: true,
+        provider: "openai-compatible",
+        model: "test-model",
+        apiKey: "",
+      })
+    ).rejects.toThrow("OPENPAWL_API_KEY");
+  });
+
   it("throws an error when workspace directory does not exist", async () => {
     await expect(
       runAgent({
@@ -293,5 +348,43 @@ describe("runAgent — error handling", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+  });
+
+  it("exports artifacts when provider JSON fails schema validation", async () => {
+    const invalidFixturePath = path.join(tmpDir, "invalid-provider-output.json");
+    await fs.writeFile(
+      invalidFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Repository Scan Result",
+          response: {
+            content: JSON.stringify({ unexpected: "shape" }),
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: invalidFixturePath,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("scope_analysis provider response failed schema validation");
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+
+    const traceRaw = await fs.readFile(path.join(runDir, "trace.json"), "utf-8");
+    const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: unknown }> };
+    expect(trace.events.some((event) =>
+      event.name === "scope_analysis_response" &&
+      JSON.stringify(event.payload).includes("\"validationStatus\":\"invalid\"")
+    )).toBe(true);
   });
 });

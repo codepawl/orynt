@@ -40,6 +40,9 @@ export interface AgentContext {
   readonly dryRun: boolean;
   readonly testCommand?: string;
   readonly mockFixturePath?: string;
+  readonly providerName?: string;
+  readonly modelName?: string;
+  readonly includePromptMetadata?: boolean;
 }
 
 /**
@@ -92,6 +95,11 @@ export interface RunOptions {
   readonly targetProduct?: Product;
   readonly testCommand?: string;
   readonly mockFixturePath?: string;
+  readonly provider?: string;
+  readonly model?: string;
+  readonly apiKey?: string;
+  readonly baseUrl?: string;
+  readonly includePromptMetadata?: boolean;
 }
 
 export interface RunResult {
