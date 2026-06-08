@@ -4,8 +4,12 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [labeled]
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
       task:
@@ -51,49 +55,35 @@ jobs:
       - name: Typecheck Openpawl packages
         run: bun run typecheck:core && bun run typecheck:cli
 
-      - name: Determine task and mode
-        id: config
+      - name: Resolve Openpawl trigger
+        id: trigger
         env:
-          DISPATCH_TASK: ${{ github.event.inputs.task }}
-          DISPATCH_REPO_PATH: ${{ github.event.inputs.repo_path }}
-          DISPATCH_MODE: ${{ github.event.inputs.mode }}
+          OPENPAWL_TASK: ${{ github.event.inputs.task }}
+          OPENPAWL_REPO_PATH: ${{
+            github.event.inputs.repo_path != '' && github.event.inputs.repo_path != null
+              && github.event.inputs.repo_path
+          }}
+          OPENPAWL_MODE: ${{
+            github.event.inputs.mode != '' && github.event.inputs.mode != null
+              && github.event.inputs.mode
+          }}
+          OPENPAWL_REPOSITORY: ${{ github.repository }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            TASK="Review and analyse the changes in this pull request"
-            REPO_PATH="."
-            MODE="dry-run"
-          else
-            TASK="${DISPATCH_TASK:-review changes and suggest improvements}"
-            REPO_PATH="${DISPATCH_REPO_PATH:-.}"
-            MODE="${DISPATCH_MODE:-dry-run}"
-          fi
-
-          case "$MODE" in
-            dry-run|write) ;;
-            *)
-              echo "Invalid mode: $MODE" >&2
-              exit 1
-              ;;
-          esac
-
-          {
-            echo "task<<EOF"
-            echo "$TASK"
-            echo "EOF"
-            echo "repo_path=$REPO_PATH"
-            echo "mode=$MODE"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "Task: $TASK"
-          echo "Repo path: $REPO_PATH"
-          echo "Mode: $MODE"
+          bun run dev:cli -- openpawl-trigger \
+            --event-name "${{ github.event_name }}" \
+            --event-path "${GITHUB_EVENT_PATH}" \
+            --workflow-task "${OPENPAWL_TASK:-review and suggest improvements}" \
+            --workflow-repo-path "${OPENPAWL_REPO_PATH:-.}" \
+            --workflow-mode "${OPENPAWL_MODE:-dry-run}" \
+            --workflow-repository "${OPENPAWL_REPOSITORY}"
 
       - name: Run Openpawl agent
         id: openpawl
+        if: steps.trigger.outputs.should_run == 'true'
         env:
-          OPENPAWL_TASK: ${{ steps.config.outputs.task }}
-          OPENPAWL_REPO_PATH: ${{ steps.config.outputs.repo_path }}
-          OPENPAWL_MODE: ${{ steps.config.outputs.mode }}
+          OPENPAWL_TASK: ${{ steps.trigger.outputs.task }}
+          OPENPAWL_REPO_PATH: ${{ steps.trigger.outputs.repo_path }}
+          OPENPAWL_MODE: ${{ steps.trigger.outputs.mode }}
         run: |
           set +e
 
@@ -137,9 +127,9 @@ jobs:
       - name: Post report as PR comment
         if: |
           always() &&
-          github.event_name == 'pull_request' &&
+          steps.trigger.outputs.should_run == 'true' &&
           steps.openpawl.outputs.report_path != '' &&
-          github.event.pull_request.head.repo.full_name == github.repository
+          steps.trigger.outputs.issue_number != ''
         uses: actions/github-script@v7
         continue-on-error: true
         with:
@@ -147,10 +137,33 @@ jobs:
           script: |
             const fs = require('fs');
             const reportPath = '${{ steps.openpawl.outputs.report_path }}';
+            const issueNumber = Number('${{ steps.trigger.outputs.issue_number }}');
+            const isPullRequest = '${{ steps.trigger.outputs.issue_is_pull_request }}' === 'true';
+            const baseRepo = '${{ steps.trigger.outputs.base_repo_full_name }}' || `${context.repo.owner}/${context.repo.repo}`;
+            const headRepo = '${{ steps.trigger.outputs.head_repo_full_name }}';
 
             if (!fs.existsSync(reportPath)) {
               console.log('No report found at', reportPath);
               return;
+            }
+
+            if (!Number.isFinite(issueNumber)) {
+              console.log('Skipping Openpawl comment because no issue number was resolved.');
+              return;
+            }
+
+            if (isPullRequest) {
+              const pull = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: issueNumber,
+              });
+              const pullHeadRepo = pull.data.head?.repo?.full_name;
+              const resolvedHeadRepo = headRepo || pullHeadRepo;
+              if (resolvedHeadRepo && resolvedHeadRepo !== baseRepo) {
+                console.log('Skipping Openpawl PR comment because this run is from a forked pull request.');
+                return;
+              }
             }
 
             const report = fs.readFileSync(reportPath, 'utf8');
@@ -159,21 +172,17 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               body: report,
             });
 
             console.log(`✅ Posted Openpawl report for run ${runId}`);
 
-      - name: Skip PR comment on forked pull requests
+      - name: Fail if Openpawl run failed
         if: |
           always() &&
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository
-        run: echo "Skipping Openpawl PR comment because this pull request comes from a fork."
-
-      - name: Fail if Openpawl run failed
-        if: always() && steps.openpawl.outputs.exit_code != '0'
+          steps.trigger.outputs.should_run == 'true' &&
+          steps.openpawl.outputs.exit_code != '0'
         run: |
           echo "Openpawl exited with code ${{ steps.openpawl.outputs.exit_code }}."
           echo "Artifacts were uploaded when available."

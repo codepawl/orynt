@@ -14,6 +14,7 @@ import * as path from "path";
 import { resolveProviderConfig, runAgent } from "@codepawl/core";
 import type { RunResult } from "@codepawl/core";
 import { renderBanner, renderCompactLogo } from "./branding";
+import { resolveOpenPawlTriggerFromEvent } from "./openpawl-trigger";
 
 // Helpers
 
@@ -504,6 +505,107 @@ async function cmdGithubComment(flags: Record<string, string | boolean>): Promis
   ok(`Comment posted: ${htmlUrl}`);
 }
 
+async function writeActionOutput(outputs: Record<string, string>): Promise<void> {
+  const outputPath = process.env["GITHUB_OUTPUT"];
+  if (!outputPath) return;
+  const payload = Object.entries(outputs)
+    .map(([name, value]) => `${name}=${value}`)
+    .join("\n");
+  if (payload.length === 0) return;
+  await fs.appendFile(outputPath, `${payload}\n`, "utf-8");
+}
+
+function booleanToGithubOutput(value: boolean): string {
+  return value ? "true" : "false";
+}
+
+function showOpenPawlTriggerHelp(): void {
+  console.log(`Usage: codepawl openpawl-trigger [options]
+
+Resolve Openpawl trigger strategy and emit GitHub Action outputs.
+
+Options:
+  --event-name <name>        GitHub event name (default: GITHUB_EVENT_NAME)
+  --event-path <path>        Path to the GitHub event payload (default: GITHUB_EVENT_PATH)
+  --workflow-task <task>     task for manual workflow_dispatch runs
+  --workflow-repo-path <p>   repository path for manual workflow_dispatch runs
+  --workflow-mode <mode>     dry-run (default) or write for manual workflow_dispatch runs
+  --workflow-repository <r>  repository slug for default fallbacks
+`);
+}
+
+async function cmdOpenPawlTrigger(flags: Record<string, string | boolean>): Promise<void> {
+  if (flags["help"] === true) {
+    showOpenPawlTriggerHelp();
+    return;
+  }
+
+  const eventName = readStringFlag(flags, "event-name") ?? process.env["GITHUB_EVENT_NAME"] ?? "";
+  const eventPath = readStringFlag(flags, "event-path") ?? process.env["GITHUB_EVENT_PATH"];
+  const workflowTask = readStringFlag(flags, "workflow-task");
+  const workflowRepoPath = readStringFlag(flags, "workflow-repo-path");
+  const workflowMode = readStringFlag(flags, "workflow-mode");
+  const workflowRepository = readStringFlag(flags, "workflow-repository") ?? process.env["GITHUB_REPOSITORY"];
+
+  let eventPayload: Record<string, unknown> | undefined;
+  if (eventPath) {
+    try {
+      const raw = await fs.readFile(eventPath, "utf-8");
+      eventPayload = JSON.parse(raw) as Record<string, unknown>;
+    } catch (err: unknown) {
+      die(`Failed to read GitHub event payload from ${eventPath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const resolution = resolveOpenPawlTriggerFromEvent(eventPayload, {
+    eventName,
+    workflowTask: workflowTask ?? "review changes and suggest improvements",
+    workflowRepoPath: workflowRepoPath ?? ".",
+    workflowMode: workflowMode ?? "dry-run",
+    workflowRepository,
+  });
+
+  await writeActionOutput({
+    should_run: booleanToGithubOutput(resolution.shouldRun),
+    task: resolution.task,
+    repo_path: resolution.repoPath,
+    mode: resolution.mode,
+    issue_number: resolution.issueNumber ? String(resolution.issueNumber) : "",
+    issue_is_pull_request: booleanToGithubOutput(resolution.issueIsPullRequest),
+    source: resolution.source,
+    base_repo_full_name: resolution.baseRepoFullName ?? "",
+    head_repo_full_name: resolution.headRepoFullName ?? "",
+    reason: resolution.reason,
+  });
+
+  if (resolution.shouldRun) {
+    if (process.stdout.isTTY) {
+      ok(`Resolved Openpawl trigger (${resolution.source})`);
+      console.log(`   Task:  ${resolution.task}`);
+      console.log(`   Mode:  ${resolution.mode}`);
+      console.log(`   Repo:  ${resolution.repoPath}`);
+      if (resolution.issueNumber) {
+        console.log(`   Issue: #${resolution.issueNumber}`);
+      }
+      console.log();
+    } else {
+      console.log(JSON.stringify({
+        shouldRun: resolution.shouldRun,
+        task: resolution.task,
+        mode: resolution.mode,
+        repoPath: resolution.repoPath,
+        issueNumber: resolution.issueNumber,
+        issueIsPullRequest: resolution.issueIsPullRequest,
+        source: resolution.source,
+      }));
+    }
+  } else {
+    if (process.stdout.isTTY) {
+      console.log(`No Openpawl run configured: ${resolution.reason}`);
+    }
+  }
+}
+
 // help
 
 function showHelp(): void {
@@ -515,6 +617,7 @@ Commands:
   trace        Pretty-print a trace.json file
   doctor       Check system readiness
   github-comment  Post a run report as a GitHub PR comment
+  openpawl-trigger  Resolve trigger inputs for GitHub workflow orchestration
 
 Run options:
   --repo <path>          Path to the target repository (default: .)
@@ -552,6 +655,7 @@ Examples:
   codepawl trace --input .codepawl/runs/run_123/trace.json --format markdown
   codepawl doctor
   codepawl github-comment --report .codepawl/runs/run_123/report.md
+  codepawl openpawl-trigger --event-name issue_comment --event-path "$GITHUB_EVENT_PATH"
 `);
 }
 
@@ -639,6 +743,9 @@ async function main(): Promise<void> {
       break;
     case "github-comment":
       await cmdGithubComment(flags);
+      break;
+    case "openpawl-trigger":
+      await cmdOpenPawlTrigger(flags);
       break;
     default:
       die(`Unknown command: "${command}". Run "codepawl --help" for usage.`);
