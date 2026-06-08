@@ -98,9 +98,22 @@ The default provider is a **mock LLM** that reads rules from a JSON fixture file
 ## CI/CD Integration
 
 See [`.github/workflows/openpawl.yml`](.github/workflows/openpawl.yml) for a reusable GitHub Actions workflow that:
-- Runs Openpawl on pull requests (dry-run) and `workflow_dispatch` (configurable)
-- Uploads all run artifacts
-- Posts the `report.md` as a PR comment (when `GITHUB_TOKEN` is available)
+- Runs Openpawl on pull requests in dry-run mode
+- Runs manually with `workflow_dispatch`
+- Uploads all generated files under `.codepawl/runs/<run-id>/`
+- Posts `report.md` as a non-destructive PR comment for same-repository pull requests when comment permissions are available
+
+Manual run inputs:
+- `task`: coding task for Openpawl, defaulting to `review changes and suggest improvements`
+- `repo_path`: target repository path from the checkout root, defaulting to `.`
+- `mode`: `dry-run` or `write`, defaulting to `dry-run`
+
+To run it manually in GitHub:
+1. Open the repository's **Actions** tab.
+2. Select **Openpawl CI**.
+3. Choose **Run workflow**.
+4. Set `task`, `repo_path`, and `mode`.
+5. Download the `openpawl-run-<run-id>` artifact from the completed workflow run.
 
 ---
 

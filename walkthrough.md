@@ -33,6 +33,21 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 
 **Scope:** Only `packages/core`, `packages/cli`, tests, and this walkthrough were changed. `apps/web` and `apps/api` were not modified.
 
+### 2026-06-08 GitHub Actions Hardening
+
+**Goal:** Make the Openpawl workflow usable from `workflow_dispatch` and safe on `pull_request` without adding new agent intelligence or external integrations.
+
+**Fixes:**
+- `workflow_dispatch` now accepts `task`, `repo_path`, and `mode`.
+- `mode` defaults to `dry-run`; pull requests always run dry-run regardless of manual input defaults.
+- The workflow calls the current monorepo CLI script: `bun run dev:cli -- run ...`.
+- The Openpawl step captures its exit code instead of hiding it with `|| true`, allowing artifact upload and PR comment attempts before a final failure gate.
+- Generated files under `.codepawl/runs/<run-id>/` are uploaded with `actions/upload-artifact@v4`.
+- PR comments are non-destructive: the workflow creates a new comment and does not delete previous comments.
+- Forked pull requests skip the comment step; the comment step also uses `continue-on-error: true` so missing comment permissions do not fail the workflow by themselves.
+
+**Scope:** `.github/workflows/openpawl.yml`, README documentation, and this walkthrough were changed. `apps/web` and `apps/api` were not modified.
+
 ---
 
 ## What Was Built
@@ -83,16 +98,17 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 **New files:**
 - [`.github/workflows/openpawl.yml`](.github/workflows/openpawl.yml) — Reusable GitHub Actions workflow:
   - Triggers: `pull_request` and `workflow_dispatch`
-  - Runs Openpawl CLI (dry-run on PRs, configurable on dispatch)
-  - Uploads `.codepawl/runs/` as artifact
-  - Posts `report.md` as PR comment (when GITHUB_TOKEN available)
+  - Runs Openpawl CLI via `bun run dev:cli -- run`
+  - Runs dry-run on PRs; `workflow_dispatch` supports `dry-run` and `write`
+  - Uploads `.codepawl/runs/<run-id>/` as an artifact
+  - Posts `report.md` as a non-destructive PR comment for same-repository PRs when permissions are available
   - Runs unit tests (core + cli)
 
 ---
 
 ### 4. Documentation
 
-- [`README.md`](README.md) — Updated with full Openpawl quick start
+- [`README.md`](README.md) — Updated with full Openpawl quick start and manual GitHub Actions dispatch instructions
 - [`CLAUDE.md`](CLAUDE.md) — Updated commands section
 - [`walkthrough.md`](walkthrough.md) — This file
 
@@ -146,7 +162,39 @@ bun run typecheck
 bun run test
 bunx vitest run --reporter=dot  # packages/core
 bunx vitest run --reporter=dot  # packages/cli
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/openpawl.yml')); print('yaml parse ok')"
 ```
+
+### GitHub Actions Workflow Verification
+
+Local workflow syntax validation:
+```bash
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/openpawl.yml')); print('yaml parse ok')"
+```
+
+Result:
+```
+yaml parse ok
+```
+
+No live GitHub Actions run was executed during this verification.
+
+Manual workflow usage:
+1. Open **Actions** in GitHub.
+2. Select **Openpawl CI**.
+3. Choose **Run workflow**.
+4. Set:
+   - `task`: coding task for Openpawl
+   - `repo_path`: target path from checkout root, usually `.`
+   - `mode`: `dry-run` or `write`
+5. Download the `openpawl-run-<run-id>` artifact after the run completes.
+
+Pull request behavior:
+- `pull_request` always runs Openpawl in dry-run mode.
+- The workflow uploads generated artifacts when a run directory exists.
+- Same-repository PRs attempt to post `report.md` as a PR comment.
+- Forked PRs skip commenting to avoid permission failures.
+- Comment posting is `continue-on-error`, so unavailable comment permissions do not fail the workflow by themselves.
 
 ### Artifact Path Regression Verification
 

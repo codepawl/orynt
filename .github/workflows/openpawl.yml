@@ -9,8 +9,12 @@ on:
         description: "Coding task for Openpawl to execute"
         required: false
         default: "review changes and suggest improvements"
+      repo_path:
+        description: "Path to the target repository from the checkout root"
+        required: false
+        default: "."
       mode:
-        description: "Run mode: dry-run or write"
+        description: "Run mode"
         required: false
         default: "dry-run"
         type: choice
@@ -25,6 +29,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      issues: write
 
     steps:
       - name: Checkout repository
@@ -40,40 +45,71 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build packages
-        run: bun run build --filter @codepawl/core --filter @codepawl/cli 2>/dev/null || true
+      - name: Typecheck Openpawl packages
+        run: bun run typecheck:core && bun run typecheck:cli
 
       - name: Determine task and mode
         id: config
+        env:
+          DISPATCH_TASK: ${{ github.event.inputs.task }}
+          DISPATCH_REPO_PATH: ${{ github.event.inputs.repo_path }}
+          DISPATCH_MODE: ${{ github.event.inputs.mode }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             TASK="Review and analyse the changes in this pull request"
+            REPO_PATH="."
             MODE="dry-run"
           else
-            TASK="${{ github.event.inputs.task }}"
-            MODE="${{ github.event.inputs.mode }}"
+            TASK="${DISPATCH_TASK:-review changes and suggest improvements}"
+            REPO_PATH="${DISPATCH_REPO_PATH:-.}"
+            MODE="${DISPATCH_MODE:-dry-run}"
           fi
-          echo "task=${TASK}" >> "$GITHUB_OUTPUT"
-          echo "mode=${MODE}" >> "$GITHUB_OUTPUT"
+
+          case "$MODE" in
+            dry-run|write) ;;
+            *)
+              echo "Invalid mode: $MODE" >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "task<<EOF"
+            echo "$TASK"
+            echo "EOF"
+            echo "repo_path=$REPO_PATH"
+            echo "mode=$MODE"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Task: $TASK"
+          echo "Repo path: $REPO_PATH"
+          echo "Mode: $MODE"
 
       - name: Run Openpawl agent
         id: openpawl
+        env:
+          OPENPAWL_TASK: ${{ steps.config.outputs.task }}
+          OPENPAWL_REPO_PATH: ${{ steps.config.outputs.repo_path }}
+          OPENPAWL_MODE: ${{ steps.config.outputs.mode }}
         run: |
-          if [ "${{ steps.config.outputs.mode }}" = "write" ]; then
-            bun packages/cli/src/bin.ts run \
-              --repo . \
-              --task "${{ steps.config.outputs.task }}" \
+          set +e
+
+          if [ "$OPENPAWL_MODE" = "write" ]; then
+            bun run dev:cli -- run \
+              --repo "$OPENPAWL_REPO_PATH" \
+              --task "$OPENPAWL_TASK" \
               --write \
-              --test-cmd "bun run test" \
-            || true
+              --test-cmd "bun run test"
           else
-            bun packages/cli/src/bin.ts run \
-              --repo . \
-              --task "${{ steps.config.outputs.task }}" \
+            bun run dev:cli -- run \
+              --repo "$OPENPAWL_REPO_PATH" \
+              --task "$OPENPAWL_TASK" \
               --dry-run \
-              --test-cmd "echo skip" \
-            || true
+              --test-cmd "echo skip"
           fi
+          EXIT_CODE=$?
+          set -e
+          echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
 
           # Capture the latest run ID
           RUN_DIR=$(ls -td .codepawl/runs/run_* 2>/dev/null | head -1)
@@ -84,20 +120,25 @@ jobs:
             echo "report_path=${RUN_DIR}/report.md" >> "$GITHUB_OUTPUT"
           fi
 
+          exit 0
+
       - name: Upload Openpawl run artifacts
-        if: steps.openpawl.outputs.run_dir != ''
+        if: always() && steps.openpawl.outputs.run_dir != ''
         uses: actions/upload-artifact@v4
         with:
           name: openpawl-run-${{ steps.openpawl.outputs.run_id }}
-          path: ${{ steps.openpawl.outputs.run_dir }}/
+          path: ${{ steps.openpawl.outputs.run_dir }}/**
+          if-no-files-found: error
           retention-days: 30
 
       - name: Post report as PR comment
         if: |
+          always() &&
           github.event_name == 'pull_request' &&
           steps.openpawl.outputs.report_path != '' &&
-          github.token != ''
+          github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
+        continue-on-error: true
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -112,24 +153,6 @@ jobs:
             const report = fs.readFileSync(reportPath, 'utf8');
             const runId = '${{ steps.openpawl.outputs.run_id }}';
 
-            // Find and delete any previous Openpawl comment on this PR
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            for (const comment of comments) {
-              if (comment.body && comment.body.includes('Openpawl Agent Run Report')) {
-                await github.rest.issues.deleteComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: comment.id,
-                });
-              }
-            }
-
-            // Post the new report
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -138,6 +161,20 @@ jobs:
             });
 
             console.log(`✅ Posted Openpawl report for run ${runId}`);
+
+      - name: Skip PR comment on forked pull requests
+        if: |
+          always() &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: echo "Skipping Openpawl PR comment because this pull request comes from a fork."
+
+      - name: Fail if Openpawl run failed
+        if: always() && steps.openpawl.outputs.exit_code != '0'
+        run: |
+          echo "Openpawl exited with code ${{ steps.openpawl.outputs.exit_code }}."
+          echo "Artifacts were uploaded when available."
+          exit 1
 
   unit-tests:
     name: Unit Tests (core + cli)
