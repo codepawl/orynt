@@ -6,7 +6,7 @@
 
 - `v0.1.0-alpha.1`: Mock-first monorepo foundation, local dry-run, metadata-only patch plans, and PR workflow verification without production write mode.
 - `v0.1.0-alpha.2`: Experimental OpenAI-compatible provider, structured-output retry, safer diagnostics, and GitHub workflow hardening.
-- `v0.1.0-alpha.3`: `json_schema` strict mode, context compaction with budgets, grounding/rejection of provider paths, and dry-run scope fallback.
+- `v0.1.0-alpha.3`: `json_schema` strict mode, context compaction with budgets, grounding/rejection of provider paths, dry-run scope fallback for ungrounded proposals, and safe write-mode v0 guardrails.
 
 ### Maturity plan
 
@@ -27,7 +27,7 @@
 - Run `npm pack` dry-run for package artifacts.
 - Install CLI in a temporary repository and run `codepawl doctor`.
 - Run `codepawl run --repo . --task "review current repository changes" --dry-run`.
-- Confirm all expected artifacts and deterministic reports are produced.
+- Confirm all expected artifacts (`trace.json`, `run.json`, `report.md`, `patch-plan.json`, `selected-files.json`, `applied-files.json`) and deterministic reports are produced.
 - Confirm traces/reports include context-pack and compaction metrics and no secrets.
 - Confirm GitHub Action docs still match workflow behavior.
 - Confirm license and package metadata are explicit and consistent.

@@ -14,12 +14,17 @@ All notable changes for Openpawl.
 - Rejection and surfacing of ungrounded provider paths.
 - Report traceability improvements for compacted context and provider diagnostics.
 - Scope fallback behavior in dry-run for ungrounded provider proposals.
+- Safe write-mode v0 guardrails:
+  - explicit `--test-cmd` is mandatory for write runs,
+  - only new test-file creation chunks are applied,
+  - disallowed paths and existing files are rejected before or during apply.
 
 ### Changed
 
 - `scope_analysis` and `patch_plan` now require JSON schema-aligned structured output.
 - Patch planning remains metadata-only (`rationale`, `chunks`).
 - Real-provider dry-run validated with default budgets and grounding safety.
+- `applied-files.json` artifact added for safe write-mode auditability.
 
 ## [0.1.0-alpha.2] - 2026-06-08
 
@@ -42,7 +47,7 @@ All notable changes for Openpawl.
 
 - Bun monorepo foundation with `@codepawl/core` and `@codepawl/cli`.
 - Deterministic mock provider and local dry-run mode.
-- Core artifact pipeline (trace/run/plan/report outputs).
+- Core artifact pipeline (trace, run, report, patch-plan, selected-files, and applied-files outputs).
 - Workflow and PR smoke capabilities:
   - `workflow_dispatch` dry-run
   - pull_request dry-run
@@ -65,7 +70,7 @@ All notable changes for Openpawl.
 ### Alpha
 
 - Verified: CLI + dry-run + trace + CI
-- Limitation: no trusted write mode
+- Limitation: no production write mode (v0 write mode is create-only and test-safe)
 
 ### Beta
 
@@ -85,4 +90,3 @@ All notable changes for Openpawl.
 - Verified installation docs and packaging metadata.
 - Security and safety guardrails complete with auditable behavior.
 - Full CI green and documented release checklist completion.
-

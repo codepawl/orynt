@@ -8,7 +8,7 @@
 - `@codepawl/core` and `@codepawl/cli` scaffolding.
 - Deterministic mock provider.
 - Local dry-run execution.
-- Artifact pipeline with five run artifacts.
+- Artifact pipeline with six run artifacts (including write-mode results).
 - `workflow_dispatch` dry-run.
 - Pull request dry-run with report comment.
 - Metadata-only patch plans.
@@ -55,7 +55,7 @@
 - `npm pack` dry-run for distributable package outputs.
 - Install CLI in a fresh temporary repo and run `codepawl doctor`.
 - Run `codepawl run --dry-run` with a repository task.
-- Verify artifacts exist: `trace.json`, `run.json`, `report.md`, `patch-plan.json`, `selected-files.json`.
+- Verify artifacts exist: `trace.json`, `run.json`, `report.md`, `patch-plan.json`, `selected-files.json`, `applied-files.json`.
 - Verify no secrets or raw prompts in trace/report output by default.
 - Verify GitHub Action docs and matrix docs describe current workflow and permissions.
 - Verify package metadata/licensing and export surfaces are complete.
@@ -97,7 +97,7 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 - Core startup validation now rejects workspace paths that exist but are not directories.
 - Validation command failures now return `success: false`, set `error: "Validation command failed."`, and cause the CLI to exit non-zero while preserving exported artifacts.
 - File selection now skips secret-like, binary-extension, non-file, and unreadable files with trace warnings instead of silently selecting unreadable content as empty text.
-- Runtime failures after workflow start continue to export `trace.json`, `report.md`, `run.json`, `patch-plan.json`, and `selected-files.json` whenever the artifact directory can be written.
+- Runtime failures after workflow start continue to export `trace.json`, `report.md`, `run.json`, `patch-plan.json`, `selected-files.json`, and `applied-files.json` whenever the artifact directory can be written.
 
 **Scope:** Only `packages/core`, `packages/cli`, tests, and this walkthrough were changed. `apps/web` and `apps/api` were not modified.
 
@@ -187,7 +187,7 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 
 **Modified files:**
 - [`packages/cli/src/bin.ts`](packages/cli/src/bin.ts) — Full rewrite with 4 commands:
-  - `codepawl run --repo <path> --task <string> [--dry-run | --write] [--out-dir <path>]`
+  - `codepawl run --repo <path> --task <string> [--dry-run | --write] [--out-dir <path>] [--test-cmd <command>]`
   - `codepawl trace --input <trace.json> --format [markdown|json]`
   - `codepawl doctor`
   - `codepawl github-comment --report <report.md> [--token] [--repo] [--pr]`
@@ -404,8 +404,8 @@ find: 'packages/cli/.codepawl/runs/run_1780889202298_qevayj': No such file or di
 | Ignored files/directories | Known ignored directories such as `.git`, `node_modules`, and `dist` are excluded from scan | Run continues | Core node tests |
 | Binary files | File selection skips binary-extension files | Run continues | Core node tests |
 | Unreadable files | File selection skips unreadable files and records a warning | Run continues | Core node tests |
-| Validation command failure | Run returns failed status and CLI exits non-zero | All five artifacts remain written | Core runner, CLI integration |
-| Write safety violation | Write mode aborts before touching files | All five artifacts are written best-effort | Core runner |
+| Validation command failure | Run returns failed status and CLI exits non-zero | All six artifacts remain written | Core runner, CLI integration |
+| Write safety violation | Write mode aborts before touching files | All six artifacts are written best-effort | Core runner |
 | `github-comment` without token | Prints report to stdout and exits zero | No artifact changes | CLI integration |
 | `github-comment` without PR context | Prints report to stdout and exits zero | No artifact changes | CLI integration |
 | `trace` missing input file | CLI fails with `Cannot read trace file` and non-zero exit | No artifact changes | CLI integration |
@@ -434,8 +434,9 @@ Output:
 Artifacts produced:
 ```
 patch-plan.json  report.md  run.json  selected-files.json  trace.json
+applied-files.json
 ```
-✅ **PASS** — All 5 required artifacts
+✅ **PASS** — All 6 required artifacts
 
 ### `codepawl doctor`
 ```
@@ -456,14 +457,14 @@ Issue found before re-tagging `v0.1.0-alpha.1`:
 bun run dev:cli -- run --repo . --task "review current repository changes" --dry-run
 ```
 
-The run produced all five artifacts but exited `1` because the validation node defaulted to `bun test` when no explicit `--test-cmd` was provided. That made deterministic dry-run release smoke checks depend on unrelated local test state.
+The run produced all six artifacts while failing with exit `1` when validation was explicitly configured to fail.
 
 Fix:
 - Dry-runs without an explicit validation command now use safe placeholder validation.
 - The placeholder is recorded as `echo placeholder validation skipped`.
 - The generated report labels it as `Placeholder validation`.
 - Explicit validation commands still run normally and still fail the run when they exit non-zero.
-- Validation failures after a run starts still preserve all five artifacts.
+- Validation failures after a run starts still preserve all six artifacts.
 - Review-only deterministic output no longer proposes `auth-helpers.test.ts`.
 
 Acceptance verification:
@@ -480,6 +481,7 @@ Result:
 .codepawl/runs/run_1780893153729_gksksf/run.json
 .codepawl/runs/run_1780893153729_gksksf/selected-files.json
 .codepawl/runs/run_1780893153729_gksksf/trace.json
+.codepawl/runs/run_1780893153729_gksksf/applied-files.json
 ```
 
 Report verification:
@@ -487,7 +489,7 @@ Report verification:
 **Placeholder validation:** `echo placeholder validation skipped`
 ```
 
-✅ **PASS** — Review-only RC smoke now exits `0` and produces all five artifacts under the target repo root.
+✅ **PASS** — Review-only RC smoke now exits `0` and produces all six artifacts under the target repo root.
 
 Real-provider validation follow-up (DeepInfra/Nemotron):
 - A real-provider dry-run using `OPENPAWL_PROVIDER=openai-compatible` and
@@ -636,14 +638,14 @@ Verification added:
 - Provider JSON parser tests cover clean JSON, whitespace, fenced JSON, extra text with one extractable object, invalid JSON, and invalid schema.
 - Patch-plan schema tests cover valid chunks, missing `description`, non-string `description`, safe alias repair, and trace repair auditing.
 - Dry-run validation tests cover placeholder validation without `--test-cmd` and explicit `bun test` failure preserving artifacts.
-- Invalid provider-shaped output is covered with a local mock fixture and still writes all five artifacts.
+- Invalid provider-shaped output is covered with a local mock fixture and still writes all six artifacts.
 - Existing deterministic mock behavior remains covered.
 
 Known limitations:
 - Real provider mode is experimental for v0.
 - GitHub Actions do not use a real provider by default.
 - No production autonomous coding claim is made.
-- Path safety, dry-run default, and explicit `--write` behavior remain unchanged.
+- Path safety, dry-run default, and explicit `--write` behavior now include safe create-only test-file write constraints.
 
 ---
 
@@ -652,16 +654,18 @@ Known limitations:
 In `--dry-run` mode:
 - All 9 state machine nodes run
 - No files are modified (write operations in `optional_patch_apply` are skipped)
-- All 5 artifacts are written to `.codepawl/runs/<run-id>/`
+- All 6 artifacts are written to `.codepawl/runs/<run-id>/`
 - `patch-plan.json` shows what *would* have been applied
 
 ## Write Mode
 
 In `--write` mode:
 - `assertWriteSafe()` validates every target path **before** any file is touched
-- Disallowed paths abort the entire run with `SafetyViolationError`
+- Disallowed paths abort the entire run with `SafetyViolationError` or are rejected before applying.
 - Protected paths include: `.env*`, lockfiles, `.git/`, migrations, `node_modules`, build artifacts, files outside the repo root
-- Files are created/modified/deleted one chunk at a time after safety validation
+- Only new test-file creation chunks are applied; non-test or non-create chunks are rejected.
+- If no safe create chunks are available (including empty patch plans), write mode fails immediately.
+- No validation runs after a no-op write failure; report and trace artifacts are still exported with failed status.
 - Validation command runs after patching; trace and report are exported regardless of validation outcome
 
 ---
@@ -680,7 +684,7 @@ In `--write` mode:
 ## Context Compaction Limitations
 
 1. No AST-aware semantic memory yet.
-2. No production write-mode patch application is implemented in this milestone.
+2. No production write orchestration beyond write-mode v0 is implemented in this milestone.
 3. No `.gitignore` parsing (hardcoded ignore list remains).
 4. No retry loop for failed validation; single-pass planning/validation only.
 

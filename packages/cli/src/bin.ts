@@ -206,6 +206,9 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   const mockFixture = readStringFlag(flags, "mock-fixture");
   const resolvedMockFixture = mockFixture ? resolveFromBase(mockFixture, resolutionBase) : undefined;
   const testCmd = readStringFlag(flags, "test-cmd");
+  if (flags["write"] === true && !testCmd) {
+    die("Write mode requires --test-cmd (for example: --write --test-cmd \"bun test\" ).");
+  }
   const provider = readStringFlag(flags, "provider");
   const model = readStringFlag(flags, "model");
   const structuredOutputModeRaw = readStringFlag(flags, "response-format");
@@ -238,9 +241,13 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   if (resolvedOutDir) console.log(`   OutDir:  ${resolvedOutDir}`);
   console.log(`   Task:    ${task}`);
   console.log(`   Mode:    ${dryRun ? "dry-run (no files modified)" : "write"}`);
+  if (!dryRun && testCmd) {
+    console.log(`   TestCmd: ${testCmd}`);
+  } else {
+    console.log("   TestCmd: omitted (dry-run default placeholder)");
+  }
   console.log(`   Provider: ${providerConfig.provider}`);
   console.log(`   Model:   ${providerConfig.model ?? "deterministic-mock"}`);
-  if (testCmd) console.log(`   TestCmd: ${testCmd}`);
   console.log();
 
   let result: RunResult;
@@ -504,7 +511,7 @@ Run options:
   --task <string>        Coding task description (required)
   --out-dir <path>       Artifact output directory (default: <repo>/.codepawl/runs/<run-id>)
   --dry-run              Scan and plan only; no files are modified (default)
-  --write                Apply the generated patch to the repository
+  --write                Apply safe test-file patch chunks, then validate (requires --test-cmd)
   --mock-fixture <path>  Path to a JSON LLM mock fixture file
   --test-cmd <cmd>       Validation command; review-only dry-runs use placeholder validation when omitted
   --provider <name>      Provider override: mock or openai-compatible (default: OPENPAWL_PROVIDER or mock)
@@ -531,7 +538,7 @@ Examples:
   codepawl run --repo . --task "add tests for shared helpers" --dry-run
   codepawl run --repo . --task "Review and analyse this PR" --dry-run
   codepawl run --repo . --task "add tests" --provider openai-compatible --model gpt-4.1-mini --dry-run
-  codepawl run --repo . --task "fix failing unit test" --write
+  codepawl run --repo . --task "fix failing unit test" --write --test-cmd "bun test"
   codepawl trace --input .codepawl/runs/run_123/trace.json --format markdown
   codepawl doctor
   codepawl github-comment --report .codepawl/runs/run_123/report.md
@@ -548,9 +555,9 @@ Options:
   --task <string>        Coding or review task (required)
   --out-dir <path>       Artifact directory (default: <repo>/.codepawl/runs/<run-id>)
   --dry-run              Plan and report without modifying files (default)
-  --write                Apply safe patch chunks, then validate
+  --write                Apply safe test-file patch chunks, then validate (requires --test-cmd)
   --mock-fixture <path>  Optional deterministic mock fixture
-  --test-cmd <cmd>       Validation command; review-only dry-runs use placeholder validation when omitted
+  --test-cmd <cmd>       Required for write mode; review-only dry-runs use placeholder validation when omitted
   --provider <name>      mock or openai-compatible (env: OPENPAWL_PROVIDER)
   --model <model>        Provider model override (env: OPENPAWL_MODEL)
   --response-format <json_schema|json_object>
@@ -584,6 +591,7 @@ Examples:
   codepawl run --repo . --task "review current repository changes" --dry-run
   codepawl run --repo . --task "add tests for shared helpers" --dry-run
   codepawl run --repo . --task "add tests" --provider openai-compatible --model gpt-4.1-mini --dry-run
+  codepawl run --repo . --task "add tests for shared helpers" --write --test-cmd "bun test"
 `);
 }
 

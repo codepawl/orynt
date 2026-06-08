@@ -63,6 +63,12 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     structuredOutputMode,
   } = options;
 
+  if (!dryRun && !testCommand) {
+    throw new Error(
+      "Write mode requires an explicit test command. Pass --test-cmd (or set testCommand) to run write mode safely."
+    );
+  }
+
   // Resolve workspace directory
   const resolvedWorkspaceDir = path.resolve(workspaceDir);
   const resolvedOutputDir = outDir
@@ -198,9 +204,13 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
         JSON.stringify({ selectedFiles: [] }, null, 2),
         "utf-8"
       );
+      await fs.writeFile(
+        path.join(runDir, "applied-files.json"),
+        JSON.stringify({ attempted: 0, created: [], skipped: [], rejected: [] }, null, 2),
+        "utf-8"
+      );
     } catch { /* best-effort */ }
 
-    activeLedgers.delete(runId);
     const traceSummary = ledger.getSummary();
     return {
       runId,
@@ -213,7 +223,6 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     };
   }
 
-  activeLedgers.delete(runId);
   const traceSummary = ledger.getSummary();
   const validationFailed = finalState.validationResult?.success === false;
 
@@ -221,35 +230,19 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   if (runError) {
     try {
       await fs.mkdir(runDir, { recursive: true });
-      const summary = traceSummary;
-      await fs.writeFile(
-        path.join(runDir, "trace.json"),
-        JSON.stringify(summary, null, 2),
-        "utf-8"
-      );
-      const errorReport =
-        `# Openpawl Run Report\n\n**Run ID:** \`${runId}\`\n**Status:** ❌ FAILED\n\n## Error\n\n\`\`\`\n${runError}\n\`\`\`\n`;
-      await fs.writeFile(path.join(runDir, "report.md"), errorReport, "utf-8");
+      const traceExportNode = createTraceExportNode();
+      const reportExportNode = createReportExportNode();
+      await traceExportNode(finalState);
+      await reportExportNode(finalState);
       await fs.writeFile(
         path.join(runDir, "run.json"),
         JSON.stringify({ runId, success: false, error: runError }, null, 2),
         "utf-8"
       );
-      await fs.writeFile(
-        path.join(runDir, "patch-plan.json"),
-        JSON.stringify(
-          finalState.patchPlan ?? { chunks: [], rationale: "Run failed before patch plan." },
-          null, 2
-        ),
-        "utf-8"
-      );
-      await fs.writeFile(
-        path.join(runDir, "selected-files.json"),
-        JSON.stringify(finalState.fileSelectionResult ?? { selectedFiles: [] }, null, 2),
-        "utf-8"
-      );
     } catch { /* best-effort */ }
   }
+
+  activeLedgers.delete(runId);
 
   return {
     runId,

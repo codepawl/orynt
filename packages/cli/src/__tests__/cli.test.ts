@@ -135,7 +135,7 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     });
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
-    const expectedFiles = ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"];
+    const expectedFiles = ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json", "applied-files.json"];
 
     for (const file of expectedFiles) {
       const exists = await fs.stat(path.join(runDir, file)).catch(() => null);
@@ -179,7 +179,7 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     expect(runId, result.stdout).toBeTruthy();
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
-    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json", "applied-files.json"]) {
       const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
       expect(stat, `${file} should exist under the target repo`).not.toBeNull();
     }
@@ -213,7 +213,7 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     expect(result.stdout).toContain(`Repo:    ${WORKSPACE_ROOT}`);
     expect(result.stdout).toContain(`Report: ${path.join(outDir, "report.md")}`);
 
-    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json", "applied-files.json"]) {
       const stat = await fs.stat(path.join(outDir, file)).catch(() => null);
       expect(stat, `${file} should exist under explicit outDir`).not.toBeNull();
     }
@@ -303,7 +303,34 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
     expect(runId, result.stdout).toBeTruthy();
     const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
-    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json", "applied-files.json"]) {
+      const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
+      expect(stat, `${file} should exist`).not.toBeNull();
+    }
+  });
+
+  it("exits non-zero and keeps complete artifacts when validation fails", async () => {
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      tmpDir,
+      "--task",
+      "add tests for shared helpers",
+      "--dry-run",
+      "--mock-fixture",
+      FIXTURE_PATH,
+      "--test-cmd",
+      "bun -e \"process.exit(4)\"",
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("Status:  FAILED");
+    expect(result.stdout).toContain("Error:   Validation command failed.");
+
+    const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
+    expect(runId, result.stdout).toBeTruthy();
+    const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json", "applied-files.json"]) {
       const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
       expect(stat, `${file} should exist after validation failure`).not.toBeNull();
     }
@@ -325,7 +352,7 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
     const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
     expect(runId, result.stdout).toBeTruthy();
     const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
-    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json", "applied-files.json"]) {
       const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
       expect(stat, `${file} should exist after dry-run smoke`).not.toBeNull();
     }
@@ -355,7 +382,7 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
 });
 
 describe("CLI: codepawl run --write (via runAgent)", () => {
-  it("fails clearly because current MVP patch plans are metadata-only", async () => {
+  it("creates an allowed test file when write mode is enabled", async () => {
     // Use a fixture that generates a metadata-only create plan.
     const writeFixture = [
       {
@@ -390,19 +417,87 @@ describe("CLI: codepawl run --write (via runAgent)", () => {
     const fixturePath = path.join(tmpDir, "write-fixture.json");
     await fs.writeFile(fixturePath, JSON.stringify(writeFixture), "utf-8");
 
-    const result = await runMockAgent({
-      query: "add tests for hello file",
-      workspaceDir: tmpDir,
-      dryRun: false,
-      testCommand: "echo ok",
-      mockFixturePath: fixturePath,
-    });
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      tmpDir,
+      "--task",
+      "add tests for hello file",
+      "--write",
+      "--test-cmd",
+      "echo ok",
+      "--mock-fixture",
+      fixturePath,
+    ]);
 
     const createdFile = path.join(tmpDir, "src", "__tests__", "hello.test.ts");
+    const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
+
+    expect(result.exitCode).toBe(0);
+    expect(runId, result.stdout).toBeTruthy();
+    expect(result.stdout).toContain("Status:  SUCCESS");
+    const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
+    const applied = JSON.parse(await fs.readFile(path.join(runDir, "applied-files.json"), "utf-8")) as {
+      attempted: number;
+      created: string[];
+      skipped: Array<{ file: string; reason: string }>;
+      rejected: Array<{ file: string; reason: string }>;
+    };
+
     const exists = await fs.stat(createdFile).catch(() => null);
-    expect(exists, "metadata-only write mode must not create files").toBeNull();
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("metadata-only patch plans");
+    expect(exists, "write mode should create allowed test files").not.toBeNull();
+    expect(applied.created).toEqual(["src/__tests__/hello.test.ts"]);
+    expect(applied.skipped).toEqual([]);
+    expect(applied.rejected).toEqual([]);
+  });
+
+  it("fails when write mode is used without an explicit test command", async () => {
+    const writeFixture = [
+      {
+        matchLastMessage: "Scope Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Scope: add hello test helper",
+            affectedModules: ["src"],
+            proposedFilesToModify: [],
+            proposedFilesToCreate: ["src/__tests__/hello.test.ts"],
+          }),
+          usage: { inputTokens: 10, outputTokens: 10 },
+        },
+      },
+      {
+        matchLastMessage: "Patch Context Pack",
+        response: {
+          content: JSON.stringify({
+            rationale: "Create hello test file",
+            chunks: [
+              {
+                type: "create",
+                file: "src/__tests__/hello.test.ts",
+                description: "Create hello test file",
+              },
+            ],
+          }),
+          usage: { inputTokens: 20, outputTokens: 20 },
+        },
+      },
+    ];
+    const fixturePath = path.join(tmpDir, "write-fixture-missing-cmd.json");
+    await fs.writeFile(fixturePath, JSON.stringify(writeFixture), "utf-8");
+
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      tmpDir,
+      "--task",
+      "add tests for hello file",
+      "--write",
+      "--mock-fixture",
+      fixturePath,
+    ]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Write mode requires --test-cmd");
   });
 });
 

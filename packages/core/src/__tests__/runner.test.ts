@@ -3,7 +3,6 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { runAgent } from "../runner";
-import { SafetyViolationError } from "../safety";
 
 // Path to the bundled mock fixture
 const FIXTURE_PATH = path.join(
@@ -21,6 +20,7 @@ const REQUIRED_ARTIFACTS = [
   "run.json",
   "patch-plan.json",
   "selected-files.json",
+  "applied-files.json",
 ];
 
 async function expectRequiredArtifacts(runDir: string): Promise<void> {
@@ -56,7 +56,7 @@ afterEach(async () => {
 });
 
 describe("runAgent — dry-run mode", () => {
-  it("produces all 5 artifact files in .codepawl/runs/<runId>/", async () => {
+  it("produces all 6 artifact files in .codepawl/runs/<runId>/", async () => {
     const result = await runAgent({
       query: "add tests for auth helpers",
       workspaceDir: tmpDir,
@@ -70,7 +70,7 @@ describe("runAgent — dry-run mode", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
 
-    // All 5 required artifact files must exist
+    // All required artifact files must exist
     await expectRequiredArtifacts(runDir);
   });
 
@@ -144,6 +144,60 @@ describe("runAgent — dry-run mode", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+  });
+
+  it("succeeds when patch plan is empty in dry-run mode", async () => {
+    const emptyFixturePath = path.join(tmpDir, "dry-run-empty-chunks.json");
+    await fs.writeFile(
+      emptyFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope: no-op task",
+              affectedModules: ["src"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["src/__tests__/noop.test.ts"],
+            }),
+            usage: { inputTokens: 3, outputTokens: 4 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({ rationale: "No code changes in dry-run.", chunks: [] }),
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "review current repository changes",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "echo ok",
+      mockFixturePath: emptyFixturePath,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeNull();
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+
+    const applied = JSON.parse(await fs.readFile(path.join(runDir, "applied-files.json"), "utf-8")) as {
+      attempted: number;
+      created: string[];
+      skipped: Array<{ file: string; reason: string }>;
+      rejected: Array<{ file: string; reason: string }>;
+    };
+    expect(applied.attempted).toBe(0);
+    expect(applied.created).toEqual([]);
+    expect(applied.skipped).toEqual([]);
+    expect(applied.rejected).toEqual([]);
   });
 
   it("runs explicit bun test command and preserves artifacts on failure", async () => {
@@ -445,6 +499,384 @@ describe("runAgent — write mode safety guardrails", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+  });
+
+  it("creates a new allowed test file in write mode", async () => {
+    const createFixture = path.join(tmpDir, "write-create-fixture.json");
+    await fs.writeFile(
+      createFixture,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope: add hello test",
+              affectedModules: ["src"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["src/__tests__/hello.test.ts"],
+            }),
+            usage: { inputTokens: 10, outputTokens: 10 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Create hello test file",
+              chunks: [
+                {
+                  type: "create",
+                  file: "src/__tests__/hello.test.ts",
+                  description: "Create hello test file",
+                },
+              ],
+            }),
+            usage: { inputTokens: 20, outputTokens: 20 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for hello file",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "echo ok",
+      mockFixturePath: createFixture,
+    });
+
+    const createdPath = path.join(tmpDir, "src", "__tests__", "hello.test.ts");
+    const created = await fs.readFile(createdPath, "utf-8");
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+
+    expect(result.success).toBe(true);
+    expect(created).toContain("Task: Create hello test file");
+    expect(result.state.writeResult?.created).toEqual(["src/__tests__/hello.test.ts"]);
+    expect(result.state.writeResult?.skipped).toEqual([]);
+    expect(result.state.writeResult?.rejected).toEqual([]);
+
+    await expectRequiredArtifacts(runDir);
+    const applied = JSON.parse(await fs.readFile(path.join(runDir, "applied-files.json"), "utf-8")) as {
+      created: string[];
+      skipped: Array<{ file: string; reason: string }>;
+      rejected: Array<{ file: string; reason: string }>;
+    };
+    expect(applied.created).toEqual(["src/__tests__/hello.test.ts"]);
+    expect(applied.skipped).toEqual([]);
+    expect(applied.rejected).toEqual([]);
+  });
+
+  it("fails write mode with empty chunk list and preserves artifacts", async () => {
+    const emptyFixturePath = path.join(tmpDir, "write-empty-chunks.json");
+    await fs.writeFile(
+      emptyFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope: no-op write plan",
+              affectedModules: ["src"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["src/__tests__/noop.test.ts"],
+            }),
+            usage: { inputTokens: 6, outputTokens: 6 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({ rationale: "No code chunks in write mode.", chunks: [] }),
+            usage: { inputTokens: 3, outputTokens: 2 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "update repository docs",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "echo ok",
+      mockFixturePath: emptyFixturePath,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No safe create chunks available in write mode.");
+    expect(result.state.writeResult?.attempted).toBe(0);
+    expect(result.state.writeResult?.created).toEqual([]);
+    expect(result.state.writeResult?.skipped).toEqual([]);
+    expect(result.state.writeResult?.rejected).toEqual([]);
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
+      success: boolean;
+      error: string | null;
+    };
+    expect(runArtifact.success).toBe(false);
+    expect(runArtifact.error).toContain("No safe create chunks available in write mode.");
+
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("**Overall:** Not run");
+    expect(report).toContain("Not run");
+    expect(report).toContain("Write mode failed before validation because no safe create chunks were available.");
+    expect(report).not.toContain("Validation failed — review errors before merging.");
+  });
+
+  it("fails write mode when all patch chunks are unsafe", async () => {
+    const unsafeFixture = path.join(tmpDir, "write-unsafe-chunks.json");
+    const unsafeTargetPath = path.join(tmpDir, "src", "__tests__", "allowed-marker.test.ts");
+    await fs.mkdir(path.dirname(unsafeTargetPath), { recursive: true });
+    await fs.writeFile(unsafeTargetPath, "export const allowed = true;", "utf-8");
+    await fs.writeFile(
+      unsafeFixture,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope: adjust test scaffolding",
+              affectedModules: ["src"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["src/__tests__/allowed-marker.test.ts"],
+            }),
+            usage: { inputTokens: 6, outputTokens: 6 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Unsafe patch plan",
+              chunks: [
+                {
+                  type: "modify",
+                  file: "src/__tests__/allowed-marker.test.ts",
+                  description: "Attempt unsafe modify chunk",
+                },
+              ],
+            }),
+            usage: { inputTokens: 6, outputTokens: 6 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for source files",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "echo ok",
+      mockFixturePath: unsafeFixture,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No safe create chunks available in write mode.");
+    expect(result.state.writeResult?.attempted).toBe(1);
+    expect(result.state.writeResult?.created).toEqual([]);
+    expect(result.state.writeResult?.rejected).toEqual([
+      {
+        file: "src/__tests__/allowed-marker.test.ts",
+        reason: "chunk type modify is not supported in write mode v0; only create chunks are applied",
+      },
+    ]);
+    expect(result.state.writeResult?.skipped).toEqual([]);
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("❌ FAILED");
+    expect(report).toContain("No safe create chunks available in write mode.");
+    expect(report).toContain("**Attempted chunks:** 1");
+    expect(report).toContain("**Created:** 0");
+    expect(report).toContain("**Rejected:** 1");
+    expect(report).toContain("**Overall:** Not run");
+    expect(report).toContain("Write mode failed before validation because no safe create chunks were available.");
+    expect(report).not.toContain("Validation failed — review errors before merging.");
+  });
+
+  it("skips existing files and fails write mode when no new files are created", async () => {
+    const existingPath = path.join(tmpDir, "src", "__tests__", "existing.test.ts");
+    await fs.mkdir(path.dirname(existingPath), { recursive: true });
+    await fs.writeFile(existingPath, "export const existing = true;", "utf-8");
+
+    const overwriteFixture = path.join(tmpDir, "write-overwrite-fixture.json");
+    await fs.writeFile(
+      overwriteFixture,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope: existing test file",
+              affectedModules: ["src"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["src/__tests__/existing.test.ts"],
+            }),
+            usage: { inputTokens: 10, outputTokens: 10 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Create existing test file",
+              chunks: [
+                {
+                  type: "create",
+                  file: "src/__tests__/existing.test.ts",
+                  description: "Create existing test file",
+                },
+              ],
+            }),
+            usage: { inputTokens: 20, outputTokens: 20 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for hello file",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "echo ok",
+      mockFixturePath: overwriteFixture,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No safe create chunks available in write mode.");
+    const marker = await fs.readFile(existingPath, "utf-8");
+    expect(marker).toBe("export const existing = true;");
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+  });
+
+  it("rejects scope proposals that are disallowed for write mode", async () => {
+    const invalidFixture = path.join(tmpDir, "write-invalid-fixture.json");
+    await fs.writeFile(
+      invalidFixture,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope: add source-only change",
+              affectedModules: ["src"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["src/main.ts"],
+            }),
+            usage: { inputTokens: 8, outputTokens: 8 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Disallowed create",
+              chunks: [
+                {
+                  type: "create",
+                  file: "src/main.ts",
+                  description: "Create source file",
+                },
+              ],
+            }),
+            usage: { inputTokens: 8, outputTokens: 8 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const result = await runAgent({
+      query: "add tests for source files",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "echo ok",
+      mockFixturePath: invalidFixture,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("category=ungrounded_provider_output");
+    expect(result.error).toContain("purpose=scope_analysis");
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("Rejected/un-grounded scope proposals");
+  });
+
+  it("requires explicit test command in write mode", async () => {
+    const noTestCommandResult = runAgent({
+      query: "add tests for shared helpers",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      mockFixturePath: FIXTURE_PATH,
+    });
+    await expect(noTestCommandResult).rejects.toThrow(/explicit test command/i);
+  });
+
+  it("preserves artifacts and surfaces failure when validation fails after write mode file creation", async () => {
+    const failingFixture = path.join(tmpDir, "write-validation-fail.json");
+    await fs.writeFile(
+      failingFixture,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Scope: add write test",
+              affectedModules: ["src"],
+              proposedFilesToModify: [],
+              proposedFilesToCreate: ["src/__tests__/validation-fail.test.ts"],
+            }),
+            usage: { inputTokens: 10, outputTokens: 10 },
+          },
+        },
+        {
+          matchLastMessage: "Patch Context Pack",
+          response: {
+            content: JSON.stringify({
+              rationale: "Write one test file",
+              chunks: [
+                {
+                  type: "create",
+                  file: "src/__tests__/validation-fail.test.ts",
+                  description: "Create a temporary test file",
+                },
+              ],
+            }),
+            usage: { inputTokens: 20, outputTokens: 20 },
+          },
+        },
+      ]),
+      "utf-8"
+    );
+
+    const createdPath = path.join(tmpDir, "src", "__tests__", "validation-fail.test.ts");
+
+    const result = await runAgent({
+      query: "add tests",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      testCommand: "bun -e \"process.exit(3)\"",
+      mockFixturePath: failingFixture,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Validation command failed.");
+
+    const created = await fs.readFile(createdPath, "utf-8");
+    expect(created).toContain("Task: Create a temporary test file");
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("Validation Result");
+    expect(report).toContain("❌ FAILED");
   });
 });
 
@@ -1153,6 +1585,7 @@ describe("runAgent — error handling", () => {
       query: "add tests for shared helpers",
       workspaceDir: tmpDir,
       dryRun: false,
+      testCommand: "echo ok",
       mockFixturePath: groundingFixturePath,
     });
 

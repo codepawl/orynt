@@ -19,7 +19,7 @@ Openpawl currently targets **v0.1.0-alpha.3**.
 
 - [0.1.0-alpha.1](CHANGELOG.md): Bun monorepo foundation, deterministic mock provider, local and CI dry-runs, metadata-only patch plans, and PR report workflow without production write mode.
 - [0.1.0-alpha.2](CHANGELOG.md): OpenAI-compatible provider experiments, provider diagnostics, structured-output retrying, safe trace metadata, and GitHub comment workflow hardening.
-- [0.1.0-alpha.3](CHANGELOG.md): `json_schema` strict output, context compaction with budget controls, grounding and rejection of invented paths, and dry-run scope fallback for ungrounded proposals.
+- [0.1.0-alpha.3](CHANGELOG.md): `json_schema` strict output, context compaction with budget controls, grounding and rejection of invented paths, dry-run scope fallback for ungrounded proposals, and safe write-mode v0 foundation.
 
 ### Maturity targets
 
@@ -40,7 +40,7 @@ Openpawl currently targets **v0.1.0-alpha.3**.
 - `npm pack` dry-run for core/cli packages.
 - Install CLI in a temporary repo and run `codepawl doctor`.
 - Run `codepawl run --repo . --task "review current repository changes" --dry-run`.
-- Verify `.codepawl/runs/<run-id>/` artifacts include report, trace, run JSON, patch plan, and selected files.
+- Verify `.codepawl/runs/<run-id>/` artifacts include report, trace, run JSON, patch plan, selected files, and `applied-files.json`.
 - Verify traces/reports do not contain secrets or full prompts.
 - Verify GitHub Action docs and workflow comments still align with repository policy.
 - Verify package metadata and licenses are explicit and consistent (`package.json`, `license`, `README`, bin exports).
@@ -72,6 +72,7 @@ Artifacts will appear in `.codepawl/runs/<run-id>/`:
 - `run.json`: structured run result
 - `patch-plan.json`: the generated patch plan
 - `selected-files.json`: files selected for the task
+- `applied-files.json`: write-mode summary of attempted/skipped/rejected chunks (empty in dry-run)
 
 Dry-runs use placeholder validation when `--test-cmd` is omitted, so smoke checks do not run unrelated repo-wide tests. Pass `--test-cmd "<command>"` to run real validation; a non-zero command still fails the run and preserves artifacts.
 
@@ -81,10 +82,11 @@ Dry-runs use placeholder validation when `--test-cmd` is omitted, so smoke check
 bun run dev:cli -- run \
   --repo . \
   --task "fix failing unit test" \
-  --write
+  --write \
+  --test-cmd "bun test"
 ```
 
-> ⚠️ Write mode validates all target paths before applying any changes. Disallowed paths (lockfiles, env files, .git, migrations, build artifacts) will cause the run to abort with a `SafetyViolationError`.
+> ⚠️ Write mode applies only allowed test-file creation chunks. Disallowed paths (lockfiles, env files, .git, migrations, build artifacts), non-test targets, and existing files are rejected.
 
 ### 4. Inspect the trace
 
