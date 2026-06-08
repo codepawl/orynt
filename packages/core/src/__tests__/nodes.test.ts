@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
-import { createIntakeNode, createRepoScanNode, activeLedgers } from "../agent/nodes";
+import {
+  createFileSelectionNode,
+  createIntakeNode,
+  createRepoScanNode,
+  activeLedgers,
+} from "../agent/nodes";
 import { TraceLedger } from "../ledger/trace";
 import type { AgentState, AgentContext } from "../state/schema";
 
@@ -103,6 +108,19 @@ describe("createRepoScanNode", () => {
     expect(paths.every((p) => !p.startsWith(".git"))).toBe(true);
   });
 
+  it("excludes ignored build artifact directories from scan", async () => {
+    await fs.mkdir(path.join(tmpDir, "dist"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, "dist", "bundle.js"), "compiled", "utf-8");
+    await fs.writeFile(path.join(tmpDir, "index.ts"), "export {};", "utf-8");
+
+    const node = createRepoScanNode();
+    const result = await node(makeState());
+
+    const paths = (result.repoScanResult?.files ?? []).map((f) => f.path);
+    expect(paths).toContain("index.ts");
+    expect(paths.every((p) => !p.startsWith("dist"))).toBe(true);
+  });
+
   it("skips secret files during scan", async () => {
     await fs.writeFile(path.join(tmpDir, ".env"), "SECRET=123", "utf-8");
     await fs.writeFile(path.join(tmpDir, "index.ts"), "export {};", "utf-8");
@@ -139,5 +157,75 @@ describe("createRepoScanNode", () => {
 
     const npmConfigs = result.repoScanResult?.packageConfigs.filter((c) => c.type === "npm") ?? [];
     expect(npmConfigs.length).toBeGreaterThan(0);
+  });
+});
+
+describe("createFileSelectionNode", () => {
+  it("skips secret-like files during file selection", async () => {
+    await fs.writeFile(path.join(tmpDir, ".env"), "SECRET=123", "utf-8");
+    await fs.writeFile(path.join(tmpDir, "index.ts"), "export {};", "utf-8");
+
+    const node = createFileSelectionNode();
+    const result = await node(
+      makeState({
+        scopeAnalysisResult: {
+          rationale: "test",
+          affectedModules: ["."],
+          proposedFilesToModify: [".env", "index.ts"],
+          proposedFilesToCreate: [],
+        },
+      })
+    );
+
+    const selectedPaths = result.fileSelectionResult?.selectedFiles.map((f) => f.path) ?? [];
+    expect(selectedPaths).not.toContain(".env");
+    expect(selectedPaths).toContain("index.ts");
+  });
+
+  it("skips binary files during file selection", async () => {
+    await fs.writeFile(path.join(tmpDir, "image.png"), new Uint8Array([0, 1, 2, 3]));
+    await fs.writeFile(path.join(tmpDir, "index.ts"), "export {};", "utf-8");
+
+    const node = createFileSelectionNode();
+    const result = await node(
+      makeState({
+        scopeAnalysisResult: {
+          rationale: "test",
+          affectedModules: ["."],
+          proposedFilesToModify: ["image.png", "index.ts"],
+          proposedFilesToCreate: [],
+        },
+      })
+    );
+
+    const selectedPaths = result.fileSelectionResult?.selectedFiles.map((f) => f.path) ?? [];
+    expect(selectedPaths).not.toContain("image.png");
+    expect(selectedPaths).toContain("index.ts");
+  });
+
+  it("skips unreadable files during file selection", async () => {
+    const unreadablePath = path.join(tmpDir, "private.ts");
+    await fs.writeFile(unreadablePath, "export const secret = true;", "utf-8");
+    await fs.chmod(unreadablePath, 0o000);
+
+    const node = createFileSelectionNode();
+    const result = await node(
+      makeState({
+        scopeAnalysisResult: {
+          rationale: "test",
+          affectedModules: ["."],
+          proposedFilesToModify: ["private.ts"],
+          proposedFilesToCreate: [],
+        },
+      })
+    );
+    await fs.chmod(unreadablePath, 0o600);
+
+    const selectedPaths = result.fileSelectionResult?.selectedFiles.map((f) => f.path) ?? [];
+    expect(selectedPaths).not.toContain("private.ts");
+
+    const ledger = activeLedgers.get("test-session");
+    const eventNames = ledger?.getSummary().events.map((event) => event.name) ?? [];
+    expect(eventNames).toContain("skipped_unreadable_file:private.ts");
   });
 });

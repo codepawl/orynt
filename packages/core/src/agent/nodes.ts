@@ -27,6 +27,13 @@ const execAsync = promisify(exec);
 
 export const activeLedgers = new Map<string, TraceLedger>();
 
+const BINARY_FILE_EXTENSION_RE =
+  /\.(png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot|otf|mp4|webm|mp3|pdf|zip|tar|gz|rar|bin|exe|dll|so|dylib)$/i;
+
+function isBinaryFilePath(filePath: string): boolean {
+  return BINARY_FILE_EXTENSION_RE.test(filePath);
+}
+
 export function createIntakeNode(): AgentNode {
   return async (state) => {
     const messages = [...state.messages];
@@ -272,10 +279,27 @@ export function createFileSelectionNode(): AgentNode {
         continue;
       }
 
+      if (isBinaryFilePath(relPath)) {
+        if (ledger) {
+          ledger.recordEvent("system", `skipped_binary_file:${relPath}`, "warning", {
+            reason: "binary file excluded from file selection",
+          });
+        }
+        continue;
+      }
+
       const fullPath = path.join(state.context.workspaceDir, relPath);
       let content = "";
       try {
         const stat = await fs.stat(fullPath);
+        if (!stat.isFile()) {
+          if (ledger) {
+            ledger.recordEvent("system", `skipped_non_file:${relPath}`, "warning", {
+              reason: "path is not a regular file",
+            });
+          }
+          continue;
+        }
         if (totalBytesRead + stat.size > SCAN_MAX_BYTES) {
           if (ledger) {
             ledger.recordEvent("system", `skipped_file_byte_cap:${relPath}`, "warning", {
@@ -288,7 +312,21 @@ export function createFileSelectionNode(): AgentNode {
         }
         content = await fs.readFile(fullPath, "utf-8");
         totalBytesRead += stat.size;
-      } catch { /* file may not exist yet (new file creation) */ }
+      } catch (err: unknown) {
+        const errorCode = typeof err === "object" && err !== null && "code" in err
+          ? String((err as { code?: unknown }).code)
+          : null;
+        if (errorCode !== "ENOENT") {
+          if (ledger) {
+            ledger.recordEvent("system", `skipped_unreadable_file:${relPath}`, "warning", {
+              reason: "file could not be read",
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          continue;
+        }
+        // File may not exist yet because the patch plan will create it.
+      }
 
       selectedFiles.push({
         path: relPath,

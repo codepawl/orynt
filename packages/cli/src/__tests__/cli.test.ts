@@ -30,7 +30,11 @@ afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
-function runCliFromPackageDir(args: string[], invocationCwd?: string): Promise<{
+function runCliFromPackageDir(
+  args: string[],
+  invocationCwd?: string,
+  envOverrides: Record<string, string | undefined> = {}
+): Promise<{
   stdout: string;
   stderr: string;
   exitCode: number | null;
@@ -41,6 +45,13 @@ function runCliFromPackageDir(args: string[], invocationCwd?: string): Promise<{
       env["INIT_CWD"] = invocationCwd;
     } else {
       delete env["INIT_CWD"];
+    }
+    for (const [key, value] of Object.entries(envOverrides)) {
+      if (value === undefined) {
+        delete env[key];
+      } else {
+        env[key] = value;
+      }
     }
     const child = spawn("bun", ["src/bin.ts", ...args], {
       cwd: CLI_DIR,
@@ -56,6 +67,12 @@ function runCliFromPackageDir(args: string[], invocationCwd?: string): Promise<{
     child.on("error", reject);
     child.on("close", (exitCode) => resolve({ stdout, stderr, exitCode }));
   });
+}
+
+async function writeReportFile(): Promise<string> {
+  const reportPath = path.join(tmpDir, "report.md");
+  await fs.writeFile(reportPath, "# Test Report\n\nRun completed.", "utf-8");
+  return reportPath;
 }
 
 /**
@@ -158,6 +175,96 @@ describe("CLI: codepawl run --dry-run (via runAgent)", () => {
       expect(stat, `${file} should exist under explicit outDir`).not.toBeNull();
     }
   });
+
+  it("fails fast when --repo is missing a value", async () => {
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      "--task",
+      "add tests",
+      "--dry-run",
+    ]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("--repo requires a value");
+    expect(result.stdout).not.toContain("Starting Openpawl run");
+  });
+
+  it("fails fast when repo path does not exist", async () => {
+    const missingRepo = path.join(tmpDir, "missing-repo");
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      missingRepo,
+      "--task",
+      "add tests",
+      "--dry-run",
+    ]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Repository path does not exist");
+    expect(result.stdout).not.toContain("Starting Openpawl run");
+  });
+
+  it("fails fast when repo path is not a directory", async () => {
+    const repoFile = path.join(tmpDir, "repo-file");
+    await fs.writeFile(repoFile, "not a directory", "utf-8");
+
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      repoFile,
+      "--task",
+      "add tests",
+      "--dry-run",
+    ]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Repository path is not a directory");
+    expect(result.stdout).not.toContain("Starting Openpawl run");
+  });
+
+  it("fails fast when task is empty", async () => {
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      tmpDir,
+      "--task",
+      "   ",
+      "--dry-run",
+    ]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("--task is required and must not be empty");
+    expect(result.stdout).not.toContain("Starting Openpawl run");
+  });
+
+  it("exits non-zero and keeps complete artifacts when validation fails", async () => {
+    const result = await runCliFromPackageDir([
+      "run",
+      "--repo",
+      tmpDir,
+      "--task",
+      "add tests for shared helpers",
+      "--dry-run",
+      "--mock-fixture",
+      FIXTURE_PATH,
+      "--test-cmd",
+      "bun -e \"process.exit(4)\"",
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("Status:  ❌ FAILED");
+    expect(result.stdout).toContain("Error:   Validation command failed.");
+
+    const runId = result.stdout.match(/Run ID:\s+(run_[^\s]+)/)?.[1];
+    expect(runId, result.stdout).toBeTruthy();
+    const runDir = path.join(tmpDir, ".codepawl", "runs", runId as string);
+    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
+      const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
+      expect(stat, `${file} should exist after validation failure`).not.toBeNull();
+    }
+  });
 });
 
 describe("CLI: codepawl run --write (via runAgent)", () => {
@@ -238,6 +345,15 @@ describe("CLI: codepawl trace (utility logic)", () => {
     expect(Array.isArray(trace.events)).toBe(true);
     expect(Array.isArray(trace.steps)).toBe(true);
   });
+
+  it("fails clearly when trace input file is missing", async () => {
+    const missingTrace = path.join(tmpDir, "missing-trace.json");
+    const result = await runCliFromPackageDir(["trace", "--input", missingTrace]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Cannot read trace file");
+    expect(result.stderr).toContain(missingTrace);
+  });
 });
 
 describe("CLI: codepawl doctor (utility checks)", () => {
@@ -245,6 +361,15 @@ describe("CLI: codepawl doctor (utility checks)", () => {
     // Doctor command reads this env — just verifying it doesn't crash
     const provider = process.env["CODEPAWL_LLM_PROVIDER"];
     expect(typeof provider === "string" || provider === undefined).toBe(true);
+  });
+
+  it("passes with a warning when optional GitHub token is missing", async () => {
+    const result = await runCliFromPackageDir(["doctor"], undefined, { GITHUB_TOKEN: undefined });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("GitHub Token");
+    expect(result.stdout).toContain("not set");
+    expect(result.stdout).toContain("All checks passed");
   });
 });
 
@@ -267,5 +392,31 @@ describe("CLI: codepawl github-comment (mocked)", () => {
     expect(report).toContain(result.runId);
     // Should not be empty
     expect(report.length).toBeGreaterThan(200);
+  });
+
+  it("prints the report and exits successfully without a token", async () => {
+    const reportPath = await writeReportFile();
+    const result = await runCliFromPackageDir(
+      ["github-comment", "--report", reportPath, "--repo", "codepawl/codepawl", "--pr", "1"],
+      undefined,
+      { GITHUB_TOKEN: undefined }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("No GitHub token, repo, or PR number provided");
+    expect(result.stdout).toContain("# Test Report");
+  });
+
+  it("prints the report and exits successfully without PR context", async () => {
+    const reportPath = await writeReportFile();
+    const result = await runCliFromPackageDir(
+      ["github-comment", "--report", reportPath, "--token", "fake-token"],
+      undefined,
+      { GITHUB_TOKEN: undefined }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("No GitHub token, repo, or PR number provided");
+    expect(result.stdout).toContain("# Test Report");
   });
 });

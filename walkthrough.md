@@ -20,6 +20,19 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 
 **Scope:** Only `packages/core`, `packages/cli`, and tests/docs were changed. `apps/web` and `apps/api` were not modified.
 
+### 2026-06-08 Failure Behavior Hardening
+
+**Goal:** Keep Openpawl MVP behavior predictable across startup errors, runtime failures, unsafe write attempts, and CLI utility edge cases without adding product features.
+
+**Fixes:**
+- CLI startup validation now rejects missing `--repo` values, nonexistent repos, non-directory repo paths, and empty/whitespace-only tasks before the run starts.
+- Core startup validation now rejects workspace paths that exist but are not directories.
+- Validation command failures now return `success: false`, set `error: "Validation command failed."`, and cause the CLI to exit non-zero while preserving exported artifacts.
+- File selection now skips secret-like, binary-extension, non-file, and unreadable files with trace warnings instead of silently selecting unreadable content as empty text.
+- Runtime failures after workflow start continue to export `trace.json`, `report.md`, `run.json`, `patch-plan.json`, and `selected-files.json` whenever the artifact directory can be written.
+
+**Scope:** Only `packages/core`, `packages/cli`, tests, and this walkthrough were changed. `apps/web` and `apps/api` were not modified.
+
 ---
 
 ## What Was Built
@@ -33,7 +46,7 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 **Modified files:**
 - [`packages/core/src/agent/nodes.ts`](packages/core/src/agent/nodes.ts) — Full rewrite with safety integration:
   - `createRepoScanNode()` now enforces file/byte caps and skips secret files
-  - `createFileSelectionNode()` skips secret files and byte-capped files
+  - `createFileSelectionNode()` skips secret files, binary files, unreadable files, non-files, and byte-capped files
   - `createOptionalPatchApplyNode()` calls `assertWriteSafe()` before any write; throws `SafetyViolationError` on violation (aborts run)
   - `createTraceExportNode()` now writes `patch-plan.json` and `selected-files.json`
   - `createReportExportNode()` produces full GitHub-ready Markdown with all required sections
@@ -43,8 +56,8 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 **Test files:**
 - [`packages/core/src/__tests__/safety.test.ts`](packages/core/src/__tests__/safety.test.ts) — 15 tests
 - [`packages/core/src/__tests__/trace.test.ts`](packages/core/src/__tests__/trace.test.ts) — 7 tests
-- [`packages/core/src/__tests__/nodes.test.ts`](packages/core/src/__tests__/nodes.test.ts) — 7 tests
-- [`packages/core/src/__tests__/runner.test.ts`](packages/core/src/__tests__/runner.test.ts) — 8 tests
+- [`packages/core/src/__tests__/nodes.test.ts`](packages/core/src/__tests__/nodes.test.ts) — 11 tests
+- [`packages/core/src/__tests__/runner.test.ts`](packages/core/src/__tests__/runner.test.ts) — 11 tests
 - [`packages/core/src/__tests__/fixtures/mock-llm.json`](packages/core/src/__tests__/fixtures/mock-llm.json) — Mock LLM fixture
 
 ---
@@ -58,9 +71,10 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
   - `codepawl doctor`
   - `codepawl github-comment --report <report.md> [--token] [--repo] [--pr]`
   - Normalizes `--repo`, `--out-dir`, and `--mock-fixture` before calling `@codepawl/core`
+  - Fails fast with clear errors for invalid startup inputs
 
 **Test files:**
-- [`packages/cli/src/__tests__/cli.test.ts`](packages/cli/src/__tests__/cli.test.ts) — 6 tests
+- [`packages/cli/src/__tests__/cli.test.ts`](packages/cli/src/__tests__/cli.test.ts) — 17 tests
 
 ---
 
@@ -110,6 +124,30 @@ $ bun --filter @codepawl/core test && bun --filter @codepawl/cli test
 ```
 ✅ **PASS**
 
+### Direct Vitest Counts
+```
+packages/core:
+  Test Files  4 passed (4)
+  Tests       44 passed (44)
+
+packages/cli:
+  Test Files  1 passed (1)
+  Tests       17 passed (17)
+```
+✅ **PASS** — 61/61 tests
+
+### Commands Run
+```bash
+bun run typecheck:core
+bun run typecheck:cli
+bun run test:core
+bun run test:cli
+bun run typecheck
+bun run test
+bunx vitest run --reporter=dot  # packages/core
+bunx vitest run --reporter=dot  # packages/cli
+```
+
 ### Artifact Path Regression Verification
 
 Command run from repository root:
@@ -145,6 +183,25 @@ find: 'packages/cli/.codepawl/runs/run_1780889202298_qevayj': No such file or di
 ```
 
 ✅ **PASS** — The run artifacts were written to `.codepawl/runs/<run-id>/` at the target repo root, and the reported paths match the written files.
+
+### Failure Behavior Matrix
+
+| Case | Expected behavior | Artifact behavior | Test coverage |
+|------|-------------------|-------------------|---------------|
+| Missing `--repo` value | CLI fails fast with `--repo requires a value` and non-zero exit | No run starts | CLI integration |
+| Repo path missing | CLI fails fast with `Repository path does not exist` and non-zero exit | No run starts | CLI integration, core runner |
+| Repo path is a file | CLI/core reject it as not a directory | No run starts | CLI integration, core runner |
+| Empty task | CLI fails fast with a clear task error and non-zero exit | No run starts | CLI integration |
+| Secret-like files | Scan/selection skip secret-looking files | Run continues | Core node tests |
+| Ignored files/directories | Known ignored directories such as `.git`, `node_modules`, and `dist` are excluded from scan | Run continues | Core node tests |
+| Binary files | File selection skips binary-extension files | Run continues | Core node tests |
+| Unreadable files | File selection skips unreadable files and records a warning | Run continues | Core node tests |
+| Validation command failure | Run returns failed status and CLI exits non-zero | All five artifacts remain written | Core runner, CLI integration |
+| Write safety violation | Write mode aborts before touching files | All five artifacts are written best-effort | Core runner |
+| `github-comment` without token | Prints report to stdout and exits zero | No artifact changes | CLI integration |
+| `github-comment` without PR context | Prints report to stdout and exits zero | No artifact changes | CLI integration |
+| `trace` missing input file | CLI fails with `Cannot read trace file` and non-zero exit | No artifact changes | CLI integration |
+| `doctor` without GitHub token | Warns that token is optional/missing and exits zero if local tools are available | No artifact changes | CLI integration |
 
 ### CLI Smoke Test
 
@@ -209,8 +266,10 @@ In `--write` mode:
 2. **No `.gitignore` parsing** — The scan uses a hardcoded exclusion list. A proper `.gitignore` parser would improve accuracy.
 3. **No retry loop** — The state machine runs once (no re-plan loop if validation fails).
 4. **No interactive write confirmation** — Write mode applies all approved patches atomically; there is no interactive per-chunk confirmation in this MVP.
-5. **Validation is fire-and-forget** — The run exports artifacts even if tests fail, but doesn't attempt to auto-fix the failure.
-6. **GitHub comment requires API token** — Without a token, the `github-comment` command prints the report to stdout.
+5. **Validation is fire-and-forget** — The run exits failed and exports artifacts when tests fail, but doesn't attempt to auto-fix the failure.
+6. **Binary detection is conservative** — File selection skips known binary extensions; it does not inspect every file's bytes for binary content.
+7. **Ignore handling is hardcoded** — Known generated and dependency directories are skipped, but repo-specific `.gitignore` rules are not parsed yet.
+8. **GitHub posting requires API token and PR context** — Without them, `github-comment` prints the report to stdout instead of posting.
 
 ---
 

@@ -85,21 +85,48 @@ function resolveFromBase(input: string, baseDir: string): string {
   return path.resolve(baseDir, input);
 }
 
+function readStringFlag(
+  flags: Record<string, string | boolean>,
+  name: string
+): string | undefined {
+  const value = flags[name];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    die(`--${name} requires a value.`);
+  }
+  return value;
+}
+
+async function assertDirectory(dirPath: string, label: string): Promise<void> {
+  let stat;
+  try {
+    stat = await fs.stat(dirPath);
+  } catch {
+    die(`${label} does not exist: ${dirPath}`);
+  }
+  if (!stat.isDirectory()) {
+    die(`${label} is not a directory: ${dirPath}`);
+  }
+}
+
 // ─── run command ───────────────────────────────────────────────────────────
 
 async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
-  const repo = (flags["repo"] as string | undefined) ?? ".";
+  const repo = readStringFlag(flags, "repo") ?? ".";
   const resolutionBase = await getResolutionBase();
   const resolvedRepo = resolveFromBase(repo, resolutionBase);
-  const outDir = flags["out-dir"] as string | undefined;
+  const outDir = readStringFlag(flags, "out-dir");
   const resolvedOutDir = outDir ? resolveFromBase(outDir, resolutionBase) : undefined;
-  const task = flags["task"] as string | undefined;
+  const task = readStringFlag(flags, "task");
   const dryRun = flags["dry-run"] === true || flags["write"] !== true;
-  const mockFixture = flags["mock-fixture"] as string | undefined;
+  const mockFixture = readStringFlag(flags, "mock-fixture");
   const resolvedMockFixture = mockFixture ? resolveFromBase(mockFixture, resolutionBase) : undefined;
-  const testCmd = flags["test-cmd"] as string | undefined;
+  const testCmd = readStringFlag(flags, "test-cmd");
 
-  if (!task) die("--task is required. e.g. --task \"add tests for auth helpers\"");
+  if (!task || task.trim().length === 0) {
+    die("--task is required and must not be empty. e.g. --task \"add tests for auth helpers\"");
+  }
+  await assertDirectory(resolvedRepo, "Repository path");
 
   console.log(BANNER);
   console.log(`🚀 Starting Openpawl run`);
@@ -147,8 +174,8 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
 // ─── trace command ─────────────────────────────────────────────────────────
 
 async function cmdTrace(flags: Record<string, string | boolean>): Promise<void> {
-  const input = flags["input"] as string | undefined;
-  const format = (flags["format"] as string | undefined) ?? "markdown";
+  const input = readStringFlag(flags, "input");
+  const format = readStringFlag(flags, "format") ?? "markdown";
 
   if (!input) die("--input is required. e.g. --input .codepawl/runs/<run-id>/trace.json");
 
@@ -269,10 +296,10 @@ async function cmdDoctor(): Promise<void> {
 // ─── github-comment command ─────────────────────────────────────────────────
 
 async function cmdGithubComment(flags: Record<string, string | boolean>): Promise<void> {
-  const reportPath = flags["report"] as string | undefined;
-  const token = (flags["token"] as string | undefined) ?? process.env["GITHUB_TOKEN"];
-  const repoSlug = flags["repo"] as string | undefined;
-  const prNumber = flags["pr"] as string | undefined;
+  const reportPath = readStringFlag(flags, "report");
+  const token = readStringFlag(flags, "token") ?? process.env["GITHUB_TOKEN"];
+  const repoSlug = readStringFlag(flags, "repo");
+  const prNumber = readStringFlag(flags, "pr");
 
   if (!reportPath) die("--report is required. e.g. --report .codepawl/runs/<run-id>/report.md");
 

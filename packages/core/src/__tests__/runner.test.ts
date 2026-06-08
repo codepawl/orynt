@@ -14,6 +14,21 @@ const FIXTURE_PATH = path.join(
 
 let tmpDir: string;
 
+const REQUIRED_ARTIFACTS = [
+  "trace.json",
+  "report.md",
+  "run.json",
+  "patch-plan.json",
+  "selected-files.json",
+];
+
+async function expectRequiredArtifacts(runDir: string): Promise<void> {
+  for (const file of REQUIRED_ARTIFACTS) {
+    const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
+    expect(stat, `Expected artifact ${file} to exist`).not.toBeNull();
+  }
+}
+
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openpawl-test-"));
 });
@@ -38,18 +53,7 @@ describe("runAgent — dry-run mode", () => {
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
 
     // All 5 required artifact files must exist
-    const requiredFiles = [
-      "trace.json",
-      "report.md",
-      "run.json",
-      "patch-plan.json",
-      "selected-files.json",
-    ];
-    for (const file of requiredFiles) {
-      const filePath = path.join(runDir, file);
-      const stat = await fs.stat(filePath).catch(() => null);
-      expect(stat, `Expected artifact ${file} to exist`).not.toBeNull();
-    }
+    await expectRequiredArtifacts(runDir);
   });
 
   it("writes artifacts to an explicit outDir when provided", async () => {
@@ -66,10 +70,7 @@ describe("runAgent — dry-run mode", () => {
     expect(result.reportPath).toBe(path.join(outDir, "report.md"));
     expect(result.tracePath).toBe(path.join(outDir, "trace.json"));
 
-    for (const file of ["trace.json", "report.md", "run.json", "patch-plan.json", "selected-files.json"]) {
-      const stat = await fs.stat(path.join(outDir, file)).catch(() => null);
-      expect(stat, `Expected artifact ${file} to exist in explicit outDir`).not.toBeNull();
-    }
+    await expectRequiredArtifacts(outDir);
 
     const defaultRunDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     const defaultDirStat = await fs.stat(defaultRunDir).catch(() => null);
@@ -107,6 +108,24 @@ describe("runAgent — dry-run mode", () => {
 
     expect(result.traceSummary.traceId).toBe(result.runId);
     expect(result.traceSummary.events.length).toBeGreaterThan(0);
+  });
+
+  it("returns failure and complete artifacts when validation command fails", async () => {
+    const result = await runAgent({
+      query: "add tests for auth helpers",
+      workspaceDir: tmpDir,
+      dryRun: true,
+      testCommand: "bun -e \"process.exit(7)\"",
+      mockFixturePath: FIXTURE_PATH,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Validation command failed.");
+    expect(result.state.validationResult?.success).toBe(false);
+    expect(result.state.validationResult?.commandsRun[0]?.exitCode).toBe(7);
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
   });
 
   it("report.md contains task, run ID, and mode information", async () => {
@@ -202,6 +221,9 @@ describe("runAgent — write mode safety guardrails", () => {
     // bun.lock must be unchanged
     const lockContent = await fs.readFile(path.join(tmpDir, "bun.lock"), "utf-8");
     expect(lockContent).toBe("fake lock content");
+
+    const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+    await expectRequiredArtifacts(runDir);
   });
 });
 
@@ -215,6 +237,20 @@ describe("runAgent — error handling", () => {
         mockFixturePath: FIXTURE_PATH,
       })
     ).rejects.toThrow("does not exist");
+  });
+
+  it("throws an error when workspace path is not a directory", async () => {
+    const filePath = path.join(tmpDir, "not-a-directory");
+    await fs.writeFile(filePath, "not a repo", "utf-8");
+
+    await expect(
+      runAgent({
+        query: "test",
+        workspaceDir: filePath,
+        dryRun: true,
+        mockFixturePath: FIXTURE_PATH,
+      })
+    ).rejects.toThrow("not a directory");
   });
 
   it("exports artifacts even when a node throws", async () => {
@@ -233,11 +269,7 @@ describe("runAgent — error handling", () => {
     expect(result.success).toBe(false);
     expect(result.error).toBeTruthy();
 
-    // trace.json and report.md must still exist (best-effort export)
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
-    const traceExists = await fs.stat(path.join(runDir, "trace.json")).catch(() => null);
-    const reportExists = await fs.stat(path.join(runDir, "report.md")).catch(() => null);
-    expect(traceExists).not.toBeNull();
-    expect(reportExists).not.toBeNull();
+    await expectRequiredArtifacts(runDir);
   });
 });

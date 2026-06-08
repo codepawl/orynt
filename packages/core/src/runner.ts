@@ -56,11 +56,15 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     ? path.resolve(outDir)
     : path.join(resolvedWorkspaceDir, ".codepawl", "runs", runId);
 
-  // Validate workspace exists
+  // Validate workspace exists and is a directory before starting the workflow.
+  let workspaceStat;
   try {
-    await fs.access(resolvedWorkspaceDir);
+    workspaceStat = await fs.stat(resolvedWorkspaceDir);
   } catch {
     throw new Error(`Workspace directory does not exist: ${resolvedWorkspaceDir}`);
+  }
+  if (!workspaceStat.isDirectory()) {
+    throw new Error(`Workspace path is not a directory: ${resolvedWorkspaceDir}`);
   }
 
   // Set up trace ledger
@@ -173,6 +177,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
 
   activeLedgers.delete(runId);
   const traceSummary = ledger.getSummary();
+  const validationFailed = finalState.validationResult?.success === false;
 
   // If the run completed (finalState exists) but had an error, write best-effort artifacts
   if (runError) {
@@ -210,8 +215,8 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
 
   return {
     runId,
-    success: !runError,
-    error: runError,
+    success: !runError && !validationFailed,
+    error: runError ?? (validationFailed ? "Validation command failed." : null),
     state: finalState,
     traceSummary,
     reportPath: path.join(runDir, "report.md"),
