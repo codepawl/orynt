@@ -9,13 +9,47 @@
 - `v0.1.0-alpha.3`: `json_schema` strict mode, context compaction with budgets, grounding/rejection of provider paths, dry-run scope fallback for ungrounded proposals, and safe write-mode v0 guardrails.
 - `v0.1.0-alpha.9`: first external installability cut with repo-root config, reusable workflow template, install docs, and safer write-mode defaults.
 - `v0.1.0-alpha.10`: maintainer mention UX with exact `@openpawl` commands, dry-run-only mention triggers, direct CLI workflow invocation that bypasses the root Turbo script, and live issue/PR verification on GitHub Actions runs `27208458149`, `27208687623`, `27208690487`, and `27208692054`.
+- `v0.1.0-beta.1`: approval write mode with bot-branch PR creation and a deterministic patch quality harness.
 
 ### Maturity plan
 
-- **Alpha (current):** CLI + dry-run + trace + CI verified; real-provider runs are experimental.
-- **Beta:** safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
+- **Alpha:** CLI + dry-run + trace + CI verified; real-provider runs are experimental.
+- **Beta (current):** safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
 - **RC:** validate on multiple real repositories, publish provider compatibility matrix, and stabilize failure/retry behavior.
 - **0.1.0 stable:** safe write-mode and release packaging readiness for external users.
+
+### v0.1.0-beta.1 implementation plan
+
+**Goal:** Move Openpawl from runnable/installable to useful and safe for real repository work.
+
+**Risk-ordered tasks:**
+
+1. Add approval-gated write triggers without changing existing dry-run triggers:
+   - exact `/openpawl apply` slash command only
+   - `openpawl-approved` label for issue/PR approval
+   - no write mode from `@openpawl` mentions
+   - maintainer-only `/openpawl apply` using GitHub `author_association`
+2. Persist approved writes as new bot branches and PRs:
+   - run a fresh write-mode Openpawl execution from issue/PR context
+   - keep current create-only/test-file-only write policy
+   - push `openpawl/apply-<issue-or-pr-number>-<run-id>`
+   - open a PR back to the default branch with run and validation details
+3. Add a deterministic patch quality harness:
+   - CLI command `codepawl eval patch-quality`
+   - 20-30 fixture cases using mock LLM responses and temp repos
+   - metrics for useful report, accepted patch, validation pass, unsafe block, and irrelevant file touch
+4. Update docs and release notes:
+   - README and install docs list `/openpawl apply` and `openpawl-approved`
+   - external install docs describe the new `contents: write` permission for approval writes
+   - preserve direct `@codepawl/cli` workflow invocation
+
+**Validation commands:**
+
+- `bun install`
+- `bun run typecheck`
+- `bun run test`
+- `bun run build`
+- `git diff --check`
 
 ### Publishing guidance
 

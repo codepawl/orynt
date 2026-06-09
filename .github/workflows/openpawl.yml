@@ -34,7 +34,7 @@ jobs:
     name: Openpawl Agent Run
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       issues: write
 
@@ -78,6 +78,21 @@ jobs:
               --event-path "${GITHUB_EVENT_PATH}" \
               --workflow-repository "${OPENPAWL_REPOSITORY}"
           fi
+
+      - name: Checkout base ref for approved write
+        if: steps.trigger.outputs.approved_write == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.trigger.outputs.base_ref }}
+
+      - name: Install dependencies for approved write checkout
+        if: steps.trigger.outputs.approved_write == 'true'
+        run: bun install
+
+      - name: Typecheck approved write checkout
+        if: steps.trigger.outputs.approved_write == 'true'
+        run: bun run typecheck:core && bun run typecheck:cli
 
       - name: Run Openpawl agent
         id: openpawl
@@ -177,6 +192,52 @@ jobs:
             });
 
             console.log(`✅ Posted Openpawl report for run ${runId}`);
+
+      - name: Create approved Openpawl apply PR
+        if: |
+          always() &&
+          steps.trigger.outputs.approved_write == 'true' &&
+          steps.openpawl.outputs.exit_code == '0' &&
+          steps.openpawl.outputs.run_id != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.trigger.outputs.issue_number }}
+          SOURCE_TITLE: ${{ steps.trigger.outputs.source_title }}
+          BASE_REF: ${{ steps.trigger.outputs.base_ref }}
+          RUN_ID: ${{ steps.openpawl.outputs.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$(git status --porcelain --untracked-files=normal)" ]; then
+            echo "No approved Openpawl file changes found; skipping PR creation."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH_NAME="openpawl/apply-${ISSUE_NUMBER}-${RUN_ID}"
+          git checkout -B "$BRANCH_NAME"
+          git add -A
+          git commit -m "chore: apply openpawl changes for #${ISSUE_NUMBER}"
+          git push --force-with-lease origin "$BRANCH_NAME"
+
+          cat > /tmp/openpawl-pr-body.md <<EOF
+          Openpawl approved write run created this branch.
+
+          Source: #${ISSUE_NUMBER}
+          Run ID: ${RUN_ID}
+          Validation: passed
+          Artifact: openpawl-artifacts-${RUN_ID}
+          Workflow: ${RUN_URL}
+
+          Refs #${ISSUE_NUMBER}
+          EOF
+
+          gh pr create \
+            --base "$BASE_REF" \
+            --head "$BRANCH_NAME" \
+            --title "Openpawl apply for #${ISSUE_NUMBER}: ${SOURCE_TITLE}" \
+            --body-file /tmp/openpawl-pr-body.md
 
       - name: Fail if Openpawl run failed
         if: |

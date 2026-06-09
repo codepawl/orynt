@@ -16,6 +16,7 @@ import type { RunResult } from "@codepawl/core";
 import { renderBanner, renderCompactLogo } from "./branding";
 import { resolveOpenPawlTriggerFromEvent } from "./openpawl-trigger";
 import { loadOpenPawlConfig, resolveRunTestCommand } from "./openpawl-config";
+import { runPatchQualityEval } from "./patch-quality-eval";
 
 // Helpers
 
@@ -527,7 +528,13 @@ async function writeActionOutput(outputs: Record<string, string>): Promise<void>
   const outputPath = process.env["GITHUB_OUTPUT"];
   if (!outputPath) return;
   const payload = Object.entries(outputs)
-    .map(([name, value]) => `${name}=${value}`)
+    .map(([name, value]) => {
+      if (!value.includes("\n")) {
+        return `${name}=${value}`;
+      }
+      const delimiter = `openpawl_${name}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      return `${name}<<${delimiter}\n${value}\n${delimiter}`;
+    })
     .join("\n");
   if (payload.length === 0) return;
   await fs.appendFile(outputPath, `${payload}\n`, "utf-8");
@@ -593,6 +600,10 @@ async function cmdOpenPawlTrigger(flags: Record<string, string | boolean>): Prom
     source: resolution.source,
     base_repo_full_name: resolution.baseRepoFullName ?? "",
     head_repo_full_name: resolution.headRepoFullName ?? "",
+    base_ref: resolution.baseRef ?? "",
+    approved_write: booleanToGithubOutput(resolution.approvedWrite),
+    approval_source: resolution.approvalSource,
+    source_title: resolution.sourceTitle ?? "",
     reason: resolution.reason,
   });
 
@@ -614,6 +625,8 @@ async function cmdOpenPawlTrigger(flags: Record<string, string | boolean>): Prom
         repoPath: resolution.repoPath,
         issueNumber: resolution.issueNumber,
         issueIsPullRequest: resolution.issueIsPullRequest,
+        approvedWrite: resolution.approvedWrite,
+        approvalSource: resolution.approvalSource,
         source: resolution.source,
       }));
     }
@@ -622,6 +635,41 @@ async function cmdOpenPawlTrigger(flags: Record<string, string | boolean>): Prom
       console.log(`No Openpawl run configured: ${resolution.reason}`);
     }
   }
+}
+
+function showEvalHelp(): void {
+  console.log(`Usage: codepawl eval patch-quality [options]
+
+Run the deterministic Openpawl patch quality fixture harness.
+
+Options:
+  --out-dir <path>       Artifact directory (default: .codepawl/evals/patch-quality-<run-id>)
+  --limit <n>            Run only the first n fixtures
+`);
+}
+
+async function cmdEval(args: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const evalName = args[0];
+  if (!evalName || flags["help"] === true) {
+    showEvalHelp();
+    return;
+  }
+  if (evalName !== "patch-quality") {
+    die(`Unknown eval: "${evalName}". Supported eval: patch-quality.`);
+  }
+
+  const outDir = readStringFlag(flags, "out-dir");
+  const limit = readPositiveIntFlag(flags, "limit");
+  const result = await runPatchQualityEval({ outDir, limit });
+  console.log(`${renderCompactLogo()} Patch quality eval complete`);
+  console.log(`   Run ID:  ${result.runId}`);
+  console.log(`   Cases:   ${result.caseCount}`);
+  console.log(`   Passed:  ${result.passCount}`);
+  console.log(`   Failed:  ${result.failCount}`);
+  console.log(`   Metrics: ${result.metricsPath}`);
+  console.log(`   Report:  ${result.reportPath}`);
+  console.log();
+  process.exit(result.failCount === 0 ? 0 : 1);
 }
 
 // help
@@ -636,6 +684,7 @@ Commands:
   doctor       Check system readiness
   github-comment  Post a run report as a GitHub PR comment
   openpawl-trigger  Resolve trigger inputs for GitHub workflow orchestration
+  eval         Run Openpawl evaluation harnesses
 
 Run options:
   --repo <path>          Path to the target repository (default: .)
@@ -675,6 +724,7 @@ Examples:
   codepawl doctor
   codepawl github-comment --report .codepawl/runs/run_123/report.md
   codepawl openpawl-trigger --event-name issue_comment --event-path "$GITHUB_EVENT_PATH"
+  codepawl eval patch-quality
 `);
 }
 
@@ -741,7 +791,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("codepawl v0.1.0-alpha.10 (Openpawl MVP)");
+    console.log("codepawl v0.1.0-beta.1 (Openpawl beta)");
     return;
   }
 
@@ -766,6 +816,9 @@ async function main(): Promise<void> {
       break;
     case "openpawl-trigger":
       await cmdOpenPawlTrigger(flags);
+      break;
+    case "eval":
+      await cmdEval(commandArgs, flags);
       break;
     default:
       die(`Unknown command: "${command}". Run "codepawl --help" for usage.`);

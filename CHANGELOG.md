@@ -4,6 +4,20 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.1.0-beta.1] - 2026-06-09
+
+### Added
+
+- Approval write mode through maintainer `/openpawl apply` and the `openpawl-approved` label.
+- Approved write runs create a fresh Openpawl write run, push an `openpawl/apply-<issue-or-pr-number>-<run-id>` bot branch, and open a PR.
+- Patch quality harness exposed as `codepawl eval patch-quality`.
+
+### Changed
+
+- Mention-triggered commands remain dry-run only; `@openpawl apply` is not supported.
+- External workflow permissions now include `contents: write` for approval write PR creation.
+- CLI version output now identifies beta.1.
+
 ## [0.1.0-alpha.10] - 2026-06-09
 
 ### Added

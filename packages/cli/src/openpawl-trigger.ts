@@ -1,10 +1,11 @@
 export const OPENPAWL_TRIGGER_LABEL = "openpawl";
+export const OPENPAWL_APPROVED_LABEL = "openpawl-approved";
 export const OPENPAWL_REVIEW_TASK = "Review and analyse the changes in this repository context";
 export const OPENPAWL_PLAN_TASK = "Plan the next implementation steps for the repository changes";
 export const OPENPAWL_ADD_TESTS_TASK = "Add targeted tests for the repository changes";
 export const OPENPAWL_FIX_FAILING_TESTS_TASK = "Fix the failing tests for the repository changes";
 
-type ParsedCommandName = "review" | "plan" | "add tests" | "fix failing tests";
+type ParsedCommandName = "review" | "plan" | "add tests" | "fix failing tests" | "apply";
 type ParsedCommandPrefix = "/" | "@";
 
 export interface ParsedOpenPawlCommand {
@@ -24,6 +25,10 @@ export interface OpenPawlTriggerResolution {
   issueIsPullRequest: boolean;
   baseRepoFullName?: string;
   headRepoFullName?: string;
+  baseRef?: string;
+  approvedWrite: boolean;
+  approvalSource: "none" | "apply_command" | "approved_label" | "workflow_dispatch";
+  sourceTitle?: string;
   source: "workflow_dispatch" | "pull_request" | "issue_comment" | "issues" | "none";
 }
 
@@ -31,6 +36,8 @@ interface GithubEventLike {
   action?: string;
   comment?: {
     body?: string;
+    title?: string;
+    author_association?: string;
     user?: {
       login?: string;
       type?: string;
@@ -38,11 +45,18 @@ interface GithubEventLike {
   };
   issue?: {
     number?: number;
+    title?: string;
+    body?: string;
     pull_request?: unknown;
   };
   pull_request?: {
     number?: number;
+    title?: string;
+    body?: string;
     labels?: Array<{ name?: string }>;
+    base?: {
+      ref?: string;
+    };
     head?: {
       repo?: {
         full_name?: string;
@@ -54,6 +68,7 @@ interface GithubEventLike {
   };
   repository?: {
     full_name?: string;
+    default_branch?: string;
   };
   inputs?: {
     task?: string;
@@ -69,6 +84,8 @@ const COMMAND_TASKS = new Map<string, string>([
   ["fix failing tests", OPENPAWL_FIX_FAILING_TESTS_TASK],
 ]);
 
+const MAINTAINER_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
 function trimToSingleSpace(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -82,6 +99,10 @@ function isOpenPawlReportComment(commentBody: string): boolean {
 
 function isLabelMatch(labelName: unknown): boolean {
   return typeof labelName === "string" && labelName.toLowerCase() === OPENPAWL_TRIGGER_LABEL;
+}
+
+function isApprovalLabelMatch(labelName: unknown): boolean {
+  return typeof labelName === "string" && labelName.toLowerCase() === OPENPAWL_APPROVED_LABEL;
 }
 
 function pickLabelName(payload: GithubEventLike): string | undefined {
@@ -128,6 +149,40 @@ function getHeadRepo(payload: GithubEventLike): string | undefined {
   return typeof fullName === "string" ? fullName : undefined;
 }
 
+function getBaseRef(payload: GithubEventLike): string {
+  const prBase = payload.pull_request?.base?.ref;
+  if (typeof prBase === "string" && prBase.trim()) {
+    return prBase;
+  }
+  const defaultBranch = payload.repository?.default_branch;
+  return typeof defaultBranch === "string" && defaultBranch.trim() ? defaultBranch : "main";
+}
+
+function isMaintainerAssociation(value: unknown): boolean {
+  return typeof value === "string" && MAINTAINER_ASSOCIATIONS.has(value.toUpperCase());
+}
+
+function getSourceTitle(payload: GithubEventLike): string {
+  const title = payload.pull_request?.title ?? payload.issue?.title;
+  return typeof title === "string" && title.trim() ? title.trim() : "repository changes";
+}
+
+function getSourceBody(payload: GithubEventLike): string {
+  const body = payload.pull_request?.body ?? payload.issue?.body;
+  return typeof body === "string" && body.trim() ? body.trim() : "No issue or pull request body was provided.";
+}
+
+function buildApprovedApplyTask(payload: GithubEventLike, issueNumber: number, issueIsPullRequest: boolean): string {
+  const sourceKind = issueIsPullRequest ? "pull request" : "issue";
+  const title = getSourceTitle(payload);
+  const body = getSourceBody(payload);
+  return [
+    `Approved Openpawl apply for ${sourceKind} #${issueNumber}: ${title}`,
+    "",
+    body,
+  ].join("\n");
+}
+
 export function parseOpenPawlCommand(commentBody: string): ParsedOpenPawlCommand | null {
   if (!commentBody) return null;
 
@@ -141,6 +196,14 @@ export function parseOpenPawlCommand(commentBody: string): ParsedOpenPawlCommand
     const commandText = match[2]?.trim() ?? "";
     const normalizedCommand = commandText.toLowerCase();
     const task = COMMAND_TASKS.get(normalizedCommand);
+    if (prefix === "/" && normalizedCommand === "apply") {
+      return {
+        command: normalizedCommand as ParsedCommandName,
+        prefix,
+        task: "",
+        sourceLine: line,
+      };
+    }
     if (prefix === "/" && normalizedCommand !== "review" && normalizedCommand !== "add tests") {
       continue;
     }
@@ -157,11 +220,6 @@ export function parseOpenPawlCommand(commentBody: string): ParsedOpenPawlCommand
   }
 
   return null;
-}
-
-function fallbackCommandTask(commentBody: string): string | null {
-  const command = parseOpenPawlCommand(commentBody);
-  return command ? command.task : null;
 }
 
 export function resolveOpenPawlTriggerFromEvent(
@@ -194,6 +252,9 @@ export function resolveOpenPawlTriggerFromEvent(
         mode,
         issueIsPullRequest: false,
         baseRepoFullName: baseRepo,
+        baseRef: getBaseRef(payload),
+        approvedWrite: false,
+        approvalSource: "workflow_dispatch",
         source: "workflow_dispatch",
       };
     }
@@ -201,7 +262,26 @@ export function resolveOpenPawlTriggerFromEvent(
       const issueNumber = payload.pull_request?.number;
       const prNumber = typeof issueNumber === "number" && Number.isFinite(issueNumber) ? issueNumber : undefined;
       const isLabeledTrigger = payload.action === "labeled" && isLabelMatch(pickLabelName(payload));
+      const isApprovedLabelTrigger = payload.action === "labeled" && isApprovalLabelMatch(pickLabelName(payload));
       if (!isLabeledTrigger && payload.action !== undefined && payload.action !== "opened" && payload.action !== "synchronize" && payload.action !== "reopened") {
+        if (isApprovedLabelTrigger && prNumber !== undefined) {
+          return {
+            shouldRun: true,
+            reason: "Pull request labeled with openpawl-approved.",
+            task: buildApprovedApplyTask(payload, prNumber, true),
+            repoPath: ".",
+            mode: "write",
+            issueNumber: prNumber,
+            issueIsPullRequest: true,
+            baseRepoFullName: baseRepo,
+            headRepoFullName: getHeadRepo(payload),
+            baseRef: getBaseRef(payload),
+            approvedWrite: true,
+            approvalSource: "approved_label",
+            sourceTitle: getSourceTitle(payload),
+            source: "pull_request",
+          };
+        }
         return {
           shouldRun: false,
           reason: "Unsupported pull_request action for automatic Openpawl runs.",
@@ -211,6 +291,9 @@ export function resolveOpenPawlTriggerFromEvent(
           issueIsPullRequest: true,
           baseRepoFullName: baseRepo,
           headRepoFullName: getHeadRepo(payload),
+          baseRef: getBaseRef(payload),
+          approvedWrite: false,
+          approvalSource: "none",
           source: "pull_request",
         };
       }
@@ -224,6 +307,27 @@ export function resolveOpenPawlTriggerFromEvent(
           issueIsPullRequest: true,
           baseRepoFullName: baseRepo,
           headRepoFullName: getHeadRepo(payload),
+          baseRef: getBaseRef(payload),
+          approvedWrite: false,
+          approvalSource: "none",
+          source: "pull_request",
+        };
+      }
+      if (isApprovedLabelTrigger) {
+        return {
+          shouldRun: true,
+          reason: "Pull request labeled with openpawl-approved.",
+          task: buildApprovedApplyTask(payload, prNumber, true),
+          repoPath: ".",
+          mode: "write",
+          issueNumber: prNumber,
+          issueIsPullRequest: true,
+          baseRepoFullName: baseRepo,
+          headRepoFullName: getHeadRepo(payload),
+          baseRef: getBaseRef(payload),
+          approvedWrite: true,
+          approvalSource: "approved_label",
+          sourceTitle: getSourceTitle(payload),
           source: "pull_request",
         };
       }
@@ -237,6 +341,9 @@ export function resolveOpenPawlTriggerFromEvent(
         issueIsPullRequest: true,
         baseRepoFullName: baseRepo,
         headRepoFullName: getHeadRepo(payload),
+        baseRef: getBaseRef(payload),
+        approvedWrite: false,
+        approvalSource: "none",
         source: "pull_request",
       };
     }
@@ -252,6 +359,9 @@ export function resolveOpenPawlTriggerFromEvent(
           issueIsPullRequest: isPullRequestIssue(payload),
           issueNumber: getIssueNumber(payload),
           baseRepoFullName: baseRepo,
+          baseRef: getBaseRef(payload),
+          approvedWrite: false,
+          approvalSource: "none",
           source: "issue_comment",
         };
       }
@@ -266,12 +376,15 @@ export function resolveOpenPawlTriggerFromEvent(
           issueIsPullRequest: isPullRequestIssue(payload),
           issueNumber: getIssueNumber(payload),
           baseRepoFullName: baseRepo,
+          baseRef: getBaseRef(payload),
+          approvedWrite: false,
+          approvalSource: "none",
           source: "issue_comment",
         };
       }
 
-      const task = fallbackCommandTask(body);
-      if (!task) {
+      const command = parseOpenPawlCommand(body);
+      if (!command) {
         return {
           shouldRun: false,
           reason: "No supported /openpawl or @openpawl command found in issue_comment body.",
@@ -281,6 +394,9 @@ export function resolveOpenPawlTriggerFromEvent(
           issueIsPullRequest: isPullRequestIssue(payload),
           issueNumber: getIssueNumber(payload),
           baseRepoFullName: baseRepo,
+          baseRef: getBaseRef(payload),
+          approvedWrite: false,
+          approvalSource: "none",
           source: "issue_comment",
         };
       }
@@ -289,31 +405,73 @@ export function resolveOpenPawlTriggerFromEvent(
         return {
           shouldRun: false,
           reason: "issue_comment event missing issue number.",
-          task,
+          task: command.task || OPENPAWL_REVIEW_TASK,
           repoPath: ".",
           mode: "dry-run",
           issueIsPullRequest: isPullRequestIssue(payload),
           issueNumber,
           baseRepoFullName: baseRepo,
+          baseRef: getBaseRef(payload),
+          approvedWrite: false,
+          approvalSource: "none",
+          source: "issue_comment",
+        };
+      }
+      if (command.command === "apply") {
+        const issueIsPullRequest = isPullRequestIssue(payload);
+        if (!isMaintainerAssociation(payload.comment?.author_association)) {
+          return {
+            shouldRun: false,
+            reason: "/openpawl apply requires a maintainer comment author association.",
+            task: buildApprovedApplyTask(payload, issueNumber, issueIsPullRequest),
+            repoPath: ".",
+            mode: "dry-run",
+            issueNumber,
+            issueIsPullRequest,
+            baseRepoFullName: baseRepo,
+            baseRef: getBaseRef(payload),
+            approvedWrite: false,
+            approvalSource: "none",
+            sourceTitle: getSourceTitle(payload),
+            source: "issue_comment",
+          };
+        }
+        return {
+          shouldRun: true,
+          reason: "Maintainer /openpawl apply command detected.",
+          task: buildApprovedApplyTask(payload, issueNumber, issueIsPullRequest),
+          repoPath: ".",
+          mode: "write",
+          issueNumber,
+          issueIsPullRequest,
+          baseRepoFullName: baseRepo,
+          baseRef: getBaseRef(payload),
+          approvedWrite: true,
+          approvalSource: "apply_command",
+          sourceTitle: getSourceTitle(payload),
           source: "issue_comment",
         };
       }
       return {
         shouldRun: true,
         reason: "Supported Openpawl comment command detected.",
-        task,
+        task: command.task,
         repoPath: ".",
         mode: "dry-run",
         issueNumber,
         issueIsPullRequest: isPullRequestIssue(payload),
         baseRepoFullName: baseRepo,
+        baseRef: getBaseRef(payload),
+        approvedWrite: false,
+        approvalSource: "none",
         source: "issue_comment",
       };
     }
     case "issues": {
       const action = payload.action;
       const labelName = pickLabelName(payload);
-      if (action !== "labeled" || !isLabelMatch(labelName)) {
+      const isApprovedLabelTrigger = action === "labeled" && isApprovalLabelMatch(labelName);
+      if (action !== "labeled" || (!isLabelMatch(labelName) && !isApprovedLabelTrigger)) {
         return {
           shouldRun: false,
           reason: "issues event is not an openpawl label application.",
@@ -323,6 +481,9 @@ export function resolveOpenPawlTriggerFromEvent(
           issueIsPullRequest: false,
           issueNumber: getIssueNumber(payload),
           baseRepoFullName: baseRepo,
+          baseRef: getBaseRef(payload),
+          approvedWrite: false,
+          approvalSource: "none",
           source: "issues",
         };
       }
@@ -336,6 +497,26 @@ export function resolveOpenPawlTriggerFromEvent(
           mode: "dry-run",
           issueIsPullRequest: false,
           baseRepoFullName: baseRepo,
+          baseRef: getBaseRef(payload),
+          approvedWrite: false,
+          approvalSource: "none",
+          source: "issues",
+        };
+      }
+      if (isApprovedLabelTrigger) {
+        return {
+          shouldRun: true,
+          reason: "Issue labeled with openpawl-approved.",
+          task: buildApprovedApplyTask(payload, issueNumber, false),
+          repoPath: ".",
+          mode: "write",
+          issueNumber,
+          issueIsPullRequest: false,
+          baseRepoFullName: baseRepo,
+          baseRef: getBaseRef(payload),
+          approvedWrite: true,
+          approvalSource: "approved_label",
+          sourceTitle: getSourceTitle(payload),
           source: "issues",
         };
       }
@@ -348,6 +529,9 @@ export function resolveOpenPawlTriggerFromEvent(
         issueNumber,
         issueIsPullRequest: false,
         baseRepoFullName: baseRepo,
+        baseRef: getBaseRef(payload),
+        approvedWrite: false,
+        approvalSource: "none",
         source: "issues",
       };
     }
@@ -360,6 +544,9 @@ export function resolveOpenPawlTriggerFromEvent(
         mode: "dry-run",
         issueIsPullRequest: false,
         baseRepoFullName: baseRepo,
+        baseRef: getBaseRef(payload),
+        approvedWrite: false,
+        approvalSource: "none",
         source: "none",
       };
   }

@@ -85,9 +85,18 @@ describe("Openpawl comment command parser", () => {
     expect(parseOpenPawlCommand("/openpawl fix failing tests")).toBeNull();
   });
 
+  it("parses slash-only apply command", () => {
+    const parsed = parseOpenPawlCommand("/openpawl apply");
+    expect(parsed).not.toBeNull();
+    expect(parsed).toMatchObject({
+      command: "apply",
+      prefix: "/",
+    });
+  });
+
   it("does not parse unsupported mention commands", () => {
-    const parsed = parseOpenPawlCommand("@openpawl run");
-    expect(parsed).toBeNull();
+    expect(parseOpenPawlCommand("@openpawl run")).toBeNull();
+    expect(parseOpenPawlCommand("@openpawl apply")).toBeNull();
   });
 
   it("does not parse unrelated text", () => {
@@ -188,6 +197,88 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
     });
   });
 
+  it("resolves maintainer /openpawl apply as an approved write run", () => {
+    const resolution = resolveOpenPawlTriggerFromEvent(
+      {
+        action: "created",
+        comment: {
+          body: "/openpawl apply",
+          author_association: "MEMBER",
+          user: {
+            login: "maintainer",
+            type: "User",
+          },
+        },
+        issue: {
+          number: 108,
+          title: "Add coverage for trace export",
+          body: "Please create targeted regression tests.",
+          pull_request: {},
+        },
+        repository: {
+          full_name: "codepawl/openpawl",
+          default_branch: "main",
+        },
+      } as Record<string, unknown>,
+      {
+        eventName: "issue_comment",
+      }
+    );
+
+    expect(resolution).toMatchObject({
+      shouldRun: true,
+      reason: "Maintainer /openpawl apply command detected.",
+      mode: "write",
+      issueNumber: 108,
+      issueIsPullRequest: true,
+      approvedWrite: true,
+      approvalSource: "apply_command",
+      baseRef: "main",
+      sourceTitle: "Add coverage for trace export",
+      source: "issue_comment",
+    });
+    expect(resolution.task).toContain("Approved Openpawl apply for pull request #108");
+    expect(resolution.task).toContain("Please create targeted regression tests.");
+  });
+
+  it("does not resolve non-maintainer /openpawl apply as a write run", () => {
+    const resolution = resolveOpenPawlTriggerFromEvent(
+      {
+        action: "created",
+        comment: {
+          body: "/openpawl apply",
+          author_association: "CONTRIBUTOR",
+          user: {
+            login: "external-user",
+            type: "User",
+          },
+        },
+        issue: {
+          number: 109,
+          title: "Improve docs",
+          body: "Please update docs.",
+        },
+        repository: {
+          full_name: "codepawl/openpawl",
+        },
+      } as Record<string, unknown>,
+      {
+        eventName: "issue_comment",
+      }
+    );
+
+    expect(resolution).toMatchObject({
+      shouldRun: false,
+      reason: "/openpawl apply requires a maintainer comment author association.",
+      mode: "dry-run",
+      issueNumber: 109,
+      issueIsPullRequest: false,
+      approvedWrite: false,
+      approvalSource: "none",
+      source: "issue_comment",
+    });
+  });
+
   it("does not run for unsupported /openpawl command in issue_comment", async () => {
     const event = await loadGithubEventFixture("issue_comment_unsupported.json");
     const resolution = resolveOpenPawlTriggerFromEvent(event as Record<string, unknown>, {
@@ -268,6 +359,42 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
     });
   });
 
+  it("resolves issues labeled openpawl-approved as an approved write run", () => {
+    const resolution = resolveOpenPawlTriggerFromEvent(
+      {
+        action: "labeled",
+        issue: {
+          number: 202,
+          title: "Add CLI smoke tests",
+          body: "Generate focused CLI regression tests.",
+        },
+        label: {
+          name: "openpawl-approved",
+        },
+        repository: {
+          full_name: "codepawl/openpawl",
+          default_branch: "main",
+        },
+      } as Record<string, unknown>,
+      {
+        eventName: "issues",
+      }
+    );
+
+    expect(resolution).toMatchObject({
+      shouldRun: true,
+      reason: "Issue labeled with openpawl-approved.",
+      mode: "write",
+      issueIsPullRequest: false,
+      issueNumber: 202,
+      approvedWrite: true,
+      approvalSource: "approved_label",
+      baseRef: "main",
+      source: "issues",
+    });
+    expect(resolution.task).toContain("Approved Openpawl apply for issue #202");
+  });
+
   it("resolves pull_request labeled openpawl as dry-run", async () => {
     const event = await loadGithubEventFixture("pull_request_labeled_openpawl.json");
     const resolution = resolveOpenPawlTriggerFromEvent(event as Record<string, unknown>, {
@@ -283,6 +410,51 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
       issueNumber: 203,
       source: "pull_request",
     });
+  });
+
+  it("resolves pull_request labeled openpawl-approved as an approved write run", () => {
+    const resolution = resolveOpenPawlTriggerFromEvent(
+      {
+        action: "labeled",
+        pull_request: {
+          number: 205,
+          title: "Improve patch planning",
+          body: "Add quality checks for patch plans.",
+          base: {
+            ref: "main",
+          },
+          head: {
+            repo: {
+              full_name: "codepawl/openpawl",
+            },
+          },
+        },
+        label: {
+          name: "openpawl-approved",
+        },
+        repository: {
+          full_name: "codepawl/openpawl",
+          default_branch: "main",
+        },
+      } as Record<string, unknown>,
+      {
+        eventName: "pull_request",
+      }
+    );
+
+    expect(resolution).toMatchObject({
+      shouldRun: true,
+      reason: "Pull request labeled with openpawl-approved.",
+      mode: "write",
+      issueIsPullRequest: true,
+      issueNumber: 205,
+      approvedWrite: true,
+      approvalSource: "approved_label",
+      baseRef: "main",
+      sourceTitle: "Improve patch planning",
+      source: "pull_request",
+    });
+    expect(resolution.task).toContain("Approved Openpawl apply for pull request #205");
   });
 
   it("marks forked pull_request safely by reporting mismatched head repo", async () => {
