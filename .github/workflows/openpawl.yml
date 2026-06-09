@@ -59,22 +59,16 @@ jobs:
         id: trigger
         env:
           OPENPAWL_TASK: ${{ github.event.inputs.task }}
-          OPENPAWL_REPO_PATH: ${{
-            github.event.inputs.repo_path != '' && github.event.inputs.repo_path != null
-              && github.event.inputs.repo_path
-          }}
-          OPENPAWL_MODE: ${{
-            github.event.inputs.mode != '' && github.event.inputs.mode != null
-              && github.event.inputs.mode
-          }}
+          OPENPAWL_REPO_PATH: ${{ github.event.inputs.repo_path }}
+          OPENPAWL_MODE: ${{ github.event.inputs.mode }}
           OPENPAWL_REPOSITORY: ${{ github.repository }}
         run: |
           bun run dev:cli -- openpawl-trigger \
             --event-name "${{ github.event_name }}" \
             --event-path "${GITHUB_EVENT_PATH}" \
-            --workflow-task "${OPENPAWL_TASK:-review and suggest improvements}" \
-            --workflow-repo-path "${OPENPAWL_REPO_PATH:-.}" \
-            --workflow-mode "${OPENPAWL_MODE:-dry-run}" \
+            --workflow-task "${OPENPAWL_TASK}" \
+            --workflow-repo-path "${OPENPAWL_REPO_PATH}" \
+            --workflow-mode "${OPENPAWL_MODE}" \
             --workflow-repository "${OPENPAWL_REPOSITORY}"
 
       - name: Run Openpawl agent
