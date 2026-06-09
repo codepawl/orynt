@@ -4,6 +4,19 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.1.0-alpha.10] - 2026-06-09
+
+### Added
+
+- Exact `@openpawl` mention-trigger UX for maintainer comments.
+- Mention commands for `review`, `plan`, `add tests`, and `fix failing tests`.
+
+### Changed
+
+- Mention-triggered runs are dry-run only.
+- Report comment recursion guard now ignores Openpawl report bodies explicitly.
+- Slash-command behavior remains unchanged for `/openpawl review` and `/openpawl add tests`.
+
 ## [0.1.0-alpha.9] - 2026-06-09
 
 ### Added

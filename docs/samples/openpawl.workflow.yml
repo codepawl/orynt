@@ -1,5 +1,7 @@
 name: Openpawl CI
 
+# Supports exact /openpawl and @openpawl commands. Mention-triggered runs stay dry-run only.
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 

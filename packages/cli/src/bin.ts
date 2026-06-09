@@ -741,7 +741,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("codepawl v0.1.0-alpha.9 (Openpawl MVP)");
+    console.log("codepawl v0.1.0-alpha.10 (Openpawl MVP)");
     return;
   }
 

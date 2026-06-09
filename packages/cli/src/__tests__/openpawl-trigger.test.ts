@@ -3,6 +3,8 @@ import { readFile } from "fs/promises";
 import path from "path";
 import {
   OPENPAWL_ADD_TESTS_TASK,
+  OPENPAWL_FIX_FAILING_TESTS_TASK,
+  OPENPAWL_PLAN_TASK,
   OPENPAWL_REVIEW_TASK,
   parseOpenPawlCommand,
   resolveOpenPawlTriggerFromEvent,
@@ -37,8 +39,54 @@ describe("Openpawl comment command parser", () => {
     });
   });
 
+  it("parses '@openpawl review' exactly", () => {
+    const parsed = parseOpenPawlCommand("@openpawl review");
+    expect(parsed).not.toBeNull();
+    expect(parsed).toMatchObject({
+      command: "review",
+      prefix: "@",
+    });
+  });
+
+  it("parses '@openpawl plan' exactly", () => {
+    const parsed = parseOpenPawlCommand("  @OpenPawl   Plan  ");
+    expect(parsed).not.toBeNull();
+    expect(parsed).toMatchObject({
+      command: "plan",
+      prefix: "@",
+    });
+  });
+
+  it("parses '@openpawl add tests' exactly", () => {
+    const parsed = parseOpenPawlCommand("@openpawl add tests");
+    expect(parsed).not.toBeNull();
+    expect(parsed).toMatchObject({
+      command: "add tests",
+      prefix: "@",
+    });
+  });
+
+  it("parses '@openpawl fix failing tests' exactly", () => {
+    const parsed = parseOpenPawlCommand("@openpawl fix failing tests");
+    expect(parsed).not.toBeNull();
+    expect(parsed).toMatchObject({
+      command: "fix failing tests",
+      prefix: "@",
+    });
+  });
+
   it("does not parse unsupported command variants", () => {
     const parsed = parseOpenPawlCommand("/openpawl run");
+    expect(parsed).toBeNull();
+  });
+
+  it("does not parse unsupported slash commands", () => {
+    expect(parseOpenPawlCommand("/openpawl plan")).toBeNull();
+    expect(parseOpenPawlCommand("/openpawl fix failing tests")).toBeNull();
+  });
+
+  it("does not parse unsupported mention commands", () => {
+    const parsed = parseOpenPawlCommand("@openpawl run");
     expect(parsed).toBeNull();
   });
 
@@ -59,6 +107,11 @@ describe("Openpawl comment command parser", () => {
       command: "review",
     });
   });
+
+  it("does not parse mention commands embedded in extra text", () => {
+    const parsed = parseOpenPawlCommand("Please try @openpawl review for me.");
+    expect(parsed).toBeNull();
+  });
 });
 
 describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
@@ -70,7 +123,7 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
 
     expect(resolution).toMatchObject({
       shouldRun: true,
-      reason: "Supported /openpawl comment command detected.",
+      reason: "Supported Openpawl comment command detected.",
       task: OPENPAWL_REVIEW_TASK,
       mode: "dry-run",
       issueIsPullRequest: true,
@@ -87,11 +140,50 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
 
     expect(resolution).toMatchObject({
       shouldRun: true,
-      reason: "Supported /openpawl comment command detected.",
+      reason: "Supported Openpawl comment command detected.",
       task: OPENPAWL_ADD_TESTS_TASK,
       mode: "dry-run",
       issueIsPullRequest: false,
       issueNumber: 102,
+      source: "issue_comment",
+    });
+  });
+
+  it.each([
+    ["@openpawl review", OPENPAWL_REVIEW_TASK, true],
+    ["@openpawl plan", OPENPAWL_PLAN_TASK, false],
+    ["@openpawl add tests", OPENPAWL_ADD_TESTS_TASK, false],
+    ["@openpawl fix failing tests", OPENPAWL_FIX_FAILING_TESTS_TASK, true],
+  ])("resolves %s as a dry-run task", (body, expectedTask, isPullRequest) => {
+    const resolution = resolveOpenPawlTriggerFromEvent(
+      {
+        action: "created",
+        comment: {
+          body,
+          user: {
+            login: "maintainer",
+            type: "User",
+          },
+        },
+        issue: {
+          number: isPullRequest ? 105 : 106,
+          pull_request: isPullRequest ? {} : undefined,
+        },
+        repository: {
+          full_name: "codepawl/openpawl",
+        },
+      } as Record<string, unknown>,
+      {
+        eventName: "issue_comment",
+      }
+    );
+
+    expect(resolution).toMatchObject({
+      shouldRun: true,
+      reason: "Supported Openpawl comment command detected.",
+      task: expectedTask,
+      mode: "dry-run",
+      issueIsPullRequest: isPullRequest,
       source: "issue_comment",
     });
   });
@@ -104,7 +196,7 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
 
     expect(resolution).toMatchObject({
       shouldRun: false,
-      reason: "No supported /openpawl command found in issue_comment body.",
+      reason: "No supported /openpawl or @openpawl command found in issue_comment body.",
       issueIsPullRequest: false,
       issueNumber: 103,
       source: "issue_comment",
@@ -122,6 +214,39 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
       reason: "Ignoring bot-authored issue_comment to prevent recursive Openpawl runs.",
       issueIsPullRequest: true,
       issueNumber: 104,
+      source: "issue_comment",
+    });
+  });
+
+  it("does not run for Openpawl report comments", () => {
+    const resolution = resolveOpenPawlTriggerFromEvent(
+      {
+        action: "created",
+        comment: {
+          body: "# 🐾 Openpawl Agent Run Report\n\n## 📋 Task Summary",
+          user: {
+            login: "github-actions[bot]",
+            type: "Bot",
+          },
+        },
+        issue: {
+          number: 107,
+          pull_request: {},
+        },
+        repository: {
+          full_name: "codepawl/openpawl",
+        },
+      } as Record<string, unknown>,
+      {
+        eventName: "issue_comment",
+      }
+    );
+
+    expect(resolution).toMatchObject({
+      shouldRun: false,
+      reason: "Ignoring Openpawl report comment to prevent recursive Openpawl runs.",
+      issueIsPullRequest: true,
+      issueNumber: 107,
       source: "issue_comment",
     });
   });
