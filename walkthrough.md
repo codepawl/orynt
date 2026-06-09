@@ -785,3 +785,36 @@ In `--write` mode:
 **Limitations**:
 - Could not claim fork PR behavior was verified (no fork PR created).
 - Could not verify report comment targeting for issue/PR comment or label events because corresponding runs were not emitted by GitHub Actions for the posted events.
+
+### 2026-06-09 Openpawl GitHub trigger fix verification (gh CLI)
+
+**Scope**: Investigated the live trigger failures, fixed the workflow argument handling, added a bot-comment recursion guard, and re-ran the issue/PR smoke cases against issue `#40` and PR `#41`.
+
+**Root cause found in live logs**:
+- The `Resolve Openpawl trigger` step always passed `--workflow-task`, `--workflow-repo-path`, and `--workflow-mode` even when the event was not `workflow_dispatch`.
+- On `issue_comment`, `issues`, and `pull_request` events those env vars were empty, so `bun run dev:cli -- openpawl-trigger` failed before the resolver could inspect the payload.
+
+**Fix applied**:
+- `.github/workflows/openpawl.yml` now passes the manual dispatch flags only for `workflow_dispatch`.
+- `packages/cli/src/openpawl-trigger.ts` now ignores bot-authored `issue_comment` events so report comments cannot recurse into Openpawl.
+
+**Run IDs**:
+- Manual dispatch pass: `27196883555`
+- Pre-fix failures:
+  - `27197015583` (`issue_comment`)
+  - `27197037033` (`issues`)
+  - `27197299847` (`pull_request`)
+  - `27197322270` (`pull_request`)
+  - `27197302474` (`issue_comment`)
+  - `27197384944` (`issue_comment`)
+- Post-fix passes:
+  - `27197966439` (`issues`)
+  - `27197968248` (`issue_comment`)
+  - `27197969031` (`issue_comment` on PR `#41`)
+- Remaining failure:
+  - `27198113115` (`pull_request` on PR `#41`) still resolved against the stale PR head SHA `09e6cf70dc2b7eb7f7f0c697b345cfcf15414b0d` even after the branch tip advanced to `472beeb11502d3cc4fa4a405e2d1099e2f2842b7`
+
+**Limitations**:
+- `workflow_dispatch`, issue comment, and issue label paths are verified as working after the fix.
+- The PR label path is still blocked by GitHub reporting a stale PR head for `#41`, so that rerun did not exercise the updated workflow file even though the branch tip itself is fixed.
+- Write mode remains manual-only via `workflow_dispatch`; comment and label triggers stay dry-run only.
