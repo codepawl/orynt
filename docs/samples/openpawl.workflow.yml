@@ -222,17 +222,17 @@ jobs:
           git commit -m "chore: apply openpawl changes for #${ISSUE_NUMBER}"
           git push --force-with-lease origin "$BRANCH_NAME"
 
-          cat > /tmp/openpawl-pr-body.md <<EOF
-          Openpawl approved write run created this branch.
-
-          Source: #${ISSUE_NUMBER}
-          Run ID: ${RUN_ID}
-          Validation: passed
-          Artifact: openpawl-artifacts-${RUN_ID}
-          Workflow: ${RUN_URL}
-
-          Refs #${ISSUE_NUMBER}
-          EOF
+          printf '%s\n' \
+            "Openpawl approved write run created this branch." \
+            "" \
+            "Source: #${ISSUE_NUMBER}" \
+            "Run ID: ${RUN_ID}" \
+            "Validation: passed" \
+            "Artifact: openpawl-artifacts-${RUN_ID}" \
+            "Workflow: ${RUN_URL}" \
+            "" \
+            "Refs #${ISSUE_NUMBER}" \
+            > /tmp/openpawl-pr-body.md
 
           PR_OUTPUT=$(mktemp)
           MANUAL_PR_URL="https://github.com/${{ github.repository }}/compare/${BASE_REF}...${BRANCH_NAME}?expand=1"
@@ -254,16 +254,16 @@ jobs:
               echo "Manual PR command:"
               echo "${MANUAL_PR_CMD}"
 
-              cat > /tmp/openpawl-manual-pr.md <<EOF
-              Openpawl write run \`${RUN_ID}\` succeeded and pushed branch **${BRANCH_NAME}**.
-
-              Automatic PR creation was blocked by organization policy: \`GitHub Actions is not permitted to create or approve pull requests.\`
-
-              To continue, create the PR manually:
-              - Compare URL: ${MANUAL_PR_URL}
-              - CLI command:
-                ${MANUAL_PR_CMD}
-              EOF
+              printf '%s\n' \
+                "Openpawl write run ${RUN_ID} succeeded and pushed branch ${BRANCH_NAME}." \
+                "" \
+                "Automatic PR creation was blocked by organization policy: GitHub Actions is not permitted to create or approve pull requests." \
+                "" \
+                "To continue, create the PR manually:" \
+                "- Compare URL: ${MANUAL_PR_URL}" \
+                "- CLI command:" \
+                "  ${MANUAL_PR_CMD}" \
+                > /tmp/openpawl-manual-pr.md
 
               if [ -n "${ISSUE_NUMBER}" ] && [ -n "${GITHUB_TOKEN}" ]; then
                 if gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body-file /tmp/openpawl-manual-pr.md; then
