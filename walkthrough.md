@@ -811,10 +811,9 @@ In `--write` mode:
   - `27197966439` (`issues`)
   - `27197968248` (`issue_comment`)
   - `27197969031` (`issue_comment` on PR `#41`)
-- Remaining failure:
-  - `27198113115` (`pull_request` on PR `#41`) still resolved against the stale PR head SHA `09e6cf70dc2b7eb7f7f0c697b345cfcf15414b0d` even after the branch tip advanced to `472beeb11502d3cc4fa4a405e2d1099e2f2842b7`
+  - `27198840237` (`pull_request` opened)
+  - `27198935621` (`pull_request` labeled)
 
 **Limitations**:
-- `workflow_dispatch`, issue comment, and issue label paths are verified as working after the fix.
-- The PR label path is still blocked by GitHub reporting a stale PR head for `#41`, so that rerun did not exercise the updated workflow file even though the branch tip itself is fixed.
+- `workflow_dispatch`, issue comment, issue label, pull_request opened, and pull_request labeled paths are verified as working after the fix.
 - Write mode remains manual-only via `workflow_dispatch`; comment and label triggers stay dry-run only.
