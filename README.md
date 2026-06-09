@@ -19,6 +19,11 @@ Write mode remains gated behind `workflow_dispatch` plus repo config / approval 
 
 The GitHub Actions workflow invokes `@codepawl/cli` directly with `bun --filter @codepawl/cli dev -- ...` so trigger and run arguments bypass the root Turbo script.
 
+Current workflow command forms:
+
+- `bun --filter @codepawl/cli dev -- openpawl-trigger ...`
+- `bun --filter @codepawl/cli dev -- run ...`
+
 ## Install
 
 See [docs/OPENPAWL_INSTALL.md](docs/OPENPAWL_INSTALL.md) for the copy/paste setup, permissions, artifacts, reports, and security notes.

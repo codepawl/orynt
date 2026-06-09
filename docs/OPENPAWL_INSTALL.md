@@ -9,7 +9,10 @@ Openpawl is installable by copying a workflow file and a repo-root config file i
 3. Change `validation.writeTestCommand` in the config to match that repo’s test command.
 4. Push the files and run the workflow from the GitHub Actions tab.
 
-The workflow invokes `@codepawl/cli` directly with `bun --filter @codepawl/cli dev -- ...`, so Openpawl trigger and run arguments are not routed through the root Turbo script after the monorepo migration.
+The workflow invokes `@codepawl/cli` directly, so Openpawl trigger and run arguments are not routed through the root Turbo script after the monorepo migration:
+
+- `bun --filter @codepawl/cli dev -- openpawl-trigger ...`
+- `bun --filter @codepawl/cli dev -- run ...`
 
 The workflow keeps the current Openpawl trigger UX and adds mention support:
 

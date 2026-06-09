@@ -11,12 +11,21 @@ All notable changes for Openpawl.
 - Exact `@openpawl` mention-trigger UX for maintainer comments.
 - Mention commands for `review`, `plan`, `add tests`, and `fix failing tests`.
 - GitHub Actions workflow now invokes `@codepawl/cli` directly so runtime arguments bypass the root Turbo script.
+- Live mention-trigger verification for issue and PR comment paths.
 
 ### Changed
 
 - Mention-triggered runs are dry-run only.
 - Report comment recursion guard now ignores Openpawl report bodies explicitly.
 - Slash-command behavior remains unchanged for `/openpawl review` and `/openpawl add tests`.
+- Current workflow invocations use `bun --filter @codepawl/cli dev -- openpawl-trigger ...` and `bun --filter @codepawl/cli dev -- run ...`.
+
+### Verified
+
+- Issue `@openpawl review`: GitHub Actions run `27208458149` passed.
+- PR opened baseline: GitHub Actions run `27208687623` passed.
+- PR `@openpawl add tests`: GitHub Actions runs `27208690487` and `27208692054` passed.
+- Pre-fix failure `27206619272` was caused by workflow runtime arguments being routed through Turbo via `bun run dev:cli`; the workflow now invokes `@codepawl/cli` directly.
 
 ## [0.1.0-alpha.9] - 2026-06-09
 
