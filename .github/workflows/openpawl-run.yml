@@ -110,7 +110,7 @@ jobs:
             RUN_ARGS+=(--out-dir "$OPENPAWL_OUT_DIR")
           fi
 
-          bun run dev:cli -- "${RUN_ARGS[@]}"
+          bun --filter @codepawl/cli dev -- "${RUN_ARGS[@]}"
           EXIT_CODE=$?
           set -e
           echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"

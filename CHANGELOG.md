@@ -10,6 +10,7 @@ All notable changes for Openpawl.
 
 - Exact `@openpawl` mention-trigger UX for maintainer comments.
 - Mention commands for `review`, `plan`, `add tests`, and `fix failing tests`.
+- GitHub Actions workflow now invokes `@codepawl/cli` directly so runtime arguments bypass the root Turbo script.
 
 ### Changed
 

@@ -65,7 +65,7 @@ jobs:
           OPENPAWL_REPOSITORY: ${{ github.repository }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            bun run dev:cli -- openpawl-trigger \
+            bun --filter @codepawl/cli dev -- openpawl-trigger \
               --event-name "$EVENT_NAME" \
               --event-path "${GITHUB_EVENT_PATH}" \
               --workflow-task "${OPENPAWL_TASK}" \
@@ -73,7 +73,7 @@ jobs:
               --workflow-mode "${OPENPAWL_MODE}" \
               --workflow-repository "${OPENPAWL_REPOSITORY}"
           else
-            bun run dev:cli -- openpawl-trigger \
+            bun --filter @codepawl/cli dev -- openpawl-trigger \
               --event-name "$EVENT_NAME" \
               --event-path "${GITHUB_EVENT_PATH}" \
               --workflow-repository "${OPENPAWL_REPOSITORY}"
@@ -90,12 +90,12 @@ jobs:
           set +e
 
           if [ "$OPENPAWL_MODE" = "write" ]; then
-            bun run dev:cli -- run \
+            bun --filter @codepawl/cli dev -- run \
               --repo "$OPENPAWL_REPO_PATH" \
               --task "$OPENPAWL_TASK" \
               --write
           else
-            bun run dev:cli -- run \
+            bun --filter @codepawl/cli dev -- run \
               --repo "$OPENPAWL_REPO_PATH" \
               --task "$OPENPAWL_TASK" \
               --dry-run

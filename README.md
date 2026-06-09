@@ -17,6 +17,8 @@ Slash commands keep the existing behavior. Mention commands are dry-run only and
 
 Write mode remains gated behind `workflow_dispatch` plus repo config / approval flow.
 
+The GitHub Actions workflow invokes `@codepawl/cli` directly with `bun --filter @codepawl/cli dev -- ...` so trigger and run arguments bypass the root Turbo script.
+
 ## Install
 
 See [docs/OPENPAWL_INSTALL.md](docs/OPENPAWL_INSTALL.md) for the copy/paste setup, permissions, artifacts, reports, and security notes.
