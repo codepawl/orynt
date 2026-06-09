@@ -104,7 +104,6 @@ jobs:
           set -e
           echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
 
-          # Capture the latest run ID
           RUN_DIR=$(ls -td .codepawl/runs/run_* 2>/dev/null | head -1)
           if [ -n "$RUN_DIR" ]; then
             RUN_ID=$(basename "$RUN_DIR")
@@ -187,28 +186,3 @@ jobs:
           echo "Openpawl exited with code ${{ steps.openpawl.outputs.exit_code }}."
           echo "Artifacts were uploaded when available."
           exit 1
-
-  unit-tests:
-    name: Unit Tests (core + cli)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Typecheck
-        run: bun run typecheck:core && bun run typecheck:cli
-
-      - name: Run core tests
-        run: bun run test:core
-
-      - name: Run CLI tests
-        run: bun run test:cli

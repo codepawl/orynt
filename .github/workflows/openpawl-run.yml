@@ -1,0 +1,136 @@
+name: Openpawl Reusable Run
+
+on:
+  workflow_call:
+    inputs:
+      repo_path:
+        description: "Path to the target repository from the checkout root"
+        required: false
+        type: string
+        default: "."
+      task:
+        description: "Coding task for Openpawl to execute"
+        required: true
+        type: string
+      mode:
+        description: "Run mode"
+        required: false
+        type: string
+        default: "dry-run"
+      config_path:
+        description: "Openpawl config file path relative to repo root"
+        required: false
+        type: string
+        default: "openpawl.config.json"
+      test_cmd:
+        description: "Optional validation command override"
+        required: false
+        type: string
+      mock_fixture:
+        description: "Optional mock fixture path"
+        required: false
+        type: string
+      out_dir:
+        description: "Optional artifact output directory"
+        required: false
+        type: string
+    outputs:
+      run_id:
+        value: ${{ jobs.openpawl-run.outputs.run_id }}
+      run_dir:
+        value: ${{ jobs.openpawl-run.outputs.run_dir }}
+      report_path:
+        value: ${{ jobs.openpawl-run.outputs.report_path }}
+      trace_path:
+        value: ${{ jobs.openpawl-run.outputs.trace_path }}
+      exit_code:
+        value: ${{ jobs.openpawl-run.outputs.exit_code }}
+
+jobs:
+  openpawl-run:
+    name: Openpawl Agent Run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    outputs:
+      run_id: ${{ steps.openpawl.outputs.run_id }}
+      run_dir: ${{ steps.openpawl.outputs.run_dir }}
+      report_path: ${{ steps.openpawl.outputs.report_path }}
+      trace_path: ${{ steps.openpawl.outputs.trace_path }}
+      exit_code: ${{ steps.openpawl.outputs.exit_code }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Typecheck Openpawl packages
+        run: bun run typecheck:core && bun run typecheck:cli
+
+      - name: Run Openpawl agent
+        id: openpawl
+        env:
+          OPENPAWL_MODE: ${{ inputs.mode }}
+          OPENPAWL_REPO_PATH: ${{ inputs.repo_path }}
+          OPENPAWL_TASK: ${{ inputs.task }}
+          OPENPAWL_CONFIG_PATH: ${{ inputs.config_path }}
+          OPENPAWL_TEST_CMD: ${{ inputs.test_cmd }}
+          OPENPAWL_MOCK_FIXTURE: ${{ inputs.mock_fixture }}
+          OPENPAWL_OUT_DIR: ${{ inputs.out_dir }}
+        run: |
+          set +e
+
+          RUN_ARGS=(run --repo "$OPENPAWL_REPO_PATH" --task "$OPENPAWL_TASK" --config "$OPENPAWL_CONFIG_PATH")
+
+          if [ -n "$OPENPAWL_TEST_CMD" ]; then
+            RUN_ARGS+=(--test-cmd "$OPENPAWL_TEST_CMD")
+          fi
+
+          if [ "$OPENPAWL_MODE" = "write" ]; then
+            RUN_ARGS+=(--write)
+          else
+            RUN_ARGS+=(--dry-run)
+          fi
+
+          if [ -n "$OPENPAWL_MOCK_FIXTURE" ]; then
+            RUN_ARGS+=(--mock-fixture "$OPENPAWL_MOCK_FIXTURE")
+          fi
+
+          if [ -n "$OPENPAWL_OUT_DIR" ]; then
+            RUN_ARGS+=(--out-dir "$OPENPAWL_OUT_DIR")
+          fi
+
+          bun run dev:cli -- "${RUN_ARGS[@]}"
+          EXIT_CODE=$?
+          set -e
+          echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+
+          RUN_DIR=$(ls -td .codepawl/runs/run_* 2>/dev/null | head -1)
+          if [ -n "$RUN_DIR" ]; then
+            RUN_ID=$(basename "$RUN_DIR")
+            echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+            echo "run_dir=${RUN_DIR}" >> "$GITHUB_OUTPUT"
+            echo "report_path=${RUN_DIR}/report.md" >> "$GITHUB_OUTPUT"
+            echo "trace_path=${RUN_DIR}/trace.json" >> "$GITHUB_OUTPUT"
+          fi
+
+          exit 0
+
+      - name: Upload Openpawl run artifacts
+        if: always() && steps.openpawl.outputs.run_dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: openpawl-artifacts-${{ steps.openpawl.outputs.run_id }}
+          path: ${{ steps.openpawl.outputs.run_dir }}/**
+          if-no-files-found: error
+          retention-days: 30

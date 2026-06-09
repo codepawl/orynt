@@ -4,6 +4,26 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.1.0-alpha.9] - 2026-06-09
+
+### Added
+
+- Repo-root `openpawl.config.json` discovery for write-mode validation defaults.
+- Copyable external install docs and sample workflow/config files.
+- Reusable GitHub Actions workflow template for Openpawl execution jobs.
+
+### Changed
+
+- GitHub workflow no longer hardcodes validation commands; repo config controls write-mode safety defaults.
+- CLI version output and release docs now identify alpha.9 as the current cut.
+- Manual workflow dispatch remains the only path that can select write mode.
+
+### Security
+
+- Dry-run remains the default path.
+- Exact slash commands stay limited to `/openpawl review` and `/openpawl add tests`.
+- Workflow permissions and fork/comment safeguards are documented for external installs.
+
 ## [0.1.0-alpha.3] - 2026-06-08
 
 ### Added

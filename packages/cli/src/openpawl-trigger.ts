@@ -171,7 +171,7 @@ export function resolveOpenPawlTriggerFromEvent(
       return {
         shouldRun: true,
         reason: "Manual workflow_dispatch trigger.",
-        task: resolvedWorkflowTask || "review and suggest improvements",
+        task: resolvedWorkflowTask || "review changes and suggest improvements",
         repoPath: resolvedWorkflowRepoPath || ".",
         mode,
         issueIsPullRequest: false,

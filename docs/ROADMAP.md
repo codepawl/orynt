@@ -7,6 +7,7 @@
 - `v0.1.0-alpha.1`: Mock-first monorepo foundation, local dry-run, metadata-only patch plans, and PR workflow verification without production write mode.
 - `v0.1.0-alpha.2`: Experimental OpenAI-compatible provider, structured-output retry, safer diagnostics, and GitHub workflow hardening.
 - `v0.1.0-alpha.3`: `json_schema` strict mode, context compaction with budgets, grounding/rejection of provider paths, dry-run scope fallback for ungrounded proposals, and safe write-mode v0 guardrails.
+- `v0.1.0-alpha.9`: first external installability cut with repo-root config, reusable workflow template, install docs, and safer write-mode defaults.
 
 ### Maturity plan
 
@@ -502,4 +503,3 @@ graph LR
   P5 --> P8[8. Deploy]
   P7 --> P8
 ```
-

@@ -1,0 +1,101 @@
+# Installing Openpawl in another GitHub repo
+
+Openpawl is installable by copying a workflow file and a repo-root config file into an existing GitHub repository.
+
+## Minimal setup
+
+1. Copy `docs/samples/openpawl.workflow.yml` into the target repo as `.github/workflows/openpawl.yml`.
+2. Copy `docs/samples/openpawl.config.json` into the target repo root as `openpawl.config.json`.
+3. Change `validation.writeTestCommand` in the config to match that repo’s test command.
+4. Push the files and run the workflow from the GitHub Actions tab.
+
+The workflow keeps the current Openpawl trigger UX:
+
+- `issue_comment` only accepts `/openpawl review` and `/openpawl add tests`
+- `pull_request` and `issues` still trigger review-only dry-runs on labels/events
+- `workflow_dispatch` supports manual dry-run or manual write mode
+
+## Config file
+
+`openpawl.config.json` is loaded automatically from the target repo root.
+
+Only one install-time setting is required for the alpha.9 cut:
+
+```json
+{
+  "validation": {
+    "writeTestCommand": "bun run test"
+  }
+}
+```
+
+Write mode uses this command when the workflow does not pass `--test-cmd` explicitly. Dry-run stays on the safe placeholder path unless a command is provided manually.
+
+## Permissions
+
+The workflow only needs:
+
+- `contents: read`
+- `issues: write`
+- `pull-requests: write`
+
+Why:
+
+- `contents: read` lets the job check out the repository
+- `issues: write` lets Openpawl post the report back to the issue or PR thread
+- `pull-requests: write` supports PR comment and label flows
+
+No PAT is required for the basic install. `GITHUB_TOKEN` is enough.
+
+## Security behavior
+
+Openpawl is intentionally conservative:
+
+- Dry-run is the default.
+- Only manual `workflow_dispatch` can select write mode.
+- Write mode is still constrained to safe test-file creation behavior in the current alpha line.
+- The workflow skips recursive bot-authored `issue_comment` runs.
+- Forked PR comments are skipped when the head repo differs from the base repo.
+- Reports and artifacts are written under `.codepawl/runs/<run-id>/`.
+
+## Commands and triggers
+
+Exact slash commands only:
+
+- `/openpawl review`
+- `/openpawl add tests`
+
+Anything else is ignored.
+
+Manual workflow dispatch accepts:
+
+- `task`
+- `repo_path`
+- `mode` (`dry-run` or `write`)
+
+Write mode should only be used when the repo’s `openpawl.config.json` points at a safe validation command.
+
+## Artifacts and reports
+
+Each successful or failed run writes artifacts into `.codepawl/runs/<run-id>/`:
+
+- `trace.json`
+- `report.md`
+- `run.json`
+- `patch-plan.json`
+- `selected-files.json`
+- `applied-files.json`
+
+The workflow uploads that directory as a GitHub Actions artifact and posts `report.md` back to the issue or PR when applicable.
+
+## Limitations
+
+- The current alpha only allows the safe write path already implemented in Openpawl.
+- The config file is JSON only in this release cut.
+- Dry-run still uses placeholder validation unless a command is explicitly supplied.
+- Manual write mode requires a repo-specific validation command.
+- External installs should pin a release tag instead of tracking `main`.
+
+## Optional reusable workflow
+
+If you want to centralize the execution job instead of copying the full workflow, use `.github/workflows/openpawl-run.yml` from the Openpawl repo as a reusable workflow template. The copyable workflow in `docs/samples/openpawl.workflow.yml` is the simpler install path.

@@ -6,6 +6,7 @@
   - `v0.1.0-alpha.1`: Foundation, deterministic mock provider, local dry-run, PR workflow verification, metadata-only patch planning.
   - `v0.1.0-alpha.2`: Experimental provider integration, structured-output retry/failure diagnostics, safe trace metadata.
   - `v0.1.0-alpha.3`: `json_schema` strict provider mode, context compaction, grounding/rejection of invented paths, dry-run scope fallback, and safe write-mode v0 (create-only test files).
+  - `v0.1.0-alpha.9`: first external installability cut with repo-root config, reusable workflow template, install docs, and safer write-mode defaults.
 
 - **Current publish posture**
   - Keep GitHub Releases as the release mechanism for alpha.

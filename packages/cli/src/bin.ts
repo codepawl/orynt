@@ -3,7 +3,7 @@
  * @codepawl/cli - Openpawl command-line interface
  *
  * Commands:
- *   run --repo <path> --task <string> [--dry-run | --write] [--out-dir <path>] [--mock-fixture <path>] [--test-cmd <cmd>]
+ *   run --repo <path> --task <string> [--dry-run | --write] [--out-dir <path>] [--config <path>] [--mock-fixture <path>] [--test-cmd <cmd>]
  *   trace --input <trace.json> [--format markdown|json]
  *   doctor
  *   github-comment --report <report.md> [--token <gh-token>] [--repo <owner/repo>] [--pr <number>]
@@ -15,6 +15,7 @@ import { resolveProviderConfig, runAgent } from "@codepawl/core";
 import type { RunResult } from "@codepawl/core";
 import { renderBanner, renderCompactLogo } from "./branding";
 import { resolveOpenPawlTriggerFromEvent } from "./openpawl-trigger";
+import { loadOpenPawlConfig, resolveRunTestCommand } from "./openpawl-config";
 
 // Helpers
 
@@ -202,11 +203,19 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   const resolvedRepo = resolveFromBase(repo, resolutionBase);
   const outDir = readStringFlag(flags, "out-dir");
   const resolvedOutDir = outDir ? resolveFromBase(outDir, resolutionBase) : undefined;
+  const configPath = readStringFlag(flags, "config");
+  if (configPath !== undefined && configPath.trim().length === 0) {
+    die("--config must not be empty.");
+  }
+  const resolvedConfigPath = configPath ? resolveFromBase(configPath, resolutionBase) : undefined;
   const task = readStringFlag(flags, "task");
   const dryRun = flags["dry-run"] === true || flags["write"] !== true;
   const mockFixture = readStringFlag(flags, "mock-fixture");
   const resolvedMockFixture = mockFixture ? resolveFromBase(mockFixture, resolutionBase) : undefined;
   const testCmd = readStringFlag(flags, "test-cmd");
+  if (testCmd !== undefined && testCmd.trim().length === 0) {
+    die("--test-cmd must not be empty.");
+  }
   const provider = readStringFlag(flags, "provider");
   const model = readStringFlag(flags, "model");
   const structuredOutputModeRaw = readStringFlag(flags, "response-format");
@@ -226,6 +235,12 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
     die("--task is required and must not be empty. e.g. --task \"add tests for shared helpers\"");
   }
   await assertDirectory(resolvedRepo, "Repository path");
+  const loadedConfig = await loadOpenPawlConfig(resolvedRepo, resolvedConfigPath);
+  const resolvedTestCommand = resolveRunTestCommand({
+    dryRun,
+    explicitTestCommand: testCmd,
+    config: loadedConfig.config,
+  });
   let providerConfig;
   try {
     providerConfig = resolveProviderConfig({ provider, model });
@@ -239,8 +254,11 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   if (resolvedOutDir) console.log(`   OutDir:  ${resolvedOutDir}`);
   console.log(`   Task:    ${task}`);
   console.log(`   Mode:    ${dryRun ? "dry-run (no files modified)" : "write"}`);
+  if (loadedConfig.configPath) console.log(`   Config:  ${loadedConfig.configPath}`);
   if (testCmd) {
     console.log(`   TestCmd: ${testCmd}`);
+  } else if (!dryRun && resolvedTestCommand) {
+    console.log(`   TestCmd: ${resolvedTestCommand} (from config)`);
   } else {
     console.log(`   TestCmd: ${dryRun ? "omitted (dry-run placeholder fallback)" : "omitted (write mode attempts scoped inference)"}`);
   }
@@ -255,7 +273,7 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
       workspaceDir: resolvedRepo,
       outDir: resolvedOutDir,
       dryRun,
-      testCommand: testCmd,
+      testCommand: resolvedTestCommand,
       mockFixturePath: resolvedMockFixture,
       provider,
       model,
@@ -623,6 +641,7 @@ Run options:
   --repo <path>          Path to the target repository (default: .)
   --task <string>        Coding task description (required)
   --out-dir <path>       Artifact output directory (default: <repo>/.codepawl/runs/<run-id>)
+  --config <path>        Openpawl config file path relative to --repo (default: openpawl.config.json)
   --dry-run              Scan and plan only; no files are modified (default)
   --write                Apply safe test-file patch chunks, then validate (scoped default inference; blocked in write mode if no safe command is found)
   --mock-fixture <path>  Path to a JSON LLM mock fixture file
@@ -668,6 +687,7 @@ Options:
   --repo <path>          Target repository path (default: .)
   --task <string>        Coding or review task (required)
   --out-dir <path>       Artifact directory (default: <repo>/.codepawl/runs/<run-id>)
+  --config <path>        Openpawl config file path relative to --repo (default: openpawl.config.json)
   --dry-run              Plan and report without modifying files (default)
   --write                Apply safe test-file patch chunks, then validate (scoped default inference; write mode fails if no safe command found)
   --mock-fixture <path>  Optional deterministic mock fixture
@@ -721,7 +741,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("codepawl v0.1.0 (Openpawl MVP)");
+    console.log("codepawl v0.1.0-alpha.9 (Openpawl MVP)");
     return;
   }
 
