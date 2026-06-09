@@ -11,12 +11,14 @@ All notable changes for Openpawl.
 - Approval write mode through maintainer `/openpawl apply` and the `openpawl-approved` label.
 - Approved write runs create a fresh Openpawl write run, push an `openpawl/apply-<issue-or-pr-number>-<run-id>` bot branch, and open a PR.
 - Patch quality harness exposed as `codepawl eval patch-quality`.
+- Deterministic mock fallback now emits a safe generated test create chunk for explicit `add tests for ...` write requests to support beta.1 live apply smoke runs.
 
 ### Changed
 
 - Mention-triggered commands remain dry-run only; `@openpawl apply` is not supported.
 - External workflow permissions now include `contents: write` for approval write PR creation.
 - CLI version output now identifies beta.1.
+- Issue #45 failure mode was preserved and documented: docs-only `/openpawl apply` requests without safe create chunks fail with `No safe create chunks available in write mode.`.
 
 ## [0.1.0-alpha.10] - 2026-06-09
 

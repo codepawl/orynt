@@ -24,6 +24,8 @@ The workflow keeps the current Openpawl trigger UX and adds approval write mode:
 - mention-triggered runs are always dry-run only
 - approved write runs create `openpawl/apply-<issue-or-pr-number>-<run-id>` and open a PR
 
+For beta.1 smoke verification, `/openpawl apply` should be exercised on a task that includes an explicit test intent (for example, an issue body containing `add tests for ...`). Arbitrary docs-only apply tasks can be unsupported by design and should fail before validation when no safe create chunk is available.
+
 ## Config file
 
 `openpawl.config.json` is loaded automatically from the target repo root.
@@ -113,6 +115,7 @@ The workflow uploads that directory as a GitHub Actions artifact and posts `repo
 - The config file is JSON only in this release cut.
 - Dry-run still uses placeholder validation unless a command is explicitly supplied.
 - Manual write mode requires a repo-specific validation command.
+- `/openpawl apply` write runs still require generated, safe create chunks. Requests that cannot produce a safe create chunk (such as docs-only edits without a concrete patch chunk) are rejected with `No safe create chunks available in write mode.`
 - External installs should pin a release tag instead of tracking `main`.
 
 ## Optional reusable workflow

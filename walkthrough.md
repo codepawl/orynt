@@ -221,6 +221,12 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 - Write mode fails before executing validation if no safe inferred command is available from those targets.
 - Validation command decision is persisted in trace/report/run artifacts.
 
+### 2026-06-09 Beta.1 write apply safety clarification
+
+- `/openpawl apply` enforces safe-write policy: only new test files are applied in write mode.
+- Issue #45 was classified as expected unsupported behavior for docs-only apply tasks (no generated safe write chunk) and surfaces `No safe create chunks available in write mode.`
+- The deterministic mock fallback was improved so explicit `add tests for ...` write tasks now produce one allowed `create` chunk for smoke-verification coverage.
+
 **Scope:** `packages/core/src/agent/nodes.ts`, `packages/core/src/runner.ts`, `packages/core/src/__tests__/runner.test.ts`, `packages/cli/src/bin.ts`, `packages/cli/src/__tests__/cli.test.ts`, and docs updates. `apps/web` and `apps/api` were not modified.
 
 ---

@@ -32,6 +32,22 @@
     }
   },
   {
+    "matchQuery": "add tests for",
+    "matchLastMessage": "Scope Context Pack",
+    "response": {
+      "content": "{\"rationale\": \"The task explicitly requests tests; add a safe generated regression test scaffold.\", \"affectedModules\": [\"packages/core/src\"], \"proposedFilesToModify\": [], \"proposedFilesToCreate\": [\"packages/core/src/__tests__/generic.generated.test.ts\"]}",
+      "usage": { "inputTokens": 120, "outputTokens": 80 }
+    }
+  },
+  {
+    "matchQuery": "add tests for",
+    "matchLastMessage": "Patch Context Pack",
+    "response": {
+      "content": "{\"rationale\": \"Create one safe generated test scaffold for the requested add-tests task.\", \"chunks\": [{\"type\": \"create\", \"file\": \"packages/core/src/__tests__/generic.generated.test.ts\", \"description\": \"Create deterministic tests for an explicit add-tests request.\"}]}",
+      "usage": { "inputTokens": 120, "outputTokens": 80 }
+    }
+  },
+  {
     "matchLastMessage": "Scope Context Pack",
     "response": {
       "content": "{\"rationale\": \"Generic scope fallback for deterministic mock runs.\", \"affectedModules\": [\"packages/core/src\"], \"proposedFilesToModify\": [], \"proposedFilesToCreate\": [\"packages/core/src/__tests__/generic.generated.test.ts\"]}",

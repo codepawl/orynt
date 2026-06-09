@@ -9,7 +9,7 @@
 - `v0.1.0-alpha.3`: `json_schema` strict mode, context compaction with budgets, grounding/rejection of provider paths, dry-run scope fallback for ungrounded proposals, and safe write-mode v0 guardrails.
 - `v0.1.0-alpha.9`: first external installability cut with repo-root config, reusable workflow template, install docs, and safer write-mode defaults.
 - `v0.1.0-alpha.10`: maintainer mention UX with exact `@openpawl` commands, dry-run-only mention triggers, direct CLI workflow invocation that bypasses the root Turbo script, and live issue/PR verification on GitHub Actions runs `27208458149`, `27208687623`, `27208690487`, and `27208692054`.
-- `v0.1.0-beta.1`: approval write mode with bot-branch PR creation and a deterministic patch quality harness.
+- `v0.1.0-beta.1`: approval write mode with bot-branch PR creation, safe create-chunk write policy, and a deterministic patch quality harness.
 
 ### Maturity plan
 
@@ -34,6 +34,7 @@
    - keep current create-only/test-file-only write policy
    - push `openpawl/apply-<issue-or-pr-number>-<run-id>`
    - open a PR back to the default branch with run and validation details
+   - requires a generated safe create chunk for `/openpawl apply`; arbitrary docs-only write requests without patch content still fail with `No safe create chunks available in write mode.`
 3. Add a deterministic patch quality harness:
    - CLI command `codepawl eval patch-quality`
    - 20-30 fixture cases using mock LLM responses and temp repos
