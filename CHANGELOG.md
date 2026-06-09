@@ -25,8 +25,19 @@ All notable changes for Openpawl.
 
 ### Verified
 
-- Run `27223304290` succeeded through agent, validation, commit, and branch push to `openpawl/apply-46-run_1781025474393_c7nloc`.
-- Openpawl branch push was successful, PR auto-creation was blocked by policy (`GitHub Actions is not permitted to create or approve pull requests.`), and manual PR #47 became the fallback path.
+- Issue #46 apply run verification (beta.1):
+  - Run `27225431860` completed as expected after successful agent/write workflow:
+    - `run_1781027825358_wl6vup` pushed to branch `openpawl/apply-46-run_1781027825358_wl6vup`
+    - validation passed
+    - branch push succeeded
+    - `gh pr create` was blocked by org policy: `GitHub Actions is not permitted to create or approve pull requests.`
+    - fallback path produced compare link and manual `gh pr create` command in report/comment
+    - manual PR #47 was used as a concrete fallback example
+  - `main` was not pushed directly; apply changes were only pushed to the bot branch
+- Previous run outcomes:
+  - `27222113779`: rejected before write due `No safe create chunks available in write mode.` for docs-only task.
+  - `27223304290`: write/validation/branch push passed, `main` not directly updated, PR auto-create blocked by org policy.
+  - `27224486041`: branch push passed, fallback was attempted with a heredoc bug which has since been fixed.
 
 ## [0.1.0-alpha.10] - 2026-06-09
 

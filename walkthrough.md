@@ -229,12 +229,19 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 
 ### 2026-06-09 Beta.1 org-policy PR fallback verified
 
-- Run `27223304290` completed successfully through agent execution, validation, commit, and branch push to `openpawl/apply-46-run_1781025474393_c7nloc`.
-- The run then hit org policy `"GitHub Actions is not permitted to create or approve pull requests."` during `gh pr create`, so workflow continues with partial-success:
-  - branch push remains authoritative success,
-  - workflow emits a warning,
-  - a manual PR note/comment includes branch `openpawl/apply-46-run_1781025474393_c7nloc` plus manual command/link.
-- Manual PR #47 was used as fallback for that run.
+- Issue #46 live apply verification (run `27225431860`):
+  - Created write run `run_1781027825358_wl6vup`.
+  - Branch push to `openpawl/apply-46-run_1781027825358_wl6vup` succeeded.
+  - Org-policy PR creation block happened with message: `"GitHub Actions is not permitted to create or approve pull requests."`
+  - Workflow continued as partial success:
+    - warning emitted,
+    - branch push remains authoritative success,
+    - fallback report/comment included compare URL and manual `gh pr create` command.
+  - Manual PR #47 was later created from the pushed branch as fallback proof.
+- Legacy beta.1 run outcomes:
+  - `27222113779`: docs-only `/openpawl apply` task rejected before write as `No safe create chunks available in write mode.`
+  - `27223304290`: write/validation/branch push passed and branch remained push-only due org-policy PR block.
+  - `27224486041`: branch push passed and org-policy fallback was exercised; earlier heredoc fallback syntax bug was fixed afterwards.
 
 **Scope:** `packages/core/src/agent/nodes.ts`, `packages/core/src/runner.ts`, `packages/core/src/__tests__/runner.test.ts`, `packages/cli/src/bin.ts`, `packages/cli/src/__tests__/cli.test.ts`, and docs updates. `apps/web` and `apps/api` were not modified.
 
