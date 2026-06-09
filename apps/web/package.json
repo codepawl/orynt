@@ -4,7 +4,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "bun --bun next dev",
-    "build": "bun --bun next build",
+    "build": "bun --bun next build --webpack",
     "build:cf": "opennextjs-cloudflare build",
     "start": "bun --bun next start",
     "typecheck": "tsc --noEmit",
