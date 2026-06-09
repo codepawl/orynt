@@ -1,13 +1,23 @@
-import type { Metadata } from "next";
+import { createRoute } from "@tanstack/react-router";
 
-export const revalidate = 3600;
+import { Route as siteRoute } from "./site";
 
-export const metadata: Metadata = {
-  title: "Research notes",
-  description: "Curated AI/ML research notes from the CodePawl team.",
-};
+export const Route = createRoute({
+  getParentRoute: () => siteRoute,
+  path: "research",
+  head: () => ({
+    meta: [
+      { title: "Research notes" },
+      {
+        name: "description",
+        content: "Curated AI/ML research notes from the CodePawl team.",
+      },
+    ],
+  }),
+  component: ResearchIndex,
+});
 
-export default function ResearchIndex() {
+function ResearchIndex() {
   return (
     <section className="mx-auto max-w-[1240px] px-6 py-20">
       <p className="cp-marker mb-6">research</p>

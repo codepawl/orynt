@@ -1,6 +1,6 @@
-import Link from "next/link";
+import { Link } from "@/components/link";
 
-export default function NotFound() {
+export function NotFoundPage() {
   return (
     <main className="mx-auto flex min-h-[60vh] max-w-xl flex-col justify-center px-6 py-20">
       <p className="cp-marker mb-6">404 · not found</p>

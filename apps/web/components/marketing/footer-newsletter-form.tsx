@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 const TURNSTILE_DEV_TOKEN = "1x00000000000000000000AA";
 
@@ -30,7 +29,7 @@ export function FooterNewsletterForm() {
           email,
           source: "landing_footer",
           turnstile_token:
-            process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? TURNSTILE_DEV_TOKEN,
+            import.meta.env.VITE_TURNSTILE_SITE_KEY ?? TURNSTILE_DEV_TOKEN,
         }),
       });
       if (response.status === 202) {

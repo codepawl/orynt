@@ -1,11 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ClerkProvider } from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/react";
 import { ui } from "@clerk/ui";
 
 import { PostHogProvider } from "@/components/posthog-provider";
-import { ThemeProvider } from "@/components/theme-provider";
 
 const clerkAppearance = {
   cssLayerName: "clerk",
@@ -70,17 +69,16 @@ const clerkAppearance = {
 };
 
 export function AppProviders({ children }: { children: ReactNode }) {
+  const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
   return (
-    <ClerkProvider ui={ui} appearance={clerkAppearance}>
+    <ClerkProvider
+      ui={ui}
+      appearance={clerkAppearance}
+      publishableKey={publishableKey}
+      __internal_bypassMissingPublishableKey={!publishableKey}
+    >
       <PostHogProvider>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
+        {children}
       </PostHogProvider>
     </ClerkProvider>
   );

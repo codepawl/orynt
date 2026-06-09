@@ -1,8 +1,8 @@
-@layer theme, base, clerk, components, utilities;
-@import "tailwindcss";
+@import "../node_modules/tailwindcss/index.css";
 @import "../styles/design-tokens.css";
+@layer theme, base, clerk, components, utilities;
 
-/* next-themes flips a class on <html>, so dark variants resolve via that. */
+/* Dark mode is driven by the `dark` class on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Tailwind v4 @theme block. Aliases raw design tokens onto the names that
@@ -37,10 +37,7 @@
   --color-code-border: var(--code-border);
   --color-code-tab: var(--code-tab);
 
-  /* Fonts. next/font/local sets --font-display, --font-body, --font-mono
-   * on the <html> className, so Tailwind's font-display utility resolves
-   * to the loaded font with the template's fallbacks underneath.
-   */
+  /* Fonts are loaded via @font-face declarations in styles/design-tokens.css. */
   --font-display: "Fraunces", "Times New Roman", serif;
   --font-body: "Inter Tight", system-ui, -apple-system, sans-serif;
   --font-mono:

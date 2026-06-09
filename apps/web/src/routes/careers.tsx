@@ -1,14 +1,21 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { createRoute } from "@tanstack/react-router";
 
-export const revalidate = 3600;
+import { Link } from "@/components/link";
+import { Route as siteRoute } from "./site";
 
-export const metadata: Metadata = {
-  title: "Careers",
-  description: "Open roles at CodePawl.",
-};
+export const Route = createRoute({
+  getParentRoute: () => siteRoute,
+  path: "careers",
+  head: () => ({
+    meta: [
+      { title: "Careers" },
+      { name: "description", content: "Open roles at CodePawl." },
+    ],
+  }),
+  component: CareersIndex,
+});
 
-export default function CareersIndex() {
+function CareersIndex() {
   return (
     <section className="mx-auto max-w-[1240px] px-6 py-20">
       <p className="cp-marker mb-6">careers</p>
@@ -19,10 +26,7 @@ export default function CareersIndex() {
         We hire deliberately around product milestones. The next hiring window
         is planned after the v0.1 launch. If your work is closely aligned with
         agent tooling and production AI systems,{" "}
-        <Link
-          href="/contact"
-          className="text-ratchet hover:text-ratchet-hot"
-        >
+        <Link href="/contact" className="text-ratchet hover:text-ratchet-hot">
           get in touch
         </Link>{" "}
         and share what you&apos;ve built.

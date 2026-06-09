@@ -1,13 +1,21 @@
-import type { Metadata } from "next";
+import { createRoute } from "@tanstack/react-router";
 
 import { ContactForm } from "@/components/marketing/contact-form";
+import { Route as siteRoute } from "./site";
 
-export const metadata: Metadata = {
-  title: "Contact",
-  description: "Send a message to founder@codepawl.com.",
-};
+export const Route = createRoute({
+  getParentRoute: () => siteRoute,
+  path: "contact",
+  head: () => ({
+    meta: [
+      { title: "Contact" },
+      { name: "description", content: "Send a message to founder@codepawl.com." },
+    ],
+  }),
+  component: ContactPage,
+});
 
-export default function ContactPage() {
+function ContactPage() {
   return (
     <section className="mx-auto max-w-2xl px-6 py-20">
       <p className="cp-marker mb-6">contact · founder@codepawl.com</p>

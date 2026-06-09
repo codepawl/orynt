@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@/components/link";
 import { ArrowRight, JournalText } from "react-bootstrap-icons";
 
 import { ArchitecturalOverlay } from "./architectural-overlay";

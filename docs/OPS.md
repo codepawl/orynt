@@ -8,11 +8,14 @@ Local. Run web and API in separate terminals.
 
 Required env vars (see `.env.example` for the full list):
 
-- `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`
-- `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` pointing at a local or shared dev Supabase project
-- `SUPABASE_SERVICE_ROLE_KEY` for the API
+- `VITE_API_BASE_URL=http://localhost:8000/api/v1`
+- `VITE_SITE_URL=http://localhost:3000`
+- `VITE_CLERK_PUBLISHABLE_KEY` for Clerk auth in the web app
+- `VITE_TURNSTILE_SITE_KEY` for the contact/newsletter forms
+- `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` for analytics
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for the API
 - `RESEND_API_KEY` in test mode (sends to a single sink email)
-- `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` for the always-pass dev keys provided by Cloudflare
+- `TURNSTILE_SECRET_KEY` for the always-pass dev keys provided by Cloudflare
 - `GITHUB_TOKEN` with `public_repo` scope
 
 OS: WSL2 Ubuntu. Node 20+, Bun 1.x, Python 3.12+, uv installed.
@@ -33,7 +36,7 @@ URL: `codepawl.com` and `www.codepawl.com` (web), `api.codepawl.com` (API).
 
 ## Hosting
 
-- **Frontend (Next.js)**: Cloudflare Workers Builds via the `@opennextjs/cloudflare` adapter (see [ADR-008](DECISIONS.md)). Worker name `codepawl`, asset binding `ASSETS`. Production branch `main` runs `wrangler deploy`; other branches run `wrangler versions upload` for preview URLs.
+- **Frontend (TanStack Start)**: Cloudflare Workers via `@cloudflare/vite-plugin` and `wrangler` (see [ADR-008](DECISIONS.md)). Worker name `codepawl`. Production branch `main` runs `wrangler deploy`; other branches run `wrangler versions upload` for preview URLs.
 - **Backend (FastAPI)**: Fly.io single app `codepawl-api`, primary region `sin`, shared-CPU 256 MB machine, `min_machines_running = 0` with auto-start on HTTP (see [ADR-009](DECISIONS.md)). Add a second region via `fly scale count 2 --region iad` if global p95 spikes.
 - **Database**: Supabase managed Postgres on the `Pro` tier from launch (better SLA than free; rollback to free if pre-revenue and traffic is tiny).
 - **DNS**: Cloudflare. Proxy on for the web hostnames, DNS-only for the API hostname (avoids Cloudflare's interference with long-running requests).
@@ -53,11 +56,11 @@ Never commit `.env`, `.env.local`, or any file containing real keys. `.env.examp
 ### Web (apps/web)
 
 - **Trigger**: push to `main` (production), push to any other branch (preview)
-- **Build command**: `bun install && bun --filter @codepawl/web build:cf` (wraps `next build` and emits a Worker entry + assets)
-- **Output**: `apps/web/.open-next/worker.js` + `apps/web/.open-next/assets/`
-- **Production deploy**: `cd apps/web && npx wrangler deploy` (promotes to live)
+- **Build command**: `bun install && bun --filter @codepawl/web build`
+- **Output**: `apps/web/dist/client/` and `apps/web/dist/server/server.mjs` for local preview; Cloudflare deploys from `wrangler.jsonc` and the TanStack Start server entry
+- **Production deploy**: `cd apps/web && bun run deploy` (promotes to live)
 - **Non-production deploy**: `cd apps/web && npx wrangler versions upload` (preview URL only, no traffic shift)
-- **ISR**: in-Worker by default. Promote to a Workers KV namespace via `incrementalCache` in `open-next.config.ts` once cold-deploy cache misses become visible
+- **Preview**: `cd apps/web && bun run preview`
 
 ### API (apps/api)
 
@@ -107,7 +110,7 @@ Concurrency: cancel in-progress runs on the same branch when a new commit lands.
 ### Error tracking
 
 - **Sentry** for both web and API. Free tier covers 5k errors/month, sufficient for MVP traffic
-- Source maps uploaded on every deploy via `@sentry/nextjs` build plugin (web) and `sentry-cli` (API)
+- Source maps uploaded on every deploy via the web build pipeline and `sentry-cli` (API)
 - Alert rule: any new error type in production pages me on Discord
 
 ### Uptime
@@ -162,4 +165,4 @@ cd apps/web && npx wrangler tail codepawl --format pretty
 
 **Sentry shows TypeError client-side from `motion/react`**: usually means a component that uses motion is rendering on the server without a "use client" directive. Add the directive.
 
-**Turnstile verification fails for all submissions**: check that `TURNSTILE_SECRET_KEY` matches the site key in `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (same widget pair). Dev uses the always-pass test pair, production uses real keys.
+**Turnstile verification fails for all submissions**: check that `TURNSTILE_SECRET_KEY` matches the site key in `VITE_TURNSTILE_SITE_KEY` (same widget pair). Dev uses the always-pass test pair, production uses real keys.

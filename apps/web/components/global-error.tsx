@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/components/link";
 import { useEffect } from "react";
 
-export default function GlobalError({
+export function GlobalErrorPage({
   error,
   reset,
 }: {
@@ -13,13 +13,13 @@ export default function GlobalError({
   useEffect(() => {
     console.error(error);
   }, [error]);
+
   return (
     <main className="mx-auto flex min-h-[60vh] max-w-xl flex-col justify-center px-6 py-20">
       <p className="cp-marker text-danger mb-6">500 · something broke</p>
       <h1 className="cp-h1 text-fg-1">We hit an error.</h1>
       <p className="cp-lead text-fg-2 mt-6">
-        Sentry has been notified. You can retry, or head back to the
-        homepage.
+        Sentry has been notified. You can retry, or head back to the homepage.
       </p>
       <div className="mt-8 flex gap-3">
         <button

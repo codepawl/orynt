@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
-import { SignInButton, SignUpButton, Show, UserButton } from "@clerk/nextjs";
+import { SignInButton, SignUpButton, Show, UserButton } from "@clerk/react";
 
+import { Link } from "@/components/link";
 import {
   STACK_PRODUCTS,
   productAvailabilityLabel,
@@ -31,14 +30,7 @@ export function Nav() {
           href="/"
           className="cp-hover-link text-fg-1 cp-h4 inline-flex items-center gap-2 font-display"
         >
-          <Image
-            src="/logo_for_light_mode.svg"
-            alt=""
-            width={28}
-            height={28}
-            priority
-            className="h-7 w-7"
-          />
+          <img src="/logo_for_light_mode.svg" alt="" width={28} height={28} className="h-7 w-7" />
           CODEPAWL
         </Link>
         <nav aria-label="Primary" className="hidden md:block">

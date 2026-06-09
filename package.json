@@ -28,7 +28,7 @@
     "test:all": "turbo run test",
     "test:e2e": "cd apps/web && bunx playwright test --reporter=line",
     "test:e2e:attached": "cd apps/web && PLAYWRIGHT_SKIP_WEBSERVER=1 bunx playwright test --reporter=line",
-    "test:e2e:web": "cd apps/web && rm -rf .next/dev && CI=true bunx playwright test --reporter=line",
+    "test:e2e:web": "cd apps/web && CI=true bunx playwright test --reporter=line",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --port 8000",
     "test:api": "cd apps/api && uv run pytest",
     "lint:api": "cd apps/api && uv run ruff check .",
@@ -36,9 +36,6 @@
   },
   "overrides": {
     "postcss": "8.5.14"
-  },
-  "dependencies": {
-    "next": "^16.2.7"
   },
   "devDependencies": {
     "turbo": "^2.9.16"

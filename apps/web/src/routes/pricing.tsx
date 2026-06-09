@@ -1,13 +1,23 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { createRoute } from "@tanstack/react-router";
 
-export const revalidate = 3600;
+import { Link } from "@/components/link";
+import { Route as siteRoute } from "./site";
 
-export const metadata: Metadata = {
-  title: "Pricing",
-  description:
-    "Open-source libraries are free forever. KStudio is a closed paid product. Enterprise pricing on request.",
-};
+export const Route = createRoute({
+  getParentRoute: () => siteRoute,
+  path: "pricing",
+  head: () => ({
+    meta: [
+      { title: "Pricing" },
+      {
+        name: "description",
+        content:
+          "Open-source libraries are free forever. KStudio is a closed paid product. Enterprise pricing on request.",
+      },
+    ],
+  }),
+  component: PricingPage,
+});
 
 const TIERS = [
   {
@@ -45,7 +55,7 @@ const TIERS = [
   },
 ] as const;
 
-export default function PricingPage() {
+function PricingPage() {
   return (
     <section className="mx-auto max-w-[1240px] px-6 py-20">
       <p className="cp-marker mb-6">pricing</p>

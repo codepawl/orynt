@@ -1,8 +1,7 @@
-import Image from "next/image";
-import Link from "next/link";
 import type { Icon } from "react-bootstrap-icons";
 import { EnvelopeAt, Github, TwitterX } from "react-bootstrap-icons";
 
+import { Link } from "@/components/link";
 import { FooterNewsletterForm } from "./footer-newsletter-form";
 
 const LINKS = {
@@ -79,13 +78,7 @@ export function Footer() {
       <div className="mx-auto grid max-w-[1240px] gap-12 px-6 py-16 lg:grid-cols-[2fr_3fr]">
         <div>
           <div className="cp-h4 flex items-center gap-3 text-fg-1 font-display">
-            <Image
-              src="/logo_for_light_mode.svg"
-              alt=""
-              width={32}
-              height={32}
-              className="h-8 w-8"
-            />
+            <img src="/logo_for_light_mode.svg" alt="" width={32} height={32} className="h-8 w-8" />
             <span>CODEPAWL</span>
           </div>
           <p className="cp-small text-fg-3 mt-3 max-w-lg">

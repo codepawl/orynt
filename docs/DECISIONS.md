@@ -128,22 +128,22 @@ ADR-style log of architectural decisions. Append new decisions; do not edit hist
 
 ---
 
-## ADR-008: Cloudflare Workers Builds with `@opennextjs/cloudflare` for the web frontend
+## ADR-008: Cloudflare Workers with TanStack Start for the web frontend
 
 **Date**: 2026-05-22
 **Status**: accepted
 
-**Context**: The hosting target for `apps/web` was an open question deferred to phase 8 between Vercel and Koyeb. In the meantime, Cloudflare already owns DNS for the project and Workers Builds matured into a Git-integrated CI that ships a Worker + static assets in one step. The `@opennextjs/cloudflare` adapter is now Cloudflare's official path for Next.js App Router and supports ISR. Continuing to defer adds two unknowns on top of every web change (build target and rollback story); locking it now lets the deploy pipeline stabilize before traffic arrives.
+**Context**: The web frontend had a Next/OpenNext deployment path that carried the most operational complexity in the repo. TanStack Start already owns the route tree and SSR layer, and Cloudflare's official path for Start uses the Vite Cloudflare plugin plus Wrangler. Keeping the deployment config aligned with the framework reduces the number of moving parts every time we change the marketing site or the docs routes.
 
-**Decision**: Host `apps/web` on Cloudflare Workers Builds. Build with `opennextjs-cloudflare build` (which wraps `next build`) to produce `.open-next/worker.js` and `.open-next/assets/`. `wrangler.jsonc` lives at `apps/web/wrangler.jsonc` with `name: codepawl`, `compatibility_flags: ["nodejs_compat"]`, and an `ASSETS` binding pointing at `.open-next/assets`. Production branch `main` deploys via `wrangler deploy`; non-production branches use `wrangler versions upload` to get a preview URL. ISR cache is in-Worker until cold-deploy misses become visible, at which point a KV namespace is added in `open-next.config.ts` and `wrangler.jsonc`.
+**Decision**: Host `apps/web` on Cloudflare Workers. Build the app with TanStack Start + Vite and `@cloudflare/vite-plugin`, and deploy with `wrangler`. `wrangler.jsonc` lives at `apps/web/wrangler.jsonc` with `name: codepawl`, `compatibility_flags: ["nodejs_compat"]`, and `main: "@tanstack/react-start/server-entry"`. Production branch `main` deploys via `wrangler deploy`; non-production branches use `wrangler versions upload` to get a preview URL.
 
 **Alternatives considered**:
 - **Vercel**: best ISR ergonomics and per-page analytics, but a second vendor on top of Cloudflare DNS and a second dashboard for runtime env vars.
 - **Koyeb (Next.js standalone)**: same vendor as the API, but Cloudflare's edge cannot cache Koyeb origin responses with the same fidelity as a Worker, and Koyeb scales-from-zero adds cold-start latency on marketing pages where TTFB matters most.
-- **Cloudflare Pages classic with `@cloudflare/next-on-pages`**: the adapter is in maintenance mode and Cloudflare is migrating Next.js users to Workers + Static Assets.
-- **`output: 'export'` (pure static)**: removes the runtime entirely but conflicts with the CLAUDE.md mandate that marketing pages use ISR.
+- **Cloudflare Pages classic**: still useful for purely static sites, but the Start app already targets Workers directly and does not need Pages-specific routing glue.
+- **`output: 'export'` (pure static)**: removes the runtime entirely and conflicts with the requirement that the marketing surface stay server-rendered.
 
-**Consequences**: One vendor for DNS, edge cache, and asset hosting — one bill, one auth, fewer integration seams. Cloudflare's network footprint gives lower TTFB than either alternative for global traffic. The trade-off: Vercel-specific niceties (per-page analytics, one-click rollback UI, automatic source-map upload via the Sentry build plugin) are lost and must be replicated through wrangler and the Cloudflare dashboard. ISR cache rebuilds cold on every deploy until KV is wired in, which is acceptable for a marketing site with hourly revalidate windows. The `apps/web/vercel.json` file is deleted; `docs/OPS.md` Hosting and Deployment sections move to reflect Workers Builds.
+**Consequences**: One vendor for DNS, edge cache, and asset hosting means one bill, one auth surface, and fewer integration seams. Cloudflare's network footprint gives lower TTFB than either alternative for global traffic. The trade-off: Vercel-specific niceties are gone, and source-map / rollback ergonomics now live in wrangler and the Cloudflare dashboard. The `apps/web/vercel.json` file is not part of this stack; `docs/OPS.md` hosting and deployment sections now reflect TanStack Start + Workers.
 
 ---
 

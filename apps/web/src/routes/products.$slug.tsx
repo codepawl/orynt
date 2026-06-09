@@ -1,40 +1,37 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { createRoute, notFound } from "@tanstack/react-router";
 
 import {
   getStackProduct,
-  getStackProducts,
   productAvailabilityLabel,
   productBadgeClass,
   productStateClass,
 } from "@/components/marketing/products";
-
-export const revalidate = 3600;
+import { Route as productsRoute } from "./products";
 
 const API_FETCH_TIMEOUT_MS = 2500;
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
-export async function generateStaticParams(): Promise<{ slug: string }[]> {
-  const products = await getStackProducts();
-  return products.map((product) => ({ slug: product.slug }));
-}
-
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}): Promise<Metadata> {
-  const { slug } = await params;
-  const product = await getStackProduct(slug);
-  if (!product) return { title: "Not found" };
-  return { title: product.name, description: product.tagline };
-}
+export const Route = createRoute({
+  getParentRoute: () => productsRoute,
+  path: "$slug",
+  loader: async ({ params }) => {
+    const product = await getStackProduct(params.slug);
+    if (!product) throw notFound();
+    const stats = await fetchStats(params.slug);
+    return { product, stats };
+  },
+  head: ({ loaderData }) => ({
+    meta: [
+      { title: loaderData?.product.name ?? "Product" },
+      { name: "description", content: loaderData?.product.tagline ?? "" },
+    ],
+  }),
+  component: ProductDetailPage,
+});
 
 async function fetchStats(slug: string): Promise<{ stars: number } | null> {
-  const base =
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
   try {
-    const response = await fetch(`${base}/products/${slug}/stats`, {
-      next: { revalidate: 3600 },
+    const response = await fetch(`${API_BASE}/products/${slug}/stats`, {
       signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) return null;
@@ -45,16 +42,9 @@ async function fetchStats(slug: string): Promise<{ stars: number } | null> {
   }
 }
 
-export default async function ProductDetail({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  const product = await getStackProduct(slug);
-  if (!product) {
-    notFound();
-  }
+function ProductDetailPage() {
+  const { product, stats } = Route.useLoaderData();
+
   if (product.availability === "announced_soon") {
     return (
       <article className="mx-auto max-w-[1240px] px-6 py-20">
@@ -85,7 +75,7 @@ export default async function ProductDetail({
       </article>
     );
   }
-  const stats = await fetchStats(slug);
+
   return (
     <article className="mx-auto max-w-[1240px] px-6 py-20">
       <p className="cp-marker mb-6">
@@ -115,10 +105,7 @@ export default async function ProductDetail({
         </div>
         <div>
           <p className="cp-caption text-fg-3">Stars</p>
-          <p
-            className="cp-h4 text-fg-1 mt-2"
-            data-testid="product-stars"
-          >
+          <p className="cp-h4 text-fg-1 mt-2" data-testid="product-stars">
             {stats ? stats.stars.toLocaleString() : "—"}
           </p>
         </div>

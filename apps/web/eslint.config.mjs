@@ -1,17 +1,15 @@
-import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
-import nextTypescript from "eslint-config-next/typescript";
+import js from "@eslint/js";
+import tseslint from "typescript-eslint";
 
-const eslintConfig = [
-  ...nextCoreWebVitals,
-  ...nextTypescript,
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
     ignores: [
       "node_modules/**",
+      "dist/**",
       ".next/**",
-      ".open-next/**",
-      "out/**",
-      "build/**",
-      "next-env.d.ts",
+      ".turbo/**",
       "e2e/**",
       "__tests__/**",
     ],
@@ -19,9 +17,6 @@ const eslintConfig = [
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
-      "react-hooks/set-state-in-effect": "off",
     },
   },
-];
-
-export default eslintConfig;
+);

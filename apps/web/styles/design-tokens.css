@@ -127,10 +127,57 @@
   --grid-gutter: 24px;
 }
 
-/* Light-mode opt-in. next-themes flips html.light to override. */
+@font-face {
+  font-family: "Fraunces";
+  src: url("../public/fonts/Fraunces.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("../public/fonts/Fraunces-Italic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter Tight";
+  src: url("../public/fonts/InterTight.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter Tight";
+  src: url("../public/fonts/InterTight-Italic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../public/fonts/JetBrainsMono.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../public/fonts/JetBrainsMono-Italic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* Dark mode is the default; html.light can opt into the alternate palette. */
 html.dark,
 html.light {
-  --ink-0: #ffffff;
   --ink-0: #f5f2ed;
   --ink-1: #eae7e1;
   --ink-2: #ddd9d0;

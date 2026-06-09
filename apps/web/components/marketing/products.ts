@@ -18,7 +18,7 @@ type ProductsResponse = {
 };
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 const API_FETCH_TIMEOUT_MS = 2500;
 
 export const STACK_PRODUCTS: ReadonlyArray<StackProduct> = [
@@ -130,7 +130,6 @@ export function productBadgeClass(product: StackProduct): string {
 async function fetchApiProducts(): Promise<ReadonlyArray<Product> | null> {
   try {
     const response = await fetch(`${API_BASE}/products`, {
-      next: { revalidate: 3600 },
       signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {

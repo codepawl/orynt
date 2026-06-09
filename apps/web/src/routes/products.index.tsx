@@ -1,5 +1,4 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { createRoute } from "@tanstack/react-router";
 
 import {
   getStackProducts,
@@ -7,17 +6,28 @@ import {
   productBadgeClass,
   productStateClass,
 } from "@/components/marketing/products";
+import { Link } from "@/components/link";
+import { Route as productsRoute } from "./products";
 
-export const revalidate = 3600;
+export const Route = createRoute({
+  getParentRoute: () => productsRoute,
+  path: "/",
+  loader: async () => getStackProducts(),
+  head: () => ({
+    meta: [
+      { title: "Products" },
+      {
+        name: "description",
+        content:
+          "CodePawl products: TracePawl, Mempawl, OpenPawl, and CachePawl. Infrastructure for AI agents.",
+      },
+    ],
+  }),
+  component: ProductsIndexPage,
+});
 
-export const metadata: Metadata = {
-  title: "Products",
-  description:
-    "CodePawl products: TracePawl, Mempawl, OpenPawl, and CachePawl. Infrastructure for AI agents.",
-};
-
-export default async function ProductsIndex() {
-  const products = await getStackProducts();
+function ProductsIndexPage() {
+  const products = Route.useLoaderData();
 
   return (
     <section className="mx-auto max-w-[1240px] px-6 py-20">
@@ -26,9 +36,9 @@ export default async function ProductsIndex() {
         Four products. One <em className="cp-em">platform</em>.
       </h1>
       <p className="cp-lead text-fg-2 mt-6 max-w-2xl">
-        CodePawl builds infrastructure for AI agents: debugging,
-        memory, coordination, and workload optimization. TracePawl is the
-        current focus.
+        CodePawl builds infrastructure for AI agents: debugging, memory,
+        coordination, and workload optimization. TracePawl is the current
+        focus.
       </p>
       <ul className="mt-12 grid gap-6 md:grid-cols-2">
         {products.map((product) => (
@@ -47,7 +57,6 @@ export default async function ProductsIndex() {
             </header>
             <h2 className="cp-h3 text-fg-1">{product.name}</h2>
             <p className="cp-body text-fg-2">{product.tagline}</p>
-            <p className="cp-small text-fg-3">{product.description}</p>
             <Link
               href={`/products/${product.slug}`}
               className="cp-hover-link text-ratchet hover:text-ratchet-hot cp-small mt-auto w-fit"
