@@ -1,0 +1,17 @@
+{
+  "action": "created",
+  "comment": {
+    "body": "/openpawl review",
+    "user": {
+      "login": "github-actions[bot]",
+      "type": "Bot"
+    }
+  },
+  "issue": {
+    "number": 104,
+    "pull_request": {}
+  },
+  "repository": {
+    "full_name": "codepawl/openpawl"
+  }
+}

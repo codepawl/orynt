@@ -47,6 +47,11 @@ describe("Openpawl comment command parser", () => {
     expect(parsed).toBeNull();
   });
 
+  it("does not parse comments that embed the command in extra text", () => {
+    const parsed = parseOpenPawlCommand("run /openpawl review please");
+    expect(parsed).toBeNull();
+  });
+
   it("parses a supported command on its own line", () => {
     const parsed = parseOpenPawlCommand("Hello team,\n/openpawl review\nPlease run it.");
     expect(parsed).not.toBeNull();
@@ -102,6 +107,21 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
       reason: "No supported /openpawl command found in issue_comment body.",
       issueIsPullRequest: false,
       issueNumber: 103,
+      source: "issue_comment",
+    });
+  });
+
+  it("does not run for bot-authored issue_comment commands", async () => {
+    const event = await loadGithubEventFixture("issue_comment_bot_review_pr.json");
+    const resolution = resolveOpenPawlTriggerFromEvent(event as Record<string, unknown>, {
+      eventName: "issue_comment",
+    });
+
+    expect(resolution).toMatchObject({
+      shouldRun: false,
+      reason: "Ignoring bot-authored issue_comment to prevent recursive Openpawl runs.",
+      issueIsPullRequest: true,
+      issueNumber: 104,
       source: "issue_comment",
     });
   });

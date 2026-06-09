@@ -27,6 +27,10 @@ interface GithubEventLike {
   action?: string;
   comment?: {
     body?: string;
+    user?: {
+      login?: string;
+      type?: string;
+    };
   };
   issue?: {
     number?: number;
@@ -94,6 +98,16 @@ function getIssueNumber(payload: GithubEventLike): number | undefined {
 
 function isPullRequestIssue(payload: GithubEventLike): boolean {
   return typeof payload.issue?.pull_request !== "undefined";
+}
+
+function isBotAuthoredComment(payload: GithubEventLike): boolean {
+  const userType = payload.comment?.user?.type;
+  if (typeof userType === "string" && userType.toLowerCase() === "bot") {
+    return true;
+  }
+
+  const login = payload.comment?.user?.login;
+  return typeof login === "string" && login.toLowerCase().endsWith("[bot]");
 }
 
 function getHeadRepo(payload: GithubEventLike): string | undefined {
@@ -209,6 +223,20 @@ export function resolveOpenPawlTriggerFromEvent(
       };
     }
     case "issue_comment": {
+      if (isBotAuthoredComment(payload)) {
+        return {
+          shouldRun: false,
+          reason: "Ignoring bot-authored issue_comment to prevent recursive Openpawl runs.",
+          task: OPENPAWL_REVIEW_TASK,
+          repoPath: ".",
+          mode: "dry-run",
+          issueIsPullRequest: isPullRequestIssue(payload),
+          issueNumber: getIssueNumber(payload),
+          baseRepoFullName: baseRepo,
+          source: "issue_comment",
+        };
+      }
+
       const body = typeof payload.comment?.body === "string" ? payload.comment.body : "";
       const task = fallbackCommandTask(body);
       if (!task) {

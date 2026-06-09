@@ -58,18 +58,26 @@ jobs:
       - name: Resolve Openpawl trigger
         id: trigger
         env:
+          EVENT_NAME: ${{ github.event_name }}
           OPENPAWL_TASK: ${{ github.event.inputs.task }}
           OPENPAWL_REPO_PATH: ${{ github.event.inputs.repo_path }}
           OPENPAWL_MODE: ${{ github.event.inputs.mode }}
           OPENPAWL_REPOSITORY: ${{ github.repository }}
         run: |
-          bun run dev:cli -- openpawl-trigger \
-            --event-name "${{ github.event_name }}" \
-            --event-path "${GITHUB_EVENT_PATH}" \
-            --workflow-task "${OPENPAWL_TASK}" \
-            --workflow-repo-path "${OPENPAWL_REPO_PATH}" \
-            --workflow-mode "${OPENPAWL_MODE}" \
-            --workflow-repository "${OPENPAWL_REPOSITORY}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            bun run dev:cli -- openpawl-trigger \
+              --event-name "$EVENT_NAME" \
+              --event-path "${GITHUB_EVENT_PATH}" \
+              --workflow-task "${OPENPAWL_TASK}" \
+              --workflow-repo-path "${OPENPAWL_REPO_PATH}" \
+              --workflow-mode "${OPENPAWL_MODE}" \
+              --workflow-repository "${OPENPAWL_REPOSITORY}"
+          else
+            bun run dev:cli -- openpawl-trigger \
+              --event-name "$EVENT_NAME" \
+              --event-path "${GITHUB_EVENT_PATH}" \
+              --workflow-repository "${OPENPAWL_REPOSITORY}"
+          fi
 
       - name: Run Openpawl agent
         id: openpawl
