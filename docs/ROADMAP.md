@@ -35,6 +35,8 @@
    - push `openpawl/apply-<issue-or-pr-number>-<run-id>`
    - open a PR back to the default branch with run and validation details
    - requires a generated safe create chunk for `/openpawl apply`; arbitrary docs-only write requests without patch content still fail with `No safe create chunks available in write mode.`
+   - if PR creation is blocked by org policy, branch push is still considered a successful apply step and the workflow records manual fallback instructions.
+
 3. Add a deterministic patch quality harness:
    - CLI command `codepawl eval patch-quality`
    - 20-30 fixture cases using mock LLM responses and temp repos

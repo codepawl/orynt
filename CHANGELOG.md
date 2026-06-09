@@ -18,7 +18,15 @@ All notable changes for Openpawl.
 - Mention-triggered commands remain dry-run only; `@openpawl apply` is not supported.
 - External workflow permissions now include `contents: write` for approval write PR creation.
 - CLI version output now identifies beta.1.
-- Issue #45 failure mode was preserved and documented: docs-only `/openpawl apply` requests without safe create chunks fail with `No safe create chunks available in write mode.`.
+- Issue #45 failure mode was preserved and documented: docs-only `/openpawl apply` requests without safe create chunks fail with `No safe create chunks available in write mode.`
+- Openpawl apply workflow now treats org-policy PR creation denial as a warning path after successful branch push:
+  - branch push success + org policy block keeps workflow success with manual PR fallback notes.
+  - unexpected PR creation errors still fail the write run.
+
+### Verified
+
+- Run `27223304290` succeeded through agent, validation, commit, and branch push to `openpawl/apply-46-run_1781025474393_c7nloc`.
+- Openpawl branch push was successful, PR auto-creation was blocked by policy (`GitHub Actions is not permitted to create or approve pull requests.`), and manual PR #47 became the fallback path.
 
 ## [0.1.0-alpha.10] - 2026-06-09
 

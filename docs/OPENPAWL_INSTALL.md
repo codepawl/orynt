@@ -56,6 +56,8 @@ Why:
 - `issues: write` lets Openpawl post the report back to the issue or PR thread
 - `pull-requests: write` supports PR comment, label, and approved apply PR flows
 
+If an org blocks GitHub Actions PR creation, the workflow still pushes `openpawl/apply-*` branches but posts a warning and manual PR instructions in the issue/PR comment.
+
 No PAT is required for the basic install. `GITHUB_TOKEN` is enough.
 
 ## Security behavior
@@ -69,6 +71,8 @@ Openpawl is intentionally conservative:
 - The workflow skips recursive bot-authored `issue_comment` runs.
 - Forked PR comments are skipped when the head repo differs from the base repo.
 - Reports and artifacts are written under `.codepawl/runs/<run-id>/`.
+
+- In orgs that block Actions from creating or approving pull requests, approved `/openpawl apply` runs can still succeed after branch push and provide manual PR fallback details.
 
 ## Commands and triggers
 

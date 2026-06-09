@@ -227,6 +227,15 @@ This walkthrough documents the implementation of the Openpawl MVP — a complete
 - Issue #45 was classified as expected unsupported behavior for docs-only apply tasks (no generated safe write chunk) and surfaces `No safe create chunks available in write mode.`
 - The deterministic mock fallback was improved so explicit `add tests for ...` write tasks now produce one allowed `create` chunk for smoke-verification coverage.
 
+### 2026-06-09 Beta.1 org-policy PR fallback verified
+
+- Run `27223304290` completed successfully through agent execution, validation, commit, and branch push to `openpawl/apply-46-run_1781025474393_c7nloc`.
+- The run then hit org policy `"GitHub Actions is not permitted to create or approve pull requests."` during `gh pr create`, so workflow continues with partial-success:
+  - branch push remains authoritative success,
+  - workflow emits a warning,
+  - a manual PR note/comment includes branch `openpawl/apply-46-run_1781025474393_c7nloc` plus manual command/link.
+- Manual PR #47 was used as fallback for that run.
+
 **Scope:** `packages/core/src/agent/nodes.ts`, `packages/core/src/runner.ts`, `packages/core/src/__tests__/runner.test.ts`, `packages/cli/src/bin.ts`, `packages/cli/src/__tests__/cli.test.ts`, and docs updates. `apps/web` and `apps/api` were not modified.
 
 ---

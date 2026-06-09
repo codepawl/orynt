@@ -234,11 +234,53 @@ jobs:
           Refs #${ISSUE_NUMBER}
           EOF
 
-          gh pr create \
+          PR_OUTPUT=$(mktemp)
+          MANUAL_PR_URL="https://github.com/${{ github.repository }}/compare/${BASE_REF}...${BRANCH_NAME}?expand=1"
+          MANUAL_PR_CMD="gh pr create --repo \"${{ github.repository }}\" --base \"${BASE_REF}\" --head \"${BRANCH_NAME}\" --title \"Openpawl apply for #${ISSUE_NUMBER}: ${SOURCE_TITLE}\" --body-file /tmp/openpawl-pr-body.md"
+          if gh pr create \
             --base "$BASE_REF" \
             --head "$BRANCH_NAME" \
             --title "Openpawl apply for #${ISSUE_NUMBER}: ${SOURCE_TITLE}" \
-            --body-file /tmp/openpawl-pr-body.md
+            --body-file /tmp/openpawl-pr-body.md \
+            > "$PR_OUTPUT" 2>&1; then
+            echo "✅ Openpawl PR created for run ${RUN_ID}."
+            rm -f "$PR_OUTPUT"
+          else
+            PR_EXIT_CODE=$?
+            if grep -qi "is not permitted to create or approve pull requests" "$PR_OUTPUT"; then
+              echo "::warning title=Openpawl PR creation blocked::Openpawl write run completed and pushed branch ${BRANCH_NAME}, but organization policy blocks GitHub Actions PR creation."
+              echo "Openpawl branch: ${BRANCH_NAME}"
+              echo "Branch compare link: ${MANUAL_PR_URL}"
+              echo "Manual PR command:"
+              echo "${MANUAL_PR_CMD}"
+
+              cat > /tmp/openpawl-manual-pr.md <<EOF
+              Openpawl write run \`${RUN_ID}\` succeeded and pushed branch **${BRANCH_NAME}**.
+
+              Automatic PR creation was blocked by organization policy: \`GitHub Actions is not permitted to create or approve pull requests.\`
+
+              To continue, create the PR manually:
+              - Compare URL: ${MANUAL_PR_URL}
+              - CLI command:
+                ${MANUAL_PR_CMD}
+              EOF
+
+              if [ -n "${ISSUE_NUMBER}" ] && [ -n "${GITHUB_TOKEN}" ]; then
+                if gh issue comment "$ISSUE_NUMBER" --repo "${{ github.repository }}" --body-file /tmp/openpawl-manual-pr.md; then
+                  echo "✅ Posted manual-PR fallback note to issue #${ISSUE_NUMBER}."
+                else
+                  echo "::warning::Unable to post fallback PR instructions comment on issue #${ISSUE_NUMBER}."
+                fi
+              fi
+              rm -f "$PR_OUTPUT" /tmp/openpawl-manual-pr.md
+              exit 0
+            fi
+
+            echo "Openpawl PR creation failed with unexpected error for run ${RUN_ID}."
+            cat "$PR_OUTPUT"
+            rm -f "$PR_OUTPUT"
+            exit "$PR_EXIT_CODE"
+          fi
 
       - name: Fail if Openpawl run failed
         if: |
