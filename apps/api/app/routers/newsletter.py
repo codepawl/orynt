@@ -5,8 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from supabase import Client
 
-from app.config import Settings, get_settings
-from app.dependencies import get_supabase_client
+from app.dependencies import SettingsDep, get_supabase_client
 from app.middleware import limiter
 from app.models.newsletter import (
     ConfirmResponse,
@@ -22,13 +21,12 @@ from app.services.turnstile_service import verify_turnstile
 router = APIRouter(prefix="/api/v1/newsletter", tags=["newsletter"])
 
 
-def get_subscriber_repo(
+async def get_subscriber_repo(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> SubscriberRepo:
     return SupabaseSubscriberRepo(client)
 
 
-SettingsDep = Annotated[Settings, Depends(get_settings)]
 RepoDep = Annotated[SubscriberRepo, Depends(get_subscriber_repo)]
 
 

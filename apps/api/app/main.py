@@ -9,6 +9,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urlparse
 
 import structlog
@@ -21,7 +22,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.errors import register_exception_handlers
 from app.jobs.sync_github_stats import sync as sync_stats_job
 from app.middleware import limiter
@@ -82,8 +83,7 @@ def _request_host(request: Request) -> str:
     return host.split(":", 1)[0].lower().rstrip(".")
 
 
-async def _run_sync_stats() -> None:
-    settings = get_settings()
+async def _run_sync_stats(settings: Settings) -> None:
     if settings.testing or not settings.supabase_url or not settings.supabase_service_role_key:
         return
     from supabase import create_client
@@ -96,41 +96,46 @@ async def _run_sync_stats() -> None:
     )
 
 
-@asynccontextmanager
-async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    settings = get_settings()
-    scheduler: AsyncIOScheduler | None = None
-    if not settings.testing:
-        scheduler = AsyncIOScheduler(timezone="UTC")
-        # First run ~30s after boot per docs/ROADMAP.md.
-        scheduler.add_job(
-            _run_sync_stats,
-            trigger=DateTrigger(run_date=datetime.now(UTC) + timedelta(seconds=30)),
-            id="github_sync_boot",
-            replace_existing=True,
-        )
-        scheduler.add_job(
-            _run_sync_stats,
-            trigger=IntervalTrigger(hours=6),
-            id="github_sync_cron",
-            replace_existing=True,
-        )
-        scheduler.start()
-        log.info("scheduler_started")
+def _create_lifespan(settings: Settings) -> Callable[[FastAPI], Any]:
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        scheduler: AsyncIOScheduler | None = None
+        if not settings.testing:
+            scheduler = AsyncIOScheduler(timezone="UTC")
+            # First run ~30s after boot per docs/ROADMAP.md.
+            scheduler.add_job(
+                _run_sync_stats,
+                args=[settings],
+                trigger=DateTrigger(run_date=datetime.now(UTC) + timedelta(seconds=30)),
+                id="github_sync_boot",
+                replace_existing=True,
+            )
+            scheduler.add_job(
+                _run_sync_stats,
+                args=[settings],
+                trigger=IntervalTrigger(hours=6),
+                id="github_sync_cron",
+                replace_existing=True,
+            )
+            scheduler.start()
+            log.info("scheduler_started")
 
-    try:
-        yield
-    finally:
-        if scheduler is not None:
-            scheduler.shutdown(wait=False)
-            log.info("scheduler_stopped")
+        try:
+            yield
+        finally:
+            if scheduler is not None:
+                scheduler.shutdown(wait=False)
+                log.info("scheduler_stopped")
+
+    return _lifespan
 
 
-def create_app() -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     _configure_logging()
     _maybe_init_sentry()
 
-    settings = get_settings()
+    settings = settings or get_settings()
+
     docs_url = "/docs" if settings.docs_public else None
     redoc_url = "/redoc" if settings.docs_public else None
     openapi_url = "/openapi.json" if settings.docs_public else None
@@ -141,7 +146,7 @@ def create_app() -> FastAPI:
         docs_url=docs_url,
         redoc_url=redoc_url,
         openapi_url=openapi_url,
-        lifespan=_lifespan,
+        lifespan=_create_lifespan(settings),
     )
 
     app.state.limiter = limiter
@@ -167,7 +172,8 @@ def create_app() -> FastAPI:
         path = str(request.scope.get("path", ""))
         if path != "/health/ready" and _request_host(request) not in allowed_hosts:
             return PlainTextResponse("Invalid host header", status_code=400)
-        return await call_next(request)
+        response: Response = await call_next(request)
+        return response
 
     app.add_middleware(SlowAPIMiddleware)
     app.add_middleware(

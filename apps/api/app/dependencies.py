@@ -39,11 +39,15 @@ class _MissingSupabase:
         )
 
 
-def get_supabase_client() -> Client:
+async def get_supabase_client() -> Client:
     return _build_client()
 
 
-SettingsDep = Annotated[Settings, Depends(get_settings)]
+async def get_settings_dep() -> Settings:
+    return get_settings()
+
+
+SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
 
 
 def require_admin(

@@ -15,13 +15,13 @@ from app.repositories.product_stats_repo import ProductStatsRepo, SupabaseProduc
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
 
 
-def get_product_repo(
+async def get_product_repo(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> ProductRepo:
     return SupabaseProductRepo(client)
 
 
-def get_product_stats_repo(
+async def get_product_stats_repo(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> ProductStatsRepo:
     return SupabaseProductStatsRepo(client)

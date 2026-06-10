@@ -41,7 +41,10 @@ def test_rejects_untrusted_host(client: TestClient) -> None:
 
 
 def test_readiness_returns_200_when_db_reachable(app: FastAPI, client: TestClient) -> None:
-    app.dependency_overrides[get_supabase_client] = lambda: _FakeSupabaseOk()
+    async def _fake_supabase_ready() -> _FakeSupabaseOk:
+        return _FakeSupabaseOk()
+
+    app.dependency_overrides[get_supabase_client] = _fake_supabase_ready
     response = client.get("/health/ready")
     assert response.status_code == 200
     body = response.json()
@@ -50,7 +53,10 @@ def test_readiness_returns_200_when_db_reachable(app: FastAPI, client: TestClien
 
 
 def test_readiness_returns_503_when_db_errors(app: FastAPI, client: TestClient) -> None:
-    app.dependency_overrides[get_supabase_client] = lambda: _FakeSupabaseFail()
+    async def _fake_supabase_error() -> _FakeSupabaseFail:
+        return _FakeSupabaseFail()
+
+    app.dependency_overrides[get_supabase_client] = _fake_supabase_error
     response = client.get("/health/ready")
     assert response.status_code == 503
     body = response.json()
