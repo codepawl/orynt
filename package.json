@@ -29,6 +29,7 @@
     "test:e2e": "cd apps/web && bunx playwright test --reporter=line",
     "test:e2e:attached": "cd apps/web && PLAYWRIGHT_SKIP_WEBSERVER=1 bunx playwright test --reporter=line",
     "test:e2e:web": "cd apps/web && CI=true bunx playwright test --reporter=line",
+    "deploy": "cd apps/web && bun run deploy",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --port 8000",
     "test:api": "cd apps/api && uv run pytest",
     "lint:api": "cd apps/api && uv run ruff check .",
