@@ -10,11 +10,13 @@
 - `v0.1.0-alpha.9`: first external installability cut with repo-root config, reusable workflow template, install docs, and safer write-mode defaults.
 - `v0.1.0-alpha.10`: maintainer mention UX with exact `@openpawl` commands, dry-run-only mention triggers, direct CLI workflow invocation that bypasses the root Turbo script, and live issue/PR verification on GitHub Actions runs `27208458149`, `27208687623`, `27208690487`, and `27208692054`.
 - `v0.1.0-beta.1`: approval write mode with bot-branch PR creation, safe create-chunk write policy, and a deterministic patch quality harness.
+- `v0.2.0`: patch-quality reliability layer released. Harness expanded to 50 fixtures, with reliability metrics, failure taxonomy, and common add-tests safe-generation coverage.
 
 ### Maturity plan
 
 - **Alpha:** CLI + dry-run + trace + CI verified; real-provider runs are experimental.
-- **Beta (current):** safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
+- **Beta (current):** v0.2.0 release; safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
+- **v0.2 Reliability (released):** 50-fixture deterministic patch-quality regression harness and failure-taxonomy coverage complete; live GitHub dry-run smoke pass achieved in `27273286439`.
 - **RC:** validate on multiple real repositories, publish provider compatibility matrix, and stabilize failure/retry behavior.
 - **0.1.0 stable:** safe write-mode and release packaging readiness for external users.
 

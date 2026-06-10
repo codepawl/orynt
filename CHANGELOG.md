@@ -4,6 +4,35 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.2.0] - 2026-06-10
+
+### Added
+
+- v0.2 Reliability Layer released:
+  - expanded patch-quality fixture set to 50 cases
+  - added reliability metrics and failure-taxonomy reporting to patch-quality eval outputs
+  - improved safe-chunk generation mapping for common add-tests intents
+
+### Verified
+
+- `bun run typecheck`
+- `bun run test`
+- `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp007-eval --limit 50`
+  - Run ID: `eval_1781089789811_pw198o`
+  - Passed: `50`, Failed: `0`
+- write/apply smoke on safe fixture path:
+  - `bun --filter @codepawl/cli dev -- run --repo . --task "add unit tests for shared helpers" --write --test-command "echo smoke-ok" --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json --out-dir /tmp/codepawl-cp007-write-smoke`
+  - Run ID: `run_1781089801963_u5vppi`
+- live GitHub dry-run smoke:
+  - `gh workflow run openpawl.yml --ref main`
+  - Run URL: `https://github.com/codepawl/codepawl/actions/runs/27273286439`
+  - conclusion: `success`
+
+### Release status
+
+- CP-007 closeout decision: `TAG_READY`.
+- `v0.2.0` release evidence includes local eval/write smoke artifacts and the 27273286439 run proof.
+
 ## [0.1.0-beta.1] - 2026-06-09
 
 ### Added
@@ -137,6 +166,8 @@ All notable changes for Openpawl.
 - No production write-mode patch generation in this milestone.
 
 ## [Unreleased]
+
+### No unreleased items.
 
 ### Scope
 

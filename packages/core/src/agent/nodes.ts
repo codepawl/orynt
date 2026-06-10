@@ -416,17 +416,21 @@ function isLikelyFileDescription(text: string): boolean {
 function isTestFilePath(filePath: string): boolean {
   const normalized = path.posix.normalize(filePath.replace(/\\/g, "/"));
   const segments = normalized.split("/");
-  if (!segments.some((segment) => TEST_DIR_SEGMENTS.has(segment))) {
-    return false;
-  }
   const baseName = segments[segments.length - 1] ?? "";
   const lowered = baseName.toLowerCase();
   if (!/\.[A-Za-z0-9]+$/.test(baseName)) {
     return false;
   }
+  const hasTestDir = segments.some((segment) => TEST_DIR_SEGMENTS.has(segment));
   const hasTestToken = lowered.includes("test") || lowered.includes("spec");
   const isAllowedExtension = /\.(ts|tsx|js|jsx|py|rs|go|java|cpp|c|cs|sh|md|yml|yaml|json|txt)$/.test(baseName);
-  return hasTestToken && isAllowedExtension;
+  const stem = lowered.replace(/\.[a-z0-9]+$/, "");
+  const hasTestStemToken = stem === "test" || stem === "spec"
+    || stem.includes(".test")
+    || stem.includes(".spec")
+    || /(?:\.|_|-)test(?:\.|$)/.test(stem)
+    || /(?:\.|_|-)spec(?:\.|$)/.test(stem);
+  return isAllowedExtension && hasTestToken && (hasTestDir || hasTestStemToken);
 }
 
 function isNearRelevantModule(filePath: string, affectedModules: ReadonlyArray<string>): boolean {
