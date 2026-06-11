@@ -3,8 +3,8 @@
 Openpawl is distributed from the public Action repository:
 `https://github.com/codepawl/openpawl`.
 
-This website uses current-candidate install wording until the final Marketplace
-release tag and listing URL are verified.
+Use the verified public Action release tag for installs. The GitHub Marketplace
+listing remains pending until its listing URL exists and has been verified.
 
 ## Minimal Action Setup
 
@@ -25,16 +25,18 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v6
-      - uses: codepawl/openpawl@main
+      - uses: codepawl/openpawl@v0.5.1
 ```
 
-Replace `main` with the verified Marketplace release tag after the Action
-release exists and the listing has been confirmed.
+`v0.5.1` is the verified public Action release tag. This install guide does not
+claim that the GitHub Marketplace listing is live.
 
 ## Public References
 
 - Source repository: `https://github.com/codepawl/openpawl`
-- Action metadata: `https://github.com/codepawl/openpawl/blob/main/action.yml`
+- Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.5.1`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.1/action.yml`
+- Release install docs: `https://github.com/codepawl/openpawl/blob/v0.5.1/docs/OPENPAWL_INSTALL.md`
 - Repository docs: `https://github.com/codepawl/openpawl/tree/main/docs`
 - Support issues: `https://github.com/codepawl/openpawl/issues`
 - Security advisories: `https://github.com/codepawl/openpawl/security/advisories`

@@ -8,7 +8,10 @@ import {
   OPENPAWL_ACTION_METADATA,
   OPENPAWL_INSTALL_DOC,
   OPENPAWL_MAIN_DOCS,
+  OPENPAWL_MARKETPLACE_DOC,
   OPENPAWL_REPO,
+  OPENPAWL_RELEASE,
+  OPENPAWL_RELEASE_URL,
   PageShell,
 } from "@/components/marketing/marketplace-pages";
 import { Route as siteRoute } from "./site";
@@ -34,7 +37,7 @@ function OpenpawlDocsPage() {
     <PageShell
       eyebrow="openpawl / docs"
       title="Openpawl documentation."
-      lead="Use these links for the current public Action candidate. Release-tagged docs should be used only after the GitHub Release exists."
+      lead="Use the verified v0.5.1 public Action release for installs. The default branch remains available for current development docs."
     >
       <InfoCard title="Start here">
         <LinkGrid
@@ -48,13 +51,19 @@ function OpenpawlDocsPage() {
             {
               href: OPENPAWL_ACTION_METADATA,
               label: "Action metadata",
-              body: "Root action.yml inputs, outputs, branding, and runtime.",
+              body: "Release-locked root action.yml inputs, outputs, branding, and runtime.",
               external: true,
             },
             {
               href: OPENPAWL_INSTALL_DOC,
               label: "Install guide",
-              body: "Workflow setup, permissions, safety model, and artifacts.",
+              body: "Release-locked workflow setup, permissions, safety model, and artifacts.",
+              external: true,
+            },
+            {
+              href: OPENPAWL_MARKETPLACE_DOC,
+              label: "Marketplace readiness",
+              body: "Release-locked Marketplace candidate fields and copy guardrails.",
               external: true,
             },
             {
@@ -80,12 +89,13 @@ function OpenpawlDocsPage() {
 
       <InfoCard title="Marketplace status">
         <p>
-          Openpawl is being prepared for GitHub Marketplace. This page does not
-          claim a live Marketplace listing. Check{" "}
+          Openpawl has a public{" "}
+          <InlineLink href={OPENPAWL_RELEASE_URL}>{OPENPAWL_RELEASE}</InlineLink>{" "}
+          Action release and is being prepared for GitHub Marketplace. This page
+          does not claim a live Marketplace listing. Check{" "}
           <InlineLink href="/status">status</InlineLink> for current readiness.
         </p>
       </InfoCard>
     </PageShell>
   );
 }
-

@@ -2,7 +2,25 @@
 
 Date: 2026-06-11
 
-Status: planning only. Do not delete, move, tag, publish, or change runtime behavior from this document without a separate implementation pass.
+Status: implementation checkpoint in progress. The original plan was committed
+first, then the private repo migration pass moved website/docs/workflow
+references to `codepawl/openpawl@v0.5.1` without changing Openpawl runtime
+behavior.
+
+## Progress Log
+
+- 2026-06-11: committed this plan as checkpoint `4266954`.
+- 2026-06-11: verified local public `openpawl` checkout is exactly on tag
+  `v0.5.1`.
+- 2026-06-11: updated private website/docs install links to
+  `codepawl/openpawl@v0.5.1` while keeping Marketplace listing copy pending.
+- 2026-06-11: updated private Openpawl workflows to run the public
+  `codepawl/openpawl@v0.5.1` source checkout where the private wrapper must
+  preserve comments, artifacts, and approved-write PR behavior.
+- 2026-06-11: froze private duplicate `packages/core`, `packages/cli`, and
+  `packages/shared` with package README notes. Package deletion remains unsafe
+  because root scripts still reference core/cli and `apps/web` still imports
+  `@codepawl/shared`.
 
 ## Verdict
 
@@ -38,7 +56,7 @@ Private CodePawl repo:
 - `.github/workflows/openpawl-run.yml`
 - `docs/MARKETPLACE.md`
 - `docs/OPENPAWL_INSTALL.md`
-- `docs/WEBSITE_CLOUD_MASTER_PLAN.md`
+- `.agents/audits/WEBSITE_CLOUD_MASTER_PLAN.md`
 - `apps/web`
 
 ## Source-Of-Truth Map
@@ -54,7 +72,7 @@ Private CodePawl repo:
 | Evidence Summary | Runtime behavior lives in core report export paths and workflow comment wrappers. | Public runtime plus private workflow comment wrapper only if still needed. | Preserve output contract during workflow-link change. |
 | Marketplace docs | Public repo has full Action submission fields for `v0.5.1`; private repo has website support docs. | Public repo for Action docs; private repo for website URLs. | Private docs should link to public versioned docs and avoid duplicating runtime instructions. |
 | Website Marketplace routes | Added in private repo Phase 1. | Private `apps/web`, with public Openpawl links. | Update to reference `v0.5.1` where release URL is verified. |
-| Private Openpawl workflows | Still run local private packages or checkout `codepawl/codepawl`. | Public `codepawl/openpawl@v0.5.1`. | Change in a workflow-link phase, not in this plan. |
+| Private Openpawl workflows | Migrated to run the public `codepawl/openpawl@v0.5.1` source checkout where private wrapper behavior is still needed. | Public `codepawl/openpawl@v0.5.1`. | Keep comments, artifacts, and approved-write PR behavior in private wrappers. |
 | Future Openpawl development | Split across public/private copies risk. | Public `openpawl` repo only. | Make private repo a consumer, not runtime owner. |
 
 ## Duplicate And Stale Files In `codepawl`
@@ -86,8 +104,8 @@ Decision: freeze these private packages immediately by policy, not by deletion. 
 
 ### Workflow duplicates to replace with public Action usage
 
-- `.github/workflows/openpawl.yml` runs the local private `@codepawl/cli` package.
-- `.github/workflows/openpawl-run.yml` checks out `repository: codepawl/codepawl` at `openpawl_ref` and runs `.openpawl-src`.
+- `.github/workflows/openpawl.yml` previously ran the local private `@codepawl/cli` package; it now checks out `codepawl/openpawl@v0.5.1` into `.openpawl-src`.
+- `.github/workflows/openpawl-run.yml` previously checked out the private monorepo at `openpawl_ref`; it now checks out `repository: codepawl/openpawl`.
 
 Decision: these should switch to public release consumption in a dedicated workflow-link phase. The target is `uses: codepawl/openpawl@v0.5.1` for direct Action use, or `uses: codepawl/openpawl/.github/workflows/openpawl-run.yml@v0.5.1` only where the reusable workflow shape is required.
 
@@ -140,11 +158,11 @@ These private files still assume the packages exist and must be changed only in 
   - `docs/DATA.md`
   - `docs/UI.md`
 
-Decision: do not remove package paths until these references are audited. Prefer a transitional `docs/OPENPAWL_SOURCE_MIGRATION_PLAN.md` link and deprecation note first.
+Decision: do not remove package paths until these references are audited. Prefer a transitional `.agents/plans/OPENPAWL_SOURCE_MIGRATION_PLAN.md` link and deprecation note first.
 
 ## Website Reference Policy
 
-Now that public Action release `v0.5.1` exists, private website Marketplace pages should move from `main` and "current candidate" links to verified release links where they describe installs:
+Now that public Action release `v0.5.1` exists, private website Marketplace pages should use verified release links where they describe installs:
 
 - Install snippets should use `codepawl/openpawl@v0.5.1`.
 - Source/doc links can use `v0.5.1` for release-locked docs and `main` for current development docs when explicitly labeled.
@@ -212,7 +230,7 @@ Scope: private website docs/copy only.
 Tasks:
 
 - Update `apps/web/components/marketing/marketplace-pages.tsx` constants to include `v0.5.1` release docs for install and action metadata where appropriate.
-- Update `/openpawl/install` snippet from `codepawl/openpawl@main` to `codepawl/openpawl@v0.5.1`.
+- Update `/openpawl/install` snippet from the old default-branch Action ref to `codepawl/openpawl@v0.5.1`.
 - Update `docs/MARKETPLACE.md`, `docs/OPENPAWL_INSTALL.md`, and `docs/samples/openpawl.workflow.yml` to point at `v0.5.1`.
 - Keep listing copy as pending unless the GitHub Marketplace listing URL exists.
 
@@ -244,7 +262,7 @@ Scope: private GitHub Actions workflow wiring.
 Recommended target:
 
 - Replace local package execution in `.github/workflows/openpawl.yml` with `uses: codepawl/openpawl@v0.5.1` where direct Action invocation is enough.
-- Replace checkout of `repository: codepawl/codepawl` in `.github/workflows/openpawl-run.yml` with `repository: codepawl/openpawl`, or replace the reusable workflow with `uses: codepawl/openpawl/.github/workflows/openpawl-run.yml@v0.5.1` if compatible.
+- Replace private-monorepo source checkout in `.github/workflows/openpawl-run.yml` with `repository: codepawl/openpawl`, or replace the reusable workflow with `uses: codepawl/openpawl/.github/workflows/openpawl-run.yml@v0.5.1` if compatible.
 
 Preserve:
 
@@ -269,8 +287,8 @@ git diff --check
 Remote validation:
 
 ```bash
-gh workflow run openpawl.yml --repo codepawl/codepawl -f mode=dry-run -f task="review changes and suggest improvements"
-gh run list --repo codepawl/codepawl --workflow openpawl.yml --limit 5
+gh workflow run openpawl.yml --repo <private-codepawl-repo> -f mode=dry-run -f task="review changes and suggest improvements"
+gh run list --repo <private-codepawl-repo> --workflow openpawl.yml --limit 5
 ```
 
 Go criteria:

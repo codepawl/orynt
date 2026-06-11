@@ -6,6 +6,8 @@ import {
   InfoCard,
   InlineLink,
   OPENPAWL_INSTALL_DOC,
+  OPENPAWL_RELEASE,
+  OPENPAWL_RELEASE_URL,
   PageShell,
 } from "@/components/marketing/marketplace-pages";
 import { Route as siteRoute } from "./site";
@@ -19,7 +21,7 @@ export const Route = createRoute({
       {
         name: "description",
         content:
-          "Install the current Openpawl GitHub Action candidate without relying on an unverified release tag.",
+          "Install the Openpawl GitHub Action from the verified v0.5.1 public release tag.",
       },
     ],
   }),
@@ -30,10 +32,10 @@ function OpenpawlInstallPage() {
   return (
     <PageShell
       eyebrow="openpawl / install"
-      title="Install Openpawl without overclaiming release status."
-      lead="Openpawl is a public dry-run-first GitHub Action candidate. Use the current public source while the Marketplace release tag is being verified, then pin the verified release tag when it exists."
+      title="Install Openpawl from the public Action release."
+      lead="Openpawl is a public dry-run-first GitHub Action candidate. Pin the verified v0.5.1 release tag for Action installs while the GitHub Marketplace listing remains pending."
     >
-      <InfoCard title="Current candidate workflow">
+      <InfoCard title="Pinned release workflow">
         <CodeBlock>{`jobs:
   openpawl:
     runs-on: ubuntu-latest
@@ -41,14 +43,15 @@ function OpenpawlInstallPage() {
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: codepawl/openpawl@main
+      - uses: codepawl/openpawl@v0.5.1
         with:
           task: "review changes and suggest improvements"
           mode: "dry-run"
           repo-path: "."`}</CodeBlock>
         <p>
-          Replace <code className="cp-inline-code">@main</code> with a verified
-          release tag after the GitHub Release and Marketplace listing are live.
+          The public release is{" "}
+          <InlineLink href={OPENPAWL_RELEASE_URL}>{OPENPAWL_RELEASE}</InlineLink>.
+          This page does not claim that the GitHub Marketplace listing is live.
         </p>
       </InfoCard>
 
@@ -83,11 +86,10 @@ function OpenpawlInstallPage() {
       <InfoCard title="Source install guide">
         <p>
           The full source guide lives in the public Openpawl repository on the
-          default branch:{" "}
+          verified release tag:{" "}
           <InlineLink href={OPENPAWL_INSTALL_DOC}>OPENPAWL_INSTALL.md</InlineLink>.
         </p>
       </InfoCard>
     </PageShell>
   );
 }
-

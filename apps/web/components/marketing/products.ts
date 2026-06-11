@@ -63,7 +63,7 @@ export const STACK_PRODUCTS: ReadonlyArray<StackProduct> = [
     description:
       "OpenPawl reviews repositories from GitHub Actions, writes schema-versioned artifacts, and keeps beta write mode gated behind explicit maintainer approval.",
     availability: "active",
-    install: "Use codepawl/openpawl@main until the Marketplace release tag is verified",
+    install: "Use codepawl/openpawl@v0.5.1 for the public Action release",
     language: "TypeScript",
     current_focus: false,
   },

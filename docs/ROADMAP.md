@@ -2,13 +2,19 @@
 
 ## Openpawl Release Roadmap
 
+Openpawl runtime development now belongs in the public
+`codepawl/openpawl@v0.5.1` release line and later public releases. The private
+`packages/core`, `packages/cli`, and `packages/shared` directories are frozen
+compatibility copies until package-removal audit work proves they can be
+deleted safely.
+
 ### Release history snapshot
 
 - `v0.1.0-alpha.1`: Mock-first monorepo foundation, local dry-run, metadata-only patch plans, and PR workflow verification without production write mode.
 - `v0.1.0-alpha.2`: Experimental OpenAI-compatible provider, structured-output retry, safer diagnostics, and GitHub workflow hardening.
 - `v0.1.0-alpha.3`: `json_schema` strict mode, context compaction with budgets, grounding/rejection of provider paths, dry-run scope fallback for ungrounded proposals, and safe write-mode v0 guardrails.
 - `v0.1.0-alpha.9`: first external installability cut with repo-root config, reusable workflow template, install docs, and safer write-mode defaults.
-- `v0.1.0-alpha.10`: maintainer mention UX with exact `@openpawl` commands, dry-run-only mention triggers, direct CLI workflow invocation that bypasses the root Turbo script, and live issue/PR verification on GitHub Actions runs `27208458149`, `27208687623`, `27208690487`, and `27208692054`.
+  - `v0.1.0-alpha.10`: maintainer mention UX with exact `@openpawl` commands, dry-run-only mention triggers, direct public Openpawl CLI workflow invocation that bypasses the target repo root Turbo script, and live issue/PR verification on GitHub Actions runs `27208458149`, `27208687623`, `27208690487`, and `27208692054`.
 - `v0.1.0-beta.1`: approval write mode with bot-branch PR creation, safe create-chunk write policy, and a deterministic patch quality harness.
 - `v0.2.0`: patch-quality reliability layer released. Harness expanded to 50 fixtures, with reliability metrics, failure taxonomy, and common add-tests safe-generation coverage.
 - `v0.2.1`: post-release external installability patch. Fixed workflows to run the Openpawl CLI from a dynamically checked out `.openpawl-src` repository to resolve dependency-resolution failures in target repositories.
@@ -54,7 +60,7 @@
 4. Update docs and release notes:
    - README and install docs list `/openpawl apply` and `openpawl-approved`
    - external install docs describe the new `contents: write` permission for approval writes
-   - preserve direct `@codepawl/cli` workflow invocation
+   - preserve direct public Openpawl CLI workflow invocation
 
 **Validation commands:**
 

@@ -79,8 +79,8 @@ No uploaded local HTML snapshot was found in the repository. The live HTML snaps
   - `/cloud`
   - `/cloud/waitlist`
 - Footer already links to `/privacy` and `/terms`, but those routes 404.
-- `apps/web/components/marketing/products.ts` still maps Openpawl to `github_repo: "codepawl/codepawl"`, while the public Marketplace candidate now lives at `codepawl/openpawl`.
-- The rendered Openpawl docs page currently says docs are sourced from `codepawl/codepawl`; that is stale for the public action repo.
+- `apps/web/components/marketing/products.ts` has been updated to map Openpawl to `github_repo: "codepawl/openpawl"`.
+- The rendered Openpawl docs page now links to release-locked `codepawl/openpawl@v0.5.1` docs where public install or Action metadata is meant.
 
 ### Live Site Findings
 
@@ -113,10 +113,10 @@ Current public status checked on 2026-06-11:
   - `CodeQL`: success, run `27331704789`
   - `Publish to npm`: skipped for the marketplace-candidate tag path
 
-Known Marketplace blocker from the final audit:
+Known Marketplace blocker from the initial audit:
 
-- `v0.5.1` release/tag URLs were not available during the audit.
-- Do not claim Marketplace publication is complete until the final release/tag and GitHub listing are actually live.
+- `v0.5.1` release/tag URLs were not available during the initial audit but have since been verified locally.
+- Do not claim Marketplace publication is complete until the GitHub listing URL is actually live.
 
 ### GitHub Marketplace Requirements That Affect The Website
 
@@ -155,7 +155,8 @@ The current product catalog marks TracePawl as the current focus and OpenPawl as
 
 4. Old repository references
 
-Local CodePawl docs and website product data still point to `codepawl/codepawl`, while current public Openpawl action repo is `codepawl/openpawl`.
+Initial audit found local CodePawl docs and website product data pointing to the
+private monorepo; public Openpawl references now point to `codepawl/openpawl`.
 
 5. Marketplace-critical URLs are missing
 
@@ -661,7 +662,7 @@ Tasks:
 
 - Add `/openpawl`.
 - Update `/products/openpawl` to redirect or canonicalize to `/openpawl`.
-- Update stale `codepawl/codepawl` references to `codepawl/openpawl` where they describe the public action.
+- Update stale private-monorepo references to `codepawl/openpawl` where they describe the public action.
 - Add evidence cards for CI, CodeQL, and smoke run.
 
 Go/no-go:
@@ -828,13 +829,13 @@ No-go if:
 - Cloud page implies billing, provisioning, SLA, or hosted availability.
 - Openpawl page claims Marketplace publication before the listing URL exists.
 - Any public page exposes private cloud/deployment/billing/internal operational details from `docs/OPS.md`.
-- Release/tag references are not verified.
+- Marketplace listing references are not verified.
 
 ## Risks
 
 1. Release/tag drift
 
-The website install snippets can become incorrect if they name a release tag before that tag exists. Mitigation: block release-specific snippets until the final Openpawl tag and Marketplace listing URL are verified.
+The website install snippets can become incorrect if they name a release tag before that tag exists. Current mitigation: use verified `codepawl/openpawl@v0.5.1` release links, but keep Marketplace listing copy pending until the listing URL is verified.
 
 2. Marketplace status drift
 
@@ -863,4 +864,4 @@ TracePawl, Mempawl, and CachePawl can distract from the one product users can us
 - What email should appear on privacy/terms pages: `founder@codepawl.com`, `hello@codepawl.com`, or a dedicated legal/support alias?
 - Should Clerk sign-in/sign-up be hidden until CodePawl Cloud has an actual signed-in user journey?
 - Is the Marketplace listing intended to use `codepawl.com` URLs or direct `github.com/codepawl/openpawl` URLs for the first submission?
-- What is the exact release tag that install snippets should use after the npm-publish/tag conflict is resolved?
+- Resolved: install snippets use the public Action release tag `v0.5.1`.

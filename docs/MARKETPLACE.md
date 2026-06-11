@@ -9,9 +9,9 @@ submission. The Action source of truth is the public repository at
 Openpawl is a Marketplace candidate. Do not claim the listing is live until the
 GitHub Marketplace listing URL exists and has been verified.
 
-Use `main` or "current candidate" wording in website copy until the final Action
-release tag is verified. Do not hardcode stale release tags in website install
-instructions.
+Use `v0.5.1` for release-pinned Action install instructions. Keep Marketplace
+listing copy pending until the GitHub Marketplace listing URL exists and has
+been verified.
 
 ## Marketplace-Critical URLs
 
@@ -27,9 +27,11 @@ instructions.
 ## Public Source URLs
 
 - Source repository: `https://github.com/codepawl/openpawl`
-- Action metadata: `https://github.com/codepawl/openpawl/blob/main/action.yml`
-- Install docs: `https://github.com/codepawl/openpawl/blob/main/docs/OPENPAWL_INSTALL.md`
-- Docs tree: `https://github.com/codepawl/openpawl/tree/main/docs`
+- Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.5.1`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.1/action.yml`
+- Install docs: `https://github.com/codepawl/openpawl/blob/v0.5.1/docs/OPENPAWL_INSTALL.md`
+- Marketplace docs: `https://github.com/codepawl/openpawl/blob/v0.5.1/docs/MARKETPLACE.md`
+- Current docs tree: `https://github.com/codepawl/openpawl/tree/main/docs`
 - Support issues: `https://github.com/codepawl/openpawl/issues`
 - Security advisories: `https://github.com/codepawl/openpawl/security/advisories`
 - Actions status: `https://github.com/codepawl/openpawl/actions`

@@ -216,9 +216,14 @@ test.describe("Marketplace-critical routes", () => {
       await expect(page.getByRole("heading", { level: 1 })).toContainText(
         route.heading,
       );
-      await expect(page.locator("#main").getByText("v0.5.1")).toHaveCount(0);
     });
   }
+
+  test("install page pins the public Openpawl release", async ({ page }) => {
+    await page.goto("/openpawl/install");
+    await expect(page.locator("#main").getByText("codepawl/openpawl@v0.5.1")).toBeVisible();
+    await expect(page.getByText("does not claim that the GitHub Marketplace listing is live")).toBeVisible();
+  });
 
   test("webhook GET remains method-not-allowed", async ({ request }) => {
     const response = await request.get("/api/github/marketplace");

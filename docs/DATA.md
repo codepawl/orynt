@@ -129,7 +129,7 @@ erDiagram
   - `id: text, primary key` lowercase slug, e.g., 'openpawl', 'featcat'
   - `name: text, not null` display name
   - `slug: text, unique, not null` URL slug (often same as id)
-  - `github_repo: text, not null` `owner/repo` format, e.g. `codepawl/codepawl`
+  - `github_repo: text, not null` `owner/repo` format, e.g. `codepawl/openpawl`
   - `tagline: text, not null`
   - `status: text, not null` ('stable', 'beta', 'alpha', 'pre-alpha', 'private')
   - `display_order: int, not null, default 0` for ordering on the hero cycler
