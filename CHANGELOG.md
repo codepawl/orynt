@@ -4,6 +4,21 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.2.2] - 2026-06-11
+
+### Added
+
+- Trigger command parity:
+  - Enabled `/openpawl plan` and `/openpawl fix failing tests` slash commands to resolve as dry-run tasks, bringing full parity to the trigger command set between slash `/` and mention `@` prefixes.
+  - Added positive unit tests and updated command resolution specs to assert proper trigger matching.
+
+### Changed
+
+- Reusable workflow ergonomics:
+  - Enabled manual triggering of the reusable workflow (`.github/workflows/openpawl-run.yml`) by adding the `workflow_dispatch` trigger event.
+  - Aligned input parameters (optionality and defaults) with the standalone copy-pasteable workflow, adding a choice menu for `mode` and defaulting `task` to review changes.
+  - Bumped default `openpawl_ref` in workflow definitions to `v0.2.2`.
+
 ## [0.2.1] - 2026-06-11
 
 ### Fixed

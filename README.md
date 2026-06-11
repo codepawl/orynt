@@ -1,4 +1,4 @@
-# Openpawl v0.2.1
+# Openpawl v0.2.2
 
 Openpawl is the server-side coding-agent workflow in the CodePawl monorepo.
 
@@ -7,7 +7,9 @@ Openpawl is the server-side coding-agent workflow in the CodePawl monorepo.
 Exact commands only:
 
 - `/openpawl review`
+- `/openpawl plan`
 - `/openpawl add tests`
+- `/openpawl fix failing tests`
 - `/openpawl apply`
 - `@openpawl review`
 - `@openpawl plan`

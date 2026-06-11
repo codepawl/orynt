@@ -9,7 +9,7 @@ Openpawl is installable by copying a workflow file and a repo-root config file i
 3. Change `validation.writeTestCommand` in the config to match that repo’s test command.
 4. Push the files and run the workflow from the GitHub Actions tab.
 
-The workflow checkouts the target repository at the root, and then checkouts the Openpawl monorepo (`codepawl/codepawl`) at a specific release tag (e.g. `v0.2.1`) into the `.openpawl-src` subdirectory. It then runs Openpawl commands inside `.openpawl-src` targeting the parent repository. The `.openpawl-src` directory is cleaned up before any pull requests are created or once execution finishes, preventing any tracking or pollution of the target repository's git status.
+The workflow checkouts the target repository at the root, and then checkouts the Openpawl monorepo (`codepawl/codepawl`) at a specific release tag (e.g. `v0.2.2`) into the `.openpawl-src` subdirectory. It then runs Openpawl commands inside `.openpawl-src` targeting the parent repository. The `.openpawl-src` directory is cleaned up before any pull requests are created or once execution finishes, preventing any tracking or pollution of the target repository's git status.
 
 The workflow invokes `@codepawl/cli` directly inside `.openpawl-src`:
 
@@ -18,7 +18,7 @@ The workflow invokes `@codepawl/cli` directly inside `.openpawl-src`:
 
 The workflow keeps the current Openpawl trigger UX and adds approval write mode:
 
-- slash commands remain exact `/openpawl review` and `/openpawl add tests`
+- slash commands remain exact `/openpawl review`, `/openpawl plan`, `/openpawl add tests`, and `/openpawl fix failing tests`
 - approval write mode uses exact `/openpawl apply` or the `openpawl-approved` label
 - mention commands add exact `@openpawl review`, `@openpawl plan`, `@openpawl add tests`, and `@openpawl fix failing tests`
 - `pull_request` and `issues` still trigger review-only dry-runs on labels/events
@@ -81,7 +81,9 @@ Openpawl is intentionally conservative:
 Exact commands only:
 
 - `/openpawl review`
+- `/openpawl plan`
 - `/openpawl add tests`
+- `/openpawl fix failing tests`
 - `/openpawl apply`
 - `@openpawl review`
 - `@openpawl plan`
@@ -128,13 +130,13 @@ The workflow uploads that directory as a GitHub Actions artifact and posts `repo
 
 If you want to centralize the execution job instead of copying the full workflow, use `.github/workflows/openpawl-run.yml` from the Openpawl repo as a reusable workflow template. The copyable workflow in `docs/samples/openpawl.workflow.yml` is the simpler install path.
 
-When using the reusable workflow, you can specify the `openpawl_ref` input (defaults to `v0.2.1`) to control which version of Openpawl is executed:
+When using the reusable workflow, you can specify the `openpawl_ref` input (defaults to `v0.2.2`) to control which version of Openpawl is executed:
 
 ```yaml
 jobs:
   openpawl:
-    uses: codepawl/codepawl/.github/workflows/openpawl-run.yml@v0.2.1
+    uses: codepawl/codepawl/.github/workflows/openpawl-run.yml@v0.2.2
     with:
       task: "add unit tests for shared helpers"
-      openpawl_ref: "v0.2.1"
+      openpawl_ref: "v0.2.2"
 ```
