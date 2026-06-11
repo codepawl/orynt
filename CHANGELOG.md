@@ -4,6 +4,34 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.5.0] - 2026-06-11
+
+### Added
+
+- v0.5 Evidence UX Layer:
+  - `report.md` now starts with an Evidence Summary derived from existing schema v1 run, trace, patch-plan, selected-files, and applied-files evidence.
+  - Evidence Summary includes run ID, GitHub Actions URL when supplied by the workflow, artifact name, artifact directory, report path, trace path, status, readiness, validation, provider-call count, file/chunk counts, and write summary counts.
+  - Failure reports include a short Failure Summary with normalized presentation-only categories.
+  - GitHub issue/PR comments include run ID, Actions URL, artifact name, artifact directory, report path, and trace path when available.
+
+### Verified
+
+- `bun run typecheck`
+- `bun run test`
+- `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp024-followup-eval --limit 50`
+- live GitHub `workflow_dispatch` dry-run smoke:
+  - Run URL: `https://github.com/codepawl/codepawl/actions/runs/27323506270`
+  - GitHub run ID: `27323506270`
+  - Openpawl run ID: `run_1781151538660_qpej6x`
+  - Artifact: `openpawl-artifacts-run_1781151538660_qpej6x`
+  - Report: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781151538660_qpej6x/report.md`
+  - Trace: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781151538660_qpej6x/trace.json`
+
+### Compatibility
+
+- Artifact JSON schemaVersion remains `"1"`.
+- Write safety gates, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, bounded retry behavior, and trace legacy compatibility are unchanged.
+
 ## [0.4.0] - 2026-06-11
 
 ### Added

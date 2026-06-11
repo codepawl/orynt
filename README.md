@@ -1,4 +1,4 @@
-# Openpawl v0.4.0
+# Openpawl v0.5.0
 
 Openpawl is the server-side coding-agent workflow in the CodePawl monorepo.
 
@@ -55,6 +55,8 @@ Openpawl writes machine-readable JSON artifacts with `schemaVersion: "1"`:
 These JSON artifacts are schema-backed in `@codepawl/core`. `report.md` intentionally remains a human-readable Markdown report for GitHub comments and does not carry machine-readable front matter.
 
 `report.md` starts with a compact Evidence Summary derived from the JSON artifact evidence already produced by the run: run ID, mode, status, readiness, validation state, provider-call count, selected/planned/applied file counts, normalized presentation-only failure category, and artifact paths. Failure reports include a short Failure Summary before the detailed report sections. GitHub issue/PR comments also include Actions run context, the uploaded artifact name, and report/trace paths when available.
+
+When run from GitHub Actions, the Evidence Summary includes the Actions run URL, uploaded artifact name, artifact directory, report path, and trace path so workflow-dispatch artifacts carry the same evidence context even when no issue or PR comment is posted.
 
 ## Install
 

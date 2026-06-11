@@ -9,7 +9,7 @@ Openpawl is installable by copying a workflow file and a repo-root config file i
 3. Change `validation.writeTestCommand` in the config to match that repo’s test command.
 4. Push the files and run the workflow from the GitHub Actions tab.
 
-The workflow checkouts the target repository at the root, and then checkouts the Openpawl monorepo (`codepawl/codepawl`) at a specific release tag (e.g. `v0.4.0`) into the `.openpawl-src` subdirectory. It then runs Openpawl commands inside `.openpawl-src` targeting the parent repository. The `.openpawl-src` directory is cleaned up before any pull requests are created or once execution finishes, preventing any tracking or pollution of the target repository's git status.
+The workflow checkouts the target repository at the root, and then checkouts the Openpawl monorepo (`codepawl/codepawl`) at a specific release tag (e.g. `v0.5.0`) into the `.openpawl-src` subdirectory. It then runs Openpawl commands inside `.openpawl-src` targeting the parent repository. The `.openpawl-src` directory is cleaned up before any pull requests are created or once execution finishes, preventing any tracking or pollution of the target repository's git status.
 
 The workflow invokes `@codepawl/cli` directly inside `.openpawl-src`:
 
@@ -115,9 +115,9 @@ Each successful or failed run writes artifacts into `.codepawl/runs/<run-id>/`:
 - `selected-files.json`
 - `applied-files.json`
 
-As of `v0.4.0`, the JSON artifacts include `schemaVersion: "1"` and are validated against exported `@codepawl/core` Zod schemas. `report.md` remains human-readable Markdown for GitHub comments and intentionally has no machine-readable front matter.
+As of `v0.5.0`, the JSON artifacts include `schemaVersion: "1"` and are validated against exported `@codepawl/core` Zod schemas. `report.md` remains human-readable Markdown for GitHub comments and intentionally has no machine-readable front matter.
 
-The top of `report.md` includes an Evidence Summary derived from the existing JSON artifacts: run ID, mode, status, readiness, validation state, provider-call count, selected/planned/applied file counts, normalized presentation-only failure category, and artifact paths. Failed runs include a short Failure Summary before detailed sections.
+The top of `report.md` includes an Evidence Summary derived from the existing JSON artifacts: run ID, GitHub Actions URL when available, artifact name, artifact directory, report path, trace path, mode, status, readiness, validation state, provider-call count, selected/planned/applied file counts, normalized presentation-only failure category, and artifact paths. Failed runs include a short Failure Summary before detailed sections.
 
 The workflow uploads that directory as a GitHub Actions artifact and posts `report.md` back to the issue or PR when applicable. The comment prepends GitHub run context with the Actions URL, artifact name, report path, and trace path when available.
 
@@ -134,13 +134,13 @@ The workflow uploads that directory as a GitHub Actions artifact and posts `repo
 
 If you want to centralize the execution job instead of copying the full workflow, use `.github/workflows/openpawl-run.yml` from the Openpawl repo as a reusable workflow template. The copyable workflow in `docs/samples/openpawl.workflow.yml` is the simpler install path.
 
-When using the reusable workflow, you can specify the `openpawl_ref` input (defaults to `v0.4.0`) to control which version of Openpawl is executed:
+When using the reusable workflow, you can specify the `openpawl_ref` input (defaults to `v0.5.0`) to control which version of Openpawl is executed:
 
 ```yaml
 jobs:
   openpawl:
-    uses: codepawl/codepawl/.github/workflows/openpawl-run.yml@v0.4.0
+    uses: codepawl/codepawl/.github/workflows/openpawl-run.yml@v0.5.0
     with:
       task: "add unit tests for shared helpers"
-      openpawl_ref: "v0.4.0"
+      openpawl_ref: "v0.5.0"
 ```

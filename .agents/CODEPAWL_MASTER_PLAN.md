@@ -5,7 +5,7 @@ Last updated: 2026-06-11 (UTC)
 ## Current Release Status
 
 - **Product:** Openpawl (`codepawl`)
-- **Current baseline:** `v0.3.0` (released)
+- **Current baseline:** `v0.5.0` (TAG_READY pending release publication)
 - **Safety posture:** Dry-run default; write mode is gated by approval + safe test-file create policy.
 - **Canonical references (no duplicate logs):**
   - [CHANGELOG.md](../CHANGELOG.md)
@@ -807,3 +807,41 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
 
 - Push after checkpoint: `git push origin main` succeeded, updating `origin/main` from `2104951` to `5c5734c`.
 - Remote release gate remains blocked because GitHub CLI auth is still unavailable for `gh repo view`, `workflow_dispatch`, comment inspection, tag push through release automation, and GitHub Release publication.
+
+#### CP-024 follow-up
+
+- Date: 2026-06-11
+- Verdict: TAG_READY
+- Scope:
+  - Rechecked GitHub CLI auth and repository access.
+  - Ran live `workflow_dispatch` dry-run smoke from pushed `main`.
+  - Added a presentation-only GitHub Actions URL row to `report.md` Evidence Summary because the first workflow-dispatch smoke produced no issue/PR comment and the artifact report did not yet include the Actions URL.
+  - Bumped Openpawl package/docs/workflow refs to `0.5.0`.
+- GitHub access evidence:
+  - `gh auth status`: authenticated as `nxank4` with `repo` scope.
+  - `gh repo view codepawl/codepawl --json nameWithOwner,defaultBranchRef,url`: passed for `codepawl/codepawl`, default branch `main`.
+- Local validation evidence before release bump:
+  - `bun run typecheck`: pass.
+  - `bun run test`: pass.
+  - `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp024-followup-eval --limit 50`: pass, 50/50, eval `eval_1781151462223_oyypdl`.
+- Live GitHub smoke evidence:
+  - First smoke after auth: GitHub run `27323397150` passed, but workflow-dispatch report artifact lacked the Actions URL in Evidence Summary; no issue/PR comment was expected for workflow_dispatch.
+  - Fix commit: `b0488d6` (`fix(openpawl): include actions url in evidence summary`), pushed to `origin/main`.
+  - Final smoke command: `gh workflow run openpawl.yml --repo codepawl/codepawl --ref main -f mode=dry-run -f repo_path=. -f task='review changes and suggest improvements'`.
+  - Final smoke run URL: `https://github.com/codepawl/codepawl/actions/runs/27323506270`.
+  - GitHub run ID/conclusion: `27323506270`, `success`.
+  - Head SHA: `b0488d65c830f4ed7ee1fb4b459646ca19d00677`.
+  - Openpawl run ID: `run_1781151538660_qpej6x`.
+  - Artifact name: `openpawl-artifacts-run_1781151538660_qpej6x`.
+  - Artifact directory: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781151538660_qpej6x`.
+  - Report path: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781151538660_qpej6x/report.md`.
+  - Trace path: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781151538660_qpej6x/trace.json`.
+  - Downloaded evidence path: `/tmp/codepawl-cp024-followup-live-smoke/openpawl-artifacts-run_1781151538660_qpej6x/`.
+  - Evidence Summary verified to include run ID, Actions URL, artifact name, artifact directory, report path, and trace path.
+  - Evidence Summary leakage check: no raw prompt, secret-shaped token, env value, or unbounded log matched in the summary. The only detailed log block was bounded placeholder validation output outside the summary.
+  - Comment evidence: not applicable to workflow_dispatch because no issue/PR number is resolved; the report artifact now carries the GitHub Actions URL and artifact context.
+- Release authorization:
+  - Proceed with `v0.5.0` metadata commit, push, annotated tag, tag push, and GitHub Release publication.
+  - Do not publish npm/packages.
+  - Artifact JSON schemaVersion `"1"` compatibility unchanged.
+  - Write safety gates, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, bounded retry behavior, and trace legacy compatibility unchanged.
