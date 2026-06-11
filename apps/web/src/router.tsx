@@ -12,6 +12,7 @@ import { Route as blogRoute } from "./routes/blog";
 import { Route as contactRoute } from "./routes/contact";
 import { Route as careersRoute } from "./routes/careers";
 import { Route as newsletterConfirmRoute } from "./routes/newsletter.confirm";
+import { Route as githubMarketplaceRoute } from "./routes/api.github.marketplace";
 import { Route as docsRoute } from "./routes/docs";
 import { Route as docsIndexRoute } from "./routes/docs.index";
 import { Route as docsProductRoute } from "./routes/docs.$";
@@ -28,6 +29,7 @@ const routeTree = rootRoute.addChildren([
     newsletterConfirmRoute,
     docsRoute.addChildren([docsIndexRoute, docsProductRoute]),
   ]),
+  githubMarketplaceRoute,
 ]);
 
 export function getRouter() {

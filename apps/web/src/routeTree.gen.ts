@@ -23,6 +23,7 @@ import { Route as DocsIndexRouteImport } from './routes/docs.index'
 import { Route as ProductsSlugRouteImport } from './routes/products.$slug'
 import { Route as NewsletterConfirmRouteImport } from './routes/newsletter.confirm'
 import { Route as DocsSplatRouteImport } from './routes/docs.$'
+import { Route as ApiGithubMarketplaceRouteImport } from './routes/api.github.marketplace'
 
 const SiteRoute = SiteRouteImport.update({
   id: '/site',
@@ -94,6 +95,11 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => DocsRoute,
 } as any)
+const ApiGithubMarketplaceRoute = ApiGithubMarketplaceRouteImport.update({
+  id: '/api/github/marketplace',
+  path: '/api/github/marketplace',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/products/$slug': typeof ProductsSlugRoute
   '/docs/': typeof DocsIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/api/github/marketplace': typeof ApiGithubMarketplaceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/products/$slug': typeof ProductsSlugRoute
   '/docs': typeof DocsIndexRoute
   '/products': typeof ProductsIndexRoute
+  '/api/github/marketplace': typeof ApiGithubMarketplaceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/products/$slug': typeof ProductsSlugRoute
   '/docs/': typeof DocsIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/api/github/marketplace': typeof ApiGithubMarketplaceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/docs/'
     | '/products/'
+    | '/api/github/marketplace'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -173,6 +183,7 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/docs'
     | '/products'
+    | '/api/github/marketplace'
   id:
     | '__root__'
     | '/'
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/docs/'
     | '/products/'
+    | '/api/github/marketplace'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -202,6 +214,7 @@ export interface RootRouteChildren {
   ResearchRoute: typeof ResearchRoute
   SiteRoute: typeof SiteRoute
   NewsletterConfirmRoute: typeof NewsletterConfirmRoute
+  ApiGithubMarketplaceRoute: typeof ApiGithubMarketplaceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -304,6 +317,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof DocsRoute
     }
+    '/api/github/marketplace': {
+      id: '/api/github/marketplace'
+      path: '/api/github/marketplace'
+      fullPath: '/api/github/marketplace'
+      preLoaderRoute: typeof ApiGithubMarketplaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -344,6 +364,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResearchRoute: ResearchRoute,
   SiteRoute: SiteRoute,
   NewsletterConfirmRoute: NewsletterConfirmRoute,
+  ApiGithubMarketplaceRoute: ApiGithubMarketplaceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

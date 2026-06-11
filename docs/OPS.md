@@ -13,6 +13,7 @@ Required env vars (see `.env.example` for the full list):
 - `VITE_CLERK_PUBLISHABLE_KEY` for Clerk auth in the web app
 - `VITE_TURNSTILE_SITE_KEY` for the contact/newsletter forms
 - `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` for analytics
+- `GITHUB_MARKETPLACE_WEBHOOK_SECRET` for the GitHub Marketplace webhook at `https://codepawl.com/api/github/marketplace`
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for the API
 - `RESEND_API_KEY` in test mode (sends to a single sink email)
 - `TURNSTILE_SECRET_KEY` for the always-pass dev keys provided by Cloudflare
@@ -61,6 +62,7 @@ Never commit `.env`, `.env.local`, or any file containing real keys. `.env.examp
 - **Production deploy**: `cd apps/web && bun run deploy` (promotes to live)
 - **Non-production deploy**: `cd apps/web && npx wrangler versions upload` (preview URL only, no traffic shift)
 - **Preview**: `cd apps/web && bun run preview`
+- **GitHub Marketplace webhook secret**: `cd apps/web && wrangler secret put GITHUB_MARKETPLACE_WEBHOOK_SECRET`
 
 ### API (apps/api)
 

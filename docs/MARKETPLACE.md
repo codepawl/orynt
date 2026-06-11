@@ -29,6 +29,22 @@ Openpawl should not be submitted to GitHub Marketplace until there is an explici
 - Security/contact URL: `https://github.com/codepawl/codepawl/security/advisories`
 - Documentation URL: `https://github.com/codepawl/codepawl/tree/v0.5.1/docs`
 
+## Marketplace Webhook
+
+- Payload URL: `https://codepawl.com/api/github/marketplace`
+- Content type: `application/json`
+- Secret runtime variable: `GITHUB_MARKETPLACE_WEBHOOK_SECRET`
+- Runtime owner: `apps/web` Cloudflare Worker.
+
+The webhook endpoint is used only for GitHub Marketplace plan-change notifications. It verifies `X-Hub-Signature-256` with HMAC SHA-256, reads `X-GitHub-Event`, accepts `marketplace_purchase` actions (`purchased`, `changed`, `cancelled`, `pending_change`, and `pending_change_cancelled`), and returns success without provisioning. Openpawl remains a free self-managed GitHub Action, so the webhook must not add paid billing logic or store repository code, prompts, traces, or artifacts.
+
+Production secret setup:
+
+```bash
+cd apps/web
+wrangler secret put GITHUB_MARKETPLACE_WEBHOOK_SECRET
+```
+
 ## Copy Guardrails
 
 - Do not claim unattended autonomous writing.
