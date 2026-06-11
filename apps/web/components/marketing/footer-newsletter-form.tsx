@@ -69,7 +69,7 @@ export function FooterNewsletterForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={status === "submitting"}
-          className="cp-body border-ink-4 bg-ink-1 text-fg-1 placeholder:text-fg-4 focus:border-ratchet min-w-0 flex-1 border-2 px-3 py-2 focus:outline-none"
+          className="cp-control cp-body border-ink-4 bg-ink-1 text-fg-1 placeholder:text-fg-4 focus:border-ratchet min-w-0 flex-1 border-2 px-3 py-2 focus:outline-none"
         />
         <button
           type="submit"

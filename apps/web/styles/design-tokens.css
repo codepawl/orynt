@@ -3,7 +3,7 @@
  * Ported from the Landing Page V1.0 template (design/colors_and_type.css).
  * These raw tokens are the source of truth. Tailwind v4 @theme block in
  * globals.css aliases them so utilities like bg-ink-0, text-fg-1,
- * font-display, rounded-md (forced to 0) all resolve correctly.
+ * font-display, rounded-md, and other shared utilities resolve correctly.
  */
 
 :root {
@@ -113,6 +113,14 @@
   --shadow-1: 0 1px 0 var(--ink-5);
   --shadow-2: 8px 8px 0 rgba(20, 20, 20, 0.16);
   --shadow-glow: 0 0 0 3px rgba(143, 77, 54, 0.22);
+
+  /* Radius scale: rounded-industrial surfaces */
+  --cp-radius-sm: 6px;
+  --cp-radius-md: 10px;
+  --cp-radius-lg: 14px;
+  --cp-radius-xl: 18px;
+  --cp-radius-2xl: 24px;
+  --cp-radius-pill: 999px;
 
   /* Motion */
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);

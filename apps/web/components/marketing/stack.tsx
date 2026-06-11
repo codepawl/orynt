@@ -28,7 +28,7 @@ export function Stack() {
           {STACK_PRODUCTS.map((product) => (
             <article
               key={product.id}
-              className={`bg-ink-1 border p-6 ${productStateClass(product)}`}
+              className={`cp-card bg-ink-1 border p-6 ${productStateClass(product)}`}
             >
               <header className="mb-4 flex items-center justify-between gap-3">
                 <p className="cp-caption text-fg-3">{product.language}</p>

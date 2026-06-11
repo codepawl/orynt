@@ -56,7 +56,7 @@ export function ContactForm() {
       <div
         role="status"
         aria-live="polite"
-        className="border-ink-4 bg-ink-1 border p-6"
+        className="cp-card border-ink-4 bg-ink-1 border p-6"
       >
         <p className="cp-h4 text-success">Thanks — we got your message.</p>
         <p className="cp-body text-fg-3 mt-2">
@@ -81,7 +81,7 @@ export function ContactForm() {
           autoComplete="name"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
-          className="cp-body border-ink-5 bg-ink-2 text-fg-1 placeholder:text-fg-4 focus:border-ratchet border px-3 py-2 focus:outline-none"
+          className="cp-control cp-body border-ink-5 bg-ink-2 text-fg-1 placeholder:text-fg-4 focus:border-ratchet border px-3 py-2 focus:outline-none"
         />
       </label>
       <label className="grid gap-2">
@@ -92,7 +92,7 @@ export function ContactForm() {
           autoComplete="email"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
-          className="cp-body border-ink-5 bg-ink-2 text-fg-1 placeholder:text-fg-4 focus:border-ratchet border px-3 py-2 focus:outline-none"
+          className="cp-control cp-body border-ink-5 bg-ink-2 text-fg-1 placeholder:text-fg-4 focus:border-ratchet border px-3 py-2 focus:outline-none"
         />
       </label>
       <label className="grid gap-2">
@@ -101,7 +101,7 @@ export function ContactForm() {
           type="text"
           value={form.subject}
           onChange={(e) => setForm({ ...form, subject: e.target.value })}
-          className="cp-body border-ink-5 bg-ink-2 text-fg-1 placeholder:text-fg-4 focus:border-ratchet border px-3 py-2 focus:outline-none"
+          className="cp-control cp-body border-ink-5 bg-ink-2 text-fg-1 placeholder:text-fg-4 focus:border-ratchet border px-3 py-2 focus:outline-none"
         />
       </label>
       <label className="grid gap-2">
@@ -113,7 +113,7 @@ export function ContactForm() {
           maxLength={5000}
           value={form.message}
           onChange={(e) => setForm({ ...form, message: e.target.value })}
-          className="cp-body border-ink-5 bg-ink-2 text-fg-1 placeholder:text-fg-4 focus:border-ratchet border px-3 py-2 focus:outline-none"
+          className="cp-control cp-body border-ink-5 bg-ink-2 text-fg-1 placeholder:text-fg-4 focus:border-ratchet border px-3 py-2 focus:outline-none"
         />
       </label>
       {error ? (

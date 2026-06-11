@@ -117,7 +117,7 @@ function BrutalCard({ children, tone = "bone", className = "" }: BrutalCardProps
 
   return (
     <article
-      className={`block-shadow-sm border-2 border-ink-4 ${toneClass} ${className}`}
+      className={`cp-card block-shadow-sm border-2 border-ink-4 ${toneClass} ${className}`}
     >
       {children}
     </article>
@@ -137,7 +137,7 @@ function StatusTag({
         : "bg-ink-2 text-fg-3 border-ink-4";
 
   return (
-    <span className={`cp-caption inline-flex border px-2 py-1 ${tone}`}>
+    <span className={`cp-caption cp-small-surface inline-flex border px-2 py-1 ${tone}`}>
       {status}
     </span>
   );

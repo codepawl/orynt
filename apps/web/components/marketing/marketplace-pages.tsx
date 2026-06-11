@@ -52,7 +52,7 @@ export function PageShell({ eyebrow, title, lead, children }: PageShellProps) {
 
 export function InfoCard({ title, children }: InfoCardProps) {
   return (
-    <section className="border-ink-4 bg-ink-1 block-shadow-sm border-2 p-6">
+    <section className="cp-card border-ink-4 bg-ink-1 block-shadow-sm border-2 p-6">
       <h2 className="cp-h3 text-fg-1">{title}</h2>
       <div className="cp-body mt-4 grid gap-4 text-fg-2">{children}</div>
     </section>

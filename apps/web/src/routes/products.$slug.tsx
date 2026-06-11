@@ -69,7 +69,7 @@ function ProductDetailPage() {
         <p className="cp-lead text-fg-2 mt-4 max-w-2xl">{product.tagline}</p>
 
         <section
-          className={`border-ink-4 mt-12 border p-6 ${productStateClass(product)}`}
+          className={`cp-card border-ink-4 mt-12 border p-6 ${productStateClass(product)}`}
         >
           <span className={productBadgeClass(product)}>
             {productAvailabilityLabel(product)}

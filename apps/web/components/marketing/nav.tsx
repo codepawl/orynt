@@ -34,7 +34,7 @@ export function Nav() {
                   ↓
                 </span>
               </Link>
-              <div className="invisible absolute left-0 top-full w-80 translate-y-2 border-2 border-ink-4 bg-ink-1 p-2 opacity-0 shadow-[6px_6px_0_var(--ink-4)] transition-all group-hover/products:visible group-hover/products:translate-y-0 group-hover/products:opacity-100 group-focus-within/products:visible group-focus-within/products:translate-y-0 group-focus-within/products:opacity-100">
+              <div className="cp-menu invisible absolute left-0 top-full w-80 translate-y-2 border-2 border-ink-4 bg-ink-1 p-2 opacity-0 shadow-[6px_6px_0_var(--ink-4)] transition-all group-hover/products:visible group-hover/products:translate-y-0 group-hover/products:opacity-100 group-focus-within/products:visible group-focus-within/products:translate-y-0 group-focus-within/products:opacity-100">
                 <ul className="grid gap-1">
                   {STACK_PRODUCTS.map((product) => (
                     <li key={product.id}>

@@ -71,13 +71,20 @@ All three are TTF variable fonts loaded via `next/font/local`. Files live in `ap
 
 ### Radius
 
-Sharp corners are the brand. All radius tokens are `0` except for tags and pills.
+Rounded-industrial corners are the brand. Structural architecture stays mostly
+sharp, while interactive and content surfaces use the centralized radius scale.
 
-- `--radius-0: 0px`
-- `--radius-1: 0px`
-- `--radius-pill: 999px` reserved for tags
+- `--cp-radius-sm: 6px`
+- `--cp-radius-md: 10px`
+- `--cp-radius-lg: 14px`
+- `--cp-radius-xl: 18px`
+- `--cp-radius-2xl: 24px`
+- `--cp-radius-pill: 999px`
 
-In Tailwind `@theme`, override `--radius-*` so utilities like `rounded`, `rounded-md`, `rounded-lg`, `rounded-xl` all resolve to `0`. Only `rounded-full` produces a pill.
+In Tailwind `@theme`, map `--radius-*` to the shared `--cp-radius-*` tokens.
+Use rounded surfaces for buttons, inputs, cards, dropdowns, badges, and code
+blocks. Keep page section borders, concrete grid containers, architectural SVG
+motifs, timeline spines, and large structural frames mostly square.
 
 ### Borders
 

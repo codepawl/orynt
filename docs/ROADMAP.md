@@ -141,7 +141,7 @@ Read these before starting:
 ## Phase 2: Design system and fonts
 
 <goal>
-Port the design tokens and three variable fonts from the provided template into `apps/web`. Tailwind v4 `@theme` generates utilities matching the tokens. Sharp corners enforced globally. Dark mode default with light-mode opt-in via `next-themes`.
+Port the design tokens and three variable fonts from the provided template into `apps/web`. Tailwind v4 `@theme` generates utilities matching the tokens. Original phase guidance enforced sharp corners globally; current radius guidance is rounded-industrial and documented in `docs/UI.md` and `.agents/design/CODEPAWL_DESIGN_SYSTEM.md`. Dark mode default with light-mode opt-in via `next-themes`.
 </goal>
 
 <context>
@@ -156,8 +156,8 @@ Read these before starting:
 - Copy the 6 TTF files (Fraunces, Fraunces-Italic, InterTight, InterTight-Italic, JetBrainsMono, JetBrainsMono-Italic) into `apps/web/public/fonts/`
 - Create `apps/web/lib/fonts.ts` declaring three `localFont` instances with `variable` set to `--font-display`, `--font-body`, `--font-mono`. Use `display: 'swap'`
 - Create `apps/web/styles/design-tokens.css` porting the `:root` block from `colors_and_type.css` (all ink, fg, ratchet, blueprint, semantic, spacing, type-scale, motion, layout tokens)
-- Create `apps/web/app/globals.css` that imports Tailwind, imports design tokens, defines an `@theme` block mapping color, font, spacing, and radius tokens so Tailwind utilities (`bg-ink-1`, `text-fg-2`, `font-display`, `rounded-md` (which resolves to 0), etc.) generate correctly
-- Override all radius utilities to resolve to 0 except `rounded-full` (which keeps pill behavior)
+- Create `apps/web/app/globals.css` that imports Tailwind, imports design tokens, defines an `@theme` block mapping color, font, spacing, and radius tokens so Tailwind utilities (`bg-ink-1`, `text-fg-2`, `font-display`, `rounded-md`, etc.) generate correctly
+- Radius guidance superseded by the rounded-industrial system: interactive and content surfaces use `--cp-radius-*`; structural frames stay mostly sharp.
 - Apply the three font variables to `<html>` in `apps/web/app/layout.tsx`
 - Install `next-themes`, wrap the app in `ThemeProvider` with `attribute="class"` and `defaultTheme="dark"`
 - Verify variable font axes work: Fraunces uses `opsz` and `SOFT` per the template's `font-variation-settings`
@@ -167,7 +167,7 @@ Read these before starting:
 <verification>
 - Run: `bun --filter @codepawl/web build` (zero warnings about font loading)
 - Manual check: open localhost, all three fonts render correctly. Inspect computed `font-family` on a `.font-display` element
-- Manual check: `rounded-lg`, `rounded-xl`, `rounded-md` all visually have 0 radius. `rounded-full` produces a pill
+- Manual check: `rounded-lg`, `rounded-xl`, `rounded-md`, and `rounded-full` map to the shared rounded-industrial radius scale
 - Manual check: light/dark toggle switches background and foreground colors smoothly
 - Manual check: variable font axes work, Fraunces italic on the test heading renders with `opsz` 144 and `SOFT` 50
 </verification>
@@ -176,7 +176,7 @@ Read these before starting:
 - [x] All fonts load locally with zero network calls to Google Fonts
 - [x] Tailwind utilities `bg-ink-0` through `bg-ink-6`, `text-fg-1` through `text-fg-5`, `bg-ratchet`, `border-ratchet` all generate
 - [x] Dark mode default, light mode toggle works
-- [x] Sharp corners enforced globally
+- [x] Original sharp-corner pass completed; current system uses rounded-industrial surface radii
 - [x] CSS file size budget: tokens + Tailwind output under 50KB gzipped before any component code
 </done_when>
 

@@ -24,4 +24,4 @@ Domain terms used in this project. Update as new terms emerge.
 - **ISR**: Incremental Static Regeneration. Next.js pattern where static pages re-render in the background after a set interval. We use it on all marketing pages.
 - **Double opt-in**: Newsletter pattern where the user must click a confirmation link emailed to them before being added to the active list. Reduces spam, improves deliverability.
 - **Single gateway**: Architectural rule that Next.js never connects to Supabase directly. FastAPI is the only consumer of the DB credentials and the only place auth and rate limit checks live.
-- **Sharp corners**: Design system rule that `border-radius` is `0` everywhere except pill-shaped tags. Set in `@theme` so Tailwind utilities like `rounded-md` resolve to `0px`.
+- **Rounded-industrial corners**: Design system rule that interactive and content surfaces use the shared `--cp-radius-*` scale, while page sections, concrete grids, architectural motifs, and other structural frames stay mostly sharp.
