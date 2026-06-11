@@ -45,6 +45,14 @@ cd apps/web
 wrangler secret put GITHUB_MARKETPLACE_WEBHOOK_SECRET
 ```
 
+Verification evidence recorded `2026-06-11T07:42:54Z`:
+
+- Cloudflare Worker secret `GITHUB_MARKETPLACE_WEBHOOK_SECRET` exists.
+- Valid signed `POST https://codepawl.com/api/github/marketplace` returned `200` with `{"status":"ok","event":"marketplace_purchase","action":"purchased"}`.
+- Invalid signature returned `401` with `invalid_signature`.
+- `GET https://codepawl.com/api/github/marketplace` returned `405` with `Allow: POST`.
+- GitHub Marketplace Test Delivery status: not separately recorded in this repo; no delivery payload, signature, or secret was committed.
+
 ## Copy Guardrails
 
 - Do not claim unattended autonomous writing.

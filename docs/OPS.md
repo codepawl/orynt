@@ -67,6 +67,7 @@ Never commit `.env`, `.env.local`, or any file containing real keys. `.env.examp
 #### GitHub Marketplace Webhook Verification Log
 
 - `2026-06-11T07:31:03Z`: Deployed `codepawl` Worker version `62f4439b-9bbf-440a-9a9d-e88a72c3b34b` from commit `73de9f3`. `GET https://codepawl.com/api/github/marketplace` returned `405` with `Allow: POST`, confirming the route is live. GitHub Marketplace test delivery is still pending because Cloudflare reported no configured Worker secrets; set `GITHUB_MARKETPLACE_WEBHOOK_SECRET` in Cloudflare and use the same secret in the GitHub Marketplace listing before redelivery. No GitHub delivery ID is available yet.
+- `2026-06-11T07:42:54Z`: Final manual webhook verification completed for `https://codepawl.com/api/github/marketplace` with content type `application/json`. Cloudflare Worker secret `GITHUB_MARKETPLACE_WEBHOOK_SECRET` exists. Valid signed `marketplace_purchase` `purchased` POST returned `200` with `{"status":"ok","event":"marketplace_purchase","action":"purchased"}`. Invalid signature returned `401` with `invalid_signature`. GET returned `405` with `Allow: POST`. GitHub Marketplace Test Delivery status was not separately recorded in this repo; no delivery payload, signature, or secret was committed.
 
 ### API (apps/api)
 
