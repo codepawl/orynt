@@ -22,6 +22,7 @@
 - **Beta (current):** v0.4.0 release; safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
 - **v0.2 Reliability (released):** 50-fixture deterministic patch-quality regression harness and failure-taxonomy coverage complete; live GitHub dry-run smoke pass achieved in `27273286439`.
 - **v0.4 Trace/Evidence (released):** schema-backed JSON artifact contracts for run, trace, patch-plan, selected-files, applied-files, and eval metrics. Markdown reports remain human-readable.
+- **v0.5 Evidence UX (in progress):** present existing schema v1 evidence more clearly in `report.md` and GitHub issue/PR comments without changing autonomous behavior or artifact JSON contracts.
 - **RC:** validate on multiple real repositories, publish provider compatibility matrix, and stabilize failure/retry behavior.
 - **0.1.0 stable:** safe write-mode and release packaging readiness for external users.
 

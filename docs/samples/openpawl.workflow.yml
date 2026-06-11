@@ -130,6 +130,7 @@ jobs:
             echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
             echo "run_dir=${RUN_DIR}" >> "$GITHUB_OUTPUT"
             echo "report_path=${RUN_DIR}/report.md" >> "$GITHUB_OUTPUT"
+            echo "trace_path=${RUN_DIR}/trace.json" >> "$GITHUB_OUTPUT"
           fi
 
           exit 0
@@ -187,12 +188,26 @@ jobs:
 
             const report = fs.readFileSync(reportPath, 'utf8');
             const runId = '${{ steps.openpawl.outputs.run_id }}';
+            const runDir = '${{ steps.openpawl.outputs.run_dir }}';
+            const tracePath = '${{ steps.openpawl.outputs.trace_path }}';
+            const actionsUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const artifactName = runId ? `openpawl-artifacts-${runId}` : 'openpawl-artifacts';
+            const evidenceContext = [
+              '## GitHub Run Context',
+              `- Run ID: \`${runId || 'unknown'}\``,
+              `- Actions run: ${actionsUrl}`,
+              `- Artifact: \`${artifactName}\``,
+              `- Artifact directory: \`${runDir || 'unknown'}\``,
+              `- Report path: \`${reportPath}\``,
+              tracePath ? `- Trace path: \`${tracePath}\`` : '',
+              '',
+            ].filter(Boolean).join('\n');
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              body: report,
+              body: `${evidenceContext}\n${report}`,
             });
 
             console.log(`✅ Posted Openpawl report for run ${runId}`);

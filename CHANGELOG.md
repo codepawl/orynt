@@ -227,7 +227,12 @@ All notable changes for Openpawl.
 
 ## [Unreleased]
 
-### No unreleased items.
+### Added
+
+- Added v0.5 Evidence UX presentation work:
+  - `report.md` now starts with a compact Evidence Summary derived from existing run, trace, patch-plan, selected-files, and applied-files evidence.
+  - Failure reports include normalized presentation-only failure categories and a short Failure Summary.
+  - GitHub issue/PR comments include run ID, Actions URL, artifact name, and report/trace artifact paths when available.
 
 ### Scope
 

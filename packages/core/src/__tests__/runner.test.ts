@@ -143,6 +143,9 @@ describe("runAgent — dry-run mode", () => {
     expect(result.tracePath).toBe(path.join(outDir, "trace.json"));
 
     await expectRequiredArtifacts(outDir);
+    const report = await fs.readFile(path.join(outDir, "report.md"), "utf-8");
+    expect(report).toContain(`- Artifact directory: \`${outDir}\``);
+    expect(report).toContain(`- Run artifact: \`${path.join(outDir, "run.json")}\``);
 
     const defaultRunDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     const defaultDirStat = await fs.stat(defaultRunDir).catch(() => null);
@@ -198,6 +201,12 @@ describe("runAgent — dry-run mode", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("## Evidence Summary");
+    expect(report).toContain("| Artifact schema | `1` |");
+    expect(report).toContain("| Failure category | `validation_failed` |");
+    expect(report).toContain("### Failure Summary");
+    expect(report).toContain("- Category: `validation_failed`");
   });
 
   it("succeeds when patch plan is empty in dry-run mode", async () => {
@@ -586,6 +595,11 @@ describe("runAgent — dry-run mode", () => {
     expect(report).toContain(result.runId);
     expect(report).toContain("Dry-run");
     expect(report).toContain(task);
+    expect(report).toContain("## Evidence Summary");
+    expect(report).toContain("| Artifact schema | `1` |");
+    expect(report).toContain("| Failure category | `none` |");
+    expect(report).toContain("### Artifact Links");
+    expect(report).toContain(`openpawl-artifacts-${result.runId}`);
   });
 
   it("report.md includes a Context Pack section with compaction metadata", async () => {
@@ -812,6 +826,10 @@ describe("runAgent — readiness gate", () => {
     expect(report).toContain("## 🚦 Readiness Gate");
     expect(report).toContain("**Status:** needs_clarification");
     expect(report).toContain("Readiness gate blocked execution because the task is under-specified.");
+    expect(report).toContain("## Evidence Summary");
+    expect(report).toContain("| Failure category | `readiness_blocked` |");
+    expect(report).toContain("| Provider calls | `0` |");
+    expect(report).toContain("### Failure Summary");
     await expectRequiredArtifacts(runDir);
   });
 
@@ -1239,6 +1257,8 @@ describe("runAgent — write mode safety guardrails", () => {
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("**Overall:** Not run");
     expect(report).toContain("Not run");
+    expect(report).toContain("| Failure category | `write_policy_blocked` |");
+    expect(report).toContain("### Failure Summary");
     expect(report).toContain("Write mode failed before validation because no safe create chunks were available.");
     expect(report).not.toContain("Validation failed — review errors before merging.");
   });
@@ -1446,6 +1466,7 @@ describe("runAgent — write mode safety guardrails", () => {
     await expectRequiredArtifacts(runDir);
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("**Overall:** Not run");
+    expect(report).toContain("| Failure category | `write_policy_blocked` |");
     expect(report).toContain("Write mode failed before validation because no safe create chunks were available.");
   });
 
@@ -1570,6 +1591,8 @@ describe("runAgent — write mode safety guardrails", () => {
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("Validation Result");
     expect(report).toContain("❌ FAILED");
+    expect(report).toContain("| Failure category | `validation_failed` |");
+    expect(report).toContain("### Failure Summary");
   });
 });
 
@@ -2098,6 +2121,9 @@ describe("runAgent — error handling", () => {
     expect(traceRaw).not.toContain(secret);
     expect(traceRaw).not.toContain("Return JSON object only");
     expect(traceRaw).toContain("sk-[REDACTED]");
+    const reportRaw = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md"), "utf-8");
+    expect(reportRaw).not.toContain(secret);
+    expect(reportRaw).toContain("sk-[REDACTED]");
   });
 
   it("records provider_schema_repaired when patch_plan aliases are safely repaired", async () => {

@@ -117,7 +117,9 @@ Each successful or failed run writes artifacts into `.codepawl/runs/<run-id>/`:
 
 As of `v0.4.0`, the JSON artifacts include `schemaVersion: "1"` and are validated against exported `@codepawl/core` Zod schemas. `report.md` remains human-readable Markdown for GitHub comments and intentionally has no machine-readable front matter.
 
-The workflow uploads that directory as a GitHub Actions artifact and posts `report.md` back to the issue or PR when applicable.
+The top of `report.md` includes an Evidence Summary derived from the existing JSON artifacts: run ID, mode, status, readiness, validation state, provider-call count, selected/planned/applied file counts, normalized presentation-only failure category, and artifact paths. Failed runs include a short Failure Summary before detailed sections.
+
+The workflow uploads that directory as a GitHub Actions artifact and posts `report.md` back to the issue or PR when applicable. The comment prepends GitHub run context with the Actions URL, artifact name, report path, and trace path when available.
 
 ## Limitations
 

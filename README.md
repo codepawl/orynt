@@ -54,6 +54,8 @@ Openpawl writes machine-readable JSON artifacts with `schemaVersion: "1"`:
 
 These JSON artifacts are schema-backed in `@codepawl/core`. `report.md` intentionally remains a human-readable Markdown report for GitHub comments and does not carry machine-readable front matter.
 
+`report.md` starts with a compact Evidence Summary derived from the JSON artifact evidence already produced by the run: run ID, mode, status, readiness, validation state, provider-call count, selected/planned/applied file counts, normalized presentation-only failure category, and artifact paths. Failure reports include a short Failure Summary before the detailed report sections. GitHub issue/PR comments also include Actions run context, the uploaded artifact name, and report/trace paths when available.
+
 ## Install
 
 See [docs/OPENPAWL_INSTALL.md](docs/OPENPAWL_INSTALL.md) for the copy/paste setup, permissions, artifacts, reports, and security notes.

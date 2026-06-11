@@ -715,3 +715,52 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
 
 
 
+
+### CP-022: v0.5 Evidence UX Layer
+
+- Date: 2026-06-11
+- Verdict: V0_5_UX_READY
+- Scope: Added presentation-only Evidence Summary and Failure Summary UX for `report.md`; preserved artifact JSON schemaVersion `"1"` and did not change write-safety, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, bounded retry behavior, or trace legacy compatibility.
+- Implementation evidence:
+  - `report.md` now starts with compact evidence derived from existing run, trace, selected-files, patch-plan, applied-files, validation, readiness, and write evidence.
+  - Failure reports include normalized presentation-only categories: readiness, validation, write-policy, validation-unavailable, provider-output, and runtime failures.
+  - GitHub issue/PR comments now prepend run ID, Actions URL, artifact name, artifact directory, report path, and trace path when available.
+  - Existing detailed report sections remain below the summary; report remains human-readable Markdown with no machine-readable front matter.
+  - Secret-shaped report text is redacted before display in summaries/comments/report details.
+- Test coverage added/updated:
+  - Success dry-run Evidence Summary.
+  - Readiness failure / no-provider-call Failure Summary.
+  - Validation failure category.
+  - Write-policy failure category.
+  - Raw prompt/secret leakage prevention in report output.
+- Validation evidence:
+  - `bun run typecheck`: pass.
+  - `bun run test`: pass.
+  - `bun --filter @codepawl/cli dev -- eval patch-quality --limit 50`: pass, 50/50, eval `eval_1781150283333_4bdbhq`.
+  - Dry-run smoke: pass, run `run_1781150289105_d5ewzc`, artifacts in `/tmp/codepawl-cp022-dry-run-smoke` schema-valid with Evidence Summary.
+  - Expected-failure smoke: expected exit 1, run `run_1781150293514_03zk06`, readiness `unsupported`, artifacts in `/tmp/codepawl-cp022-failure-smoke` schema-valid with Failure Summary.
+- Next checkpoint: CP-023 should audit v0.5 release readiness without changing artifact schema v1 or safety behavior.
+
+### CP-023: v0.5.0 Evidence UX release readiness audit
+
+- Date: 2026-06-11
+- Verdict: V0_5_RELEASE_READY
+- Scope: Audited CP-022 Evidence UX Layer for v0.5.0 release readiness without bumping package versions, creating a tag, changing artifact JSON schemaVersion `"1"`, or relaxing write safety gates, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, bounded retry behavior, or trace legacy compatibility.
+- Audit evidence:
+  - Success dry-run reports include `## Evidence Summary`, `schemaVersion` display, artifact links, and `Failure category: none`.
+  - Readiness failure reports include `## Evidence Summary`, `### Failure Summary`, `readiness_blocked`, and provider-call count `0`.
+  - Validation failure reports are covered by runner tests and include `### Failure Summary` with `validation_failed`.
+  - Write-policy failure reports are covered by runner tests and include `write_policy_blocked`.
+  - Report/comment summaries do not include raw prompts, full file contents, unbounded logs, or secret-shaped tokens; report details redact secret-shaped task, rationale, validation output, error, and risk-note text.
+  - GitHub workflow comments include run ID, Actions URL, artifact name, artifact directory, report path, and trace path when available.
+  - Release-readiness fix: Evidence Summary artifact paths now use the actual run output directory, including custom `--out-dir` locations.
+- Local validation evidence:
+  - `bun run typecheck`: pass.
+  - `bun run test`: pass.
+  - `bun --filter @codepawl/cli dev -- eval patch-quality --limit 50`: pass, 50/50, eval `eval_1781150573123_by8z9m`.
+  - Dry-run smoke: pass, run `run_1781150577063_y9yv11`, artifacts in `/tmp/codepawl-cp023-final-dry-run-smoke` schema-valid with Evidence Summary and actual artifact paths.
+  - Expected-failure smoke: expected exit 1, run `run_1781150582411_2e880u`, readiness `unsupported`, artifacts in `/tmp/codepawl-cp023-final-failure-smoke` schema-valid with Failure Summary and actual artifact paths.
+- Live GitHub workflow smoke:
+  - Blocked by local GitHub CLI auth: `gh auth status` reports the active `github.com` token for `nxank4` is invalid.
+  - No workflow dispatch was attempted after the auth failure. This is an environment/auth blocker, not a code readiness blocker.
+- Next checkpoint: CP-024 should bump versions and prepare v0.5.0 release/tag only after live GitHub workflow smoke can be run with valid auth, or explicitly accept the documented auth blocker.

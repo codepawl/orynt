@@ -220,7 +220,51 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
         JSON.stringify(traceArtifact, null, 2),
         "utf-8"
       );
-      const errorReport = `# Openpawl Run Report\n\n**Run ID:** \`${runId}\`\n**Status:** ❌ ABORTED\n\n## Error\n\n\`\`\`\n${runError}\n\`\`\`\n`;
+      const redactedRunError = runError
+        ? runError
+            .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+            .replace(/sk-[A-Za-z0-9_-]{12,}/g, "sk-[REDACTED]")
+            .replace(/[A-Za-z0-9_-]{32,}/g, "[REDACTED_TOKEN]")
+        : "Unknown runtime error";
+      const errorReport = `# Openpawl Run Report
+
+**Run ID:** \`${runId}\`
+**Status:** ❌ ABORTED
+
+## Evidence Summary
+
+| Field | Value |
+|---|---|
+| Artifact schema | \`${ARTIFACT_SCHEMA_VERSION}\` |
+| Run ID | \`${runId}\` |
+| Status | \`failed\` |
+| Failure category | \`runtime_error\` |
+| Trace events | \`${summary.events.length}\` |
+
+**Primary outcome:** Run stopped before the normal report exporter completed.
+
+**Next action:** Inspect trace.json and run.json for the terminal failure event.
+
+### Failure Summary
+
+- Category: \`runtime_error\`
+- Reason: ${redactedRunError}
+- Next action: Inspect trace.json and run.json for the terminal failure event.
+
+### Artifact Links
+
+- GitHub artifact name: \`openpawl-artifacts-${runId}\`
+- Artifact directory: \`${runDir}\`
+- Run artifact: \`${runDir}/run.json\`
+- Trace artifact: \`${runDir}/trace.json\`
+- Human report: \`${runDir}/report.md\`
+
+## Error
+
+\`\`\`
+${redactedRunError}
+\`\`\`
+`;
       await fs.writeFile(path.join(runDir, "report.md"), errorReport, "utf-8");
       const abortedRunArtifact = RunArtifactSchema.parse({
         schemaVersion: ARTIFACT_SCHEMA_VERSION,
