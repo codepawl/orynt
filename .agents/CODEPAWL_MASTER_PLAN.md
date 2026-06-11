@@ -802,3 +802,8 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
   - Push local CP-023/CP-024 commits to `main` if still ahead.
   - Trigger the workflow_dispatch dry-run smoke and verify run URL, run ID, conclusion, uploaded artifact name, report/comment Evidence Summary, Actions URL, artifact path, report path, trace path, and redaction of prompt/secret/env/log content.
   - Only after live smoke passes, bump package versions to `0.5.0`, update release docs, commit, push, create annotated tag `v0.5.0`, push tag, and publish the GitHub Release.
+
+#### CP-024 push addendum
+
+- Push after checkpoint: `git push origin main` succeeded, updating `origin/main` from `2104951` to `5c5734c`.
+- Remote release gate remains blocked because GitHub CLI auth is still unavailable for `gh repo view`, `workflow_dispatch`, comment inspection, tag push through release automation, and GitHub Release publication.
