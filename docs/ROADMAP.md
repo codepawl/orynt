@@ -13,11 +13,12 @@
 - `v0.2.0`: patch-quality reliability layer released. Harness expanded to 50 fixtures, with reliability metrics, failure taxonomy, and common add-tests safe-generation coverage.
 - `v0.2.1`: post-release external installability patch. Fixed workflows to run the Openpawl CLI from a dynamically checked out `.openpawl-src` repository to resolve dependency-resolution failures in target repositories.
 - `v0.2.2`: trigger command parity and workflow dispatch ergonomics patch. Added support for `/openpawl plan` and `/openpawl fix failing tests` slash dry-run commands, enabled manual `workflow_dispatch` trigger on the reusable workflow, and aligned trigger input schemas.
+- `v0.3.0`: repository scanning reliability with `.gitignore` / `.openpawl-src` awareness and optional validation retry-loop.
 
 ### Maturity plan
 
 - **Alpha:** CLI + dry-run + trace + CI verified; real-provider runs are experimental.
-- **Beta (current):** v0.2.2 release; safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
+- **Beta (current):** v0.3.0 release; safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
 - **v0.2 Reliability (released):** 50-fixture deterministic patch-quality regression harness and failure-taxonomy coverage complete; live GitHub dry-run smoke pass achieved in `27273286439`.
 - **RC:** validate on multiple real repositories, publish provider compatibility matrix, and stabilize failure/retry behavior.
 - **0.1.0 stable:** safe write-mode and release packaging readiness for external users.

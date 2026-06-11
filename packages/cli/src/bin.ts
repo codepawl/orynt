@@ -109,6 +109,19 @@ function readPositiveIntFlag(
   return parsed;
 }
 
+function readNonNegativeIntFlag(
+  flags: Record<string, string | boolean>,
+  name: string
+): number | undefined {
+  const value = readStringFlag(flags, name);
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    die(`--${name} must be a non-negative integer.`);
+  }
+  return parsed;
+}
+
 type GithubFetch = (
   input: Parameters<typeof fetch>[0],
   init?: Parameters<typeof fetch>[1]
@@ -242,6 +255,7 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
     explicitTestCommand: testCmd,
     config: loadedConfig.config,
   });
+  const cliValidationMaxRetries = readNonNegativeIntFlag(flags, "validation-max-retries");
   let providerConfig;
   try {
     providerConfig = resolveProviderConfig({ provider, model });
@@ -265,6 +279,12 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
   }
   console.log(`   Provider: ${providerConfig.provider}`);
   console.log(`   Model:   ${providerConfig.model ?? "deterministic-mock"}`);
+  const resolvedValidationMaxRetries = cliValidationMaxRetries !== undefined
+    ? cliValidationMaxRetries
+    : loadedConfig.config?.validation?.maxRetries ?? 0;
+  if (resolvedValidationMaxRetries > 0) {
+    console.log(`   Validation max retries: ${resolvedValidationMaxRetries}`);
+  }
   console.log();
 
   let result: RunResult;
@@ -283,6 +303,7 @@ async function cmdRun(flags: Record<string, string | boolean>): Promise<void> {
       contextMaxFiles,
       contextMaxBytes,
       contextMaxChars,
+      validationMaxRetries: resolvedValidationMaxRetries,
     });
   } catch (err: unknown) {
     die(`Fatal: ${err instanceof Error ? err.message : String(err)}`);
@@ -742,6 +763,8 @@ Options:
   --write                Apply safe test-file patch chunks, then validate (scoped default inference; write mode fails if no safe command found)
   --mock-fixture <path>  Optional deterministic mock fixture
   --test-cmd <cmd>       Optional validation command; explicit command always takes precedence
+  --validation-max-retries <n>
+                         Max retries to automatically correct patch on validation failures
   --provider <name>      mock or openai-compatible (env: OPENPAWL_PROVIDER)
   --model <model>        Provider model override (env: OPENPAWL_MODEL)
   --response-format <json_schema|json_object>

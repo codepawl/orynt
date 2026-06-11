@@ -4,6 +4,24 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.3.0] - 2026-06-11
+
+### Added
+
+- `.gitignore`-aware repository scanning:
+  - Implemented a dependency-free, robust `.gitignore` parser and matcher (`GitignoreMatcher` and `globToRegex`) supporting wildcard, directory, and negation patterns.
+  - Updated `createRepoScanNode` to dynamically read and load local `.gitignore` files relative to their subdirectories during repository traversal.
+  - Added `.openpawl-src` to `SCAN_IGNORED_DIRS` to prevent scanning monorepo files during checkout.
+- Optional, bounded validation retry-loop:
+  - Added conditional retry logic to the agent execution graph. If validation fails, the agent automatically cleans up and deletes any temporary files created during the failed attempt, increments the retry attempt, and restarts planning from a clean state.
+  - Retry behavior is optional (defaults to `0` / disabled) and strictly bounded by the `validationMaxRetries` config parameter.
+  - Exposed via the `--validation-max-retries` CLI flag for `codepawl run` and config parsing.
+
+### Fixed
+
+- Mock LLM Provider rule match safety:
+  - Fixed a collision bug where repository scans of mock JSON fixtures would leak rule triggers (like `"Scope Context Pack"`) into LLM prompt contexts and falsely match rules. Resolved by stripping the serialized `"context"` block from user messages in the mock provider.
+
 ## [0.2.2] - 2026-06-11
 
 ### Added

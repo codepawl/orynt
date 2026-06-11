@@ -76,6 +76,7 @@ export const SCAN_IGNORED_DIRS = new Set([
   ".codepawl",
   ".agents",
   "out",
+  ".openpawl-src",
 ]);
 
 /** Maximum number of files to include in a repo scan. */

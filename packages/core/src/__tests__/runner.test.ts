@@ -2454,4 +2454,131 @@ describe("runAgent — error handling", () => {
     expect(report).toContain("Rejected/un-grounded patch chunks");
     expect(report).toContain("tests/shell/run_trace_ledger_tests.sh");
   });
+
+  it("executes the validation retry loop on failure, cleaning up intermediate files", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, ".gitignore"),
+      `
+validation-retry-fixture.json
+validate.js
+count.txt
+`,
+      "utf-8"
+    );
+
+    const retryFixturePath = path.join(tmpDir, "validation-retry-fixture.json");
+    
+    // We mock the LLM responses
+    const scopeResponse = {
+      rationale: "Propose test creation.",
+      affectedModules: ["packages/core/src"],
+      proposedFilesToModify: [],
+      proposedFilesToCreate: ["packages/core/src/__tests__/retry-test.test.ts"]
+    };
+    
+    const firstPatchResponse = {
+      rationale: "Initial patch attempt.",
+      chunks: [
+        {
+          type: "create",
+          file: "packages/core/src/__tests__/retry-test.test.ts",
+          description: "export const value = 'initial';"
+        }
+      ]
+    };
+    
+    const secondPatchResponse = {
+      rationale: "Fixed patch attempt.",
+      chunks: [
+        {
+          type: "create",
+          file: "packages/core/src/__tests__/retry-test.test.ts",
+          description: "export const value = 'fixed';"
+        }
+      ]
+    };
+
+    await fs.writeFile(
+      retryFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify(scopeResponse),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 5 }
+          }
+        },
+        {
+          matchLastMessage: '"validationSuccess":null',
+          response: {
+            content: JSON.stringify(firstPatchResponse),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 5 }
+          }
+        },
+        {
+          matchLastMessage: '"validationSuccess":false',
+          response: {
+            content: JSON.stringify(secondPatchResponse),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 5 }
+          }
+        }
+      ]),
+      "utf-8"
+    );
+
+    // Create the validate.js script that fails on first call, then passes on second call
+    const validateScriptPath = path.join(tmpDir, "validate.js");
+    const countFilePath = path.join(tmpDir, "count.txt");
+    await fs.writeFile(
+      validateScriptPath,
+      `
+      const fs = require('fs');
+      let count = 0;
+      if (fs.existsSync('${countFilePath.replace(/\\/g, "/")}' )) {
+        count = parseInt(fs.readFileSync('${countFilePath.replace(/\\/g, "/")}', 'utf8'), 10);
+      }
+      fs.writeFileSync('${countFilePath.replace(/\\/g, "/")}', (count + 1).toString(), 'utf8');
+      if (count === 0) {
+        process.exit(1);
+      }
+      process.exit(0);
+      `,
+      "utf-8"
+    );
+
+    // Run the agent with write mode and validationMaxRetries set to 2
+    const result = await runAgent({
+      query: "add unit tests",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      validationMaxRetries: 2,
+      testCommand: `node ${validateScriptPath}`,
+      mockFixturePath: retryFixturePath,
+    });
+
+    expect(result.success, `Agent failed with error: ${result.error}. State error: ${result.state.error}. Steps: ${JSON.stringify(result.state.steps.map(s => ({ node: s.nodeName, action: s.action, output: s.output })))}`).toBe(true);
+    expect(result.error).toBeNull();
+    
+    // Check that retry occurred and retry attempt was recorded
+    expect(result.state.validationRetryAttempt).toBe(1);
+
+    // Check that count.txt contains 2 runs
+    const countVal = await fs.readFile(countFilePath, "utf-8");
+    expect(countVal.trim()).toBe("2");
+
+    // Check that report.md details are printed
+    const reportPath = path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md");
+    const reportContent = await fs.readFile(reportPath, "utf-8");
+    expect(reportContent).toContain("Validation Retry Attempts:** 1 / 2");
+
+    // Check that created file exists and has the 'fixed' content
+    const createdFileContent = await fs.readFile(
+      path.join(tmpDir, "packages/core/src/__tests__/retry-test.test.ts"),
+      "utf-8"
+    );
+    expect(createdFileContent).toContain("fixed");
+  });
 });

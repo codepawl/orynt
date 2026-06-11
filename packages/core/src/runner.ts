@@ -14,6 +14,7 @@ import {
   createPatchPlanNode,
   createOptionalPatchApplyNode,
   createValidationNode,
+  createValidationRetryNode,
   createTraceExportNode,
   createReportExportNode,
 } from "./agent/nodes";
@@ -62,6 +63,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     contextMaxBytes,
     contextMaxChars,
     structuredOutputMode,
+    validationMaxRetries,
   } = options;
 
   // Resolve workspace directory
@@ -118,6 +120,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   graph.addNode("patch_plan", createPatchPlanNode(llm));
   graph.addNode("optional_patch_apply", createOptionalPatchApplyNode());
   graph.addNode("validation", createValidationNode());
+  graph.addNode("validation_retry", createValidationRetryNode());
   graph.addNode("trace_export", createTraceExportNode());
   graph.addNode("report_export", createReportExportNode());
 
@@ -128,7 +131,26 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   graph.addEdge("file_selection", "patch_plan");
   graph.addEdge("patch_plan", "optional_patch_apply");
   graph.addEdge("optional_patch_apply", "validation");
-  graph.addEdge("validation", "trace_export");
+
+  graph.addConditionalEdge(
+    "validation",
+    (state) => {
+      const validationFailed = state.validationResult?.success === false;
+      const currentAttempt = state.validationRetryAttempt ?? 0;
+      const maxRetries = state.context.validationMaxRetries ?? 0;
+
+      if (validationFailed && currentAttempt < maxRetries && !state.context.dryRun) {
+        return "retry";
+      }
+      return "continue";
+    },
+    {
+      retry: "validation_retry",
+      continue: "trace_export",
+    }
+  );
+
+  graph.addEdge("validation_retry", "patch_plan");
   graph.addEdge("trace_export", "report_export");
 
   graph.setEntryPoint("intake");
@@ -155,6 +177,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       contextMaxBytes: contextBudget.maxBytes,
       contextMaxChars: contextBudget.maxChars,
       structuredOutputMode: providerConfig.structuredOutputMode,
+      validationMaxRetries: validationMaxRetries ?? 0,
     },
     nextNode: null,
     isComplete: false,

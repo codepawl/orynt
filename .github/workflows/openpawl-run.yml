@@ -39,7 +39,7 @@ on:
         description: "Git ref of codepawl/codepawl to run"
         required: false
         type: string
-        default: "v0.2.2"
+        default: "v0.3.0"
   workflow_dispatch:
     inputs:
       repo_path:
@@ -81,7 +81,7 @@ on:
         description: "Git ref of codepawl/codepawl to run"
         required: false
         type: string
-        default: "v0.2.2"
+        default: "v0.3.0"
     outputs:
       run_id:
         value: ${{ jobs.openpawl-run.outputs.run_id }}

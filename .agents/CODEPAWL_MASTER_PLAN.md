@@ -1,11 +1,11 @@
 # CodePawl Master Plan Dashboard
 
-Last updated: 2026-06-10 (UTC)
+Last updated: 2026-06-11 (UTC)
 
 ## Current Release Status
 
 - **Product:** Openpawl (`codepawl`)
-- **Current baseline:** `v0.2.2` (released)
+- **Current baseline:** `v0.3.0` (released)
 - **Safety posture:** Dry-run default; write mode is gated by approval + safe test-file create policy.
 - **Canonical references (no duplicate logs):**
   - [CHANGELOG.md](../CHANGELOG.md)
@@ -419,6 +419,34 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - Parity Audit: Confirmed that slash and mention command parity only adds dry-run support for `plan` and `fix failing tests`. ✅
     - Metadata & Docs Consistency: Package versions (`0.2.2`), README, CHANGELOG, ROADMAP, installation docs, and workflow examples are all aligned to `v0.2.2`. ✅
   - Verdict: `PASS_NO_FOLLOWUP_RELEASE`
+
+- `CP-013` (2026-06-11, completed): Plan & Implement v0.3: Repository scanning reliability with `.gitignore` / `.openpawl-src` awareness and optional validation retry-loop.
+  - Owner: Antigravity
+  - Scope:
+    - `packages/core/src/safety.ts`
+    - `packages/core/src/gitignore.ts`
+    - `packages/core/src/agent/nodes.ts`
+    - `packages/core/src/runner.ts`
+    - `packages/core/src/state/schema.ts`
+    - `packages/cli/src/openpawl-config.ts`
+    - `packages/cli/src/bin.ts`
+    - `packages/core/src/providers/llm.ts`
+  - Verification Results:
+    - Typecheck: `bun run typecheck` passed cleanly across all packages. ✅
+    - Unit/Integration Tests: `bun run test` passed (222/222 passed) with new unit tests for gitignore parsing/matching and runner retry loops. ✅
+    - Patch Quality Harness: `bun --filter @codepawl/cli dev -- eval patch-quality --limit 50` successfully completed with a 100% pass rate (50/50 cases passed) and zero regressions on release safety boundaries. ✅
+
+- `CP-014` (2026-06-11, completed): v0.3 scope audit after CP-013 implementation.
+  - Owner: Antigravity
+  - Verdict: `V0_3_READY`
+  - Audit Results:
+    - Scope Verification: Confirmed that v0.3 scope (.gitignore-aware repository scanning, exclusion of .openpawl-src/.git/node_modules/lockfiles/secrets/generated artifacts, and optional bounded validation retry-loop design) was fully implemented in CP-013. ✅
+    - Mock Match Safety: Confirmed that the mock provider rule match issue was resolved in CP-013 by ignoring the serialized context block in MockLlmProvider pattern matching, thus preventing regressions in existing dry-run tests. ✅
+    - Verification Commands: Verified that typecheck, global test suites, and 50-fixture patch-quality evaluation harness pass with 100% success rate. ✅
+    - Regression Risks Audit: Confirmed that write safety gates, approval/apply policies, validation precedence, unsafe write rejection, and beta create-only guardrails were preserved intact and not relaxed. ✅
+  - Next Recommended Checkpoint: `CP-015` for v0.3.0 release packaging and tagging.
+
+
 
 
 

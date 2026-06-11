@@ -134,6 +134,52 @@ describe("createRepoScanNode", () => {
     expect(paths.some((p) => p === "index.ts")).toBe(true);
   });
 
+  it("respects dynamic .gitignore rules during scan", async () => {
+    // Write a .gitignore at the temp root directory
+    await fs.writeFile(
+      path.join(tmpDir, ".gitignore"),
+      `
+*.log
+/dist/
+!important.log
+`,
+      "utf-8"
+    );
+
+    // Create nested directory and files
+    await fs.mkdir(path.join(tmpDir, "dist"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, "dist", "bundle.js"), "compiled", "utf-8");
+    await fs.writeFile(path.join(tmpDir, "error.log"), "error details", "utf-8");
+    await fs.writeFile(path.join(tmpDir, "important.log"), "important details", "utf-8");
+    await fs.writeFile(path.join(tmpDir, "index.ts"), "export {};", "utf-8");
+
+    // Create nested folder with another .gitignore
+    await fs.mkdir(path.join(tmpDir, "src"), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, "src", "nested-ignored"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, "src", ".gitignore"),
+      `
+nested-ignored/
+`,
+      "utf-8"
+    );
+    await fs.writeFile(
+      path.join(tmpDir, "src", "nested-ignored", "ignored.ts"),
+      "ignored",
+      "utf-8"
+    );
+
+    const node = createRepoScanNode();
+    const result = await node(makeState());
+    const filePaths = (result.repoScanResult?.files ?? []).map((f) => f.path);
+
+    expect(filePaths).toContain("index.ts");
+    expect(filePaths).toContain("important.log");
+    expect(filePaths).not.toContain("error.log");
+    expect(filePaths.some((p) => p.startsWith("dist"))).toBe(false);
+    expect(filePaths.some((p) => p.includes("nested-ignored"))).toBe(false);
+  });
+
   it("detects TypeScript as a language", async () => {
     await fs.writeFile(path.join(tmpDir, "app.ts"), "const x = 1;", "utf-8");
 

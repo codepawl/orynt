@@ -5,6 +5,7 @@ export const OPENPAWL_CONFIG_FILE_NAME = "openpawl.config.json";
 
 export interface OpenPawlConfigValidation {
   readonly writeTestCommand?: string;
+  readonly maxRetries?: number;
 }
 
 export interface OpenPawlConfig {
@@ -39,8 +40,14 @@ function normalizeValidation(value: unknown, configPath: string): OpenPawlConfig
     throw new Error(`Openpawl config at ${configPath} must set validation.writeTestCommand to a non-empty string.`);
   }
 
+  const maxRetries = value.maxRetries;
+  if (maxRetries !== undefined && (typeof maxRetries !== "number" || !Number.isInteger(maxRetries) || maxRetries < 0)) {
+    throw new Error(`Openpawl config at ${configPath} must set validation.maxRetries to a non-negative integer.`);
+  }
+
   return {
     writeTestCommand: normalizedWriteTestCommand,
+    maxRetries,
   };
 }
 
@@ -51,7 +58,7 @@ export function parseOpenPawlConfig(raw: unknown, configPath: string): OpenPawlC
 
   const validation = normalizeValidation(raw.validation, configPath);
   return {
-    validation: validation.writeTestCommand ? validation : undefined,
+    validation: (validation.writeTestCommand || validation.maxRetries !== undefined) ? validation : undefined,
   };
 }
 

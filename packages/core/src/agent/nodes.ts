@@ -36,6 +36,7 @@ import {
   SCAN_MAX_FILES,
   SCAN_MAX_BYTES,
 } from "../safety";
+import { GitignoreMatcher, isPathIgnored } from "../gitignore";
 
 const execAsync = promisify(exec);
 
@@ -1483,10 +1484,23 @@ export function createRepoScanNode(): AgentNode {
 
     async function scanDirectory(
       dir: string,
-      rootDir: string
+      rootDir: string,
+      matchers: ReadonlyArray<GitignoreMatcher>
     ): Promise<{ path: string; sizeBytes: number; isDir: boolean }[]> {
       if (fileCount >= SCAN_MAX_FILES) return [];
       const results: { path: string; sizeBytes: number; isDir: boolean }[] = [];
+
+      let currentMatchers = matchers;
+      const gitignorePath = path.join(dir, ".gitignore");
+      try {
+        const gitignoreContent = await fs.readFile(gitignorePath, "utf-8");
+        const relativeDir = path.relative(rootDir, dir).replace(/\\/g, "/");
+        const newMatcher = new GitignoreMatcher(gitignoreContent, relativeDir);
+        currentMatchers = [...matchers, newMatcher];
+      } catch {
+        // No .gitignore in this directory, or read error
+      }
+
       let entries: ReturnType<typeof Object.create> = [];
       try {
         entries = await fs.readdir(dir, { withFileTypes: true });
@@ -1496,14 +1510,19 @@ export function createRepoScanNode(): AgentNode {
       for (const entry of entries) {
         if (fileCount >= SCAN_MAX_FILES) break;
         const fullPath = path.join(dir, entry.name);
-        const relativePath = path.relative(rootDir, fullPath);
+        const relativePath = path.relative(rootDir, fullPath).replace(/\\/g, "/");
 
         if (SCAN_IGNORED_DIRS.has(entry.name)) {
           continue;
         }
 
+        const isDir = entry.isDirectory();
+        if (isPathIgnored(relativePath, isDir, currentMatchers)) {
+          continue;
+        }
+
         // Skip secret files during scan
-        if (!entry.isDirectory() && isSecretFile(entry.name)) {
+        if (!isDir && isSecretFile(entry.name)) {
           if (ledger) {
             ledger.recordEvent("system", `skipped_secret_file:${relativePath}`, "warning", {
               reason: "secret file excluded from scan",
@@ -1512,13 +1531,13 @@ export function createRepoScanNode(): AgentNode {
           continue;
         }
 
-        if (entry.isDirectory()) {
+        if (isDir) {
           results.push({
             path: relativePath,
             sizeBytes: 0,
             isDir: true,
           });
-          const subResults = await scanDirectory(fullPath, rootDir);
+          const subResults = await scanDirectory(fullPath, rootDir, currentMatchers);
           results.push(...subResults);
         } else if (entry.isFile()) {
           let size = 0;
@@ -1537,7 +1556,7 @@ export function createRepoScanNode(): AgentNode {
       return results;
     }
 
-    const files = await scanDirectory(workspaceDir, workspaceDir);
+    const files = await scanDirectory(workspaceDir, workspaceDir, []);
 
     if (ledger) {
       ledger.recordEvent("system", "repo_scan_complete", "info", {
@@ -2413,7 +2432,45 @@ export function createValidationNode(): AgentNode {
         },
       ],
     };
-};
+  };
+}
+
+export function createValidationRetryNode(): AgentNode {
+  return async (state) => {
+    const ledger = activeLedgers.get(state.context.sessionId);
+    const repoRoot = state.context.workspaceDir;
+    const createdFiles = state.writeResult?.created ?? [];
+
+    for (const relativePath of createdFiles) {
+      const targetPath = path.join(repoRoot, relativePath);
+      try {
+        await fs.rm(targetPath, { force: true });
+        if (ledger) {
+          ledger.recordEvent("system", `retry_cleanup_delete:${relativePath}`, "info", {
+            reason: "cleaning up file created in failed validation attempt before retry",
+          });
+        }
+      } catch {
+        // best-effort cleanup
+      }
+    }
+
+    const currentAttempt = state.validationRetryAttempt ?? 0;
+    const nextAttempt = currentAttempt + 1;
+
+    if (ledger) {
+      ledger.recordEvent("system", "validation_retry_triggered", "warning", {
+        attemptNumber: nextAttempt,
+        maxRetries: state.context.validationMaxRetries,
+        revertedFiles: createdFiles,
+      });
+    }
+
+    return {
+      validationRetryAttempt: nextAttempt,
+      writeResult: undefined,
+    };
+  };
 }
 
 export function createTraceExportNode(): AgentNode {
@@ -2638,6 +2695,7 @@ ${readiness.warnings.length > 0 ? `**Warnings:**\n${readiness.warnings.map((warn
 > **Status:** ${validationSuccess ? "✅ SUCCESS" : "❌ FAILED"}
 > **Duration:** ${durationMs}ms
 > **Tokens Used:** ${tokenUsage.total} (in: ${tokenUsage.input}, out: ${tokenUsage.output})
+> **Validation Retry Attempts:** ${state.validationRetryAttempt ?? 0} / ${state.context.validationMaxRetries ?? 0}
 
 ---
 

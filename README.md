@@ -1,6 +1,16 @@
-# Openpawl v0.2.2
+# Openpawl v0.3.0
 
 Openpawl is the server-side coding-agent workflow in the CodePawl monorepo.
+
+## Features & Configuration
+
+### Gitignore-aware Repository Scanning
+Openpawl reads local `.gitignore` files to filter out unwanted files and folders automatically during repository scans.
+
+### Validation Retry-loop
+If validation checks fail, Openpawl can optionally clean up temporary file state and attempt a planning retry. Enable this behavior with:
+- `--validation-max-retries <N>` CLI argument
+- `"validation": { "maxRetries": <N> }` configuration in `openpawl.config.json`
 
 ## Trigger UX
 
