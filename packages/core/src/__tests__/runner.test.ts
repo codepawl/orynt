@@ -602,6 +602,38 @@ describe("runAgent — dry-run mode", () => {
     expect(report).toContain(`openpawl-artifacts-${result.runId}`);
   });
 
+  it("report.md includes GitHub Actions evidence when provided by workflow env", async () => {
+    const previousUrl = process.env["OPENPAWL_GITHUB_ACTIONS_URL"];
+    process.env["OPENPAWL_GITHUB_ACTIONS_URL"] = "https://github.com/codepawl/codepawl/actions/runs/123";
+
+    try {
+      const result = await runAgent({
+        query: "review changes and suggest improvements",
+        workspaceDir: tmpDir,
+        dryRun: true,
+        testCommand: "echo ok",
+        mockFixturePath: FIXTURE_PATH,
+      });
+
+      const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+      const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+
+      expect(report).toContain(
+        "| GitHub Actions URL | https://github.com/codepawl/codepawl/actions/runs/123 |",
+      );
+      expect(report).toContain(`| Artifact name | \`openpawl-artifacts-${result.runId}\` |`);
+      expect(report).toContain(`| Artifact directory | \`${runDir}\` |`);
+      expect(report).toContain(`| Report path | \`${path.join(runDir, "report.md")}\` |`);
+      expect(report).toContain(`| Trace path | \`${path.join(runDir, "trace.json")}\` |`);
+    } finally {
+      if (previousUrl === undefined) {
+        delete process.env["OPENPAWL_GITHUB_ACTIONS_URL"];
+      } else {
+        process.env["OPENPAWL_GITHUB_ACTIONS_URL"] = previousUrl;
+      }
+    }
+  });
+
   it("report.md includes a Context Pack section with compaction metadata", async () => {
     const result = await runAgent({
       query: "implement fixes for current repository changes",

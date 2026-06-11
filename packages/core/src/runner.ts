@@ -226,6 +226,8 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
             .replace(/sk-[A-Za-z0-9_-]{12,}/g, "sk-[REDACTED]")
             .replace(/[A-Za-z0-9_-]{32,}/g, "[REDACTED_TOKEN]")
         : "Unknown runtime error";
+      const githubActionsUrl = process.env["OPENPAWL_GITHUB_ACTIONS_URL"];
+      const githubActionsRow = githubActionsUrl ? `| GitHub Actions URL | ${githubActionsUrl} |\n` : "";
       const errorReport = `# Openpawl Run Report
 
 **Run ID:** \`${runId}\`
@@ -237,6 +239,10 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
 |---|---|
 | Artifact schema | \`${ARTIFACT_SCHEMA_VERSION}\` |
 | Run ID | \`${runId}\` |
+${githubActionsRow}| Artifact name | \`openpawl-artifacts-${runId}\` |
+| Artifact directory | \`${runDir}\` |
+| Report path | \`${runDir}/report.md\` |
+| Trace path | \`${runDir}/trace.json\` |
 | Status | \`failed\` |
 | Failure category | \`runtime_error\` |
 | Trace events | \`${summary.events.length}\` |

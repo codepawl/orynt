@@ -2862,12 +2862,21 @@ export function createReportExportNode(): AgentNode {
 - Next action: ${nextActionForEvidence}
 `;
 
+    const githubActionsUrlForEvidence = process.env["OPENPAWL_GITHUB_ACTIONS_URL"];
+    const githubActionsRowForEvidence = githubActionsUrlForEvidence
+      ? `| GitHub Actions URL | ${redactReportText(githubActionsUrlForEvidence)} |\n`
+      : "";
+
     const evidenceSummary = `## Evidence Summary
 
 | Field | Value |
 |---|---|
 | Artifact schema | \`${ARTIFACT_SCHEMA_VERSION}\` |
 | Run ID | \`${runId}\` |
+${githubActionsRowForEvidence}| Artifact name | \`${artifactNameForEvidence}\` |
+| Artifact directory | \`${artifactDirectoryForEvidence}\` |
+| Report path | \`${artifactDirectoryForEvidence}/report.md\` |
+| Trace path | \`${artifactDirectoryForEvidence}/trace.json\` |
 | Mode | \`${state.context.dryRun ? "dry-run" : "write"}\` |
 | Status | \`${runStatusForEvidence}\` |
 | Failure category | \`${failureCategoryForEvidence}\` |

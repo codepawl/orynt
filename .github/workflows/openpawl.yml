@@ -101,6 +101,7 @@ jobs:
           OPENPAWL_TASK: ${{ steps.trigger.outputs.task }}
           OPENPAWL_REPO_PATH: ${{ steps.trigger.outputs.repo_path }}
           OPENPAWL_MODE: ${{ steps.trigger.outputs.mode }}
+          OPENPAWL_GITHUB_ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set +e
 
