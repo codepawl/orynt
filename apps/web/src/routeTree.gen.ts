@@ -31,6 +31,7 @@ import { Route as OpenpawlInstallRouteImport } from './routes/openpawl.install'
 import { Route as OpenpawlDocsRouteImport } from './routes/openpawl.docs'
 import { Route as NewsletterConfirmRouteImport } from './routes/newsletter.confirm'
 import { Route as DocsSplatRouteImport } from './routes/docs.$'
+import { Route as CloudEvidenceRouteImport } from './routes/cloud.evidence'
 import { Route as ApiGithubMarketplaceRouteImport } from './routes/api.github.marketplace'
 
 const TermsRoute = TermsRouteImport.update({
@@ -143,6 +144,11 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => DocsRoute,
 } as any)
+const CloudEvidenceRoute = CloudEvidenceRouteImport.update({
+  id: '/cloud/evidence',
+  path: '/cloud/evidence',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiGithubMarketplaceRoute = ApiGithubMarketplaceRouteImport.update({
   id: '/api/github/marketplace',
   path: '/api/github/marketplace',
@@ -164,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/site': typeof SiteRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/cloud/evidence': typeof CloudEvidenceRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
   '/openpawl/docs': typeof OpenpawlDocsRoute
@@ -187,6 +194,7 @@ export interface FileRoutesByTo {
   '/site': typeof SiteRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/cloud/evidence': typeof CloudEvidenceRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
   '/openpawl/docs': typeof OpenpawlDocsRoute
@@ -213,6 +221,7 @@ export interface FileRoutesById {
   '/site': typeof SiteRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/cloud/evidence': typeof CloudEvidenceRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
   '/openpawl/docs': typeof OpenpawlDocsRoute
@@ -240,6 +249,7 @@ export interface FileRouteTypes {
     | '/site'
     | '/status'
     | '/terms'
+    | '/cloud/evidence'
     | '/docs/$'
     | '/newsletter/confirm'
     | '/openpawl/docs'
@@ -263,6 +273,7 @@ export interface FileRouteTypes {
     | '/site'
     | '/status'
     | '/terms'
+    | '/cloud/evidence'
     | '/docs/$'
     | '/newsletter/confirm'
     | '/openpawl/docs'
@@ -288,6 +299,7 @@ export interface FileRouteTypes {
     | '/site'
     | '/status'
     | '/terms'
+    | '/cloud/evidence'
     | '/docs/$'
     | '/newsletter/confirm'
     | '/openpawl/docs'
@@ -314,6 +326,7 @@ export interface RootRouteChildren {
   SiteRoute: typeof SiteRoute
   StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
+  CloudEvidenceRoute: typeof CloudEvidenceRoute
   NewsletterConfirmRoute: typeof NewsletterConfirmRoute
   ApiGithubMarketplaceRoute: typeof ApiGithubMarketplaceRoute
 }
@@ -474,6 +487,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof DocsRoute
     }
+    '/cloud/evidence': {
+      id: '/cloud/evidence'
+      path: '/cloud/evidence'
+      fullPath: '/cloud/evidence'
+      preLoaderRoute: typeof CloudEvidenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/github/marketplace': {
       id: '/api/github/marketplace'
       path: '/api/github/marketplace'
@@ -541,6 +561,7 @@ const rootRouteChildren: RootRouteChildren = {
   SiteRoute: SiteRoute,
   StatusRoute: StatusRoute,
   TermsRoute: TermsRoute,
+  CloudEvidenceRoute: CloudEvidenceRoute,
   NewsletterConfirmRoute: NewsletterConfirmRoute,
   ApiGithubMarketplaceRoute: ApiGithubMarketplaceRoute,
 }

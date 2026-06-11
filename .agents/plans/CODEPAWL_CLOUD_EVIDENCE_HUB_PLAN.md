@@ -189,6 +189,15 @@ Manual QA:
 
 ## Checkpoints
 
+0. **CP-001 read-only evidence viewer skeleton**
+   - Added `/cloud/evidence` as a static, read-only Cloud Evidence Hub demo route.
+   - Added a web-side `EvidenceRunViewModel` with run ID, status, readiness, validation, mode, `schemaVersion`, artifact list, and demo report/trace paths.
+   - Rendered a rounded-industrial Evidence Summary page from static Openpawl `v0.5.1` artifact fixture data.
+   - Added explicit safety copy: "CodePawl Cloud Evidence Hub is upcoming. This demo shows the intended artifact review experience."
+   - Added copy guardrails that the demo does not upload, store, or process real repository code, prompts, traces, artifacts, billing data, or customer workspaces.
+   - Linked the pricing Cloud waitlist card to the read-only evidence demo without changing the waitlist/contact path.
+   - Added component tests for route copy safety and static artifact rendering.
+
 1. **Evidence schema and parser spike**
    - Define normalized TypeScript types.
    - Parse a local Openpawl artifact directory.

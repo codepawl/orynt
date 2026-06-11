@@ -9,6 +9,7 @@ import { Route as productsIndexRoute } from "./routes/products.index";
 import { Route as productDetailRoute } from "./routes/products.$slug";
 import { Route as researchRoute } from "./routes/research";
 import { Route as blogRoute } from "./routes/blog";
+import { Route as cloudEvidenceRoute } from "./routes/cloud.evidence";
 import { Route as contactRoute } from "./routes/contact";
 import { Route as careersRoute } from "./routes/careers";
 import { Route as newsletterConfirmRoute } from "./routes/newsletter.confirm";
@@ -32,6 +33,7 @@ const routeTree = rootRoute.addChildren([
     productsRoute.addChildren([productsIndexRoute, productDetailRoute]),
     researchRoute,
     blogRoute,
+    cloudEvidenceRoute,
     contactRoute,
     careersRoute,
     newsletterConfirmRoute,

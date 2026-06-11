@@ -36,6 +36,7 @@ const TIERS = [
     price: "Waitlist",
     note: "Upcoming evidence and team workflow layer.",
     cta: { href: "/contact", label: "Join waitlist" },
+    demo: { href: "/cloud/evidence", label: "View evidence demo" },
     features: [
       "Not generally available yet",
       "No billing or provisioning from this page",
@@ -82,6 +83,14 @@ function PricingPage() {
             >
               {tier.cta.label}
             </Link>
+            {"demo" in tier ? (
+              <Link
+                href={tier.demo.href}
+                className="cp-hover-link cp-small w-fit text-ratchet hover:text-ratchet-hot"
+              >
+                {tier.demo.label}
+              </Link>
+            ) : null}
           </li>
         ))}
       </ul>
