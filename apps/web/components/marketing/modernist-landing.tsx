@@ -272,10 +272,6 @@ function RoadmapStep({
 }
 
 export function ModernistLanding() {
-  const productStatuses = Array.from(
-    new Set(LANDING_PRODUCTS.map((product) => productAvailabilityLabel(product))),
-  ).join(" / ");
-
   return (
     <div className="text-fg-1">
       <section className="concrete-grid relative overflow-hidden border-b-2 border-ink-4">
@@ -295,8 +291,8 @@ export function ModernistLanding() {
                   <p className="cp-lead mt-8 max-w-2xl">
                     Infrastructure for coordinated agent work - plans, evidence,
                     guardrails, memory, replay, and cloud workflows. Openpawl is
-                    the first open runtime: reviewable agent work, starting in
-                    GitHub.
+                    the current open coordination runtime: reviewable agent work,
+                    starting in GitHub.
                   </p>
                 </BlockReveal>
               </div>
@@ -312,7 +308,9 @@ export function ModernistLanding() {
                 </div>
                 <div>
                   <p className="cp-caption text-fg-3">Readiness</p>
-                  <p className="cp-small mt-1 text-fg-2">{productStatuses}</p>
+                  <p className="cp-small mt-1 text-fg-2">
+                    Openpawl AVAILABLE / future layers ROADMAP
+                  </p>
                 </div>
                 <div>
                   <p className="cp-caption text-fg-3">Cloud</p>

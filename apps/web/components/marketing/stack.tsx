@@ -11,7 +11,7 @@ export function Stack() {
       <div className="mx-auto max-w-[1240px] px-6 py-20">
         <p className="cp-marker mb-6">003 · the codepawl stack</p>
         <h2 className="cp-h2 text-fg-1 max-w-3xl">
-          Openpawl is the first open runtime; future layers add evidence,
+          Openpawl is the current open runtime; future layers add evidence,
           memory, replay, and optimization.
         </h2>
 
