@@ -372,4 +372,17 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
   - Known issues/caveats documented:
     - Updated v0.2.0 release notes on GitHub with a known-issue note pointing users to v0.2.1.
 
+- `CP-010` (2026-06-11, completed): Post-release integrity audit for v0.2.1.
+  - Owner: Antigravity
+  - Scope: Post-release tag, release, and metadata consistency audit.
+  - Audit Results:
+    - Tag Target Commit: `46c6ba4c9a2e114c10a722ee11a7430e46395252` ✅
+    - Tag Object Hash: `0e13515258a150e73435f80ea1a0bffb1d8c61aa` ✅
+    - Main HEAD Commit: `c46e4c29c87895e69e20014765d70f8073eb4cf1` ✅
+    - CP-009 Tag Inclusion: Confirmed CP-009 checkpoint is **not** inside the `v0.2.1` tag target commit (`46c6ba4`), but exists immediately after on `main` (in commit `c46e4c2`). This is normal and correct. ✅
+    - GitHub Release Notes: Confirmed `v0.2.0` release notes point to `v0.2.1` as a known-issue update, and `v0.2.1` contains the installability notes. ✅
+    - Metadata Consistency: Package versions, README, CHANGELOG, ROADMAP, and workflow default references are all aligned to `v0.2.1`. ✅
+  - Verdict: **PASS**. No follow-up release or corrections are needed.
+
+
 
