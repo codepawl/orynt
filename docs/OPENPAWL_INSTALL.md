@@ -115,6 +115,8 @@ Each successful or failed run writes artifacts into `.codepawl/runs/<run-id>/`:
 - `selected-files.json`
 - `applied-files.json`
 
+As of `v0.4.0`, the JSON artifacts include `schemaVersion: "1"` and are validated against exported `@codepawl/core` Zod schemas. `report.md` remains human-readable Markdown for GitHub comments and intentionally has no machine-readable front matter.
+
 The workflow uploads that directory as a GitHub Actions artifact and posts `report.md` back to the issue or PR when applicable.
 
 ## Limitations

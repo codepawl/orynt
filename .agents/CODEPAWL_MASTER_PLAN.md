@@ -464,8 +464,190 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - Validation Retries: Confirmed that validation retries are disabled by default (default limit `0`), bounded when enabled, and perform clean workspace file cleanups on failure. ✅
     - Safety Boundary: Confirmed that write safety gates, approval/apply policies, validation precedence, unsafe write rejection, and beta create-only guardrails were preserved intact and not relaxed. ✅
 
+- `CP-018` (2026-06-11, completed): v0.4 scope audit after CP-017 trace/evidence foundation work.
+  - Owner: codex
+  - Verdict: `PARTIAL_SCOPE_ONLY`
+  - Scope audited:
+    - `packages/core/src/state/evidence.ts`
+    - `packages/core/src/agent/nodes.ts`
+    - `packages/core/src/runner.ts`
+    - `packages/core/src/__tests__/runner.test.ts`
+    - `packages/core/src/index.ts`
+    - existing artifact surfaces for `run.json`, `trace.json`, `selected-files.json`, `patch-plan.json`, `applied-files.json`, `metrics.json`, and `report.md`
+    - release/user docs: `README.md`, `CHANGELOG.md`, `docs/ROADMAP.md`
+  - Git state:
+    - CP-017 changes are present in the working tree but are not committed.
+    - `packages/core/src/state/evidence.ts` is untracked at audit time.
+    - Modified files at audit time: `packages/core/src/__tests__/runner.test.ts`, `packages/core/src/agent/nodes.ts`, `packages/core/src/index.ts`, `packages/core/src/runner.ts`.
+  - Commands + results:
+    - `git status --short && git diff --stat && git log --oneline -10` ✅
+    - `bun run typecheck` ✅
+      - 4/4 package typechecks successful.
+    - `bun run test` ✅
+      - turbo reported 5/5 tasks successful.
+      - core suite: 145 tests passed.
+      - cli suite: 185 tests passed.
+    - `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp018-eval --limit 50` ✅
+      - Run ID: `eval_1781147648366_ungfxg`
+      - Cases: 50
+      - Passed: 50
+      - Failed: 0
+    - `bun --filter @codepawl/cli dev -- run --repo . --task "review current repository changes" --dry-run --test-command "echo cp018-smoke-ok" --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json` ✅
+      - Run ID: `run_1781147648370_6o1gg6`
+      - Status: success
+      - Readiness: ready
+      - Artifacts written under `.codepawl/runs/run_1781147648370_6o1gg6/`
+    - Smoke `run.json` schema check with `RunArtifactSchema.parse(...)` ✅
+  - Artifacts:
+    - Patch-quality metrics: `/tmp/codepawl-cp018-eval/metrics.json`
+    - Patch-quality report: `/tmp/codepawl-cp018-eval/report.md`
+    - Smoke report: `.codepawl/runs/run_1781147648370_6o1gg6/report.md`
+    - Smoke trace: `.codepawl/runs/run_1781147648370_6o1gg6/trace.json`
+    - Smoke run artifact: `.codepawl/runs/run_1781147648370_6o1gg6/run.json`
+    - Smoke patch plan: `.codepawl/runs/run_1781147648370_6o1gg6/patch-plan.json`
+    - Smoke selected files: `.codepawl/runs/run_1781147648370_6o1gg6/selected-files.json`
+    - Smoke applied files: `.codepawl/runs/run_1781147648370_6o1gg6/applied-files.json`
+  - Audit findings:
+    - CP-017 establishes a useful foundation by adding a strict `RunArtifactSchema`, exporting it from core, validating normal report-export `run.json`, validating aborted-run `run.json`, and adding runner tests that parse `run.json`.
+    - v0.4 scope is not complete because schema validation currently covers `run.json` only. `trace.json`, `patch-plan.json`, `selected-files.json`, `applied-files.json`, eval `metrics.json`, and `report.md` remain artifact conventions rather than schema-versioned evidence contracts.
+    - No evidence was found that write safety gates, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, or bounded retry behavior were relaxed by the CP-017 working-tree changes.
+  - Remaining artifact/schema gaps for `CP-019`:
+    - Add explicit schema/version contracts for `trace.json`, `patch-plan.json`, `selected-files.json`, `applied-files.json`, and patch-quality `metrics.json`.
+    - Add cross-artifact consistency checks: run ID, mode, success/error state, validation decision, readiness, write summary, and artifact timestamps where applicable.
+    - Add failure-path schema coverage for validation failure, readiness rejection, provider JSON failure, unsafe write rejection, and bounded validation retry exhaustion.
+    - Decide whether `report.md` remains human-only or gains a machine-readable front matter/summary block.
+    - Track schema versions/migration expectations before calling v0.4 complete.
+  - Next checkpoint: `CP-019` should convert the CP-017 foundation into complete artifact evidence contracts without changing runtime write/apply behavior.
 
+- `CP-019` (2026-06-11, completed): schema-backed artifact contract for v0.4 Trace/Evidence Layer.
+  - Owner: codex
+  - Verdict: `V0_4_CONTRACT_READY`
+  - Scope:
+    - `packages/core/src/state/evidence.ts`
+    - `packages/core/src/agent/nodes.ts`
+    - `packages/core/src/runner.ts`
+    - `packages/core/src/index.ts`
+    - `packages/core/src/__tests__/runner.test.ts`
+    - `packages/cli/src/patch-quality-eval.ts`
+    - `packages/cli/src/__tests__/patch-quality-eval.test.ts`
+    - `README.md`
+    - `CHANGELOG.md`
+    - `docs/ROADMAP.md`
+  - Git state:
+    - `packages/core/src/state/evidence.ts` is now tracked intent (`A`) rather than unknown.
+    - No tag was created.
+  - Contract changes:
+    - Added `schemaVersion: "1"` to generated machine-readable artifacts:
+      - `run.json`
+      - `trace.json`
+      - `patch-plan.json`
+      - `selected-files.json`
+      - `applied-files.json`
+      - patch-quality `metrics.json`
+    - Added Zod schemas for run, trace, patch-plan, selected-files, applied-files, patch-quality metrics, and a combined run artifact set.
+    - Added cross-artifact consistency checks for run ID alignment, trace ID/event correlation, write summary counts, and applied-file summaries.
+    - Kept `report.md` human-readable only and documented that decision in `README.md`; no machine-readable Markdown front matter was added.
+  - Safety boundary audit:
+    - No write safety gates were relaxed.
+    - Approval/apply policy was not changed.
+    - Validation precedence was not changed.
+    - Unsafe write rejection and beta create-only guardrails were not changed.
+    - `.gitignore` scanning and bounded retry behavior were not changed.
+  - Commands + results:
+    - `git status --short` ✅
+      - showed `A packages/core/src/state/evidence.ts`
+    - `bun run typecheck` ✅
+      - 4/4 package typechecks successful.
+    - `bun run test` ✅
+      - turbo reported 5/5 tasks successful.
+      - core suite: 145 tests passed.
+      - cli suite: 185 tests passed.
+    - `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp019-eval-final --limit 50` ✅
+      - Run ID: `eval_1781148264062_u5riw5`
+      - Cases: 50
+      - Passed: 50
+      - Failed: 0
+      - `metrics.json` parsed with `PatchQualityEvalMetricsArtifactSchema`.
+    - `bun --filter @codepawl/cli dev -- run --repo . --task "review current repository changes" --dry-run --test-command "echo cp019-smoke-ok" --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json --out-dir /tmp/codepawl-cp019-dry-run-smoke-final` ✅
+      - Run ID: `run_1781148263988_kkbvb2`
+      - Status: success
+      - Readiness: ready
+      - All machine-readable artifacts parsed with `RunArtifactSetSchema`.
+    - `bun --filter @codepawl/cli dev -- run --repo . --task "write a poem about repo maintenance" --write --test-command "echo cp019-failure-smoke" --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json --out-dir /tmp/codepawl-cp019-failure-smoke-final` ✅ expected non-zero failure
+      - Run ID: `run_1781148264258_z2dd91`
+      - Status: failed
+      - Readiness: unsupported
+      - Provider calls: 0
+      - All machine-readable artifacts parsed with `RunArtifactSetSchema`.
+  - Artifacts:
+    - Eval metrics: `/tmp/codepawl-cp019-eval-final/metrics.json`
+    - Eval report: `/tmp/codepawl-cp019-eval-final/report.md`
+    - Dry-run smoke artifacts: `/tmp/codepawl-cp019-dry-run-smoke-final/`
+    - Failure smoke artifacts: `/tmp/codepawl-cp019-failure-smoke-final/`
+  - Remaining gaps:
+    - v0.4 is not declared complete by this checkpoint.
+    - Backward-compatibility readers for pre-schemaVersion artifacts are not yet implemented; schemas intentionally validate the new generated contract.
+    - Release packaging/tagging is explicitly deferred.
+  - Next checkpoint: `CP-020` should audit v0.4 readiness and decide whether the contract is sufficient for release docs/package preparation, without creating a tag unless separately requested.
 
+- `CP-020` (2026-06-11, completed): v0.4.0 release readiness audit, packaging, and tagging gate.
+  - Owner: codex
+  - Verdict: `V0_4_RELEASE_READY`
+  - Scope:
+    - Commit CP-017 through CP-019 Trace/Evidence Layer source, tests, docs, and release metadata.
+    - Bump Openpawl package versions to `0.4.0`.
+    - Update README, CHANGELOG, ROADMAP, install docs, reusable workflow default ref, and sample workflow ref for `v0.4.0`.
+  - Release contents:
+    - Schema-backed machine-readable artifacts with `schemaVersion: "1"`:
+      - `run.json`
+      - `trace.json`
+      - `patch-plan.json`
+      - `selected-files.json`
+      - `applied-files.json`
+      - patch-quality `metrics.json`
+    - Exported Zod schemas from `@codepawl/core`.
+    - Cross-artifact consistency checks for run IDs, trace IDs/events, and write/apply summaries.
+    - `report.md` remains human-readable Markdown only.
+  - Safety boundary audit:
+    - No write safety gates were relaxed.
+    - Approval/apply policy was not changed.
+    - Validation precedence was not changed.
+    - Unsafe write rejection and beta create-only guardrails were not changed.
+    - `.gitignore` scanning and bounded retry behavior were not changed.
+  - Commands + results:
+    - `bun run typecheck` ✅
+      - 4/4 package typechecks successful.
+    - `bun run test` ✅
+      - turbo reported 5/5 tasks successful.
+      - core suite: 145 tests passed.
+      - cli suite: 185 tests passed.
+    - `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp020-eval --limit 50` ✅
+      - Run ID: `eval_1781148491980_znxa9c`
+      - Cases: 50
+      - Passed: 50
+      - Failed: 0
+      - `metrics.json` parsed with `PatchQualityEvalMetricsArtifactSchema`.
+    - `bun --filter @codepawl/cli dev -- run --repo . --task "review current repository changes" --dry-run --test-command "echo cp020-smoke-ok" --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json --out-dir /tmp/codepawl-cp020-dry-run-smoke` ✅
+      - Run ID: `run_1781148491983_fkacpd`
+      - Status: success
+      - Readiness: ready
+      - All machine-readable artifacts parsed with `RunArtifactSetSchema`.
+    - `bun --filter @codepawl/cli dev -- run --repo . --task "write a poem about repo maintenance" --write --test-command "echo cp020-failure-smoke" --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json --out-dir /tmp/codepawl-cp020-failure-smoke` ✅ expected non-zero failure
+      - Run ID: `run_1781148492001_khqk2p`
+      - Status: failed
+      - Readiness: unsupported
+      - Provider calls: 0
+      - All machine-readable artifacts parsed with `RunArtifactSetSchema`.
+  - Artifacts:
+    - Eval metrics: `/tmp/codepawl-cp020-eval/metrics.json`
+    - Eval report: `/tmp/codepawl-cp020-eval/report.md`
+    - Dry-run smoke artifacts: `/tmp/codepawl-cp020-dry-run-smoke/`
+    - Failure smoke artifacts: `/tmp/codepawl-cp020-failure-smoke/`
+  - Release action:
+    - Commit, annotated tag `v0.4.0`, push, and GitHub Release publication are authorized by this checkpoint after git status is clean.
+  - Caveats:
+    - No npm/package publish in this checkpoint.
+    - Backward-compatible readers for pre-`schemaVersion` artifacts are not included; generated artifacts use the v1 contract.
 
 
 

@@ -1,4 +1,4 @@
-# Openpawl v0.3.0
+# Openpawl v0.4.0
 
 Openpawl is the server-side coding-agent workflow in the CodePawl monorepo.
 
@@ -40,6 +40,19 @@ Current workflow command forms:
 Patch quality harness:
 
 - `bun --filter @codepawl/cli dev -- eval patch-quality`
+
+## Artifact Contract
+
+Openpawl writes machine-readable JSON artifacts with `schemaVersion: "1"`:
+
+- `run.json`
+- `trace.json`
+- `patch-plan.json`
+- `selected-files.json`
+- `applied-files.json`
+- patch-quality `metrics.json`
+
+These JSON artifacts are schema-backed in `@codepawl/core`. `report.md` intentionally remains a human-readable Markdown report for GitHub comments and does not carry machine-readable front matter.
 
 ## Install
 

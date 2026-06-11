@@ -4,6 +4,23 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.4.0] - 2026-06-11
+
+### Added
+
+- v0.4 Trace/Evidence Layer:
+  - Added `schemaVersion: "1"` contracts for machine-readable run artifacts: `run.json`, `trace.json`, `patch-plan.json`, `selected-files.json`, and `applied-files.json`.
+  - Added schema-backed patch-quality `metrics.json` output.
+  - Added cross-artifact consistency checks for run IDs, trace event correlation, and write summary/applied-file counts.
+  - Kept `report.md` human-readable only, with no machine-readable front matter, to preserve GitHub comment readability.
+
+### Verified
+
+- `bun run typecheck`
+- `bun run test`
+- `bun --filter @codepawl/cli dev -- eval patch-quality --limit 50`
+- dry-run and expected-failure smokes with schema-valid artifacts
+
 ## [0.3.0] - 2026-06-11
 
 ### Added

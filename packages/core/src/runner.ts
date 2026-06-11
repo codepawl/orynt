@@ -19,6 +19,14 @@ import {
   createReportExportNode,
 } from "./agent/nodes";
 import type { RunOptions, RunResult } from "./state/schema";
+import {
+  ARTIFACT_SCHEMA_VERSION,
+  AppliedFilesArtifactSchema,
+  PatchPlanArtifactSchema,
+  RunArtifactSchema,
+  SelectedFilesArtifactSchema,
+  TraceArtifactSchema,
+} from "./state/evidence";
 
 /**
  * Default mock fixture path used when no fixture is specified.
@@ -202,45 +210,73 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     try {
       await fs.mkdir(runDir, { recursive: true });
       const summary = ledger.getSummary();
+      const traceArtifact = TraceArtifactSchema.parse({
+        schemaVersion: ARTIFACT_SCHEMA_VERSION,
+        runId,
+        ...summary,
+      });
       await fs.writeFile(
         path.join(runDir, "trace.json"),
-        JSON.stringify(summary, null, 2),
+        JSON.stringify(traceArtifact, null, 2),
         "utf-8"
       );
       const errorReport = `# Openpawl Run Report\n\n**Run ID:** \`${runId}\`\n**Status:** ❌ ABORTED\n\n## Error\n\n\`\`\`\n${runError}\n\`\`\`\n`;
       await fs.writeFile(path.join(runDir, "report.md"), errorReport, "utf-8");
+      const abortedRunArtifact = RunArtifactSchema.parse({
+        schemaVersion: ARTIFACT_SCHEMA_VERSION,
+        runId,
+        success: false,
+        mode: "dry-run",
+        error: runError,
+        durationMs: 0,
+        tokenUsage: { input: 0, output: 0, total: 0 },
+        validationMaxRetries: 0,
+        validationRetryAttempt: 0,
+        readiness: {
+          status: "unsupported",
+          reasons: ["Run aborted before graph execution."],
+          blockers: ["Runner initialization failed before execution"],
+          warnings: [],
+        },
+        writeSummary: { attempted: 0, created: 0, skipped: 0, rejected: 0 },
+        filesCreated: [],
+        filesSkipped: [],
+        filesRejected: [],
+      });
       await fs.writeFile(
         path.join(runDir, "run.json"),
-        JSON.stringify(
-          {
-            runId,
-            success: false,
-            error: runError,
-            readiness: {
-              status: "unsupported",
-              reasons: ["Run aborted before graph execution."],
-              blockers: ["Runner initialization failed before execution"],
-              warnings: [],
-            },
-          },
-          null,
-          2
-        ),
+        JSON.stringify(abortedRunArtifact, null, 2),
         "utf-8"
       );
       await fs.writeFile(
         path.join(runDir, "patch-plan.json"),
-        JSON.stringify({ chunks: [], rationale: "Run aborted before patch plan." }, null, 2),
+        JSON.stringify(PatchPlanArtifactSchema.parse({
+          schemaVersion: ARTIFACT_SCHEMA_VERSION,
+          runId,
+          chunks: [],
+          rationale: "Run aborted before patch plan.",
+        }), null, 2),
         "utf-8"
       );
       await fs.writeFile(
         path.join(runDir, "selected-files.json"),
-        JSON.stringify({ selectedFiles: [] }, null, 2),
+        JSON.stringify(SelectedFilesArtifactSchema.parse({
+          schemaVersion: ARTIFACT_SCHEMA_VERSION,
+          runId,
+          selectedFiles: [],
+        }), null, 2),
         "utf-8"
       );
       await fs.writeFile(
         path.join(runDir, "applied-files.json"),
-        JSON.stringify({ attempted: 0, created: [], skipped: [], rejected: [] }, null, 2),
+        JSON.stringify(AppliedFilesArtifactSchema.parse({
+          schemaVersion: ARTIFACT_SCHEMA_VERSION,
+          runId,
+          attempted: 0,
+          created: [],
+          skipped: [],
+          rejected: [],
+        }), null, 2),
         "utf-8"
       );
     } catch { /* best-effort */ }
@@ -260,7 +296,8 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   const traceSummary = ledger.getSummary();
   const validationFailed = finalState.validationResult?.success === false;
 
-  // If the run completed (finalState exists) but had an error, write best-effort artifacts
+  // If the run completed (finalState exists) but had an error, write best-effort artifacts.
+  // createReportExportNode writes a schema-validated run.json — no extra write needed here.
   if (runError) {
     try {
       await fs.mkdir(runDir, { recursive: true });
@@ -268,23 +305,6 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       const reportExportNode = createReportExportNode();
       await traceExportNode(finalState);
       await reportExportNode(finalState);
-      const finalReadiness = finalState.readinessGateResult;
-      const finalValidationDecision = finalState.validationResult?.validationDecision;
-      await fs.writeFile(
-        path.join(runDir, "run.json"),
-        JSON.stringify(
-          {
-            runId,
-            success: false,
-            error: runError,
-            readiness: finalReadiness,
-            validationDecision: finalValidationDecision,
-          },
-          null,
-          2
-        ),
-        "utf-8"
-      );
     } catch { /* best-effort */ }
   }
 

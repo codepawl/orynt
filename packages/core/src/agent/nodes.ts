@@ -37,6 +37,14 @@ import {
   SCAN_MAX_BYTES,
 } from "../safety";
 import { GitignoreMatcher, isPathIgnored } from "../gitignore";
+import {
+  ARTIFACT_SCHEMA_VERSION,
+  AppliedFilesArtifactSchema,
+  PatchPlanArtifactSchema,
+  RunArtifactSchema,
+  SelectedFilesArtifactSchema,
+  TraceArtifactSchema,
+} from "../state/evidence";
 
 const execAsync = promisify(exec);
 
@@ -2483,17 +2491,30 @@ export function createTraceExportNode(): AgentNode {
 
     // Write patch-plan.json
     const patchPlan = state.patchPlan ?? { chunks: [], rationale: "No patch plan generated." };
+    const patchPlanArtifact = PatchPlanArtifactSchema.parse({
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      runId,
+      rationale: patchPlan.rationale,
+      chunks: patchPlan.chunks,
+      groundingNotes: patchPlan.groundingNotes,
+      rejectedChunks: patchPlan.rejectedChunks,
+    });
     await fs.writeFile(
       path.join(runDir, "patch-plan.json"),
-      JSON.stringify(patchPlan, null, 2),
+      JSON.stringify(patchPlanArtifact, null, 2),
       "utf-8"
     );
 
     // Write selected-files.json
     const selectedFiles = state.fileSelectionResult ?? { selectedFiles: [] };
+    const selectedFilesArtifact = SelectedFilesArtifactSchema.parse({
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      runId,
+      selectedFiles: selectedFiles.selectedFiles,
+    });
     await fs.writeFile(
       path.join(runDir, "selected-files.json"),
-      JSON.stringify(selectedFiles, null, 2),
+      JSON.stringify(selectedFilesArtifact, null, 2),
       "utf-8"
     );
 
@@ -2504,17 +2525,30 @@ export function createTraceExportNode(): AgentNode {
       skipped: [],
       rejected: [],
     };
+    const appliedFilesArtifact = AppliedFilesArtifactSchema.parse({
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      runId,
+      attempted: writeResult.attempted,
+      created: writeResult.created,
+      skipped: writeResult.skipped,
+      rejected: writeResult.rejected,
+    });
     await fs.writeFile(
       path.join(runDir, "applied-files.json"),
-      JSON.stringify(writeResult, null, 2),
+      JSON.stringify(appliedFilesArtifact, null, 2),
       "utf-8"
     );
 
     if (ledger) {
       const summary = ledger.getSummary();
+      const traceArtifact = TraceArtifactSchema.parse({
+        schemaVersion: ARTIFACT_SCHEMA_VERSION,
+        runId,
+        ...summary,
+      });
       await fs.writeFile(
         path.join(runDir, "trace.json"),
-        JSON.stringify(summary, null, 2),
+        JSON.stringify(traceArtifact, null, 2),
         "utf-8"
       );
     }
@@ -2579,6 +2613,41 @@ export function createReportExportNode(): AgentNode {
       validationDecision,
       readiness,
     };
+
+    const runArtifactPayload = {
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      runId,
+      success: !state.error && (!validationAttempted || validationSuccess),
+      mode: state.context.dryRun ? "dry-run" : "write",
+      error: state.error ?? null,
+      durationMs,
+      tokenUsage,
+      validationMaxRetries: state.context.validationMaxRetries ?? 0,
+      validationRetryAttempt: state.validationRetryAttempt ?? 0,
+      readiness: readiness ? {
+        status: readiness.status,
+        reasons: [...readiness.reasons],
+        blockers: [...readiness.blockers],
+        warnings: [...readiness.warnings],
+      } : undefined,
+      validationDecision: validationDecision ? {
+        source: validationDecision.source,
+        confidence: validationDecision.confidence,
+        reason: validationDecision.reason,
+        command: validationDecision.command,
+      } : undefined,
+      writeSummary: {
+        attempted: writeResult.attempted,
+        created: writeResult.created.length,
+        skipped: writeResult.skipped.length,
+        rejected: writeResult.rejected.length,
+      },
+      filesCreated: [...writeResult.created],
+      filesSkipped: writeResult.skipped.map(s => ({ file: s.file, reason: s.reason })),
+      filesRejected: writeResult.rejected.map(r => ({ file: r.file, reason: r.reason })),
+    };
+
+    const validatedRunArtifact = RunArtifactSchema.parse(runArtifactPayload);
 
     const runDir = state.context.outputDir;
     await fs.mkdir(runDir, { recursive: true });
@@ -2648,8 +2717,8 @@ export function createReportExportNode(): AgentNode {
               return `**${label}:** \`${cmd.command}\`\n` +
                 `- Exit Code: ${cmd.exitCode}\n` +
                 `- Duration: ${cmd.durationMs}ms\n` +
-                (cmd.stdout ? `- Stdout:\n\`\`\`\n${cmd.stdout.slice(0, 2000)}\n\`\`\`\n` : "") +
-                (cmd.stderr ? `- Stderr:\n\`\`\`\n${cmd.stderr.slice(0, 2000)}\n\`\`\`\n` : "");
+                (cmd.stdout ? `<details><summary>Stdout Log</summary>\n\n\`\`\`\n${cmd.stdout.slice(0, 2000)}\n\`\`\`\n</details>\n` : "") +
+                (cmd.stderr ? `<details><summary>Stderr Log</summary>\n\n\`\`\`\n${cmd.stderr.slice(0, 2000)}\n\`\`\`\n</details>\n` : "");
             })
             : ["No validation command was executed."])
         ].join("\n")
@@ -2839,7 +2908,7 @@ _Generated by [Openpawl](https://github.com/codepawl/codepawl) — server-side c
     await fs.writeFile(path.join(runDir, "report.md"), reportMd, "utf-8");
     await fs.writeFile(
       path.join(runDir, "run.json"),
-      JSON.stringify(reportResult, null, 2),
+      JSON.stringify(validatedRunArtifact, null, 2),
       "utf-8"
     );
 

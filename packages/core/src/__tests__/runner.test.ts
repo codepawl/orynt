@@ -3,6 +3,14 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { runAgent } from "../runner";
+import {
+  AppliedFilesArtifactSchema,
+  PatchPlanArtifactSchema,
+  RunArtifactSchema,
+  RunArtifactSetSchema,
+  SelectedFilesArtifactSchema,
+  TraceArtifactSchema,
+} from "../state/evidence";
 
 // Path to the bundled mock fixture
 const FIXTURE_PATH = path.join(
@@ -28,6 +36,22 @@ async function expectRequiredArtifacts(runDir: string): Promise<void> {
     const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
     expect(stat, `Expected artifact ${file} to exist`).not.toBeNull();
   }
+}
+
+async function expectSchemaValidArtifactSet(runDir: string): Promise<void> {
+  const run = RunArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")));
+  const trace = TraceArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "trace.json"), "utf-8")));
+  const patchPlan = PatchPlanArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "patch-plan.json"), "utf-8")));
+  const selectedFiles = SelectedFilesArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "selected-files.json"), "utf-8")));
+  const appliedFiles = AppliedFilesArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "applied-files.json"), "utf-8")));
+
+  expect(() => RunArtifactSetSchema.parse({
+    run,
+    trace,
+    patchPlan,
+    selectedFiles,
+    appliedFiles,
+  })).not.toThrow();
 }
 
 async function writeJsonFixture(filePath: string, payload: unknown): Promise<void> {
@@ -101,6 +125,7 @@ describe("runAgent — dry-run mode", () => {
 
     // All required artifact files must exist
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
   });
 
   it("writes artifacts to an explicit outDir when provided", async () => {
@@ -761,11 +786,10 @@ describe("runAgent — readiness gate", () => {
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
 
-    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
-      readiness?: {
-        status: string;
-      };
-    };
+    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8"));
+    // Assert run.json conforms to the stable RunArtifactSchema
+    expect(() => RunArtifactSchema.parse(runArtifact)).not.toThrow();
+    await expectSchemaValidArtifactSet(runDir);
     expect(runArtifact.readiness?.status).toBe("ready");
   });
 
@@ -808,11 +832,10 @@ describe("runAgent — readiness gate", () => {
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
 
-    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
-      readiness?: {
-        status: string;
-      };
-    };
+    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8"));
+    // Assert run.json conforms to the stable RunArtifactSchema
+    expect(() => RunArtifactSchema.parse(runArtifact)).not.toThrow();
+    await expectSchemaValidArtifactSet(runDir);
     expect(runArtifact.readiness?.status).toBe("unsupported");
   });
 
@@ -973,6 +996,7 @@ describe("runAgent — readiness gate", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
 
     const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
       readiness?: {
@@ -1147,7 +1171,9 @@ describe("runAgent — write mode safety guardrails", () => {
     expect(result.state.writeResult?.created).toEqual(["packages/core/src/__tests__/trace-ledger.generated.test.ts"]);
     expect(result.state.writeResult?.skipped).toEqual([]);
     expect(result.state.writeResult?.rejected).toEqual([]);
-    expect(applied).toEqual({
+    expect(applied).toMatchObject({
+      schemaVersion: "1",
+      runId: result.runId,
       attempted: 1,
       created: ["packages/core/src/__tests__/trace-ledger.generated.test.ts"],
       skipped: [],
@@ -1202,6 +1228,7 @@ describe("runAgent — write mode safety guardrails", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
     const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
       success: boolean;
       error: string | null;
@@ -1539,6 +1566,7 @@ describe("runAgent — write mode safety guardrails", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("Validation Result");
     expect(report).toContain("❌ FAILED");
@@ -1731,6 +1759,7 @@ describe("runAgent — error handling", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
   });
 
   it("exports artifacts when provider JSON fails schema validation", async () => {
@@ -1771,6 +1800,7 @@ describe("runAgent — error handling", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
 
     const traceRaw = await fs.readFile(path.join(runDir, "trace.json"), "utf-8");
     const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: unknown }> };

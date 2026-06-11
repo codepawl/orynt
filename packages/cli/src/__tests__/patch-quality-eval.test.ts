@@ -2,6 +2,7 @@ import { mkdtemp, readFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
+import { PatchQualityEvalMetricsArtifactSchema } from "@codepawl/core";
 import {
   getPatchQualityExpectedMetricRates,
   getPatchQualityFailureCategories,
@@ -32,6 +33,7 @@ describe("patch quality eval harness", () => {
     });
 
     expect(result.caseCount).toBe(50);
+    expect(result.schemaVersion).toBe("1");
     expect(result.passCount).toBe(50);
     expect(result.failCount).toBe(0);
     expect(result.metricRates.usefulReport).toBe(expectedRates.usefulReport);
@@ -50,6 +52,7 @@ describe("patch quality eval harness", () => {
     expect(result.reportPath).toContain("report.md");
 
     const metrics = JSON.parse(await readFile(result.metricsPath, "utf-8")) as {
+      schemaVersion: string;
       caseCount: number;
       passCount: number;
       failCount: number;
@@ -84,6 +87,8 @@ describe("patch quality eval harness", () => {
         failureReasons: ReadonlyArray<string>;
       }>;
     };
+    expect(() => PatchQualityEvalMetricsArtifactSchema.parse(metrics)).not.toThrow();
+    expect(metrics.schemaVersion).toBe("1");
     expect(metrics.caseCount).toBe(50);
     expect(metrics.passCount).toBe(50);
     expect(metrics.failCount).toBe(0);
