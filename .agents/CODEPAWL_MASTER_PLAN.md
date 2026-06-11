@@ -446,6 +446,16 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - Regression Risks Audit: Confirmed that write safety gates, approval/apply policies, validation precedence, unsafe write rejection, and beta create-only guardrails were preserved intact and not relaxed. ✅
   - Next Recommended Checkpoint: `CP-015` for v0.3.0 release packaging and tagging.
 
+- `CP-015` (2026-06-11, completed): v0.3.0 release packaging, tagging, and GitHub release.
+  - Owner: Antigravity
+  - Scope: Commit all v0.3 files, bump package versions, update CHANGELOG/ROADMAP/README docs to v0.3.0, tag, and publish.
+  - Release Details:
+    - Release Commit Hash: `4bf33110aeb04d5d617e2673eab2c8c5c31ccd00` ✅
+    - Tag Object Hash: `f8a9777df64eabebf90218055a6832c6adbad3ab` ✅
+    - GitHub Release URL: `https://github.com/codepawl/codepawl/releases/tag/v0.3.0` ✅
+    - Validation Status: Typecheck, global tests, and patch-quality eval pass. ✅
+
+
 
 
 
