@@ -46,6 +46,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout Openpawl source
+        uses: actions/checkout@v4
+        with:
+          repository: codepawl/codepawl
+          ref: v0.2.0
+          path: .openpawl-src
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -53,9 +60,11 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+        working-directory: .openpawl-src
 
       - name: Typecheck Openpawl packages
         run: bun run typecheck:core && bun run typecheck:cli
+        working-directory: .openpawl-src
 
       - name: Resolve Openpawl trigger
         id: trigger
@@ -67,7 +76,7 @@ jobs:
           OPENPAWL_REPOSITORY: ${{ github.repository }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            bun --filter @codepawl/cli dev -- openpawl-trigger \
+            bun --cwd .openpawl-src --filter @codepawl/cli dev -- openpawl-trigger \
               --event-name "$EVENT_NAME" \
               --event-path "${GITHUB_EVENT_PATH}" \
               --workflow-task "${OPENPAWL_TASK}" \
@@ -75,7 +84,7 @@ jobs:
               --workflow-mode "${OPENPAWL_MODE}" \
               --workflow-repository "${OPENPAWL_REPOSITORY}"
           else
-            bun --filter @codepawl/cli dev -- openpawl-trigger \
+            bun --cwd .openpawl-src --filter @codepawl/cli dev -- openpawl-trigger \
               --event-name "$EVENT_NAME" \
               --event-path "${GITHUB_EVENT_PATH}" \
               --workflow-repository "${OPENPAWL_REPOSITORY}"
@@ -87,14 +96,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ steps.trigger.outputs.base_ref }}
-
-      - name: Install dependencies for approved write checkout
-        if: steps.trigger.outputs.approved_write == 'true'
-        run: bun install
-
-      - name: Typecheck approved write checkout
-        if: steps.trigger.outputs.approved_write == 'true'
-        run: bun run typecheck:core && bun run typecheck:cli
+          clean: false
 
       - name: Run Openpawl agent
         id: openpawl
@@ -107,13 +109,13 @@ jobs:
           set +e
 
           if [ "$OPENPAWL_MODE" = "write" ]; then
-            bun --filter @codepawl/cli dev -- run \
-              --repo "$OPENPAWL_REPO_PATH" \
+            bun --cwd .openpawl-src --filter @codepawl/cli dev -- run \
+              --repo "$GITHUB_WORKSPACE/$OPENPAWL_REPO_PATH" \
               --task "$OPENPAWL_TASK" \
               --write
           else
-            bun --filter @codepawl/cli dev -- run \
-              --repo "$OPENPAWL_REPO_PATH" \
+            bun --cwd .openpawl-src --filter @codepawl/cli dev -- run \
+              --repo "$GITHUB_WORKSPACE/$OPENPAWL_REPO_PATH" \
               --task "$OPENPAWL_TASK" \
               --dry-run
           fi
@@ -121,7 +123,8 @@ jobs:
           set -e
           echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
 
-          RUN_DIR=$(ls -td .codepawl/runs/run_* 2>/dev/null | head -1)
+          # Capture the latest run ID relative to target repository root
+          RUN_DIR=$(ls -td "$GITHUB_WORKSPACE/$OPENPAWL_REPO_PATH"/.codepawl/runs/run_* 2>/dev/null | head -1)
           if [ -n "$RUN_DIR" ]; then
             RUN_ID=$(basename "$RUN_DIR")
             echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
@@ -208,6 +211,8 @@ jobs:
           RUN_ID: ${{ steps.openpawl.outputs.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          rm -rf .openpawl-src
+
           if [ -z "$(git status --porcelain --untracked-files=normal)" ]; then
             echo "No approved Openpawl file changes found; skipping PR creation."
             exit 0

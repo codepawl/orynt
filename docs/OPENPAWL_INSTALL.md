@@ -9,10 +9,12 @@ Openpawl is installable by copying a workflow file and a repo-root config file i
 3. Change `validation.writeTestCommand` in the config to match that repo’s test command.
 4. Push the files and run the workflow from the GitHub Actions tab.
 
-The workflow invokes `@codepawl/cli` directly, so Openpawl trigger and run arguments are not routed through the root Turbo script after the monorepo migration:
+The workflow checkouts the target repository at the root, and then checkouts the Openpawl monorepo (`codepawl/codepawl`) at a specific release tag (e.g. `v0.2.0`) into the `.openpawl-src` subdirectory. It then runs Openpawl commands inside `.openpawl-src` targeting the parent repository. The `.openpawl-src` directory is cleaned up before any pull requests are created or once execution finishes, preventing any tracking or pollution of the target repository's git status.
 
-- `bun --filter @codepawl/cli dev -- openpawl-trigger ...`
-- `bun --filter @codepawl/cli dev -- run ...`
+The workflow invokes `@codepawl/cli` directly inside `.openpawl-src`:
+
+- `bun --cwd .openpawl-src --filter @codepawl/cli dev -- openpawl-trigger ...`
+- `bun --cwd .openpawl-src --filter @codepawl/cli dev -- run ...`
 
 The workflow keeps the current Openpawl trigger UX and adds approval write mode:
 
@@ -125,3 +127,14 @@ The workflow uploads that directory as a GitHub Actions artifact and posts `repo
 ## Optional reusable workflow
 
 If you want to centralize the execution job instead of copying the full workflow, use `.github/workflows/openpawl-run.yml` from the Openpawl repo as a reusable workflow template. The copyable workflow in `docs/samples/openpawl.workflow.yml` is the simpler install path.
+
+When using the reusable workflow, you can specify the `openpawl_ref` input (defaults to `v0.2.0`) to control which version of Openpawl is executed:
+
+```yaml
+jobs:
+  openpawl:
+    uses: codepawl/codepawl/.github/workflows/openpawl-run.yml@v0.2.0
+    with:
+      task: "add unit tests for shared helpers"
+      openpawl_ref: "v0.2.0"
+```

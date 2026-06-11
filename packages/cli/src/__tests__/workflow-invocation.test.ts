@@ -25,8 +25,8 @@ describe("Openpawl workflow invocation", () => {
   it("keeps the sample workflow aligned with the direct CLI invocation", async () => {
     const workflow = await readText(SAMPLE_WORKFLOW_PATH);
 
-    expect(workflow).toContain("bun --filter @codepawl/cli dev -- openpawl-trigger");
-    expect(workflow).toContain("bun --filter @codepawl/cli dev -- run");
+    expect(workflow).toContain("bun --cwd .openpawl-src --filter @codepawl/cli dev -- openpawl-trigger");
+    expect(workflow).toContain("bun --cwd .openpawl-src --filter @codepawl/cli dev -- run");
     expect(workflow).toContain("steps.trigger.outputs.approved_write == 'true'");
     expect(workflow).toContain("gh pr create");
     expect(workflow).not.toContain("bun run dev:cli -- openpawl-trigger");

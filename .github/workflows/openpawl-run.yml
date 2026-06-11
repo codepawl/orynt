@@ -34,6 +34,11 @@ on:
         description: "Optional artifact output directory"
         required: false
         type: string
+      openpawl_ref:
+        description: "Git ref of codepawl/codepawl to run"
+        required: false
+        type: string
+        default: "v0.2.0"
     outputs:
       run_id:
         value: ${{ jobs.openpawl-run.outputs.run_id }}
@@ -66,6 +71,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout Openpawl source
+        uses: actions/checkout@v4
+        with:
+          repository: codepawl/codepawl
+          ref: ${{ inputs.openpawl_ref }}
+          path: .openpawl-src
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -73,9 +85,11 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+        working-directory: .openpawl-src
 
       - name: Typecheck Openpawl packages
         run: bun run typecheck:core && bun run typecheck:cli
+        working-directory: .openpawl-src
 
       - name: Run Openpawl agent
         id: openpawl
@@ -90,7 +104,13 @@ jobs:
         run: |
           set +e
 
-          RUN_ARGS=(run --repo "$OPENPAWL_REPO_PATH" --task "$OPENPAWL_TASK" --config "$OPENPAWL_CONFIG_PATH")
+          RESOLVED_REPO="$GITHUB_WORKSPACE/$OPENPAWL_REPO_PATH"
+          RESOLVED_CONFIG="$OPENPAWL_CONFIG_PATH"
+          if [[ "$RESOLVED_CONFIG" != /* ]]; then
+            RESOLVED_CONFIG="$RESOLVED_REPO/$RESOLVED_CONFIG"
+          fi
+
+          RUN_ARGS=(run --repo "$RESOLVED_REPO" --task "$OPENPAWL_TASK" --config "$RESOLVED_CONFIG")
 
           if [ -n "$OPENPAWL_TEST_CMD" ]; then
             RUN_ARGS+=(--test-cmd "$OPENPAWL_TEST_CMD")
@@ -103,20 +123,37 @@ jobs:
           fi
 
           if [ -n "$OPENPAWL_MOCK_FIXTURE" ]; then
-            RUN_ARGS+=(--mock-fixture "$OPENPAWL_MOCK_FIXTURE")
+            if [[ "$OPENPAWL_MOCK_FIXTURE" != /* ]]; then
+              RUN_ARGS+=(--mock-fixture "$GITHUB_WORKSPACE/$OPENPAWL_MOCK_FIXTURE")
+            else
+              RUN_ARGS+=(--mock-fixture "$OPENPAWL_MOCK_FIXTURE")
+            fi
           fi
 
           if [ -n "$OPENPAWL_OUT_DIR" ]; then
-            RUN_ARGS+=(--out-dir "$OPENPAWL_OUT_DIR")
+            if [[ "$OPENPAWL_OUT_DIR" != /* ]]; then
+              RUN_ARGS+=(--out-dir "$GITHUB_WORKSPACE/$OPENPAWL_OUT_DIR")
+            else
+              RUN_ARGS+=(--out-dir "$OPENPAWL_OUT_DIR")
+            fi
           fi
 
-          bun --filter @codepawl/cli dev -- "${RUN_ARGS[@]}"
+          bun --cwd .openpawl-src --filter @codepawl/cli dev -- "${RUN_ARGS[@]}"
           EXIT_CODE=$?
           set -e
           echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
 
-          RUN_DIR=$(ls -td .codepawl/runs/run_* 2>/dev/null | head -1)
-          if [ -n "$RUN_DIR" ]; then
+          if [ -n "$OPENPAWL_OUT_DIR" ]; then
+            if [[ "$OPENPAWL_OUT_DIR" != /* ]]; then
+              RUN_DIR="$GITHUB_WORKSPACE/$OPENPAWL_OUT_DIR"
+            else
+              RUN_DIR="$OPENPAWL_OUT_DIR"
+            fi
+          else
+            RUN_DIR=$(ls -td "$RESOLVED_REPO"/.codepawl/runs/run_* 2>/dev/null | head -1)
+          fi
+
+          if [ -n "$RUN_DIR" ] && [ -d "$RUN_DIR" ]; then
             RUN_ID=$(basename "$RUN_DIR")
             echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
             echo "run_dir=${RUN_DIR}" >> "$GITHUB_OUTPUT"
@@ -125,6 +162,10 @@ jobs:
           fi
 
           exit 0
+
+      - name: Clean up Openpawl source
+        if: always()
+        run: rm -rf .openpawl-src
 
       - name: Upload Openpawl run artifacts
         if: always() && steps.openpawl.outputs.run_dir != ''
