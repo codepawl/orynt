@@ -2,6 +2,8 @@
 
 Openpawl is installable by copying a workflow file and a repo-root config file into an existing GitHub repository.
 
+For Marketplace review context, `v0.5.1` is the current workflow-install candidate. It is not yet packaged as a GitHub Marketplace Action; use the pinned workflow install path below until a dedicated Marketplace action wrapper exists.
+
 ## Minimal setup
 
 1. Copy `docs/samples/openpawl.workflow.yml` into the target repo as `.github/workflows/openpawl.yml`.

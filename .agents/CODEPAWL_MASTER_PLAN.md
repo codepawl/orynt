@@ -914,3 +914,68 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
 - Caveats:
   - The final CP-025 evidence record is a docs-only checkpoint on `main` after the `v0.5.1` release tag, so `main` intentionally advances past the release tag with checkpoint metadata only.
   - GitHub checkout still prints upstream `git init` default-branch hints; these are not Openpawl workflow warnings and did not fail the run.
+
+### CP-026: GitHub Marketplace readiness audit for Openpawl by CodePawl
+
+- Date: 2026-06-11
+- Verdict: BLOCKED_WITH_REASON
+- Candidate release: `v0.5.1`
+- Blocking reason:
+  - GitHub Marketplace Action publication requires a root `action.yml` or `action.yaml` metadata file and a single-action repository/package shape.
+  - Openpawl `v0.5.1` is validated as a copyable/reusable GitHub Actions workflow from the `codepawl/codepawl` monorepo, but the repository does not contain a root Action metadata file and should not be submitted as a Marketplace Action until a dedicated wrapper/package exists.
+- Official requirements checked:
+  - GitHub Actions metadata syntax: actions require `action.yml` or `action.yaml`, with `action.yml` preferred.
+  - GitHub Marketplace publishing requirements: public repository, one root action metadata file, unique action metadata `name`, and Marketplace Developer Agreement acceptance before publication.
+- Repository/release inspection:
+  - Initial status: clean, `main...origin/main`.
+  - Recent head before CP-026 docs: `5798ac7` (`docs(openpawl): record CP-025 release audit`).
+  - `v0.5.1` tag object: `29eb89383172a185b45128793fbabcd6a92c8bb2`.
+  - `v0.5.1` target commit: `682b8be7b56d62d757e67254d082d34043f814b8`.
+  - GitHub Release: `https://github.com/codepawl/codepawl/releases/tag/v0.5.1`.
+  - Live smoke run: `https://github.com/codepawl/codepawl/actions/runs/27324386738`, conclusion `success`, head SHA `682b8be7b56d62d757e67254d082d34043f814b8`.
+- Clean `v0.5.1` reproducibility evidence:
+  - Temp clone: `/tmp/codepawl-cp026-clone-og1wFs/repo`.
+  - Checkout: `v0.5.1`, target commit `682b8be7b56d62d757e67254d082d34043f814b8`.
+  - `bun install`: pass after rerun with network access and `/tmp` Bun cache/install dirs.
+  - `bun run typecheck`: pass.
+  - `bun run test`: pass.
+  - `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp026-tag-eval --limit 50`: pass, 50/50, eval `eval_1781153627117_t80410`.
+  - Dry-run smoke: pass, run `run_1781153640800_p3ob8g`, report `/tmp/codepawl-cp026-tag-dry-run-smoke/report.md`, trace `/tmp/codepawl-cp026-tag-dry-run-smoke/trace.json`.
+  - Expected-failure smoke: expected exit code `1`, readiness `unsupported`, provider calls `0`, run `run_1781153640861_2dp7i6`, report `/tmp/codepawl-cp026-tag-failure-smoke/report.md`, trace `/tmp/codepawl-cp026-tag-failure-smoke/trace.json`.
+- Marketplace docs/copy fixes:
+  - Added `docs/MARKETPLACE.md` with the CP-026 verdict, Marketplace field draft, support/install/status URLs, copy guardrails, screenshot/feature-card checklist, and publication blockers.
+  - Updated README and install docs to state that `v0.5.1` is a workflow-install candidate, not a published Marketplace Action.
+  - Updated public OpenPawl product copy and API seed/test fixtures to avoid overclaiming broad autonomous write behavior and to point at `codepawl/codepawl`.
+  - Updated product documentation/glossary/API examples to use guarded workflow language.
+- Marketplace field URLs recorded:
+  - Current install URL: `https://github.com/codepawl/codepawl/blob/v0.5.1/docs/OPENPAWL_INSTALL.md`.
+  - Reusable workflow URL: `https://github.com/codepawl/codepawl/blob/v0.5.1/.github/workflows/openpawl-run.yml`.
+  - Copyable workflow URL: `https://github.com/codepawl/codepawl/blob/v0.5.1/docs/samples/openpawl.workflow.yml`.
+  - Sample config URL: `https://github.com/codepawl/codepawl/blob/v0.5.1/docs/samples/openpawl.config.json`.
+  - Release URL: `https://github.com/codepawl/codepawl/releases/tag/v0.5.1`.
+  - Source URL: `https://github.com/codepawl/codepawl`.
+  - Support URL: `https://github.com/codepawl/codepawl/issues`.
+  - Status URL: `https://github.com/codepawl/codepawl/actions/workflows/openpawl.yml`.
+  - Security/contact URL: `https://github.com/codepawl/codepawl/security/advisories`.
+  - Documentation URL: `https://github.com/codepawl/codepawl/tree/v0.5.1/docs`.
+- Listing copy verification:
+  - Product name draft: `Openpawl by CodePawl`.
+  - Short description draft: `Dry-run-first AI code review workflow for GitHub issues and pull requests.`
+  - Full description draft explicitly says dry-run by default, schema-versioned artifacts, report context, explicit maintainer approval/manual dispatch for write mode, and beta writes limited to safe test-file creation on bot branches with PR review.
+  - Copy guardrails reject claims of unattended autonomous writing, broad code modification support, npm installability, or completed Marketplace publication.
+- Screenshot/feature-card checklist:
+  - Added in `docs/MARKETPLACE.md`: workflow dispatch setup, successful Actions run, Evidence Summary, report comment, safety card, artifact card, and limitations card.
+- Validation after docs/copy fixes:
+  - `bun run typecheck`: pass.
+  - `bun run test`: pass.
+  - `UV_CACHE_DIR=/tmp/codepawl-cp026-uv-cache uv run pytest` in `apps/api`: pass, 22 tests; warning limited to third-party FastAPI/Starlette testclient deprecation.
+- Safety boundaries preserved:
+  - No product features added.
+  - Did not rewrite `v0.5.1`.
+  - Did not publish npm/packages.
+  - Write-safety gates unchanged.
+  - Artifact schema v1 unchanged.
+  - Trace legacy compatibility unchanged.
+  - `.gitignore` scanning unchanged.
+  - Bounded retry behavior unchanged.
+  - Evidence Summary behavior unchanged.

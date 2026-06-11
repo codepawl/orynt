@@ -18,7 +18,7 @@ export function Stack() {
           <code>{`CodePawl
 ├── TracePawl    failure diagnosis and replay for AI agents
 ├── Mempawl      persistent memory for agentic systems
-├── OpenPawl     runtime for coordinated AI agents
+├── OpenPawl     guarded code review workflow
 └── CachePawl    optimization for long-horizon agent workloads`}</code>
         </pre>
 

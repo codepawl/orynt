@@ -15,12 +15,12 @@ def test_sync_stats_requires_admin_key(client: TestClient) -> None:
 
 @respx.mock
 def test_sync_stats_with_admin_key_runs_job(client: TestClient) -> None:
-    respx.get("https://api.github.com/repos/codepawl/openpawl").mock(
+    respx.get("https://api.github.com/repos/codepawl/codepawl").mock(
         return_value=Response(
             200, json={"stargazers_count": 5, "forks_count": 1, "open_issues_count": 0}
         )
     )
-    respx.get("https://api.github.com/repos/codepawl/openpawl/releases/latest").mock(
+    respx.get("https://api.github.com/repos/codepawl/codepawl/releases/latest").mock(
         return_value=Response(404, json={})
     )
     respx.get("https://api.github.com/repos/codepawl/featcat").mock(

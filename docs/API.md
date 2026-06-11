@@ -113,9 +113,9 @@
         "id": "openpawl",
         "name": "OpenPawl",
         "slug": "openpawl",
-        "tagline": "A team of agents in your terminal.",
+        "tagline": "Dry-run-first AI code review workflow for GitHub.",
         "status": "beta",
-        "github_repo": "codepawl/openpawl",
+        "github_repo": "codepawl/codepawl",
         "display_order": 1
       }
     ]

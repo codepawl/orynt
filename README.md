@@ -61,3 +61,7 @@ When run from GitHub Actions, the Evidence Summary includes the Actions run URL,
 ## Install
 
 See [docs/OPENPAWL_INSTALL.md](docs/OPENPAWL_INSTALL.md) for the copy/paste setup, permissions, artifacts, reports, and security notes.
+
+## Marketplace Status
+
+Openpawl `v0.5.1` is validated as a copyable/reusable GitHub Actions workflow, not yet as a GitHub Marketplace Action. See [docs/MARKETPLACE.md](docs/MARKETPLACE.md) for the Marketplace readiness audit, listing copy draft, support/install/status URLs, and screenshot checklist.

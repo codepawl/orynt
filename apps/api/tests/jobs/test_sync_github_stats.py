@@ -14,9 +14,9 @@ def _seed() -> list[dict[str, object]]:
             "id": "openpawl",
             "name": "OpenPawl",
             "slug": "openpawl",
-            "tagline": "agents",
+            "tagline": "Dry-run-first AI code review workflow for GitHub.",
             "status": "beta",
-            "github_repo": "codepawl/openpawl",
+            "github_repo": "codepawl/codepawl",
             "display_order": 1,
         },
         {
@@ -37,13 +37,13 @@ async def test_sync_upserts_stats_and_skips_missing_repo() -> None:
     products = FakeProductRepo(rows=_seed())
     stats = FakeProductStatsRepo()
 
-    respx.get("https://api.github.com/repos/codepawl/openpawl").mock(
+    respx.get("https://api.github.com/repos/codepawl/codepawl").mock(
         return_value=Response(
             200,
             json={"stargazers_count": 4200, "forks_count": 320, "open_issues_count": 27},
         )
     )
-    respx.get("https://api.github.com/repos/codepawl/openpawl/releases/latest").mock(
+    respx.get("https://api.github.com/repos/codepawl/codepawl/releases/latest").mock(
         return_value=Response(
             200, json={"tag_name": "v0.4.1", "published_at": "2026-05-10T08:30:00Z"}
         )
@@ -68,12 +68,12 @@ async def test_sync_only_filter() -> None:
     products = FakeProductRepo(rows=_seed())
     stats = FakeProductStatsRepo()
 
-    respx.get("https://api.github.com/repos/codepawl/openpawl").mock(
+    respx.get("https://api.github.com/repos/codepawl/codepawl").mock(
         return_value=Response(
             200, json={"stargazers_count": 1, "forks_count": 0, "open_issues_count": 0}
         )
     )
-    respx.get("https://api.github.com/repos/codepawl/openpawl/releases/latest").mock(
+    respx.get("https://api.github.com/repos/codepawl/codepawl/releases/latest").mock(
         return_value=Response(404, json={})
     )
 

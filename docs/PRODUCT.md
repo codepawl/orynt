@@ -22,13 +22,13 @@
 
 ## What we are building
 
-CodePawl is a server-side coding-agent ecosystem designed for autonomous software development. The core product is **Openpawl**, an open-source autonomous agent engine. Internally, it relies on advanced **Trace Ledger** and **Memory** modules to coordinate agent execution and maintain state history. The project also houses a product catalog (supporting tools like Featcat, HebbMem, TurboQuant, Cachepawl, and KStudio), curated AI/ML research, technical documentation, and waitlist signups.
+CodePawl is a server-side coding-agent ecosystem designed for auditable AI-assisted software development. The core product is **Openpawl**, a dry-run-first GitHub Actions workflow for repository review with conservative write-mode guardrails. The project also houses a product catalog, curated AI/ML research, technical documentation, and waitlist signups.
 
 ## Who it is for
 
 Primary audience, in priority order:
 
-1. **AI/ML engineers building production agents.** They want vetted libraries and agent orchestration frameworks like Openpawl that they can drop into a stack. They evaluate by reading the README, checking last commit date, and skimming benchmarks.
+1. **AI/ML engineers building production agents.** They want vetted libraries and guarded automation workflows like Openpawl that they can evaluate safely. They evaluate by reading the README, checking last commit date, and skimming validation evidence.
 2. **ML practitioners and researchers** reproducing papers or exploring memory, quantization, hybrid architectures. They want code that runs and reports that show the numbers held up.
 3. **AI-curious developers** following the field through curated, low-noise channels. They want a non-Twitter, non-HN, AI-focused feed.
 
@@ -49,7 +49,7 @@ AI/ML output is scattered. New libraries land on GitHub, get a tweet, get an HN 
 
 One surface for: products you can run, research you can reproduce, news you can trust. Built by people shipping the same kind of work.
 
-The differentiator is not "another AI news site." It is the **product catalog**: our flagship open-source developer agent engine **Openpawl** and its supporting tools (Featcat, HebbMem, TurboQuant, Cachepawl, KStudio) maintained by the same team, with shared design language and a coherent story about agents, memory, and compute.
+The differentiator is not "another AI news site." It is the **product catalog**: our flagship guarded code review workflow **Openpawl** and its supporting tools maintained by the same team, with shared design language and a coherent story about agents, memory, and compute.
 
 ## Success metric for MVP
 
