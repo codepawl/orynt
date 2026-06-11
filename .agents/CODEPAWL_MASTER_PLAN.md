@@ -5,7 +5,7 @@ Last updated: 2026-06-11 (UTC)
 ## Current Release Status
 
 - **Product:** Openpawl (`codepawl`)
-- **Current baseline:** `v0.5.1` (patch release in progress)
+- **Current baseline:** `v0.5.1` (released)
 - **Safety posture:** Dry-run default; write mode is gated by approval + safe test-file create policy.
 - **Canonical references (no duplicate logs):**
   - [CHANGELOG.md](../CHANGELOG.md)
@@ -845,3 +845,72 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
   - Do not publish npm/packages.
   - Artifact JSON schemaVersion `"1"` compatibility unchanged.
   - Write safety gates, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, bounded retry behavior, and trace legacy compatibility unchanged.
+
+### CP-025: v0.5.0 post-release reproducibility and GitHub Actions audit
+
+- Date: 2026-06-11
+- Verdict: V0_5_1_PATCH_RELEASED
+- Release evidence:
+  - Patch commit: `682b8be7b56d62d757e67254d082d34043f814b8` (`fix(openpawl): prepare v0.5.1 patch release`).
+  - Annotated tag: `v0.5.1`, tag object `29eb89383172a185b45128793fbabcd6a92c8bb2`, target commit `682b8be7b56d62d757e67254d082d34043f814b8`.
+  - GitHub Release: `https://github.com/codepawl/codepawl/releases/tag/v0.5.1`.
+  - No npm/packages were published.
+- v0.5.0 clean-clone reproducibility audit:
+  - Checkout: clean temp clone at `v0.5.0`, target commit `040e57e38b9ed1c8f51453b1f971964da72aa744`.
+  - `bun install`: pass after using `/tmp` Bun install/tmp directories for the clean clone.
+  - `bun run typecheck`: failed before the patch because `apps/web/components/app-providers.tsx` imported `@clerk/ui` without a resolvable root declaration.
+  - `bun run test`: pass.
+  - `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp025-tag-eval --limit 50`: pass, 50/50, eval `eval_1781152560452_0nnkvs`.
+  - Dry-run smoke: pass, run `run_1781152560455_icskpf`, report `/tmp/codepawl-cp025-tag-dry-run-smoke/report.md`, trace `/tmp/codepawl-cp025-tag-dry-run-smoke/trace.json`.
+  - Expected-failure smoke: expected exit code `1`, readiness `unsupported`, provider calls `0`, run `run_1781152560473_acxv83`, report `/tmp/codepawl-cp025-tag-failure-smoke/report.md`, trace `/tmp/codepawl-cp025-tag-failure-smoke/trace.json`.
+- GitHub Actions run `27323506270` audit:
+  - Conclusion: success, but logs contained harmless noisy checkout post-job cleanup warnings because `openpawl-install-smoke` was a tracked gitlink without a `.gitmodules` entry.
+  - Node/action warning: checkout/upload actions were still on older majors and emitted Node 20 deprecation/forced runtime warnings under `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`.
+  - Artifact upload/download: upload completed; no artifact corruption or missing-file issue found.
+  - Comment/report context: no issue/PR comment was expected for `workflow_dispatch`; the in-repo workflow carried Actions URL evidence, while reusable/sample workflows did not yet pass the same env value.
+- Patch scope:
+  - Added a typed `@clerk/ui` declaration for the web app using Clerk UI's `Ui<Appearance>` type.
+  - Removed the stale `openpawl-install-smoke` gitlink.
+  - Updated workflows and samples to `actions/checkout@v6`, `actions/upload-artifact@v7`, and `actions/github-script@v9` where applicable.
+  - Removed the temporary `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` override.
+  - Passed `OPENPAWL_GITHUB_ACTIONS_URL` through reusable/sample workflows.
+  - Renamed the report Evidence Summary schema row to `schemaVersion`.
+- v0.5.1 local validation evidence:
+  - `bun run typecheck`: pass.
+  - `bun run test`: pass.
+  - `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp025-main-eval --limit 50`: pass, 50/50, eval `eval_1781152917046_hfmm6f`.
+  - `git diff --check`: pass.
+  - Local dry-run smoke: pass, run `run_1781152933493_k9pqkw`, report `/tmp/codepawl-cp025-main-dry-run-smoke/report.md`, trace `/tmp/codepawl-cp025-main-dry-run-smoke/trace.json`.
+  - Local expected-failure smoke: expected exit code `1`, readiness `unsupported`, provider calls `0`, run `run_1781152933527_sxe3yh`, report `/tmp/codepawl-cp025-main-failure-smoke/report.md`, trace `/tmp/codepawl-cp025-main-failure-smoke/trace.json`.
+- Live GitHub smoke after fixes:
+  - Command: `gh workflow run openpawl.yml --repo codepawl/codepawl --ref main -f mode=dry-run -f repo_path=. -f task='review changes and suggest improvements'`.
+  - Run URL: `https://github.com/codepawl/codepawl/actions/runs/27324386738`.
+  - GitHub run ID/conclusion: `27324386738`, `success`.
+  - Head SHA: `682b8be7b56d62d757e67254d082d34043f814b8`.
+  - Openpawl run ID: `run_1781153102350_hx0mh7`.
+  - Artifact name: `openpawl-artifacts-run_1781153102350_hx0mh7`.
+  - Artifact directory: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781153102350_hx0mh7`.
+  - Report path: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781153102350_hx0mh7/report.md`.
+  - Trace path: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781153102350_hx0mh7/trace.json`.
+  - Downloaded evidence path: `/tmp/codepawl-cp025-live-smoke/openpawl-artifacts-run_1781153102350_hx0mh7/`.
+  - Evidence Summary includes run ID, Actions URL, artifact name, artifact directory, report path, trace path, and `schemaVersion`.
+  - Evidence Summary leakage check: no raw prompt, secret-shaped value, env value, or unbounded log matched in the summary.
+  - Comment evidence: not applicable to `workflow_dispatch` because no issue/PR number is resolved.
+- Warning verdicts after fixes:
+  - `.gitmodules` cleanup warning: fixed; no `No url found for submodule path 'openpawl-install-smoke'` or fatal submodule cleanup warning appeared in run `27324386738`.
+  - Checkout/submodule behavior: `submodules: false`; checkout still runs normal credential cleanup `git submodule foreach` commands, but they complete without warnings.
+  - Node 20 deprecation/forced-runtime warning: fixed for audited Openpawl/CI workflow actions; no Node 20 deprecation warning appeared in run `27324386738`.
+  - Artifact upload/download: pass; artifact `openpawl-artifacts-run_1781153102350_hx0mh7` uploaded with six files and downloaded for evidence inspection.
+  - Comment/report context: report artifact carries Actions URL and artifact context; issue/PR comment remains skipped for `workflow_dispatch`.
+- Safety boundaries preserved:
+  - Artifact JSON schemaVersion `"1"` compatibility unchanged.
+  - Write safety gates unchanged.
+  - Approval/apply policy unchanged.
+  - Validation precedence unchanged.
+  - Unsafe write rejection and beta create-only guardrails unchanged.
+  - `.gitignore` scanning unchanged.
+  - Bounded retry behavior unchanged.
+  - Trace legacy compatibility unchanged.
+- Caveats:
+  - The final CP-025 evidence record is a docs-only checkpoint on `main` after the `v0.5.1` release tag, so `main` intentionally advances past the release tag with checkpoint metadata only.
+  - GitHub checkout still prints upstream `git init` default-branch hints; these are not Openpawl workflow warnings and did not fail the run.
