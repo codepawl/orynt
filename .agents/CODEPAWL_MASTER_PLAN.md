@@ -455,6 +455,16 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - GitHub Release URL: `https://github.com/codepawl/codepawl/releases/tag/v0.3.0` ✅
     - Validation Status: Typecheck, global tests, and patch-quality eval pass. ✅
 
+- `CP-016` (2026-06-11, completed): post-release reproducibility audit for v0.3.0.
+  - Owner: Antigravity
+  - Verdict: `PASS_NO_FOLLOWUP_RELEASE`
+  - Audit Results:
+    - Reproducibility: Confirmed that a clean local clone of `v0.3.0` compiles, runs typecheck, passes the complete unit/integration test suite, and passes the 50-fixture patch-quality harness with 100% success rate. ✅
+    - `.gitignore` Scanning Verification: Verified that `.gitignore` parsing, stack-matching, and file exclusions function as expected, as covered by robust unit and integration tests. ✅
+    - Validation Retries: Confirmed that validation retries are disabled by default (default limit `0`), bounded when enabled, and perform clean workspace file cleanups on failure. ✅
+    - Safety Boundary: Confirmed that write safety gates, approval/apply policies, validation precedence, unsafe write rejection, and beta create-only guardrails were preserved intact and not relaxed. ✅
+
+
 
 
 
