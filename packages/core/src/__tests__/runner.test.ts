@@ -203,7 +203,7 @@ describe("runAgent — dry-run mode", () => {
     await expectRequiredArtifacts(runDir);
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("## Evidence Summary");
-    expect(report).toContain("| Artifact schema | `1` |");
+    expect(report).toContain("| schemaVersion | `1` |");
     expect(report).toContain("| Failure category | `validation_failed` |");
     expect(report).toContain("### Failure Summary");
     expect(report).toContain("- Category: `validation_failed`");
@@ -596,7 +596,7 @@ describe("runAgent — dry-run mode", () => {
     expect(report).toContain("Dry-run");
     expect(report).toContain(task);
     expect(report).toContain("## Evidence Summary");
-    expect(report).toContain("| Artifact schema | `1` |");
+    expect(report).toContain("| schemaVersion | `1` |");
     expect(report).toContain("| Failure category | `none` |");
     expect(report).toContain("### Artifact Links");
     expect(report).toContain(`openpawl-artifacts-${result.runId}`);

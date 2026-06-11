@@ -2871,7 +2871,7 @@ export function createReportExportNode(): AgentNode {
 
 | Field | Value |
 |---|---|
-| Artifact schema | \`${ARTIFACT_SCHEMA_VERSION}\` |
+| schemaVersion | \`${ARTIFACT_SCHEMA_VERSION}\` |
 | Run ID | \`${runId}\` |
 ${githubActionsRowForEvidence}| Artifact name | \`${artifactNameForEvidence}\` |
 | Artifact directory | \`${artifactDirectoryForEvidence}\` |

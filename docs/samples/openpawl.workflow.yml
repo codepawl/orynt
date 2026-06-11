@@ -2,9 +2,6 @@ name: Openpawl CI
 
 # Supports exact /openpawl and @openpawl commands. Mention-triggered runs stay dry-run only.
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   issue_comment:
     types: [created]
@@ -42,15 +39,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout Openpawl source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: codepawl/codepawl
-          ref: v0.5.0
+          ref: v0.5.1
           path: .openpawl-src
 
       - name: Setup Bun
@@ -92,7 +89,7 @@ jobs:
 
       - name: Checkout base ref for approved write
         if: steps.trigger.outputs.approved_write == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ steps.trigger.outputs.base_ref }}
@@ -105,6 +102,7 @@ jobs:
           OPENPAWL_TASK: ${{ steps.trigger.outputs.task }}
           OPENPAWL_REPO_PATH: ${{ steps.trigger.outputs.repo_path }}
           OPENPAWL_MODE: ${{ steps.trigger.outputs.mode }}
+          OPENPAWL_GITHUB_ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set +e
 
@@ -137,7 +135,7 @@ jobs:
 
       - name: Upload Openpawl run artifacts
         if: always() && steps.openpawl.outputs.run_dir != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openpawl-artifacts-${{ steps.openpawl.outputs.run_id }}
           path: ${{ steps.openpawl.outputs.run_dir }}/**
@@ -150,7 +148,7 @@ jobs:
           steps.trigger.outputs.should_run == 'true' &&
           steps.openpawl.outputs.report_path != '' &&
           steps.trigger.outputs.issue_number != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         continue-on-error: true
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -5,7 +5,7 @@ Last updated: 2026-06-11 (UTC)
 ## Current Release Status
 
 - **Product:** Openpawl (`codepawl`)
-- **Current baseline:** `v0.5.0` (TAG_READY pending release publication)
+- **Current baseline:** `v0.5.1` (patch release in progress)
 - **Safety posture:** Dry-run default; write mode is gated by approval + safe test-file create policy.
 - **Canonical references (no duplicate logs):**
   - [CHANGELOG.md](../CHANGELOG.md)

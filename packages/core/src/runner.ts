@@ -237,7 +237,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
 
 | Field | Value |
 |---|---|
-| Artifact schema | \`${ARTIFACT_SCHEMA_VERSION}\` |
+| schemaVersion | \`${ARTIFACT_SCHEMA_VERSION}\` |
 | Run ID | \`${runId}\` |
 ${githubActionsRow}| Artifact name | \`openpawl-artifacts-${runId}\` |
 | Artifact directory | \`${runDir}\` |

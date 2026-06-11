@@ -4,6 +4,21 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.5.1] - 2026-06-11
+
+### Fixed
+
+- Restored clean-clone reproducibility by adding the missing Clerk UI module declaration used by the web app typecheck.
+- Removed the stale `openpawl-install-smoke` gitlink that caused GitHub Actions checkout cleanup warnings because no `.gitmodules` entry existed.
+- Updated GitHub workflows and install samples to current checkout/upload/comment action majors and removed the temporary forced Node runtime override.
+- Propagated the GitHub Actions run URL through the reusable workflow and sample workflow so report artifacts include the same evidence context as the in-repo workflow.
+- Renamed the Evidence Summary schema row to `schemaVersion` to match the JSON artifact contract wording.
+
+### Compatibility
+
+- Artifact JSON schemaVersion remains `"1"`.
+- Write safety gates, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, bounded retry behavior, and trace legacy compatibility are unchanged.
+
 ## [0.5.0] - 2026-06-11
 
 ### Added

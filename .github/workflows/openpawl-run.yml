@@ -39,7 +39,7 @@ on:
         description: "Git ref of codepawl/codepawl to run"
         required: false
         type: string
-        default: "v0.5.0"
+        default: "v0.5.1"
   workflow_dispatch:
     inputs:
       repo_path:
@@ -81,7 +81,7 @@ on:
         description: "Git ref of codepawl/codepawl to run"
         required: false
         type: string
-        default: "v0.5.0"
+        default: "v0.5.1"
     outputs:
       run_id:
         value: ${{ jobs.openpawl-run.outputs.run_id }}
@@ -110,12 +110,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout Openpawl source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: codepawl/codepawl
           ref: ${{ inputs.openpawl_ref }}
@@ -144,6 +144,7 @@ jobs:
           OPENPAWL_TEST_CMD: ${{ inputs.test_cmd }}
           OPENPAWL_MOCK_FIXTURE: ${{ inputs.mock_fixture }}
           OPENPAWL_OUT_DIR: ${{ inputs.out_dir }}
+          OPENPAWL_GITHUB_ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set +e
 
@@ -212,7 +213,7 @@ jobs:
 
       - name: Upload Openpawl run artifacts
         if: always() && steps.openpawl.outputs.run_dir != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openpawl-artifacts-${{ steps.openpawl.outputs.run_id }}
           path: ${{ steps.openpawl.outputs.run_dir }}/**
