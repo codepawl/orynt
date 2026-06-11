@@ -384,5 +384,30 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - Metadata Consistency: Package versions, README, CHANGELOG, ROADMAP, and workflow default references are all aligned to `v0.2.1`. ✅
   - Verdict: **PASS**. No follow-up release or corrections are needed.
 
+- `CP-011` (2026-06-11, completed): Release v0.2.2 trigger command parity and reusable workflow patch.
+  - Owner: Antigravity
+  - Scope:
+    - `packages/cli/src/openpawl-trigger.ts`
+    - `packages/cli/src/__tests__/openpawl-trigger.test.ts`
+    - `.github/workflows/openpawl-run.yml`
+    - `packages/core/package.json`
+    - `packages/shared/package.json`
+    - `packages/cli/package.json`
+    - `README.md`
+    - `docs/ROADMAP.md`
+    - `CHANGELOG.md`
+    - `docs/samples/openpawl.workflow.yml`
+    - `docs/OPENPAWL_INSTALL.md`
+  - Commands + Validation Results:
+    - Main branch validation: `bun run typecheck && bun run test` ✅
+    - Parser trigger test suite resolves slash commands successfully: `/openpawl plan`, `/openpawl fix failing tests` ✅
+    - Created and published GitHub Release: `v0.2.2` ✅
+  - Artifacts:
+    - Tag: `v0.2.2`
+    - Tag Hash: `d82f633569bc49f774616d58487ae2403a4feb84`
+    - Commit Hash: `e9b146d510990bbc52d8b0ddd9aaefd15fc14078`
+    - GitHub Release URL: `https://github.com/codepawl/codepawl/releases/tag/v0.2.2`
+
+
 
 
