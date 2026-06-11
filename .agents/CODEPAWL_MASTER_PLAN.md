@@ -319,3 +319,29 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
   - Decision: **TAG_READY** for CP-007.
     - Condition met: required local verification + `bun run typecheck`/`bun run test` and successful live GitHub workflow run `27273286439`.
     - Remaining note: `openpawl-run.yml` remains non-dispatchable by `gh workflow run`; mention-trigger smoke remains environment/workflow-driven and was not executed via CLI dispatch path.
+
+- `CP-008` (2026-06-11, completed): Post-release external install smoke verification for v0.2.0.
+  - Owner: Antigravity
+  - Scope:
+    - `docs/samples/openpawl.workflow.yml`
+    - `.github/workflows/openpawl-run.yml`
+    - `docs/OPENPAWL_INSTALL.md`
+    - `packages/cli/src/__tests__/workflow-invocation.test.ts`
+  - Commands + Validation Results (Temporary Clone):
+    - Clean clone check out `v0.2.0`: `git checkout v0.2.0` ✅
+    - Dependency install: `bun install` ✅
+    - Typecheck: `bun run typecheck` ✅
+    - Unit tests: `bun run test` ✅
+    - Patch-quality eval smoke: `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /home/annx9/Code/Personal/temp-clone-cp008/eval-out --limit 50` ✅
+      - Run ID: `eval_1781142845699_7v5ely` (Passed: 50, Failed: 0)
+    - CLI dry-run smoke: `bun --filter @codepawl/cli dev -- run --repo /home/annx9/Code/Personal/temp-clone-cp008/smoke-target --task "add tests for auth helpers" --dry-run --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json --test-cmd "echo ok"` ✅
+      - Run ID: `run_1781142892375_iytud5` (Status: SUCCESS, Readiness: ready)
+  - Artifacts:
+    - Eval Metrics: `/home/annx9/Code/Personal/temp-clone-cp008/eval-out/metrics.json`
+    - Eval Report: `/home/annx9/Code/Personal/temp-clone-cp008/eval-out/report.md`
+    - Smoke artifacts folder: `/home/annx9/Code/Personal/temp-clone-cp008/smoke-target/.codepawl/runs/run_1781142892375_iytud5/`
+  - External Install Verdict:
+    - **FAIL** on original `v0.2.0` tag. Because target/external repositories do not have `@codepawl/cli` package, executing `bun --filter @codepawl/cli` directly inside target workspace fails immediately.
+    - **PASS** with post-release patch. Modified the sample workflow and reusable workflow to clone `codepawl` to a subdirectory (`.openpawl-src`), execute Openpawl there targeting the target repository's absolute path, and automatically clean up `.openpawl-src` to avoid git history pollution.
+  - Follow-up Fix Commit: `024d61b` (pushed to main, tag untouched)
+
