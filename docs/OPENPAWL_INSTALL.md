@@ -1,6 +1,7 @@
 # Installing Openpawl
 
-Openpawl is distributed from the public Action repository:
+Openpawl is an open runtime for coding-agent coordination. The first supported
+surface is GitHub Actions, distributed from the public Action repository:
 `https://github.com/codepawl/openpawl`.
 
 Use the verified public Action release tag for installs. The GitHub Marketplace
@@ -8,7 +9,8 @@ listing remains pending until its listing URL exists and has been verified.
 
 ## Minimal Action Setup
 
-Use the public Action directly from the Openpawl repository:
+Use the public Action directly from the Openpawl repository. This is the current
+concrete install path for reviewable agent work:
 
 ```yaml
 name: Openpawl

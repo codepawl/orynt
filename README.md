@@ -1,6 +1,13 @@
 # CodePawl
 
-CodePawl is the public website for Openpawl and the upcoming CodePawl Cloud.
+CodePawl makes coding agents work together. It is infrastructure for
+coordinated agent work - plans, evidence, guardrails, memory, replay, and cloud
+workflows.
+
+Openpawl is an open runtime for coding-agent coordination. It turns agent tasks
+into plans, validations, guarded changes, and traceable run evidence. The first
+supported surface is GitHub Actions.
+
 Openpawl source now lives in the public Action repository at
 `https://github.com/codepawl/openpawl`. Private duplicate packages in this repo
 are frozen compatibility copies; runtime changes belong in
@@ -9,7 +16,10 @@ are frozen compatibility copies; runtime changes belong in
 ## Features & Configuration
 
 ### Gitignore-aware Repository Scanning
-Openpawl reads local `.gitignore` files to filter out unwanted files and folders automatically during repository scans.
+Openpawl helps coding agents plan, review, validate, hand off work, and leave
+evidence that humans and other agents can trust. It reads local `.gitignore`
+files to filter out unwanted files and folders automatically during repository
+scans.
 
 ### Validation Retry-loop
 If validation checks fail, Openpawl can optionally clean up temporary file state and attempt a planning retry. Enable this behavior with:

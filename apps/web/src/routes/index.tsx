@@ -8,20 +8,20 @@ export const Route = createRoute({
   path: "/",
   head: () => ({
     meta: [
-      { title: "CodePawl - Infrastructure for AI agents" },
+      { title: "CodePawl - Coding agents that work together" },
       {
         name: "description",
         content:
-          "Debugging, memory, coordination, and optimization infrastructure for AI agents.",
+          "CodePawl is infrastructure for coordinated agent work. Openpawl is an open runtime for coding-agent coordination, starting in GitHub Actions.",
       },
       {
         property: "og:title",
-        content: "CodePawl - Infrastructure for AI agents",
+        content: "CodePawl - Coding agents that work together",
       },
       {
         property: "og:description",
         content:
-          "Debugging, memory, coordination, and optimization infrastructure for AI agents.",
+          "Infrastructure for coordinated agent work - plans, evidence, guardrails, memory, replay, and cloud workflows.",
       },
       { property: "og:type", content: "website" },
       { property: "og:url", content: "/" },

@@ -6,7 +6,7 @@
 import type { Product } from "@codepawl/shared";
 
 export interface StackProduct extends Product {
-  readonly availability: "active" | "announced_soon";
+  readonly availability: "available" | "beta" | "upcoming" | "roadmap";
   readonly description: string;
   readonly install: string;
   readonly language: string;
@@ -23,62 +23,62 @@ const API_FETCH_TIMEOUT_MS = 2500;
 
 export const STACK_PRODUCTS: ReadonlyArray<StackProduct> = [
   {
+    id: "openpawl",
+    name: "Openpawl",
+    slug: "openpawl",
+    tagline: "Reviewable agent work, starting in GitHub.",
+    status: "beta",
+    github_repo: "codepawl/openpawl",
+    display_order: 1,
+    description:
+      "Openpawl is an open runtime for coding-agent coordination. It turns agent tasks into plans, validations, guarded changes, and traceable run evidence. The first supported surface is GitHub Actions.",
+    availability: "available",
+    install: "Use codepawl/openpawl@v0.5.1 for the public Action release",
+    language: "TypeScript",
+    current_focus: true,
+  },
+  {
     id: "trace",
     name: "TracePawl",
     slug: "trace",
-    tagline: "Failure diagnosis and replay for AI agents.",
+    tagline: "Roadmap coordination evidence and replay layer.",
     status: "pre-alpha",
     github_repo: "codepawl/tracepawl",
-    display_order: 1,
+    display_order: 2,
     description:
-      "TracePawl analyzes agent runs to identify where execution drifted, which tool call caused failure, and what recovery action should be attempted next.",
-    availability: "active",
-    install: "$ pip install tracepawl",
+      "TracePawl is a future architecture layer for coordination evidence, failure diagnosis, replay, and review. It is not presented as a generally installable product yet.",
+    availability: "roadmap",
+    install: "Roadmap layer; no public install path yet",
     language: "Python",
-    current_focus: true,
+    current_focus: false,
   },
   {
     id: "mempawl",
     name: "Mempawl",
     slug: "mempawl",
-    tagline: "Persistent memory for agentic systems.",
+    tagline: "Roadmap memory layer for agent handoffs.",
     status: "pre-alpha",
     github_repo: "codepawl/mempawl",
-    display_order: 2,
-    description:
-      "Mempawl stores operational knowledge for long-running agents: previous failures, workflow preferences, and recovery patterns.",
-    availability: "announced_soon",
-    install: "$ pip install mempawl",
-    language: "Python",
-    current_focus: false,
-  },
-  {
-    id: "openpawl",
-    name: "OpenPawl",
-    slug: "openpawl",
-    tagline: "Dry-run-first AI code review workflow for GitHub.",
-    status: "beta",
-    github_repo: "codepawl/openpawl",
     display_order: 3,
     description:
-      "OpenPawl reviews repositories from GitHub Actions, writes schema-versioned artifacts, and keeps beta write mode gated behind explicit maintainer approval.",
-    availability: "active",
-    install: "Use codepawl/openpawl@v0.5.1 for the public Action release",
-    language: "TypeScript",
+      "Mempawl is a planned architecture layer for persistent operational memory across agent runs and handoffs. It remains roadmap work, not an equal ready product.",
+    availability: "roadmap",
+    install: "Roadmap layer; no public install path yet",
+    language: "Python",
     current_focus: false,
   },
   {
     id: "cachepawl",
     name: "CachePawl",
     slug: "cachepawl",
-    tagline: "Optimization for long-horizon agent workloads.",
+    tagline: "Roadmap optimization layer for repeated coordination work.",
     status: "beta",
     github_repo: "codepawl/cachepawl",
     display_order: 4,
     description:
-      "CachePawl reduces cost and latency for repeated, memory-heavy, and replay-heavy agent execution. Optimization layer, not an inference platform.",
-    availability: "announced_soon",
-    install: "$ bun add cachepawl",
+      "CachePawl is a planned optimization layer for repeated, memory-heavy, and replay-heavy agent execution. It is roadmap infrastructure, not a public product surface today.",
+    availability: "roadmap",
+    install: "Roadmap layer; no public install path yet",
     language: "TypeScript",
     current_focus: false,
   },
@@ -112,17 +112,26 @@ export async function getStackProduct(
 }
 
 export function productAvailabilityLabel(product: StackProduct): string {
-  return product.availability === "active" ? "DEVELOPING" : "COMING SOON";
+  switch (product.availability) {
+    case "available":
+      return "AVAILABLE";
+    case "beta":
+      return "BETA";
+    case "upcoming":
+      return "UPCOMING";
+    case "roadmap":
+      return "ROADMAP";
+  }
 }
 
 export function productStateClass(product: StackProduct): string {
-  return product.availability === "active"
+  return product.availability === "available" || product.availability === "beta"
     ? "product-state-active"
     : "product-state-soon";
 }
 
 export function productBadgeClass(product: StackProduct): string {
-  return product.availability === "active"
+  return product.availability === "available" || product.availability === "beta"
     ? "product-badge-active"
     : "product-badge-soon";
 }

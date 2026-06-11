@@ -11,15 +11,17 @@ export function Stack() {
       <div className="mx-auto max-w-[1240px] px-6 py-20">
         <p className="cp-marker mb-6">003 · the codepawl stack</p>
         <h2 className="cp-h2 text-fg-1 max-w-3xl">
-          One company. One stack. Four problems.
+          Openpawl is the first open runtime; future layers add evidence,
+          memory, replay, and optimization.
         </h2>
 
         <pre className="border-ink-5 bg-code-bg cp-code mt-10 inline-block border p-6 leading-relaxed">
           <code>{`CodePawl
-├── TracePawl    failure diagnosis and replay for AI agents
-├── Mempawl      persistent memory for agentic systems
-├── OpenPawl     guarded code review workflow
-└── CachePawl    optimization for long-horizon agent workloads`}</code>
+├── Openpawl        available coordination runtime, GitHub Actions first
+├── CodePawl Cloud  upcoming hosted evidence layer
+├── TracePawl       roadmap coordination evidence and replay layer
+├── Mempawl         roadmap memory and handoff layer
+└── CachePawl       roadmap optimization layer`}</code>
         </pre>
 
         <div className="mt-12 grid gap-6 md:grid-cols-2">
@@ -31,7 +33,7 @@ export function Stack() {
               <header className="mb-4 flex items-center justify-between gap-3">
                 <p className="cp-caption text-fg-3">{product.language}</p>
                 <span className={productBadgeClass(product)}>
-                  {product.availability === "active" ? (
+                  {product.availability === "available" || product.availability === "beta" ? (
                     <span className="product-pulse-dot" aria-hidden />
                   ) : null}
                   {productAvailabilityLabel(product)}

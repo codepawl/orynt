@@ -21,7 +21,7 @@ export const Route = createRoute({
       {
         name: "description",
         content:
-          "Install the Openpawl GitHub Action from the verified v0.5.1 public release tag.",
+          "Install the first supported Openpawl surface: GitHub Actions for reviewable agent work from the verified v0.5.1 public release tag.",
       },
     ],
   }),
@@ -32,8 +32,8 @@ function OpenpawlInstallPage() {
   return (
     <PageShell
       eyebrow="openpawl / install"
-      title="Install Openpawl from the public Action release."
-      lead="Openpawl is a public dry-run-first GitHub Action candidate. Pin the verified v0.5.1 release tag for Action installs while the GitHub Marketplace listing remains pending."
+      title="Install the first supported Openpawl surface."
+      lead="Openpawl is an open runtime for coding-agent coordination. Its first supported surface is dry-run-default GitHub Actions for reviewable agent work. Pin the verified v0.5.1 release tag while the GitHub Marketplace listing remains pending."
     >
       <InfoCard title="Pinned release workflow">
         <CodeBlock>{`jobs:

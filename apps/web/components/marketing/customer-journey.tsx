@@ -30,8 +30,8 @@ const JOURNEY_STEPS = [
     problem:
       "Multi-agent work becomes hard to trust when tasks, shared state, and recovery ownership are spread across scripts and chat logs.",
     response:
-      "OpenPawl runs dry-run-first code reviews from GitHub Actions with explicit maintainer approval before beta write mode.",
-    layer: "OpenPawl / guarded code review workflow",
+      "Openpawl turns agent tasks into reviewable plans, validations, guarded changes, traceable artifacts, and explicit maintainer approval before beta write mode.",
+    layer: "Openpawl / coordination runtime",
   },
   {
     id: "cost",

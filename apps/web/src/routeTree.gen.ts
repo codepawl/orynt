@@ -17,6 +17,7 @@ import { Route as ResearchRouteImport } from './routes/research'
 import { Route as ProductsRouteImport } from './routes/products'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as OpenpawlRouteImport } from './routes/openpawl'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CareersRouteImport } from './routes/careers'
@@ -72,6 +73,11 @@ const PricingRoute = PricingRouteImport.update({
   path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OpenpawlRoute = OpenpawlRouteImport.update({
+  id: '/openpawl',
+  path: '/openpawl',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsRoute = DocsRouteImport.update({
   id: '/docs',
   path: '/docs',
@@ -113,19 +119,19 @@ const ProductsSlugRoute = ProductsSlugRouteImport.update({
   getParentRoute: () => ProductsRoute,
 } as any)
 const OpenpawlSupportRoute = OpenpawlSupportRouteImport.update({
-  id: '/openpawl/support',
-  path: '/openpawl/support',
-  getParentRoute: () => rootRouteImport,
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => OpenpawlRoute,
 } as any)
 const OpenpawlInstallRoute = OpenpawlInstallRouteImport.update({
-  id: '/openpawl/install',
-  path: '/openpawl/install',
-  getParentRoute: () => rootRouteImport,
+  id: '/install',
+  path: '/install',
+  getParentRoute: () => OpenpawlRoute,
 } as any)
 const OpenpawlDocsRoute = OpenpawlDocsRouteImport.update({
-  id: '/openpawl/docs',
-  path: '/openpawl/docs',
-  getParentRoute: () => rootRouteImport,
+  id: '/docs',
+  path: '/docs',
+  getParentRoute: () => OpenpawlRoute,
 } as any)
 const NewsletterConfirmRoute = NewsletterConfirmRouteImport.update({
   id: '/newsletter/confirm',
@@ -149,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/careers': typeof CareersRoute
   '/contact': typeof ContactRoute
   '/docs': typeof DocsRouteWithChildren
+  '/openpawl': typeof OpenpawlRouteWithChildren
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/products': typeof ProductsRouteWithChildren
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/blog': typeof BlogRoute
   '/careers': typeof CareersRoute
   '/contact': typeof ContactRoute
+  '/openpawl': typeof OpenpawlRouteWithChildren
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/research': typeof ResearchRoute
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   '/careers': typeof CareersRoute
   '/contact': typeof ContactRoute
   '/docs': typeof DocsRouteWithChildren
+  '/openpawl': typeof OpenpawlRouteWithChildren
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/products': typeof ProductsRouteWithChildren
@@ -222,6 +231,7 @@ export interface FileRouteTypes {
     | '/careers'
     | '/contact'
     | '/docs'
+    | '/openpawl'
     | '/pricing'
     | '/privacy'
     | '/products'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
     | '/blog'
     | '/careers'
     | '/contact'
+    | '/openpawl'
     | '/pricing'
     | '/privacy'
     | '/research'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/careers'
     | '/contact'
     | '/docs'
+    | '/openpawl'
     | '/pricing'
     | '/privacy'
     | '/products'
@@ -293,6 +305,7 @@ export interface RootRouteChildren {
   CareersRoute: typeof CareersRoute
   ContactRoute: typeof ContactRoute
   DocsRoute: typeof DocsRouteWithChildren
+  OpenpawlRoute: typeof OpenpawlRouteWithChildren
   PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
   ProductsRoute: typeof ProductsRouteWithChildren
@@ -302,9 +315,6 @@ export interface RootRouteChildren {
   StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
   NewsletterConfirmRoute: typeof NewsletterConfirmRoute
-  OpenpawlDocsRoute: typeof OpenpawlDocsRoute
-  OpenpawlInstallRoute: typeof OpenpawlInstallRoute
-  OpenpawlSupportRoute: typeof OpenpawlSupportRoute
   ApiGithubMarketplaceRoute: typeof ApiGithubMarketplaceRoute
 }
 
@@ -366,6 +376,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/openpawl': {
+      id: '/openpawl'
+      path: '/openpawl'
+      fullPath: '/openpawl'
+      preLoaderRoute: typeof OpenpawlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs': {
       id: '/docs'
       path: '/docs'
@@ -424,24 +441,24 @@ declare module '@tanstack/react-router' {
     }
     '/openpawl/support': {
       id: '/openpawl/support'
-      path: '/openpawl/support'
+      path: '/support'
       fullPath: '/openpawl/support'
       preLoaderRoute: typeof OpenpawlSupportRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof OpenpawlRoute
     }
     '/openpawl/install': {
       id: '/openpawl/install'
-      path: '/openpawl/install'
+      path: '/install'
       fullPath: '/openpawl/install'
       preLoaderRoute: typeof OpenpawlInstallRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof OpenpawlRoute
     }
     '/openpawl/docs': {
       id: '/openpawl/docs'
-      path: '/openpawl/docs'
+      path: '/docs'
       fullPath: '/openpawl/docs'
       preLoaderRoute: typeof OpenpawlDocsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof OpenpawlRoute
     }
     '/newsletter/confirm': {
       id: '/newsletter/confirm'
@@ -479,6 +496,22 @@ const DocsRouteChildren: DocsRouteChildren = {
 
 const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
 
+interface OpenpawlRouteChildren {
+  OpenpawlDocsRoute: typeof OpenpawlDocsRoute
+  OpenpawlInstallRoute: typeof OpenpawlInstallRoute
+  OpenpawlSupportRoute: typeof OpenpawlSupportRoute
+}
+
+const OpenpawlRouteChildren: OpenpawlRouteChildren = {
+  OpenpawlDocsRoute: OpenpawlDocsRoute,
+  OpenpawlInstallRoute: OpenpawlInstallRoute,
+  OpenpawlSupportRoute: OpenpawlSupportRoute,
+}
+
+const OpenpawlRouteWithChildren = OpenpawlRoute._addFileChildren(
+  OpenpawlRouteChildren,
+)
+
 interface ProductsRouteChildren {
   ProductsSlugRoute: typeof ProductsSlugRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
@@ -499,6 +532,7 @@ const rootRouteChildren: RootRouteChildren = {
   CareersRoute: CareersRoute,
   ContactRoute: ContactRoute,
   DocsRoute: DocsRouteWithChildren,
+  OpenpawlRoute: OpenpawlRouteWithChildren,
   PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,
   ProductsRoute: ProductsRouteWithChildren,
@@ -508,9 +542,6 @@ const rootRouteChildren: RootRouteChildren = {
   StatusRoute: StatusRoute,
   TermsRoute: TermsRoute,
   NewsletterConfirmRoute: NewsletterConfirmRoute,
-  OpenpawlDocsRoute: OpenpawlDocsRoute,
-  OpenpawlInstallRoute: OpenpawlInstallRoute,
-  OpenpawlSupportRoute: OpenpawlSupportRoute,
   ApiGithubMarketplaceRoute: ApiGithubMarketplaceRoute,
 }
 export const routeTree = rootRouteImport

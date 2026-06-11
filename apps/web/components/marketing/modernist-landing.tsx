@@ -1,5 +1,5 @@
 import { Link } from "@/components/link";
-import { ArrowRight, JournalText } from "react-bootstrap-icons";
+import { ArrowRight, Github, JournalText } from "react-bootstrap-icons";
 
 import { ArchitecturalOverlay } from "./architectural-overlay";
 import { CustomerJourney } from "./customer-journey";
@@ -40,58 +40,58 @@ type EvidenceItem = {
 type RoadmapItem = {
   phase: string;
   title: string;
-  status: "complete" | "current" | "todo";
+  status: "available" | "upcoming" | "roadmap";
 };
 
 const LANDING_PRODUCTS = STACK_PRODUCTS;
 
 const EVIDENCE_ITEMS: ReadonlyArray<EvidenceItem> = [
   {
-    label: "Products",
-    body: "Browse the current agent tooling catalog.",
-    href: "/products",
-    action: "Browse products",
+    label: "Install",
+    body: "Pin the public Openpawl Action release for reviewable agent work.",
+    href: "/openpawl/install",
+    action: "Install Openpawl",
   },
   {
     label: "Docs",
-    body: "Read setup notes and product documentation.",
-    href: "/docs",
-    action: "Read docs",
+    body: "Read Action inputs, reviewable plans, artifacts, safety gates, and support boundaries.",
+    href: "/openpawl/docs",
+    action: "Read Openpawl docs",
   },
   {
-    label: "Contact",
-    body: "Talk to us about production agent workflows.",
-    href: "/contact",
-    action: "Contact us",
+    label: "Support",
+    body: "Use public issues for product questions and private advisories for security reports.",
+    href: "/openpawl/support",
+    action: "Get support",
   },
   {
-    label: "Updates",
-    body: "Follow product releases and notes.",
-    href: "/blog",
-    action: "Read updates",
+    label: "Status",
+    body: "Check public source, workflow, legal, and Marketplace-readiness links.",
+    href: "/status",
+    action: "View status",
   },
 ] as const;
 
 const ROADMAP_ITEMS: ReadonlyArray<RoadmapItem> = [
   {
-    phase: "Phase 1-2",
-    title: "Foundation",
-    status: "complete",
-  },
-  {
-    phase: "Phase 3-5",
-    title: "Catalog and API",
-    status: "complete",
-  },
-  {
     phase: "Now",
-    title: "Product surface",
-    status: "current",
+    title: "Openpawl public Action release",
+    status: "available",
   },
   {
     phase: "Next",
-    title: "More demos and guides",
-    status: "todo",
+    title: "CodePawl Cloud waitlist",
+    status: "upcoming",
+  },
+  {
+    phase: "Roadmap",
+    title: "TracePawl evidence and replay layer",
+    status: "roadmap",
+  },
+  {
+    phase: "Roadmap",
+    title: "Mempawl and CachePawl architecture layers",
+    status: "roadmap",
   },
 ] as const;
 
@@ -130,9 +130,9 @@ function StatusTag({
   status: StackProduct["status"] | RoadmapItem["status"];
 }) {
   const tone =
-    status === "complete" || status === "stable" || status === "beta"
+    status === "available" || status === "stable" || status === "beta"
       ? "bg-success/15 text-success border-success"
-      : status === "current" || status === "alpha" || status === "pre-alpha"
+      : status === "upcoming" || status === "alpha" || status === "pre-alpha"
         ? "bg-ratchet/10 text-ratchet border-ratchet"
         : "bg-ink-2 text-fg-3 border-ink-4";
 
@@ -151,16 +151,16 @@ function CTAGroup() {
           href="/products"
           className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-4 px-5 py-3 text-ink-1 transition-colors hover:bg-ratchet focus:outline-none focus:ring-4 focus:ring-ratchet/20"
         >
-          Browse products
+          View architecture
           <ArrowRight aria-hidden size={16} />
         </Link>
       </BlockPress>
       <BlockPress className="inline-flex">
         <Link
-          href="/docs"
+          href="/openpawl/install"
           className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
         >
-          Read docs
+          Install Openpawl
           <JournalText aria-hidden size={16} />
         </Link>
       </BlockPress>
@@ -189,7 +189,7 @@ function ProjectCard({
             <h3 className="cp-h3 mt-2 text-fg-1">{product.name}</h3>
           </div>
           <span className={productBadgeClass(product)}>
-            {product.availability === "active" ? (
+            {product.availability === "available" || product.availability === "beta" ? (
               <span className="product-pulse-dot" aria-hidden />
             ) : null}
             {productAvailabilityLabel(product)}
@@ -197,10 +197,10 @@ function ProjectCard({
         </header>
         <p className="cp-body mt-5">{product.tagline}</p>
         <Link
-          href={`/products/${product.slug}`}
+          href={product.slug === "openpawl" ? "/openpawl" : `/products/${product.slug}`}
           className="cp-hover-link cp-link mt-auto inline-flex w-fit items-center gap-2 pt-8 text-ratchet hover:text-ratchet-hot"
         >
-          {product.availability === "active" ? "View product" : "Early access"}{" "}
+          {product.availability === "available" ? "View product" : "View roadmap"}{" "}
           <ArrowRight aria-hidden size={14} />
         </Link>
       </BrutalCard>
@@ -236,9 +236,9 @@ function RoadmapStep({
   index: number;
 }) {
   const markerClass =
-    item.status === "complete"
+    item.status === "available"
       ? "bg-success"
-      : item.status === "current"
+      : item.status === "upcoming"
         ? "bg-ratchet"
         : "bg-ink-2";
 
@@ -273,7 +273,7 @@ function RoadmapStep({
 
 export function ModernistLanding() {
   const productStatuses = Array.from(
-    new Set(LANDING_PRODUCTS.map((product) => product.status)),
+    new Set(LANDING_PRODUCTS.map((product) => productAvailabilityLabel(product))),
   ).join(" / ");
 
   return (
@@ -287,14 +287,16 @@ export function ModernistLanding() {
                 <BlockReveal>
                   <p className="cp-marker mb-6">001 / codepawl public surface</p>
                   <h1 className="cp-display max-w-4xl text-fg-1">
-                    AI agent products for teams building production{" "}
-                    <em className="cp-em">platforms</em>.
+                    CodePawl makes coding agents work{" "}
+                    <em className="cp-em">together</em>.
                   </h1>
                 </BlockReveal>
                 <BlockReveal delay={0.05}>
                   <p className="cp-lead mt-8 max-w-2xl">
-                    Codepawl builds agent tooling for designing, evaluating, and
-                    operating production systems across modern engineering teams.
+                    Infrastructure for coordinated agent work - plans, evidence,
+                    guardrails, memory, replay, and cloud workflows. Openpawl is
+                    the first open runtime: reviewable agent work, starting in
+                    GitHub.
                   </p>
                 </BlockReveal>
               </div>
@@ -303,22 +305,52 @@ export function ModernistLanding() {
                 delay={0.1}
               >
                 <div>
-                  <p className="cp-caption text-fg-3">Products</p>
+                  <p className="cp-caption text-fg-3">Current product</p>
                   <p className="cp-h4 mt-1 text-fg-1">
-                    {LANDING_PRODUCTS.length}
+                    Openpawl
                   </p>
                 </div>
                 <div>
-                  <p className="cp-caption text-fg-3">Statuses</p>
+                  <p className="cp-caption text-fg-3">Readiness</p>
                   <p className="cp-small mt-1 text-fg-2">{productStatuses}</p>
                 </div>
                 <div>
-                  <p className="cp-caption text-fg-3">Focus</p>
-                  <p className="cp-small mt-1 text-fg-2">Production agents</p>
+                  <p className="cp-caption text-fg-3">Cloud</p>
+                  <p className="cp-small mt-1 text-fg-2">Upcoming</p>
                 </div>
               </BlockReveal>
               <BlockReveal delay={0.15}>
-                <CTAGroup />
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <BlockPress className="inline-flex">
+                    <Link
+                      href="/openpawl/install"
+                      className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-4 px-5 py-3 text-ink-1 transition-colors hover:bg-ratchet focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+                    >
+                      Install Openpawl
+                      <ArrowRight aria-hidden size={16} />
+                    </Link>
+                  </BlockPress>
+                  <BlockPress className="inline-flex">
+                    <a
+                      href="https://github.com/codepawl/openpawl/releases/tag/v0.5.1"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+                    >
+                      codepawl/openpawl@v0.5.1
+                      <Github aria-hidden size={16} />
+                    </a>
+                  </BlockPress>
+                  <BlockPress className="inline-flex">
+                    <Link
+                      href="/contact"
+                      className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
+                    >
+                      Join Cloud waitlist
+                      <ArrowRight aria-hidden size={16} />
+                    </Link>
+                  </BlockPress>
+                </div>
               </BlockReveal>
             </div>
           </div>
@@ -329,8 +361,8 @@ export function ModernistLanding() {
         <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
           <SectionHeader
             eyebrow="002 / customer journey"
-            title="The problem is not writing code. It is operating agent work."
-            body="CodePawl connects failure diagnosis, memory, coordination, and cost control into the workflow teams need after the first demo works."
+            title="Reviewable agent work, starting in GitHub."
+            body="Start with the GitHub Action surface: dry-run by default, reviewable plans, schema-versioned artifacts, Evidence Summary output, and explicit write-mode gates."
           />
           <CustomerJourney />
         </div>
@@ -340,7 +372,8 @@ export function ModernistLanding() {
         <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
           <SectionHeader
             eyebrow="003 / products"
-            title="A focused toolkit for production agents."
+            title="One open runtime, three future architecture layers."
+            body="Openpawl is available now. TracePawl, Mempawl, and CachePawl describe future layers around coordination evidence, memory, and optimization, not equal ready products."
           />
           <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {LANDING_PRODUCTS.map((product, index) => (
@@ -354,7 +387,7 @@ export function ModernistLanding() {
         <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
           <SectionHeader
             eyebrow="004 / roadmap and status"
-            title="What is ready, and what is next."
+            title="What is available, upcoming, and still roadmap."
           />
           <ol className="mt-10 border-2 border-ink-4 bg-ink-0 p-6 md:p-8">
             {ROADMAP_ITEMS.map((item, index) => (
@@ -373,7 +406,7 @@ export function ModernistLanding() {
         <div className="mx-auto max-w-[1240px] px-6 py-16 md:py-20">
           <SectionHeader
             eyebrow="005 / start"
-            title="Pick the path you need."
+            title="Openpawl links for install, docs, support, and status."
           />
           <ul className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {EVIDENCE_ITEMS.map((item, index) => (
@@ -388,11 +421,12 @@ export function ModernistLanding() {
           <BlockReveal>
             <p className="cp-marker mb-6">006 / next</p>
             <h2 className="cp-h2 max-w-2xl text-fg-1">
-              Start with the product catalog.
+              CodePawl Cloud is upcoming and waitlist-only.
             </h2>
             <p className="cp-body mt-5 max-w-xl">
-              Browse the tools, read the docs, or contact us when you are ready
-              to talk through a production agent workflow.
+              The hosted Cloud layer is not generally available yet. Join the
+              waitlist to discuss run evidence, team review workflows, and
+              future coordination, memory, and optimization surfaces.
             </p>
             <div className="mt-8">
               <CTAGroup />

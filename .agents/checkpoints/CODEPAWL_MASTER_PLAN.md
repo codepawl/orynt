@@ -8,11 +8,11 @@ Last updated: 2026-06-11 (UTC)
 - **Current baseline:** `v0.5.1` (released)
 - **Safety posture:** Dry-run default; write mode is gated by approval + safe test-file create policy.
 - **Canonical references (no duplicate logs):**
-  - [CHANGELOG.md](../CHANGELOG.md)
-  - [README.md](../README.md)
-  - [walkthrough.md](../walkthrough.md)
-  - [docs/ROADMAP.md](../docs/ROADMAP.md)
-  - [docs/PRODUCT.md](../docs/PRODUCT.md)
+  - [CHANGELOG.md](../../CHANGELOG.md)
+  - [README.md](../../README.md)
+  - [walkthrough.md](../../walkthrough.md)
+  - [docs/ROADMAP.md](../../docs/ROADMAP.md)
+  - [docs/PRODUCT.md](../../docs/PRODUCT.md)
 
 ## Completed Milestones
 
@@ -43,7 +43,7 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
 
 | Risk | Task | Scope | Status | Notes |
 |---|---|---|---|---|
-| 1 (lowest) | Master-plan governance and tracking | `.agents/CODEPAWL_MASTER_PLAN.md` | **Completed** | Single source of progress updated at each checkpoint. |
+| 1 (lowest) | Master-plan governance and tracking | `.agents/checkpoints/CODEPAWL_MASTER_PLAN.md` | **Completed** | Single source of progress updated at each checkpoint. |
 | 2 | Expand patch-quality fixtures (24 -> 50, then 100 max) | `packages/cli/src/patch-quality-eval.ts` / `packages/cli/src/__tests__/patch-quality-eval.test.ts` | **Completed** | v0.2 baseline implemented with 50 fixtures grouped by policy pattern. |
 | 3 | Add reliability metrics coverage: useful report rate, safe patch rate, validation pass rate, no-safe-chunk rate, irrelevant file touch rate, fallback/manual PR rate | Eval outputs + report schema | **Completed** | v0.2 metrics added to harness and tests; backward-compatible aliases maintained. |
 | 4 | Failure-mode report clarity | Eval report and validation summaries | **Completed** | Add machine-readable failure taxonomy and per-fixture reasons (50-fixture pass remains intact). |
@@ -124,7 +124,7 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
 
 ### Entries
 
-- `CP-000` (2026-06-10): Baseline state documented; `.agents/CODEPAWL_MASTER_PLAN.md` created.
+- `CP-000` (2026-06-10): Baseline state documented; `.agents/checkpoints/CODEPAWL_MASTER_PLAN.md` created.
 - `CP-001` (planned): Finalize checkpoint protocol usage; confirm tracker is active dashboard.
 - `CP-002` (2026-06-10, completed): Fixture expansion to 50 and expanded expected-metric assertions.
   - Scope: `packages/cli/src/patch-quality-eval.ts`, `packages/cli/src/__tests__/patch-quality-eval.test.ts`
@@ -142,7 +142,7 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
       - Report: `/tmp/codepawl-cp002-eval/report.md`
   - Decision: CP-002 complete; advance to CP-003 for reliability metrics extension and failure taxonomy.
 - `CP-003` (2026-06-10, completed): Add v0.2 reliability metrics to patch-quality eval outputs + assertions.
-  - Scope: `packages/cli/src/patch-quality-eval.ts`, `packages/cli/src/__tests__/patch-quality-eval.test.ts`, `.agents/CODEPAWL_MASTER_PLAN.md`
+  - Scope: `packages/cli/src/patch-quality-eval.ts`, `packages/cli/src/__tests__/patch-quality-eval.test.ts`, `.agents/checkpoints/CODEPAWL_MASTER_PLAN.md`
   - Commands:
     - `bun run typecheck`
     - `cd packages/cli && bun test src/__tests__/patch-quality-eval.test.ts`
@@ -164,7 +164,7 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - None for the 50-fixture v0.2 eval run.
   - Decision: CP-003 complete; advance to `CP-004` for report failure-mode clarity and clearer per-fixture reason formatting.
 - `CP-004` (2026-06-10, completed): Add machine-readable failure taxonomy and per-fixture diagnosis details to patch-quality eval report artifacts.
-  - Scope: `packages/cli/src/patch-quality-eval.ts`, `packages/cli/src/__tests__/patch-quality-eval.test.ts`, `.agents/CODEPAWL_MASTER_PLAN.md`
+  - Scope: `packages/cli/src/patch-quality-eval.ts`, `packages/cli/src/__tests__/patch-quality-eval.test.ts`, `.agents/checkpoints/CODEPAWL_MASTER_PLAN.md`
   - Commands:
     - `bun run typecheck` ✅
     - `cd packages/cli && bun test src/__tests__/patch-quality-eval.test.ts` ✅
@@ -192,7 +192,7 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - `packages/core/src/__tests__/runner.test.ts`
     - `packages/cli/src/patch-quality-eval.ts`
     - `packages/cli/src/__tests__/patch-quality-eval.test.ts`
-    - `.agents/CODEPAWL_MASTER_PLAN.md`
+    - `.agents/checkpoints/CODEPAWL_MASTER_PLAN.md`
   - Commands:
     - `bun run typecheck` ✅
     - `cd packages/core && bun test src/__tests__/runner.test.ts` ✅
@@ -227,7 +227,7 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - `packages/cli/src/__tests__/patch-quality-eval.test.ts`
     - `CHANGELOG.md`
     - `docs/ROADMAP.md`
-    - `.agents/CODEPAWL_MASTER_PLAN.md`
+    - `.agents/checkpoints/CODEPAWL_MASTER_PLAN.md`
   - Commands + results:
     - `bun run typecheck` ✅
     - `bun run test` ✅
@@ -251,7 +251,7 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
   - Scope:
     - `CHANGELOG.md`
     - `docs/ROADMAP.md`
-    - `.agents/CODEPAWL_MASTER_PLAN.md`
+    - `.agents/checkpoints/CODEPAWL_MASTER_PLAN.md`
     - no source/test edits
   - Commands + results:
     - `bun run typecheck` ✅

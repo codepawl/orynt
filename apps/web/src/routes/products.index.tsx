@@ -19,7 +19,7 @@ export const Route = createRoute({
       {
         name: "description",
         content:
-          "CodePawl products: TracePawl, Mempawl, OpenPawl, and CachePawl. Infrastructure for AI agents.",
+          "CodePawl architecture map: Openpawl is an open runtime for coding-agent coordination, while TracePawl, Mempawl, and CachePawl are roadmap layers.",
       },
     ],
   }),
@@ -33,12 +33,13 @@ function ProductsIndexPage() {
     <section className="mx-auto max-w-[1240px] px-6 py-20">
       <p className="cp-marker mb-6">000 · codepawl products</p>
       <h1 className="cp-h1 text-fg-1 max-w-3xl">
-        Four products. One <em className="cp-em">platform</em>.
+        CodePawl makes coding agents work together. Future layers on the{" "}
+        <em className="cp-em">roadmap</em>.
       </h1>
       <p className="cp-lead text-fg-2 mt-6 max-w-2xl">
-        CodePawl builds infrastructure for AI agents: debugging, memory,
-        coordination, and workload optimization. TracePawl is the current
-        focus.
+        Openpawl is the current open runtime for coding-agent coordination. The
+        first supported surface is GitHub Actions. TracePawl, Mempawl, and
+        CachePawl are future layers around evidence, memory, and optimization.
       </p>
       <ul className="mt-12 grid gap-6 md:grid-cols-2">
         {products.map((product) => (
@@ -49,7 +50,7 @@ function ProductsIndexPage() {
             <header className="flex items-center justify-between">
               <p className="cp-caption text-fg-3">{product.language}</p>
               <span className={productBadgeClass(product)}>
-                {product.availability === "active" ? (
+                {product.availability === "available" || product.availability === "beta" ? (
                   <span className="product-pulse-dot" aria-hidden />
                 ) : null}
                 {productAvailabilityLabel(product)}
@@ -58,12 +59,12 @@ function ProductsIndexPage() {
             <h2 className="cp-h3 text-fg-1">{product.name}</h2>
             <p className="cp-body text-fg-2">{product.tagline}</p>
             <Link
-              href={`/products/${product.slug}`}
+              href={product.slug === "openpawl" ? "/openpawl" : `/products/${product.slug}`}
               className="cp-hover-link text-ratchet hover:text-ratchet-hot cp-small mt-auto w-fit"
             >
-              {product.availability === "active"
+              {product.availability === "available"
                 ? "View product →"
-                : "Early access →"}
+                : "View roadmap →"}
             </Link>
           </li>
         ))}

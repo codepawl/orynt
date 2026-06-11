@@ -6,10 +6,10 @@ import { FooterNewsletterForm } from "./footer-newsletter-form";
 
 const LINKS = {
   products: [
-    { href: "/products", label: "Products" },
+    { href: "/openpawl", label: "Openpawl" },
+    { href: "/products", label: "Architecture" },
     { href: "/products/trace", label: "TracePawl" },
     { href: "/products/mempawl", label: "Mempawl" },
-    { href: "/products/openpawl", label: "OpenPawl" },
     { href: "/products/cachepawl", label: "CachePawl" },
   ],
   resources: [
@@ -85,7 +85,7 @@ export function Footer() {
             <span>CODEPAWL</span>
           </div>
           <p className="cp-small text-fg-3 mt-3 max-w-lg">
-            Infrastructure for AI agents.
+            CodePawl makes coding agents work together.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <FooterSocialLink
@@ -118,7 +118,7 @@ export function Footer() {
       <div className="border-ink-4 mx-auto flex max-w-[1240px] flex-col gap-2 border-t-2 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
         <p className="cp-caption text-fg-4">© 2026 CodePawl</p>
         <p className="cp-caption text-fg-4">
-          Infrastructure for AI agents.
+          Infrastructure for coordinated agent work. GitHub Actions are Openpawl's first supported surface.
         </p>
       </div>
     </footer>

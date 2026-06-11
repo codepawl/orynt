@@ -27,7 +27,7 @@ development surface.
 
 ## What we are building
 
-CodePawl is a server-side coding-agent ecosystem designed for auditable AI-assisted software development. The core product is **Openpawl**, a dry-run-first GitHub Actions workflow for repository review with conservative write-mode guardrails. The project also houses a product catalog, curated AI/ML research, technical documentation, and waitlist signups.
+CodePawl makes coding agents work together. It is infrastructure for coordinated agent work - plans, evidence, guardrails, memory, replay, and cloud workflows. The core product is **Openpawl**, an open runtime for coding-agent coordination. It turns agent tasks into plans, validations, guarded changes, and traceable run evidence. The first supported surface is GitHub Actions with conservative write-mode guardrails. The project also houses a product catalog, curated AI/ML research, technical documentation, and waitlist signups.
 
 ## Who it is for
 
@@ -54,7 +54,7 @@ AI/ML output is scattered. New libraries land on GitHub, get a tweet, get an HN 
 
 One surface for: products you can run, research you can reproduce, news you can trust. Built by people shipping the same kind of work.
 
-The differentiator is not "another AI news site." It is the **product catalog**: our flagship guarded code review workflow **Openpawl** and its supporting tools maintained by the same team, with shared design language and a coherent story about agents, memory, and compute.
+The differentiator is not "another AI news site." It is the **product catalog**: our flagship coordination runtime **Openpawl** and its supporting tools maintained by the same team, with shared design language and a coherent story about coordination, evidence, memory, and compute.
 
 ## Success metric for MVP
 

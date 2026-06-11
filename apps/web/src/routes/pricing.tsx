@@ -12,7 +12,7 @@ export const Route = createRoute({
       {
         name: "description",
         content:
-          "Openpawl is free to self-manage. CodePawl Cloud is upcoming and waitlist-only.",
+          "Openpawl is free to self-manage as an open runtime for coding-agent coordination. CodePawl Cloud is upcoming and waitlist-only.",
       },
     ],
   }),
@@ -23,11 +23,11 @@ const TIERS = [
   {
     name: "Open",
     price: "Free",
-    note: "Self-managed Openpawl GitHub Action.",
+    note: "Self-managed Openpawl runtime; GitHub Actions first.",
     cta: { href: "/openpawl/install", label: "Install Openpawl" },
     features: [
       "Public source at codepawl/openpawl",
-      "Dry-run-first review workflow",
+      "Reviewable plans and traceable run evidence",
       "MIT license",
     ],
   },
@@ -60,7 +60,7 @@ function PricingPage() {
     <section className="mx-auto max-w-[1240px] px-6 py-20">
       <p className="cp-marker mb-6">pricing</p>
       <h1 className="cp-h1 text-fg-1 max-w-3xl">
-        Openpawl now. Cloud <em className="cp-em">later</em>.
+        CodePawl makes coding agents work <em className="cp-em">together</em>.
       </h1>
       <ul className="mt-12 grid gap-6 md:grid-cols-3">
         {TIERS.map((tier) => (

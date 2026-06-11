@@ -25,7 +25,7 @@ export const Route = createRoute({
       {
         name: "description",
         content:
-          "Openpawl documentation for GitHub Action inputs, artifacts, dry-run behavior, and support links.",
+          "Openpawl documentation for coordination runtime concepts, GitHub Action inputs, artifacts, dry-run behavior, and support links.",
       },
     ],
   }),
@@ -37,7 +37,7 @@ function OpenpawlDocsPage() {
     <PageShell
       eyebrow="openpawl / docs"
       title="Openpawl documentation."
-      lead="Use the verified v0.5.1 public Action release for installs. The default branch remains available for current development docs."
+      lead="Openpawl turns agent tasks into plans, validations, guarded changes, and traceable run evidence. Use the verified v0.5.1 public Action release for the current GitHub Actions surface."
     >
       <InfoCard title="Start here">
         <LinkGrid
@@ -79,7 +79,7 @@ function OpenpawlDocsPage() {
       <InfoCard title="Action behavior">
         <BulletList
           items={[
-            "The Action is dry-run-first and reports findings before any write path is considered.",
+            "GitHub Actions is the first supported surface and reports findings before any write path is considered.",
             "Inputs include task, mode, repo path, config path, test command, mock fixture, output directory, and bounded validation retries.",
             "Reports and JSON artifacts are schema-versioned where applicable.",
             "Write mode remains explicit and safety-gated; it is not broad autonomous code modification.",

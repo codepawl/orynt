@@ -1,7 +1,9 @@
 # Openpawl Marketplace Website Support
 
 This website provides stable support pages for the Openpawl GitHub Marketplace
-submission. The Action source of truth is the public repository at
+submission. Openpawl is an open runtime for coding-agent coordination, and the
+first supported surface is GitHub Actions. The
+Action source of truth is the public repository at
 `https://github.com/codepawl/openpawl`.
 
 ## Current Status
@@ -44,6 +46,10 @@ been verified.
 - Do not claim CodePawl Cloud is available; it is upcoming and waitlist-only.
 - Do not expose private deployment, billing, database, or internal operational
   details.
+- State that Openpawl turns agent tasks into plans, validations, guarded
+  changes, and traceable run evidence.
+- State that GitHub Actions is the first supported surface, not the whole
+  product.
 - State that Openpawl is dry-run-first and self-managed.
 - State that write behavior requires explicit maintainer approval and remains
   constrained by the Action safety gates.

@@ -6,22 +6,22 @@ test.describe("marketing landing", () => {
   }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toContainText(
-      "AI agent products",
+      "CodePawl makes coding agents work together.",
     );
     await expect(
-      page.getByRole("heading", { name: "A focused toolkit" }),
+      page.getByRole("heading", { name: "One open runtime" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { level: 3, name: "TracePawl" }),
+      page.getByRole("heading", { level: 3, name: "Openpawl" }),
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { level: 3, name: "CachePawl" }),
     ).toBeVisible();
     await expect(
-      page.locator("#main").getByText("DEVELOPING").first(),
+      page.locator("#main").getByText("AVAILABLE").first(),
     ).toBeVisible();
     await expect(
-      page.locator("#main").getByText("COMING SOON").first(),
+      page.locator("#main").getByText("ROADMAP").first(),
     ).toBeVisible();
   });
 
@@ -54,20 +54,20 @@ test.describe("marketing landing", () => {
     await page.goto("/");
     await expect(
       page.getByRole("link", { name: "View product", exact: true }).first(),
-    ).toHaveAttribute("href", "/products/trace");
+    ).toHaveAttribute("href", "/openpawl");
     await expect(
       page
         .locator('a[href="/products/cachepawl"]')
-        .filter({ hasText: "Early access" })
+        .filter({ hasText: "View roadmap" })
         .first(),
     ).toHaveAttribute("href", "/products/cachepawl");
   });
 
-  test("hero CTA links to products", async ({ page }) => {
+  test("hero CTA links to Openpawl install", async ({ page }) => {
     await page.goto("/");
-    const cta = page.getByRole("link", { name: "Browse products" }).first();
+    const cta = page.getByRole("link", { name: "Install Openpawl" }).first();
     await expect(cta).toBeVisible();
-    await expect(cta).toHaveAttribute("href", "/products");
+    await expect(cta).toHaveAttribute("href", "/openpawl/install");
   });
 
   test("newsletter signup flow subscribes from the footer", async ({ page }) => {
@@ -125,31 +125,35 @@ test.describe("marketing landing", () => {
   }) => {
     await page.goto("/");
     const primaryNav = page.getByRole("navigation", { name: "Primary" });
+    await expect(primaryNav.getByRole("link", { name: "Openpawl" })).toHaveAttribute(
+      "href",
+      "/openpawl",
+    );
     await expect(primaryNav.getByRole("link", { name: "Docs" })).toHaveAttribute(
       "href",
       "/openpawl/docs",
     );
-    await expect(primaryNav.getByRole("link", { name: "Support" })).toHaveAttribute(
+    await expect(primaryNav.getByRole("link", { name: "Cloud Waitlist" })).toHaveAttribute(
       "href",
-      "/openpawl/support",
+      "/contact",
     );
     await expect(primaryNav.getByRole("link", { name: "Status" })).toHaveAttribute(
       "href",
       "/status",
     );
-    await expect(primaryNav.getByRole("link", { name: "Contact" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "Install" })).toHaveAttribute(
       "href",
-      "/contact",
+      "/openpawl/install",
     );
     await primaryNav.getByRole("link", { name: /Products/ }).hover();
     await expect(
       primaryNav.getByText("Products"),
     ).toBeVisible();
     await expect(
-      primaryNav.getByRole("link", { name: /TracePawl/ }),
-    ).toHaveAttribute("href", "/products/trace");
-    await expect(primaryNav.getByText("DEVELOPING").first()).toBeVisible();
-    await expect(primaryNav.getByText("COMING SOON").first()).toBeVisible();
+      primaryNav.getByRole("link", { name: /Openpawl/ }),
+    ).toHaveAttribute("href", "/openpawl");
+    await expect(primaryNav.getByText("AVAILABLE").first()).toBeVisible();
+    await expect(primaryNav.getByText("ROADMAP").first()).toBeVisible();
     await expect(
       primaryNav.getByRole("link", { name: /CachePawl/ }),
     ).toHaveAttribute("href", "/products/cachepawl");
@@ -167,6 +171,10 @@ test.describe("marketing landing", () => {
     await expect(footer.getByText("resources", { exact: true })).toBeVisible();
     await expect(footer.getByText("company", { exact: true })).toBeVisible();
     await expect(footer.getByText("legal", { exact: true })).toBeVisible();
+    await expect(footer.getByRole("link", { name: "Openpawl" })).toHaveAttribute(
+      "href",
+      "/openpawl",
+    );
     await expect(footer.getByRole("link", { name: "Openpawl Docs" })).toHaveAttribute(
       "href",
       "/openpawl/docs",
@@ -200,6 +208,8 @@ test.describe("marketing landing", () => {
 
 test.describe("Marketplace-critical routes", () => {
   const routes = [
+    { path: "/openpawl", heading: /Openpawl/ },
+    { path: "/products/openpawl", heading: /Openpawl/ },
     { path: "/openpawl/install", heading: /Install Openpawl/ },
     { path: "/openpawl/docs", heading: /Openpawl documentation/ },
     { path: "/openpawl/support", heading: /Support for Openpawl/ },
@@ -299,7 +309,7 @@ test.describe("contact form", () => {
 });
 
 test.describe("product detail", () => {
-  test("renders the TracePawl page with a stars cell wired to product_stats", async ({
+  test("renders the TracePawl page as a roadmap layer", async ({
     page,
   }) => {
     // SSG with ISR -- stats fetch happens server-side at build time; we cannot
@@ -309,11 +319,11 @@ test.describe("product detail", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "TracePawl" }),
     ).toBeVisible();
-    await expect(page.locator("#main").getByText("DEVELOPING")).toBeVisible();
-    await expect(page.getByTestId("product-stars")).toBeVisible();
+    await expect(page.locator("#main").getByText("ROADMAP")).toBeVisible();
+    await expect(page.getByTestId("product-stars")).toHaveCount(0);
   });
 
-  test("renders announced-soon pages with GitHub early access", async ({
+  test("renders roadmap pages without install blocks", async ({
     page,
   }) => {
     await page.goto("/products/mempawl");
@@ -321,10 +331,10 @@ test.describe("product detail", () => {
       page.getByRole("heading", { level: 1, name: "Mempawl" }),
     ).toBeVisible();
     await expect(
-      page.locator("#main").getByText("COMING SOON"),
+      page.locator("#main").getByText("ROADMAP"),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Get early access on GitHub" }),
+      page.getByRole("link", { name: "View roadmap source" }),
     ).toHaveAttribute("href", "https://github.com/codepawl/mempawl");
     await expect(page.getByText("Install")).toHaveCount(0);
     await expect(page.getByTestId("product-stars")).toHaveCount(0);
@@ -334,15 +344,19 @@ test.describe("product detail", () => {
     page,
   }) => {
     await page.goto("/products");
-    await expect(page.locator("#main").getByText("DEVELOPING")).toBeVisible();
+    await expect(page.locator("#main").getByText("AVAILABLE")).toBeVisible();
     await expect(
-      page.locator("#main").getByText("COMING SOON").first(),
+      page.locator("#main").getByText("ROADMAP").first(),
     ).toBeVisible();
 
     await page.goto("/docs");
-    await expect(page.locator("#main").getByText("DEVELOPING")).toBeVisible();
+    await expect(page.locator("#main").getByText("AVAILABLE")).toBeVisible();
     await expect(
-      page.locator("#main").getByText("COMING SOON").first(),
+      page.locator("#main").getByText("ROADMAP").first(),
     ).toBeVisible();
   });
 });
+    await expect(footer.getByRole("link", { name: "Openpawl" })).toHaveAttribute(
+      "href",
+      "/openpawl",
+    );

@@ -12,7 +12,7 @@ Domain terms used in this project. Update as new terms emerge.
 
 ## Product names
 
-- **OpenPawl**: Dry-run-first AI code review workflow for GitHub Actions, with conservative write-mode guardrails.
+- **Openpawl**: Open runtime for coding-agent coordination. It turns agent tasks into plans, validations, guarded changes, and traceable run evidence. The first supported surface is GitHub Actions.
 - **Featcat**: AI-powered feature catalog for data teams, Python, MIT. Scans Parquet, auto-docs columns with LLMs, detects PSI drift.
 - **HebbMem**: Hebbian memory layer for AI agents, Python, MIT. Ebbinghaus decay, spreading activation, drop-in for LangChain and similar.
 - **TurboQuant**: 3-bit vector quantization for KV cache and vector search, PyTorch, MIT.
