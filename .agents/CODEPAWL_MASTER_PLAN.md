@@ -345,3 +345,31 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - **PASS** with post-release patch. Modified the sample workflow and reusable workflow to clone `codepawl` to a subdirectory (`.openpawl-src`), execute Openpawl there targeting the target repository's absolute path, and automatically clean up `.openpawl-src` to avoid git history pollution.
   - Follow-up Fix Commit: `024d61b` (pushed to main, tag untouched)
 
+- `CP-009` (2026-06-11, completed): Release v0.2.1 patch release for the external installability fix.
+  - Owner: Antigravity
+  - Scope:
+    - `packages/core/package.json`
+    - `packages/shared/package.json`
+    - `packages/cli/package.json`
+    - `README.md`
+    - `docs/ROADMAP.md`
+    - `CHANGELOG.md`
+    - `docs/samples/openpawl.workflow.yml`
+    - `.github/workflows/openpawl-run.yml`
+    - `docs/OPENPAWL_INSTALL.md`
+  - Commands + Validation Results (Temporary Clone):
+    - Created target workspace repo, cloned `codepawl` to `.openpawl-src`, ran `bun install`, `bun run typecheck`, and executed agent dry-run smoke targeting parent directory:
+      - `bun --cwd .openpawl-src --filter @codepawl/cli dev -- run --repo /home/annx9/Code/Personal/temp-install-smoke --task "add tests for auth helpers" --dry-run --mock-fixture /home/annx9/Code/Personal/temp-install-smoke/.openpawl-src/packages/core/src/__tests__/fixtures/mock-llm.json --test-cmd "echo ok"` ✅
+      - Verdict: **PASS** (10 steps, status: SUCCESS, Readiness: ready)
+    - Patch-quality eval on 50 fixtures: `bun --filter @codepawl/cli dev -- eval patch-quality --limit 50` ✅ (Passed: 50, Failed: 0)
+    - Main branch verification: `bun run typecheck && bun run test` ✅
+  - Artifacts:
+    - Smoke artifacts: `temp-install-smoke/.codepawl/runs/run_1781143205927_zuj1zy/` (verified and cleaned up)
+    - Tag: `v0.2.1`
+    - Tag Hash: `0e13515258a150e73435f80ea1a0bffb1d8c61aa`
+    - Commit Hash: `46c6ba4c9a2e114c10a722ee11a7430e46395252`
+    - GitHub Release URL: `https://github.com/codepawl/codepawl/releases/tag/v0.2.1`
+  - Known issues/caveats documented:
+    - Updated v0.2.0 release notes on GitHub with a known-issue note pointing users to v0.2.1.
+
+
