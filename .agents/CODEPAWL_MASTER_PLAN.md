@@ -408,6 +408,19 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - Commit Hash: `e9b146d510990bbc52d8b0ddd9aaefd15fc14078`
     - GitHub Release URL: `https://github.com/codepawl/codepawl/releases/tag/v0.2.2`
 
+- `CP-012` (2026-06-11, completed): Post-release integrity and safety audit for v0.2.2.
+  - Owner: Antigravity
+  - Scope: Post-release tag, release, workflow inputs, trigger parser, and safety boundaries audit.
+  - Audit Results:
+    - Tag Target Commit: `e9b146d510990bbc52d8b0ddd9aaefd15fc14078` ✅
+    - Tag Object Hash: `d82f633569bc49f774616d58487ae2403a4feb84` ✅
+    - Main HEAD Commit: `f7ca8773211e54270dc2617716167a8eeb86283d` ✅
+    - Safety Gates Audit: Confirmed that `workflow_dispatch` write mode cannot bypass write safety checks. The core `assertWriteSafe` checks run before any write operations, and only create chunks of allowed test files under test paths are created. Existing files cannot be modified or overwritten. ✅
+    - Parity Audit: Confirmed that slash and mention command parity only adds dry-run support for `plan` and `fix failing tests`. ✅
+    - Metadata & Docs Consistency: Package versions (`0.2.2`), README, CHANGELOG, ROADMAP, installation docs, and workflow examples are all aligned to `v0.2.2`. ✅
+  - Verdict: `PASS_NO_FOLLOWUP_RELEASE`
+
+
 
 
 
