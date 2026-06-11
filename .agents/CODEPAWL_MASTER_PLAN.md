@@ -649,6 +649,67 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
     - No npm/package publish in this checkpoint.
     - Backward-compatible readers for pre-`schemaVersion` artifacts are not included; generated artifacts use the v1 contract.
 
+- `CP-021` (2026-06-11, completed): post-release reproducibility and artifact-compatibility audit for v0.4.0.
+  - Owner: codex
+  - Verdict: `PASS_NO_FOLLOWUP_RELEASE`
+  - Release/tag audit:
+    - `git rev-list -n 1 v0.4.0`: `f5d9a49f390f27bdf41325adeb5a9c57d4fe5454`
+    - `git rev-parse v0.4.0`: `dde8fc3acc690cbe23f3b13417e9fad9e25899b2`
+    - GitHub Release URL: `https://github.com/codepawl/codepawl/releases/tag/v0.4.0`
+    - GitHub Release state: not draft, not prerelease.
+  - Clean clone:
+    - Location: `/tmp/codepawl-cp021-clone`
+    - Checked out tag: `v0.4.0`
+    - HEAD: `f5d9a49f390f27bdf41325adeb5a9c57d4fe5454`
+    - Tag object: `dde8fc3acc690cbe23f3b13417e9fad9e25899b2`
+    - `git status --short` after audit: clean.
+  - Commands + results:
+    - `bun install` ✅
+      - Initial sandbox run needed explicit `/tmp` Bun paths and network escalation for missing registry packages.
+      - Final install succeeded in the clean clone.
+    - `bun run typecheck` ✅
+      - 4/4 package typechecks successful.
+    - `bun run test` ✅
+      - turbo reported 5/5 tasks successful.
+      - core suite: 145 tests passed.
+      - cli suite: 77 tests passed in the clean clone.
+    - `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp021-eval --limit 50` ✅
+      - Run ID: `eval_1781149455465_s609qo`
+      - Cases: 50
+      - Passed: 50
+      - Failed: 0
+      - `metrics.json` parsed with `PatchQualityEvalMetricsArtifactSchema`.
+    - `bun --filter @codepawl/cli dev -- run --repo . --task "review current repository changes" --dry-run --test-command "echo cp021-smoke-ok" --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json --out-dir /tmp/codepawl-cp021-dry-run-smoke` ✅
+      - Run ID: `run_1781149455462_g3eioc`
+      - Status: success
+      - Readiness: ready
+      - All machine-readable artifacts parsed with `RunArtifactSetSchema`.
+    - `bun --filter @codepawl/cli dev -- run --repo . --task "write a poem about repo maintenance" --write --test-command "echo cp021-failure-smoke" --mock-fixture packages/core/src/__tests__/fixtures/mock-llm.json --out-dir /tmp/codepawl-cp021-failure-smoke` ✅ expected non-zero failure
+      - Run ID: `run_1781149455486_i14pek`
+      - Status: failed
+      - Readiness: unsupported
+      - Provider calls: 0
+      - All machine-readable artifacts parsed with `RunArtifactSetSchema`.
+  - Artifact compatibility audit:
+    - Generated `v0.4.0` artifacts conform to `schemaVersion: "1"`.
+    - Runtime artifact read path found: `codepawl trace --input <trace.json>`.
+    - The trace reader uses structural JSON parsing and does not require `schemaVersion`.
+    - A legacy trace fixture without `schemaVersion` rendered successfully through `codepawl trace`.
+    - No runtime readers were found for old `run.json`, `patch-plan.json`, `selected-files.json`, `applied-files.json`, or eval `metrics.json`; references are generation/tests/docs only.
+    - Result: old artifact compatibility is non-blocking; no `v0.4.1` compatibility patch required.
+  - Documentation audit:
+    - README, CHANGELOG, ROADMAP, workflow refs, and release notes align with `v0.4.0`.
+    - `docs/OPENPAWL_INSTALL.md` had stale reusable-workflow examples pointing to `v0.3.0`; corrected on `main` after the audit. This does not affect the `v0.4.0` tag behavior or require a follow-up release.
+  - Safety boundary audit:
+    - No write safety gates were relaxed.
+    - Approval/apply policy was not changed.
+    - Validation precedence was not changed.
+    - Unsafe write rejection and beta create-only guardrails were not changed.
+    - `.gitignore` scanning and bounded retry behavior were not changed.
+  - Release action:
+    - No new tag created.
+    - No npm/package publish.
+    - No follow-up release required.
 
 
 
