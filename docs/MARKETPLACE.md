@@ -1,83 +1,55 @@
-# Openpawl GitHub Marketplace Readiness
+# Openpawl Marketplace Website Support
 
-CP-026 candidate release: `v0.5.1`
+This website provides stable support pages for the Openpawl GitHub Marketplace
+submission. The Action source of truth is the public repository at
+`https://github.com/codepawl/openpawl`.
 
-## Verdict
+## Current Status
 
-`BLOCKED_WITH_REASON`: `v0.5.1` is reproducible and installable as a GitHub Actions workflow, but it is not directly publishable as a GitHub Marketplace Action because this monorepo does not contain a root `action.yml` or `action.yaml` action metadata file and is not packaged as a single-action repository.
+Openpawl is a Marketplace candidate. Do not claim the listing is live until the
+GitHub Marketplace listing URL exists and has been verified.
 
-Openpawl should not be submitted to GitHub Marketplace until there is an explicit Marketplace action wrapper or a dedicated single-action repository. The current install path remains the documented copyable workflow or reusable workflow pinned to `v0.5.1`.
+Use `main` or "current candidate" wording in website copy until the final Action
+release tag is verified. Do not hardcode stale release tags in website install
+instructions.
 
-## Marketplace Field Draft
+## Marketplace-Critical URLs
 
-- Product name: `Openpawl by CodePawl`
-- Owner: `CodePawl`
-- Candidate version: `v0.5.1`
-- Primary category: `Code quality`
-- Secondary category: `Testing`
-- Short description: `Dry-run-first AI code review workflow for GitHub issues and pull requests.`
-- Full description:
-  - `Openpawl is a conservative GitHub Actions workflow for AI-assisted repository review. It runs dry-run reviews by default, writes schema-versioned artifacts, posts report context when issue or PR comments are available, and only enters write mode through explicit maintainer approval or manual workflow dispatch. Current beta writes are limited to safe test-file creation on a bot branch with PR review.`
-- Current install URL: `https://github.com/codepawl/codepawl/blob/v0.5.1/docs/OPENPAWL_INSTALL.md`
-- Reusable workflow URL: `https://github.com/codepawl/codepawl/blob/v0.5.1/.github/workflows/openpawl-run.yml`
-- Copyable workflow URL: `https://github.com/codepawl/codepawl/blob/v0.5.1/docs/samples/openpawl.workflow.yml`
-- Sample config URL: `https://github.com/codepawl/codepawl/blob/v0.5.1/docs/samples/openpawl.config.json`
-- Release URL: `https://github.com/codepawl/codepawl/releases/tag/v0.5.1`
-- Source URL: `https://github.com/codepawl/codepawl`
-- Support URL: `https://github.com/codepawl/codepawl/issues`
-- Status URL: `https://github.com/codepawl/codepawl/actions/workflows/openpawl.yml`
-- Security/contact URL: `https://github.com/codepawl/codepawl/security/advisories`
-- Documentation URL: `https://github.com/codepawl/codepawl/tree/v0.5.1/docs`
+- Install: `https://codepawl.com/openpawl/install`
+- Documentation: `https://codepawl.com/openpawl/docs`
+- Support: `https://codepawl.com/openpawl/support`
+- Status: `https://codepawl.com/status`
+- Security: `https://codepawl.com/security`
+- Privacy: `https://codepawl.com/privacy`
+- Terms: `https://codepawl.com/terms`
+- Webhook: `https://codepawl.com/api/github/marketplace`
 
-## Marketplace Webhook
+## Public Source URLs
 
-- Payload URL: `https://codepawl.com/api/github/marketplace`
-- Content type: `application/json`
-- Secret runtime variable: `GITHUB_MARKETPLACE_WEBHOOK_SECRET`
-- Runtime owner: `apps/web` Cloudflare Worker.
-
-The webhook endpoint is used only for GitHub Marketplace plan-change notifications. It verifies `X-Hub-Signature-256` with HMAC SHA-256, reads `X-GitHub-Event`, accepts `marketplace_purchase` actions (`purchased`, `changed`, `cancelled`, `pending_change`, and `pending_change_cancelled`), and returns success without provisioning. Openpawl remains a free self-managed GitHub Action, so the webhook must not add paid billing logic or store repository code, prompts, traces, or artifacts.
-
-Production secret setup:
-
-```bash
-cd apps/web
-wrangler secret put GITHUB_MARKETPLACE_WEBHOOK_SECRET
-```
-
-Verification evidence recorded `2026-06-11T07:42:54Z`:
-
-- Cloudflare Worker secret `GITHUB_MARKETPLACE_WEBHOOK_SECRET` exists.
-- Valid signed `POST https://codepawl.com/api/github/marketplace` returned `200` with `{"status":"ok","event":"marketplace_purchase","action":"purchased"}`.
-- Invalid signature returned `401` with `invalid_signature`.
-- `GET https://codepawl.com/api/github/marketplace` returned `405` with `Allow: POST`.
-- GitHub Marketplace Test Delivery status: not separately recorded in this repo; no delivery payload, signature, or secret was committed.
+- Source repository: `https://github.com/codepawl/openpawl`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/main/action.yml`
+- Install docs: `https://github.com/codepawl/openpawl/blob/main/docs/OPENPAWL_INSTALL.md`
+- Docs tree: `https://github.com/codepawl/openpawl/tree/main/docs`
+- Support issues: `https://github.com/codepawl/openpawl/issues`
+- Security advisories: `https://github.com/codepawl/openpawl/security/advisories`
+- Actions status: `https://github.com/codepawl/openpawl/actions`
 
 ## Copy Guardrails
 
 - Do not claim unattended autonomous writing.
-- Do not claim broad code modification support in beta.
-- Do not claim npm installability or package publication.
-- Do not imply Marketplace publication is complete while no root action metadata exists.
-- State that dry-run is the default.
-- State that write mode requires explicit maintainer approval or manual dispatch.
-- State that beta write behavior is constrained to safe test-file creation, bot branches, and PR review.
-- State that reports and artifacts are retained under `.codepawl/runs/<run-id>/`.
+- Do not claim the GitHub Marketplace listing is live until the listing URL
+  exists.
+- Do not claim CodePawl Cloud is available; it is upcoming and waitlist-only.
+- Do not expose private deployment, billing, database, or internal operational
+  details.
+- State that Openpawl is dry-run-first and self-managed.
+- State that write behavior requires explicit maintainer approval and remains
+  constrained by the Action safety gates.
 
-## Screenshot And Feature-Card Checklist
+## Webhook Notes
 
-- Workflow dispatch setup screen showing `mode=dry-run` and a pinned `v0.5.1` workflow reference.
-- Successful Openpawl Actions run with `Openpawl Agent Run` and artifact upload steps visible.
-- `report.md` Evidence Summary showing run ID, Actions URL, artifact name, report path, trace path, and `schemaVersion`.
-- Example issue or PR report comment with dry-run output and artifact context.
-- Safety card showing dry-run default, exact commands only, maintainer-approved write mode, bot branch, and PR review.
-- Artifact card listing `run.json`, `trace.json`, `patch-plan.json`, `selected-files.json`, `applied-files.json`, and `report.md`.
-- Limitations card stating beta write mode only applies safe test-file create chunks and rejects unsupported tasks.
+`GET /api/github/marketplace` must return `405` with `Allow: POST`.
 
-## Publication Blockers
-
-- Add a root `action.yml` or `action.yaml` metadata file for a real Marketplace Action, or move the action wrapper into a dedicated single-action repository.
-- Package only the metadata, code, and files necessary for the Action listing.
-- Decide whether Openpawl Marketplace install should be a composite action, JavaScript action, or separate workflow-template distribution.
-- Accept the GitHub Marketplace Developer Agreement for the publishing account before release publication.
-- Re-run the live smoke on the final Marketplace package before submitting.
+`POST /api/github/marketplace` must keep the existing GitHub Marketplace webhook
+behavior. It verifies GitHub signatures and accepts Marketplace purchase events
+without provisioning a hosted Cloud product from the public website.

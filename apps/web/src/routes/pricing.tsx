@@ -12,7 +12,7 @@ export const Route = createRoute({
       {
         name: "description",
         content:
-          "Open-source libraries are free forever. KStudio is a closed paid product. Enterprise pricing on request.",
+          "Openpawl is free to self-manage. CodePawl Cloud is upcoming and waitlist-only.",
       },
     ],
   }),
@@ -23,34 +23,34 @@ const TIERS = [
   {
     name: "Open",
     price: "Free",
-    note: "All six OSS libraries under MIT.",
-    cta: { href: "/products", label: "Browse libraries" },
+    note: "Self-managed Openpawl GitHub Action.",
+    cta: { href: "/openpawl/install", label: "Install Openpawl" },
     features: [
-      "OpenPawl, Featcat, HebbMem, TurboQuant, Cachepawl",
-      "GitHub issues + community Discord",
-      "MIT license, no telemetry",
+      "Public source at codepawl/openpawl",
+      "Dry-run-first review workflow",
+      "MIT license",
     ],
   },
   {
-    name: "Studio",
-    price: "$ Custom",
-    note: "KStudio closed beta with hands-on onboarding.",
-    cta: { href: "/contact", label: "Request access" },
+    name: "Cloud",
+    price: "Waitlist",
+    note: "Upcoming evidence and team workflow layer.",
+    cta: { href: "/contact", label: "Join waitlist" },
     features: [
-      "Hosted KStudio environment",
-      "Shared Slack with the team",
-      "Quarterly architecture review",
+      "Not generally available yet",
+      "No billing or provisioning from this page",
+      "Early access by request only",
     ],
   },
   {
-    name: "Enterprise",
-    price: "Contact us",
-    note: "On-prem KStudio + SLAs + dedicated review.",
+    name: "Teams",
+    price: "Discuss",
+    note: "Private planning for future team needs.",
     cta: { href: "/contact", label: "Talk to sales" },
     features: [
-      "On-prem deploy of the KStudio runtime",
-      "Custom SLAs and dedicated review",
-      "Vendor-grade security review",
+      "Openpawl rollout planning",
+      "Security review support",
+      "No production SLA offered yet",
     ],
   },
 ] as const;
@@ -60,7 +60,7 @@ function PricingPage() {
     <section className="mx-auto max-w-[1240px] px-6 py-20">
       <p className="cp-marker mb-6">pricing</p>
       <h1 className="cp-h1 text-fg-1 max-w-3xl">
-        Free libraries. Paid <em className="cp-em">studio</em>.
+        Openpawl now. Cloud <em className="cp-em">later</em>.
       </h1>
       <ul className="mt-12 grid gap-6 md:grid-cols-3">
         {TIERS.map((tier) => (

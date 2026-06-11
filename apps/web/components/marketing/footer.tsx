@@ -13,9 +13,11 @@ const LINKS = {
     { href: "/products/cachepawl", label: "CachePawl" },
   ],
   resources: [
+    { href: "/openpawl/install", label: "Install Openpawl" },
+    { href: "/openpawl/docs", label: "Openpawl Docs" },
+    { href: "/openpawl/support", label: "Openpawl Support" },
+    { href: "/status", label: "Status" },
     { href: "/research", label: "Research" },
-    { href: "/blog", label: "Blog" },
-    { href: "/docs", label: "Docs" },
   ],
   company: [
     { href: "/contact", label: "Contact" },
@@ -23,6 +25,7 @@ const LINKS = {
     { href: "/pricing", label: "Pricing" },
   ],
   legal: [
+    { href: "/security", label: "Security" },
     { href: "/privacy", label: "Privacy" },
     { href: "/terms", label: "Terms" },
   ],

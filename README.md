@@ -1,6 +1,8 @@
-# Openpawl v0.5.1
+# CodePawl
 
-Openpawl is the server-side coding-agent workflow in the CodePawl monorepo.
+CodePawl is the public website for Openpawl and the upcoming CodePawl Cloud.
+Openpawl source now lives in the public Action repository at
+`https://github.com/codepawl/openpawl`.
 
 ## Features & Configuration
 
@@ -60,8 +62,13 @@ When run from GitHub Actions, the Evidence Summary includes the Actions run URL,
 
 ## Install
 
-See [docs/OPENPAWL_INSTALL.md](docs/OPENPAWL_INSTALL.md) for the copy/paste setup, permissions, artifacts, reports, and security notes.
+See [docs/OPENPAWL_INSTALL.md](docs/OPENPAWL_INSTALL.md) for the current
+candidate install path, permissions, artifacts, reports, and security notes.
 
 ## Marketplace Status
 
-Openpawl `v0.5.1` is validated as a copyable/reusable GitHub Actions workflow, not yet as a GitHub Marketplace Action. See [docs/MARKETPLACE.md](docs/MARKETPLACE.md) for the Marketplace readiness audit, listing copy draft, support/install/status URLs, and screenshot checklist.
+Openpawl is a GitHub Marketplace Action candidate in `codepawl/openpawl`.
+This website keeps Marketplace-critical support, install, docs, status,
+security, privacy, and terms URLs stable for submission. Do not treat a
+Marketplace listing or release tag as live until it has been verified in
+GitHub.

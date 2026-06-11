@@ -125,13 +125,17 @@ test.describe("marketing landing", () => {
   }) => {
     await page.goto("/");
     const primaryNav = page.getByRole("navigation", { name: "Primary" });
-    await expect(primaryNav.getByRole("link", { name: "Research" })).toHaveAttribute(
+    await expect(primaryNav.getByRole("link", { name: "Docs" })).toHaveAttribute(
       "href",
-      "/research",
+      "/openpawl/docs",
     );
-    await expect(primaryNav.getByRole("link", { name: "Blog" })).toHaveAttribute(
+    await expect(primaryNav.getByRole("link", { name: "Support" })).toHaveAttribute(
       "href",
-      "/blog",
+      "/openpawl/support",
+    );
+    await expect(primaryNav.getByRole("link", { name: "Status" })).toHaveAttribute(
+      "href",
+      "/status",
     );
     await expect(primaryNav.getByRole("link", { name: "Contact" })).toHaveAttribute(
       "href",
@@ -163,13 +167,13 @@ test.describe("marketing landing", () => {
     await expect(footer.getByText("resources", { exact: true })).toBeVisible();
     await expect(footer.getByText("company", { exact: true })).toBeVisible();
     await expect(footer.getByText("legal", { exact: true })).toBeVisible();
-    await expect(footer.getByRole("link", { name: "Docs" })).toHaveAttribute(
+    await expect(footer.getByRole("link", { name: "Openpawl Docs" })).toHaveAttribute(
       "href",
-      "/docs",
+      "/openpawl/docs",
     );
-    await expect(footer.getByRole("link", { name: "Blog" })).toHaveAttribute(
+    await expect(footer.getByRole("link", { name: "Openpawl Support" })).toHaveAttribute(
       "href",
-      "/blog",
+      "/openpawl/support",
     );
     await expect(footer.getByRole("link", { name: "Contact" })).toHaveAttribute(
       "href",
@@ -179,6 +183,55 @@ test.describe("marketing landing", () => {
       "href",
       "/products/cachepawl",
     );
+    await expect(footer.getByRole("link", { name: "Privacy" })).toHaveAttribute(
+      "href",
+      "/privacy",
+    );
+    await expect(footer.getByRole("link", { name: "Terms" })).toHaveAttribute(
+      "href",
+      "/terms",
+    );
+    await expect(footer.getByRole("link", { name: "Security" })).toHaveAttribute(
+      "href",
+      "/security",
+    );
+  });
+});
+
+test.describe("Marketplace-critical routes", () => {
+  const routes = [
+    { path: "/openpawl/install", heading: /Install Openpawl/ },
+    { path: "/openpawl/docs", heading: /Openpawl documentation/ },
+    { path: "/openpawl/support", heading: /Support for Openpawl/ },
+    { path: "/status", heading: /Public status/ },
+    { path: "/privacy", heading: /Privacy policy/ },
+    { path: "/terms", heading: /Terms/ },
+    { path: "/security", heading: /Security reporting/ },
+  ] as const;
+
+  for (const route of routes) {
+    test(`${route.path} returns a real page`, async ({ page }) => {
+      const response = await page.goto(route.path);
+      expect(response?.status()).toBe(200);
+      await expect(page.getByRole("heading", { level: 1 })).toContainText(
+        route.heading,
+      );
+      await expect(page.locator("#main").getByText("v0.5.1")).toHaveCount(0);
+    });
+  }
+
+  test("webhook GET remains method-not-allowed", async ({ request }) => {
+    const response = await request.get("/api/github/marketplace");
+    expect(response.status()).toBe(405);
+    expect(response.headers()["allow"]).toBe("POST");
+  });
+
+  test("Marketplace copy avoids live-listing and Cloud availability claims", async ({
+    page,
+  }) => {
+    await page.goto("/status");
+    await expect(page.getByText("does not claim that a GitHub Marketplace listing is live")).toBeVisible();
+    await expect(page.getByText("CodePawl Cloud is upcoming and waitlist-only")).toBeVisible();
   });
 });
 

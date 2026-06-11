@@ -1,148 +1,58 @@
-# Installing Openpawl in another GitHub repo
+# Installing Openpawl
 
-Openpawl is installable by copying a workflow file and a repo-root config file into an existing GitHub repository.
+Openpawl is distributed from the public Action repository:
+`https://github.com/codepawl/openpawl`.
 
-For Marketplace review context, `v0.5.1` is the current workflow-install candidate. It is not yet packaged as a GitHub Marketplace Action; use the pinned workflow install path below until a dedicated Marketplace action wrapper exists.
+This website uses current-candidate install wording until the final Marketplace
+release tag and listing URL are verified.
 
-## Minimal setup
+## Minimal Action Setup
 
-1. Copy `docs/samples/openpawl.workflow.yml` into the target repo as `.github/workflows/openpawl.yml`.
-2. Copy `docs/samples/openpawl.config.json` into the target repo root as `openpawl.config.json`.
-3. Change `validation.writeTestCommand` in the config to match that repo’s test command.
-4. Push the files and run the workflow from the GitHub Actions tab.
-
-The workflow checkouts the target repository at the root, and then checkouts the Openpawl monorepo (`codepawl/codepawl`) at a specific release tag (e.g. `v0.5.1`) into the `.openpawl-src` subdirectory. It then runs Openpawl commands inside `.openpawl-src` targeting the parent repository. The `.openpawl-src` directory is cleaned up before any pull requests are created or once execution finishes, preventing any tracking or pollution of the target repository's git status.
-
-The workflow invokes `@codepawl/cli` directly inside `.openpawl-src`:
-
-- `bun --cwd .openpawl-src --filter @codepawl/cli dev -- openpawl-trigger ...`
-- `bun --cwd .openpawl-src --filter @codepawl/cli dev -- run ...`
-
-The workflow keeps the current Openpawl trigger UX and adds approval write mode:
-
-- slash commands remain exact `/openpawl review`, `/openpawl plan`, `/openpawl add tests`, and `/openpawl fix failing tests`
-- approval write mode uses exact `/openpawl apply` or the `openpawl-approved` label
-- mention commands add exact `@openpawl review`, `@openpawl plan`, `@openpawl add tests`, and `@openpawl fix failing tests`
-- `pull_request` and `issues` still trigger review-only dry-runs on labels/events
-- `workflow_dispatch` supports manual dry-run or manual write mode
-- mention-triggered runs are always dry-run only
-- approved write runs create `openpawl/apply-<issue-or-pr-number>-<run-id>` and open a PR
-
-For beta.1 smoke verification, `/openpawl apply` should be exercised on a task that includes an explicit test intent (for example, an issue body containing `add tests for ...`). Arbitrary docs-only apply tasks can be unsupported by design and should fail before validation when no safe create chunk is available.
-
-## Config file
-
-`openpawl.config.json` is loaded automatically from the target repo root.
-
-Only one install-time setting is required for the beta.1 cut:
-
-```json
-{
-  "validation": {
-    "writeTestCommand": "bun run test"
-  }
-}
-```
-
-Write mode uses this command when the workflow does not pass `--test-cmd` explicitly. Dry-run stays on the safe placeholder path unless a command is provided manually.
-
-## Permissions
-
-The workflow needs:
-
-- `contents: write`
-- `issues: write`
-- `pull-requests: write`
-
-Why:
-
-- `contents: write` lets approved write runs push an Openpawl bot branch
-- `issues: write` lets Openpawl post the report back to the issue or PR thread
-- `pull-requests: write` supports PR comment, label, and approved apply PR flows
-
-If an org blocks GitHub Actions PR creation, the workflow still pushes `openpawl/apply-*` branches but posts a warning and manual PR instructions in the issue/PR comment.
-
-No PAT is required for the basic install. `GITHUB_TOKEN` is enough.
-
-## Security behavior
-
-Openpawl is intentionally conservative:
-
-- Dry-run is the default.
-- Manual `workflow_dispatch`, maintainer `/openpawl apply`, or `openpawl-approved` can select write mode.
-- Write mode is still constrained to safe test-file creation behavior in the current beta line.
-- Approved writes create a new bot branch and PR instead of pushing to an existing user branch.
-- The workflow skips recursive bot-authored `issue_comment` runs.
-- Forked PR comments are skipped when the head repo differs from the base repo.
-- Reports and artifacts are written under `.codepawl/runs/<run-id>/`.
-
-- In orgs that block Actions from creating or approving pull requests, approved `/openpawl apply` runs can still succeed after branch push and provide manual PR fallback details.
-
-## Commands and triggers
-
-Exact commands only:
-
-- `/openpawl review`
-- `/openpawl plan`
-- `/openpawl add tests`
-- `/openpawl fix failing tests`
-- `/openpawl apply`
-- `@openpawl review`
-- `@openpawl plan`
-- `@openpawl add tests`
-- `@openpawl fix failing tests`
-- `openpawl` label for dry-run review
-- `openpawl-approved` label for approved write mode
-
-Anything else is ignored.
-
-Manual workflow dispatch accepts:
-
-- `task`
-- `repo_path`
-- `mode` (`dry-run` or `write`)
-
-Write mode should only be used when the repo’s `openpawl.config.json` points at a safe validation command. Comment-triggered write mode only accepts maintainer `/openpawl apply`; `@openpawl` mentions never write.
-
-Report comments generated by Openpawl are ignored automatically so they do not recurse back into the workflow.
-
-## Artifacts and reports
-
-Each successful or failed run writes artifacts into `.codepawl/runs/<run-id>/`:
-
-- `trace.json`
-- `report.md`
-- `run.json`
-- `patch-plan.json`
-- `selected-files.json`
-- `applied-files.json`
-
-As of `v0.5.1`, the JSON artifacts include `schemaVersion: "1"` and are validated against exported `@codepawl/core` Zod schemas. `report.md` remains human-readable Markdown for GitHub comments and intentionally has no machine-readable front matter.
-
-The top of `report.md` includes an Evidence Summary derived from the existing JSON artifacts: run ID, GitHub Actions URL when available, artifact name, artifact directory, report path, trace path, mode, status, readiness, validation state, provider-call count, selected/planned/applied file counts, normalized presentation-only failure category, and artifact paths. Failed runs include a short Failure Summary before detailed sections.
-
-The workflow uploads that directory as a GitHub Actions artifact and posts `report.md` back to the issue or PR when applicable. The comment prepends GitHub run context with the Actions URL, artifact name, report path, and trace path when available.
-
-## Limitations
-
-- The current beta only allows the safe write path already implemented in Openpawl.
-- The config file is JSON only in this release cut.
-- Dry-run still uses placeholder validation unless a command is explicitly supplied.
-- Manual write mode requires a repo-specific validation command.
-- `/openpawl apply` write runs still require generated, safe create chunks. Requests that cannot produce a safe create chunk (such as docs-only edits without a concrete patch chunk) are rejected with `No safe create chunks available in write mode.`
-- External installs should pin a release tag instead of tracking `main`.
-
-## Optional reusable workflow
-
-If you want to centralize the execution job instead of copying the full workflow, use `.github/workflows/openpawl-run.yml` from the Openpawl repo as a reusable workflow template. The copyable workflow in `docs/samples/openpawl.workflow.yml` is the simpler install path.
-
-When using the reusable workflow, you can specify the `openpawl_ref` input (defaults to `v0.5.1`) to control which version of Openpawl is executed:
+Use the public Action directly from the Openpawl repository:
 
 ```yaml
+name: Openpawl
+
+on:
+  workflow_dispatch:
+
 jobs:
   openpawl:
-    uses: codepawl/codepawl/.github/workflows/openpawl-run.yml@v0.5.1
-    with:
-      task: "add unit tests for shared helpers"
-      openpawl_ref: "v0.5.1"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: codepawl/openpawl@main
 ```
+
+Replace `main` with the verified Marketplace release tag after the Action
+release exists and the listing has been confirmed.
+
+## Public References
+
+- Source repository: `https://github.com/codepawl/openpawl`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/main/action.yml`
+- Repository docs: `https://github.com/codepawl/openpawl/tree/main/docs`
+- Support issues: `https://github.com/codepawl/openpawl/issues`
+- Security advisories: `https://github.com/codepawl/openpawl/security/advisories`
+
+## Safety Notes
+
+Openpawl is dry-run-first. Write behavior must remain behind explicit
+maintainer approval and the Action safety gates. Do not present Openpawl as an
+unattended autonomous writer.
+
+## Website Routes
+
+The public website routes used for Marketplace submission are:
+
+- `https://codepawl.com/openpawl/install`
+- `https://codepawl.com/openpawl/docs`
+- `https://codepawl.com/openpawl/support`
+- `https://codepawl.com/status`
+- `https://codepawl.com/security`
+- `https://codepawl.com/privacy`
+- `https://codepawl.com/terms`

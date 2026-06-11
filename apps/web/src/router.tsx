@@ -16,6 +16,13 @@ import { Route as githubMarketplaceRoute } from "./routes/api.github.marketplace
 import { Route as docsRoute } from "./routes/docs";
 import { Route as docsIndexRoute } from "./routes/docs.index";
 import { Route as docsProductRoute } from "./routes/docs.$";
+import { Route as openpawlInstallRoute } from "./routes/openpawl.install";
+import { Route as openpawlDocsRoute } from "./routes/openpawl.docs";
+import { Route as openpawlSupportRoute } from "./routes/openpawl.support";
+import { Route as statusRoute } from "./routes/status";
+import { Route as privacyRoute } from "./routes/privacy";
+import { Route as termsRoute } from "./routes/terms";
+import { Route as securityRoute } from "./routes/security";
 
 const routeTree = rootRoute.addChildren([
   siteRoute.addChildren([
@@ -27,6 +34,13 @@ const routeTree = rootRoute.addChildren([
     contactRoute,
     careersRoute,
     newsletterConfirmRoute,
+    openpawlInstallRoute,
+    openpawlDocsRoute,
+    openpawlSupportRoute,
+    statusRoute,
+    privacyRoute,
+    termsRoute,
+    securityRoute,
     docsRoute.addChildren([docsIndexRoute, docsProductRoute]),
   ]),
   githubMarketplaceRoute,

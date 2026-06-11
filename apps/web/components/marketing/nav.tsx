@@ -75,18 +75,26 @@ export function Nav() {
             </li>
             <li>
               <Link
-                href="/research"
+                href="/openpawl/docs"
                 className="cp-hover-link cp-nav text-fg-3 hover:text-fg-1 transition-colors"
               >
-                Research
+                Docs
               </Link>
             </li>
             <li>
               <Link
-                href="/blog"
+                href="/openpawl/support"
                 className="cp-hover-link cp-nav text-fg-3 hover:text-fg-1 transition-colors"
               >
-                Blog
+                Support
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/status"
+                className="cp-hover-link cp-nav text-fg-3 hover:text-fg-1 transition-colors"
+              >
+                Status
               </Link>
             </li>
             <li>
