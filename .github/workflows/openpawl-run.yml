@@ -38,7 +38,7 @@ on:
         description: "Git ref of codepawl/codepawl to run"
         required: false
         type: string
-        default: "v0.2.0"
+        default: "v0.2.1"
     outputs:
       run_id:
         value: ${{ jobs.openpawl-run.outputs.run_id }}

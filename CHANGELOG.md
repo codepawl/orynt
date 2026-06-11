@@ -4,6 +4,16 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.2.1] - 2026-06-11
+
+### Fixed
+
+- Post-release external installability patch:
+  - Updated copy-paste sample workflow (`docs/samples/openpawl.workflow.yml`) and reusable workflow (`.github/workflows/openpawl-run.yml`) to dynamically checkout `codepawl/codepawl` under `.openpawl-src`.
+  - Configured workflows to execute `@codepawl/cli` using `--cwd .openpawl-src` and target the absolute path of the repository, preventing dependency-resolution failures in target repos that do not contain Openpawl.
+  - Added automated cleanup steps to delete `.openpawl-src` before PR branches are created or once execution finishes.
+  - Updated installation documentation (`docs/OPENPAWL_INSTALL.md`) to reflect the new dynamic repository checkout process.
+
 ## [0.2.0] - 2026-06-10
 
 ### Added

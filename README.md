@@ -1,4 +1,4 @@
-# Openpawl v0.2.0
+# Openpawl v0.2.1
 
 Openpawl is the server-side coding-agent workflow in the CodePawl monorepo.
 
