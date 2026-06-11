@@ -764,3 +764,41 @@ Goal: improve reliability/trust while preserving current write safety gates (no 
   - Blocked by local GitHub CLI auth: `gh auth status` reports the active `github.com` token for `nxank4` is invalid.
   - No workflow dispatch was attempted after the auth failure. This is an environment/auth blocker, not a code readiness blocker.
 - Next checkpoint: CP-024 should bump versions and prepare v0.5.0 release/tag only after live GitHub workflow smoke can be run with valid auth, or explicitly accept the documented auth blocker.
+
+### CP-024: v0.5.0 live GitHub UX smoke and release packaging
+
+- Date: 2026-06-11
+- Verdict: BLOCKED_WITH_REASON
+- Blocker: Live GitHub release gates cannot run because GitHub CLI is not authenticated in this environment.
+  - `gh auth status`: failed with `You are not logged into any GitHub hosts. To log in, run: gh auth login`.
+  - `gh repo view codepawl/codepawl --json nameWithOwner,defaultBranchRef,url`: failed with `To get started with GitHub CLI, please run: gh auth login`.
+  - Because `gh repo view` does not work, no `workflow_dispatch` dry-run smoke was triggered and no GitHub comment/report evidence could be verified live.
+- Repository state before release gate:
+  - Branch: `main`.
+  - Tracking: `main...origin/main [ahead 1]` at inspection time, with CP-023 commit `faa052f` local and not yet confirmed pushed.
+  - Remote: `origin git@github.com:codepawl/codepawl.git`.
+- Local validation evidence:
+  - `bun run typecheck`: pass.
+  - `bun run test`: pass.
+  - `bun --filter @codepawl/cli dev -- eval patch-quality --limit 50`: pass, 50/50, eval `eval_1781150781021_edco1z`.
+- Release actions intentionally not taken:
+  - No package version bump to `0.5.0` because the live GitHub smoke gate did not pass.
+  - No annotated tag `v0.5.0` created.
+  - No tag pushed.
+  - No GitHub Release published.
+  - No npm/package publish.
+- Safety boundaries preserved:
+  - Artifact JSON schemaVersion `"1"` compatibility unchanged.
+  - Write safety gates unchanged.
+  - Approval/apply policy unchanged.
+  - Validation precedence unchanged.
+  - Unsafe write rejection and beta create-only guardrails unchanged.
+  - `.gitignore` scanning unchanged.
+  - Bounded retry behavior unchanged.
+  - Trace legacy compatibility unchanged.
+- Resume instructions:
+  - Authenticate GitHub CLI with an account that can access `codepawl/codepawl`.
+  - Re-run `gh auth status` and `gh repo view codepawl/codepawl --json nameWithOwner,defaultBranchRef,url`.
+  - Push local CP-023/CP-024 commits to `main` if still ahead.
+  - Trigger the workflow_dispatch dry-run smoke and verify run URL, run ID, conclusion, uploaded artifact name, report/comment Evidence Summary, Actions URL, artifact path, report path, trace path, and redaction of prompt/secret/env/log content.
+  - Only after live smoke passes, bump package versions to `0.5.0`, update release docs, commit, push, create annotated tag `v0.5.0`, push tag, and publish the GitHub Release.
