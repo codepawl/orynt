@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { handleCloudWaitlistRequest, methodNotAllowed } from "../lib/cloud-waitlist";
+import {
+  buildInternalNotificationEmail,
+  buildUserConfirmationEmail,
+} from "../lib/cloud-waitlist-emails";
 
 const ORIGINAL_ENV = process.env;
 
@@ -90,6 +94,20 @@ describe("Cloud waitlist API", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toContain("/audiences/audience_123/contacts");
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.resend.com/emails");
     expect(fetchMock.mock.calls[2]?.[0]).toBe("https://api.resend.com/emails");
+
+    const internalBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    const confirmationBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+
+    expect(internalBody).toMatchObject({
+      subject: "New CodePawl Cloud Evidence waitlist request",
+      text: expect.stringContaining("Safety warning"),
+      html: expect.stringContaining("https://codepawl.com/logo_for_light_mode.svg"),
+    });
+    expect(confirmationBody).toMatchObject({
+      subject: "You’re on the Cloud Evidence waitlist",
+      text: expect.stringContaining("local/browser-only"),
+      html: expect.stringContaining("Open browser-only Evidence Hub"),
+    });
   });
 
   test("keeps capture accepted when confirmation email fails after notification", async () => {
@@ -136,5 +154,46 @@ describe("Cloud waitlist API", () => {
     await expect(response.json()).resolves.toMatchObject({
       emailStatus: "skipped_missing_env",
     });
+  });
+
+  test("builds branded user confirmation HTML and plain text", () => {
+    const email = buildUserConfirmationEmail();
+
+    expect(email.html).toContain("https://codepawl.com/logo_for_light_mode.svg");
+    expect(email.html).toContain("CodePawl");
+    expect(email.html).toContain("You’re on the Cloud Evidence waitlist");
+    expect(email.html).toContain("https://codepawl.com/cloud/evidence");
+    expect(email.html).toContain("local/browser-only");
+    expect(email.html).toContain("Artifact contents are not uploaded or stored by CodePawl");
+    expect(email.html).not.toContain("tracking");
+    expect(email.text).toContain("You’re on the Cloud Evidence waitlist");
+    expect(email.text).toContain("https://codepawl.com/cloud/evidence");
+  });
+
+  test("builds branded internal notification HTML and escapes user input", () => {
+    const email = buildInternalNotificationEmail(
+      {
+        email: "bad+test@example.com",
+        roleUseCase: "<script>alert('role')</script>",
+        workflowNeed: "Needs <b>review</b> & approval",
+        source: "manual",
+        notes: "Do not render <img src=x onerror=alert(1)>",
+      },
+      new Date("2026-06-12T10:00:00.000Z"),
+    );
+
+    expect(email.html).toContain("https://codepawl.com/logo_for_light_mode.svg");
+    expect(email.html).toContain("New Cloud Evidence waitlist request");
+    expect(email.html).toContain("bad+test@example.com");
+    expect(email.html).toContain("&lt;script&gt;alert(&#39;role&#39;)&lt;/script&gt;");
+    expect(email.html).toContain("Needs &lt;b&gt;review&lt;/b&gt; &amp; approval");
+    expect(email.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(email.html).not.toContain("<script>");
+    expect(email.html).not.toContain("<img src=x");
+    expect(email.html).toContain(
+      "Do not request artifact contents, source code, prompts, traces, credentials, logs, or secrets",
+    );
+    expect(email.text).toContain("Timestamp: 2026-06-12T10:00:00.000Z");
+    expect(email.text).toContain("Safety warning");
   });
 });

@@ -1,3 +1,8 @@
+import {
+  buildInternalNotificationEmail,
+  buildUserConfirmationEmail,
+} from "./cloud-waitlist-emails";
+
 const JSON_HEADERS = {
   "Content-Type": "application/json",
 } as const;
@@ -166,12 +171,14 @@ async function sendInternalNotification(
   payload: CloudWaitlistPayload,
   env: WaitlistEnv,
 ): Promise<void> {
+  const email = buildInternalNotificationEmail(payload);
+
   await resendFetch(RESEND_EMAILS_URL, env, {
     from: env.resendFrom,
     to: [env.notifyTo],
-    subject: "New CodePawl Cloud Evidence waitlist request",
-    text: buildInternalNotificationText(payload),
-    html: paragraphHtml(buildInternalNotificationText(payload)),
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
   });
 }
 
@@ -179,12 +186,14 @@ async function sendUserConfirmation(
   payload: CloudWaitlistPayload,
   env: WaitlistEnv,
 ): Promise<void> {
+  const email = buildUserConfirmationEmail();
+
   await resendFetch(RESEND_EMAILS_URL, env, {
     from: env.resendFrom,
     to: [payload.email],
-    subject: "You are on the CodePawl Cloud Evidence waitlist",
-    text: buildUserConfirmationText(),
-    html: paragraphHtml(buildUserConfirmationText()),
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
   });
 }
 
@@ -267,46 +276,4 @@ function json(body: unknown, status = 200, headers?: HeadersInit): Response {
       ...headers,
     },
   });
-}
-
-function buildInternalNotificationText(payload: CloudWaitlistPayload): string {
-  return [
-    "New CodePawl Cloud Evidence waitlist request",
-    "",
-    `Email: ${payload.email}`,
-    `Role/use case: ${payload.roleUseCase}`,
-    `Workflow need: ${payload.workflowNeed}`,
-    `Source: ${payload.source}`,
-    `Notes: ${payload.notes || "None"}`,
-    "",
-    "Reminder: do not ask for artifact contents, source code, prompts, traces, credentials, logs, or secrets through this waitlist flow.",
-  ].join("\n");
-}
-
-function buildUserConfirmationText(): string {
-  return [
-    "You are on the CodePawl Cloud Evidence waitlist.",
-    "",
-    "CodePawl Cloud is upcoming and not generally available yet. The current Cloud Evidence preview is local/browser-only: artifact contents are not uploaded or stored by CodePawl.",
-    "",
-    "We will follow up when early hosted review conversations open. Please do not send artifact contents, source code, prompts, traces, credentials, logs, or secrets by email.",
-    "",
-    "CodePawl",
-    "https://codepawl.com/cloud",
-  ].join("\n");
-}
-
-function paragraphHtml(text: string): string {
-  return text
-    .split("\n\n")
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replaceAll("\n", "<br>")}</p>`)
-    .join("");
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
