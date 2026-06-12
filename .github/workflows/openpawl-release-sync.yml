@@ -4,6 +4,10 @@ on:
   repository_dispatch:
     types: [openpawl_release_published]
 
+concurrency:
+  group: openpawl-release-sync-${{ github.event.client_payload.tag || github.run_id }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -66,8 +70,8 @@ jobs:
           for route in / /openpawl /openpawl/install /openpawl/docs /openpawl/support /cloud/evidence /privacy /terms /security; do
             curl -fsS "http://127.0.0.1:4181${route}" >/dev/null
           done
-          headers="$(curl -fsSI http://127.0.0.1:4181/api/github/marketplace)"
-          printf '%s\n' "$headers" | grep -q "405"
+          headers="$(curl -sS -D - -o /dev/null -w 'HTTP_STATUS:%{http_code}' http://127.0.0.1:4181/api/github/marketplace)"
+          printf '%s\n' "$headers" | grep -q "HTTP_STATUS:405"
           printf '%s\n' "$headers" | grep -qi "^allow: POST"
 
       - name: Check whitespace
