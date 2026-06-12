@@ -5,10 +5,10 @@ import { useState } from "react";
 import {
   CLOUD_EVIDENCE_ACCEPTED_FILES,
   type CloudEvidenceArtifactSet,
+  type CloudEvidenceOpenpawlBundle,
   type CloudEvidenceValidationIssue,
   type CloudEvidenceValidationResult,
   parseCloudEvidenceArtifactBundle,
-  validateCloudEvidenceArtifactSet,
 } from "@/lib/cloud-evidence-artifacts";
 
 export type EvidenceArtifact = {
@@ -119,13 +119,22 @@ export const DEMO_EVIDENCE_ARTIFACT_SET = {
 This demo report is static and does not include customer prompts, repository code, traces, logs, or uploaded artifacts.`,
 } as const satisfies CloudEvidenceArtifactSet;
 
+export const DEMO_OPENPAWL_EVIDENCE_BUNDLE = {
+  bundleVersion: "1",
+  generatedAt: "2026-06-12T00:00:00.000Z",
+  runId: DEMO_RUN_ID,
+  artifactSchemaVersion: "1",
+  source: "openpawl",
+  artifacts: DEMO_EVIDENCE_ARTIFACT_SET,
+} as const satisfies CloudEvidenceOpenpawlBundle;
+
 const DEMO_EVIDENCE_VALIDATION = validateDemoEvidenceArtifactSet();
 
 export const DEMO_EVIDENCE_RUN = createEvidenceRunViewModel({
   artifacts: DEMO_EVIDENCE_VALIDATION.artifacts,
   runId: DEMO_EVIDENCE_VALIDATION.runId,
   schemaVersion: DEMO_EVIDENCE_VALIDATION.schemaVersion,
-  source: "Static demo fixture based on Openpawl v0.5.1 artifact contracts",
+  source: "Static demo fixture based on Openpawl evidence bundle contracts",
   reportPath: `.codepawl/runs/${DEMO_RUN_ID}/report.md`,
   tracePath: `.codepawl/runs/${DEMO_RUN_ID}/trace.json`,
 });
@@ -150,7 +159,9 @@ export function CloudEvidenceDemo({ run = DEMO_EVIDENCE_RUN }: { run?: EvidenceR
         artifacts: result.artifacts,
         runId: result.runId,
         schemaVersion: result.schemaVersion,
-        source: "Local browser-only artifact preview",
+        source: result.bundle
+          ? `Openpawl local bundle generated ${result.bundle.generatedAt}`
+          : "Local browser-only artifact preview",
         reportPath: `local-preview/${result.runId}/report.md`,
         tracePath: `local-preview/${result.runId}/trace.json`,
       }),
@@ -183,7 +194,10 @@ export function CloudEvidenceDemo({ run = DEMO_EVIDENCE_RUN }: { run?: EvidenceR
         or customer workspaces.
       </p>
       <p className="cp-body mt-4 max-w-3xl text-fg-2">
-        Future intake is designed around six Openpawl v1 artifacts only:{" "}
+        Local preview accepts Openpawl{" "}
+        <code className="cp-inline-code">openpawl-evidence-bundle.json</code>{" "}
+        files downloaded from Openpawl run artifacts. Future hosted intake is
+        designed around six Openpawl v1 artifacts only:{" "}
         <code className="cp-inline-code">{CLOUD_EVIDENCE_ACCEPTED_FILES.join(", ")}</code>.
         Artifacts must be redacted before submission. Upload controls are not
         enabled in this checkpoint.
@@ -238,9 +252,11 @@ function LocalPreviewPanel({
         Local preview only. Artifact contents are not uploaded or stored.
       </p>
       <p className="cp-body mt-4 max-w-3xl text-fg-2">
-        Paste a JSON bundle or choose a local JSON file. Validation runs in this
-        browser using the same static artifact contract helper as the demo, and
-        no artifact contents are sent to CodePawl servers.
+        Paste an <code className="cp-inline-code">openpawl-evidence-bundle.json</code>{" "}
+        file or choose it from disk. The legacy six-artifact JSON shape is also
+        accepted for CP-003 fixtures. Validation runs in this browser using the
+        same static artifact contract helper as the demo, and no artifact
+        contents are sent to CodePawl servers.
       </p>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -252,7 +268,7 @@ function LocalPreviewPanel({
                 rows={12}
                 value={previewText}
                 onChange={(event) => onPreviewTextChange(event.target.value)}
-                placeholder={`{"run.json": {...}, "trace.json": {...}, "patch-plan.json": {...}, "selected-files.json": {...}, "applied-files.json": {...}, "report.md": "..."}`}
+                placeholder={`{"bundleVersion":"1","generatedAt":"...","runId":"...","artifactSchemaVersion":"1","source":"openpawl","artifacts":{"run.json": {...}, "trace.json": {...}, "patch-plan.json": {...}, "selected-files.json": {...}, "applied-files.json": {...}, "report.md": "..."}}`}
                 className="cp-control cp-code border-ink-5 bg-code-bg text-fg-5 placeholder:text-fg-4 focus:border-ratchet border p-3 focus:outline-none"
               />
             </label>
@@ -560,7 +576,7 @@ function createEvidenceRunViewModel(input: {
 }
 
 function validateDemoEvidenceArtifactSet() {
-  const result = validateCloudEvidenceArtifactSet(DEMO_EVIDENCE_ARTIFACT_SET);
+  const result = parseCloudEvidenceArtifactBundle(JSON.stringify(DEMO_OPENPAWL_EVIDENCE_BUNDLE));
 
   if (!result.ok) {
     throw new Error(

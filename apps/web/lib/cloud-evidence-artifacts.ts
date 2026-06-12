@@ -1,4 +1,6 @@
 export const CLOUD_EVIDENCE_SCHEMA_VERSION = "1" as const;
+export const CLOUD_EVIDENCE_BUNDLE_VERSION = "1" as const;
+export const CLOUD_EVIDENCE_BUNDLE_SOURCE = "openpawl" as const;
 
 export const CLOUD_EVIDENCE_ACCEPTED_FILES = [
   "run.json",
@@ -22,8 +24,22 @@ export type CloudEvidenceArtifactSet = {
   "report.md": string;
 };
 
+export type CloudEvidenceBundleMetadata = {
+  bundleVersion: typeof CLOUD_EVIDENCE_BUNDLE_VERSION;
+  generatedAt: string;
+  runId: string;
+  artifactSchemaVersion: typeof CLOUD_EVIDENCE_SCHEMA_VERSION;
+  source: typeof CLOUD_EVIDENCE_BUNDLE_SOURCE;
+};
+
+export type CloudEvidenceOpenpawlBundle = CloudEvidenceBundleMetadata & {
+  artifacts: CloudEvidenceArtifactSet;
+};
+
 export type CloudEvidenceValidationIssue = {
   code:
+    | "missing_bundle_metadata"
+    | "wrong_bundle_version"
     | "missing_required_artifact"
     | "unknown_artifact"
     | "oversized_artifact"
@@ -43,6 +59,7 @@ export type CloudEvidenceValidationResult =
       artifacts: CloudEvidenceArtifactSet;
       runId: string;
       schemaVersion: typeof CLOUD_EVIDENCE_SCHEMA_VERSION;
+      bundle?: CloudEvidenceBundleMetadata;
     }
   | {
       ok: false;
@@ -63,7 +80,7 @@ export function parseCloudEvidenceArtifactBundle(text: string): CloudEvidenceVal
         {
           code: "invalid_json",
           message:
-            "Preview bundle must be valid JSON with accepted artifact filenames as top-level keys.",
+            "Preview bundle must be valid JSON. Use openpawl-evidence-bundle.json or the legacy six-artifact JSON shape.",
         },
       ],
     };
@@ -77,10 +94,14 @@ export function parseCloudEvidenceArtifactBundle(text: string): CloudEvidenceVal
         {
           code: "invalid_artifact_shape",
           message:
-            "Preview bundle must be a JSON object with accepted artifact filenames as top-level keys.",
+            "Preview bundle must be a JSON object. Use openpawl-evidence-bundle.json or the legacy six-artifact JSON shape.",
         },
       ],
     };
+  }
+
+  if (looksLikeOpenpawlEvidenceBundle(parsed)) {
+    return validateCloudEvidenceOpenpawlBundle(parsed);
   }
 
   return validateCloudEvidenceArtifactSet(parsed);
@@ -106,6 +127,134 @@ const UNSAFE_PAYLOAD_PATTERNS: ReadonlyArray<RegExp> = [
   /\bAKIA[0-9A-Z]{16}\b/,
   /\b(?:password|api[_-]?key|access[_-]?token|secret)\s*[:=]\s*["']?[^"',\s]{8,}/i,
 ];
+
+const OPENPAWL_BUNDLE_METADATA_FIELDS = [
+  "bundleVersion",
+  "generatedAt",
+  "runId",
+  "artifactSchemaVersion",
+  "source",
+] as const;
+
+export function validateCloudEvidenceOpenpawlBundle(
+  input: JsonObject,
+): CloudEvidenceValidationResult {
+  const issues: CloudEvidenceValidationIssue[] = [];
+
+  for (const field of OPENPAWL_BUNDLE_METADATA_FIELDS) {
+    if (!(field in input)) {
+      issues.push({
+        code: "missing_bundle_metadata",
+        message: `openpawl-evidence-bundle.json must include ${field}.`,
+      });
+    }
+  }
+
+  const artifacts = input["artifacts"];
+  if (!isPlainObject(artifacts)) {
+    issues.push({
+      code: "missing_required_artifact",
+      artifact: "artifacts",
+      message:
+        "openpawl-evidence-bundle.json must include an artifacts object containing the six accepted artifact names.",
+    });
+  }
+
+  const bundleVersion = input["bundleVersion"];
+  if ("bundleVersion" in input && bundleVersion !== CLOUD_EVIDENCE_BUNDLE_VERSION) {
+    issues.push({
+      code: "wrong_bundle_version",
+      artifact: "bundleVersion",
+      message: `openpawl-evidence-bundle.json must use bundleVersion ${CLOUD_EVIDENCE_BUNDLE_VERSION}.`,
+    });
+  }
+
+  const artifactSchemaVersion = input["artifactSchemaVersion"];
+  if ("artifactSchemaVersion" in input && artifactSchemaVersion !== CLOUD_EVIDENCE_SCHEMA_VERSION) {
+    issues.push({
+      code: "wrong_schema_version",
+      artifact: "artifactSchemaVersion",
+      message: `openpawl-evidence-bundle.json must use artifactSchemaVersion ${CLOUD_EVIDENCE_SCHEMA_VERSION}.`,
+    });
+  }
+
+  if ("source" in input && input["source"] !== CLOUD_EVIDENCE_BUNDLE_SOURCE) {
+    issues.push({
+      code: "invalid_artifact_shape",
+      artifact: "source",
+      message: 'openpawl-evidence-bundle.json must use source "openpawl".',
+    });
+  }
+
+  const bundleRunId = typeof input["runId"] === "string" ? input["runId"] : undefined;
+  if ("runId" in input && !bundleRunId) {
+    issues.push({
+      code: "missing_bundle_metadata",
+      artifact: "runId",
+      message: "openpawl-evidence-bundle.json runId must be a non-empty string.",
+    });
+  }
+
+  if ("generatedAt" in input && typeof input["generatedAt"] !== "string") {
+    issues.push({
+      code: "missing_bundle_metadata",
+      artifact: "generatedAt",
+      message: "openpawl-evidence-bundle.json generatedAt must be a string.",
+    });
+  }
+
+  if (!isPlainObject(artifacts)) {
+    return { ok: false, status: "rejected", issues };
+  }
+
+  const artifactResult = validateCloudEvidenceArtifactSet(artifacts);
+  const acceptedArtifactResult = artifactResult.ok ? artifactResult : undefined;
+  if (!artifactResult.ok) {
+    issues.push(...artifactResult.issues);
+  } else if (bundleRunId && artifactResult.runId !== bundleRunId) {
+    issues.push({
+      code: "run_id_mismatch",
+      artifact: "runId",
+      message: "openpawl-evidence-bundle.json runId must match artifacts.run.json runId.",
+    });
+  }
+
+  if (issues.length > 0) {
+    const status = issues.some((issue) => issue.code === "unsafe_payload_text")
+      ? "blocked"
+      : "rejected";
+    return { ok: false, status, issues };
+  }
+
+  if (!acceptedArtifactResult) {
+    return {
+      ok: false,
+      status: "rejected",
+      issues: [
+        {
+          code: "invalid_artifact_shape",
+          artifact: "artifacts",
+          message: "openpawl-evidence-bundle.json artifacts could not be validated.",
+        },
+      ],
+    };
+  }
+
+  return {
+    ok: true,
+    status: "accepted",
+    artifacts: acceptedArtifactResult.artifacts,
+    runId: acceptedArtifactResult.runId,
+    schemaVersion: acceptedArtifactResult.schemaVersion,
+    bundle: {
+      bundleVersion: CLOUD_EVIDENCE_BUNDLE_VERSION,
+      generatedAt: input["generatedAt"] as string,
+      runId: acceptedArtifactResult.runId,
+      artifactSchemaVersion: CLOUD_EVIDENCE_SCHEMA_VERSION,
+      source: CLOUD_EVIDENCE_BUNDLE_SOURCE,
+    },
+  };
+}
 
 export function validateCloudEvidenceArtifactSet(
   input: Partial<Record<CloudEvidenceAcceptedFile, unknown>>,
@@ -228,6 +377,16 @@ export function validateCloudEvidenceArtifactSet(
     runId: runId!,
     schemaVersion: CLOUD_EVIDENCE_SCHEMA_VERSION,
   };
+}
+
+function looksLikeOpenpawlEvidenceBundle(input: JsonObject): boolean {
+  return (
+    "artifacts" in input ||
+    "bundleVersion" in input ||
+    "artifactSchemaVersion" in input ||
+    "generatedAt" in input ||
+    input["source"] === CLOUD_EVIDENCE_BUNDLE_SOURCE
+  );
 }
 
 function findUnsafePayloadText(

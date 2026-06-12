@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   CloudEvidenceDemo,
   DEMO_EVIDENCE_ARTIFACT_SET,
+  DEMO_OPENPAWL_EVIDENCE_BUNDLE,
   DEMO_EVIDENCE_RUN,
 } from "../components/marketing/cloud-evidence-demo";
 
@@ -27,7 +28,8 @@ describe("CloudEvidenceDemo", () => {
     expect(screen.getAllByText("report.md").length).toBeGreaterThan(0);
     expect(screen.getAllByText("trace.json").length).toBeGreaterThan(0);
     expect(screen.getAllByText("run.json").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Future intake is designed around six Openpawl v1 artifacts only/i)).toBeTruthy();
+    expect(screen.getByText(/accepts Openpawl/i)).toBeTruthy();
+    expect(screen.getAllByText(/openpawl-evidence-bundle\.json/i).length).toBeGreaterThan(0);
   });
 
   test("keeps Cloud copy safe and avoids real-user data intake claims", () => {
@@ -45,18 +47,33 @@ describe("CloudEvidenceDemo", () => {
     expect(screen.queryByText(/start a free trial/i)).toBeNull();
   });
 
-  test("previews a valid artifact bundle locally", () => {
+  test("previews a valid Openpawl artifact bundle locally", () => {
     render(<CloudEvidenceDemo />);
 
     fireEvent.change(screen.getByLabelText("Local artifact JSON bundle"), {
-      target: { value: JSON.stringify(DEMO_EVIDENCE_ARTIFACT_SET) },
+      target: { value: JSON.stringify(DEMO_OPENPAWL_EVIDENCE_BUNDLE) },
     });
     fireEvent.click(screen.getByRole("button", { name: "Validate local preview" }));
 
     expect(screen.getByText("Valid local artifact preview")).toBeTruthy();
     expect(screen.getByText(/accepted locally/i)).toBeTruthy();
     expect(screen.getAllByText(DEMO_EVIDENCE_RUN.runId).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Openpawl local bundle generated/i)).toBeTruthy();
     expect(screen.getByText(/It has not been uploaded, stored, or shared with CodePawl/i)).toBeTruthy();
+  });
+
+  test("shows missing Openpawl bundle metadata rejection reasons", () => {
+    const { generatedAt: _generatedAt, ...missingGeneratedAt } = DEMO_OPENPAWL_EVIDENCE_BUNDLE;
+    render(<CloudEvidenceDemo />);
+
+    fireEvent.change(screen.getByLabelText("Local artifact JSON bundle"), {
+      target: { value: JSON.stringify(missingGeneratedAt) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Validate local preview" }));
+
+    expect(screen.getByText("Preview validation failed")).toBeTruthy();
+    expect(screen.getByText(/missing_bundle_metadata/i)).toBeTruthy();
+    expect(screen.getByText(/must include generatedAt/i)).toBeTruthy();
   });
 
   test("shows wrong schemaVersion preview rejection reasons", () => {

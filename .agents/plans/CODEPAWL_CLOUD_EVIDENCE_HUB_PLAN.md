@@ -120,6 +120,22 @@ and validation runs entirely in the browser with the web-side helper. Artifact
 contents are not uploaded, transmitted to CodePawl servers, or stored by
 CodePawl.
 
+CP-004 adds browser-local preview support for Openpawl
+`openpawl-evidence-bundle.json` files produced by Openpawl commit `7c82d4f`.
+The bundle wrapper is validated locally before rendering and no server-side
+upload, artifact storage, Openpawl runtime change, Marketplace webhook change,
+or production Cloud provisioning is introduced.
+
+Accepted local preview shapes:
+
+- Preferred CP-004 shape: an Openpawl `openpawl-evidence-bundle.json` object
+  with `bundleVersion`, `generatedAt`, `runId`, `artifactSchemaVersion`,
+  `source: "openpawl"`, and an `artifacts` object containing the six accepted
+  files below.
+- Legacy CP-003 shape: a synthetic/local JSON object with the six accepted
+  artifact filenames as top-level keys. This remains supported for static demo
+  fixtures and tests only.
+
 Accepted files:
 
 - `run.json`
@@ -128,6 +144,17 @@ Accepted files:
 - `selected-files.json`
 - `applied-files.json`
 - `report.md`
+
+Bundle metadata requirements:
+
+- `bundleVersion` must be `"1"`.
+- `generatedAt` must be present as a string.
+- `runId` must be present as a string and match nested `artifacts["run.json"].runId`.
+- `artifactSchemaVersion` must be `"1"` and match every nested JSON artifact
+  `schemaVersion`.
+- `source` must be `"openpawl"`.
+- `artifacts` must be an object containing the six accepted artifact names for
+  rendering.
 
 Required artifact set:
 
@@ -183,6 +210,10 @@ Redaction expectations:
 Rejection reasons:
 
 - `missing_required_artifact`: one or more accepted artifacts is absent.
+- `missing_bundle_metadata`: Openpawl bundle metadata such as `bundleVersion`,
+  `generatedAt`, `runId`, `artifactSchemaVersion`, or `source` is absent or not
+  usable.
+- `wrong_bundle_version`: Openpawl bundleVersion is not `"1"`.
 - `unknown_artifact`: a file outside the six accepted names was submitted.
 - `unsupported_archive_or_tree`: the submission is an archive/source tree rather
   than the flat accepted artifact set.
@@ -337,6 +368,21 @@ Manual QA:
    - Shows explicit rejection/blocking reasons for invalid local bundles.
    - Added copy and legal clarifications: "Local preview only. Artifact contents
      are not uploaded or stored."
+
+3b. **CP-004 Openpawl evidence bundle preview**
+   - Added support for Openpawl `openpawl-evidence-bundle.json` local preview
+     shape with `bundleVersion`, `generatedAt`, `runId`,
+     `artifactSchemaVersion`, `source: "openpawl"`, and nested artifacts.
+   - Kept the CP-003 top-level six-artifact fixture shape for synthetic demo
+     and regression tests.
+   - Validates bundle metadata, nested artifact schemaVersion values, run ID
+     consistency, missing nested artifacts, and unsafe-looking payload text
+     before rendering.
+   - Updated `/cloud/evidence` copy to tell users to download
+     `openpawl-evidence-bundle.json` from Openpawl runs and preview it locally
+     in the browser.
+   - No server upload/storage, Openpawl runtime changes, Marketplace webhook
+     changes, or production Cloud provisioning were added.
 
 4. **Waitlist-safe public surface**
    - Add Cloud Evidence Hub overview only if product copy is approved.
