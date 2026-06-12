@@ -75,3 +75,38 @@ The check should pass when the website/docs are synced to Openpawl `v0.5.3`.
   reviewed payload and product checkpoint explicitly approve more.
 - Keep Marketplace listing copy pending until a GitHub Marketplace listing URL
   exists and is verified.
+
+## Publish and Verification (June 2026)
+
+- Current branch state at verification time: `main...origin/main` and local
+  `main` is `ahead 4`.
+- Commit `7f6cd83` contains no changes under `packages/core`, `packages/cli`,
+  or `packages/shared`.
+- Required checks executed locally:
+  - `bun install --frozen-lockfile`
+  - `bun scripts/sync-openpawl-release.ts --payload .agents/sync/openpawl-release-v0.5.3.json --check`
+  - `bun --filter @codepawl/web typecheck`
+  - `bun --filter @codepawl/web test`
+  - `bun --filter @codepawl/web build`
+- Required check not completed in this environment due tooling/network guardrails:
+  - `bun run test:e2e` (blocked by environment usage-limit gate).
+  - route + webhook smoke (`200` route checks and `405 + Allow: POST`) (blocked by
+    environment socket/repository/network restrictions).
+- Publish verification status:
+  - `git show 7f6cd83:.github/workflows/openpawl-release-sync.yml` confirms
+    workflow exists in commit content.
+  - `git show --stat origin/main:.github/workflows/openpawl-release-sync.yml` shows
+    file is not yet present on `origin/main`.
+  - `git log --oneline origin/main -1` indicates `origin/main` tip is `5d2cd58`.
+  - `git push origin main` could not be executed because the environment blocked the
+    operation on the approval gate, preventing direct publish from this session.
+  - `repository_dispatch` simulation could not be run in this environment because
+    GitHub CLI access also failed under the same usage-limit gate.
+
+Pending publish actions remain:
+- Push `main` to `origin/main` when the environment allows network operations.
+- Re-run workflow-trigger smoke with an actual `repository_dispatch` against
+  `openpawl_release_published` using
+  `.agents/sync/openpawl-release-v0.5.3.json`.
+- Confirm workflow run opens/updates `automation/openpawl-release-v0.5.3` PR only and
+  does not trigger merge or deployment.
