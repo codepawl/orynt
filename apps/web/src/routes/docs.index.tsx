@@ -44,7 +44,7 @@ function DocsIndex() {
               <div className="flex items-start justify-between gap-3">
                 <p className="cp-h4 text-fg-1">{product.name}</p>
                 <span className={productBadgeClass(product)}>
-                  {product.availability === "active" ? (
+                  {product.availability === "available" || product.availability === "beta" ? (
                     <span className="product-pulse-dot" aria-hidden />
                   ) : null}
                   {productAvailabilityLabel(product)}

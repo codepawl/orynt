@@ -1,6 +1,6 @@
 import * as fs from "fs/promises";
 import * as path from "path";
-import { runAgent } from "@codepawl/core";
+import { ARTIFACT_SCHEMA_VERSION, PatchQualityEvalMetricsArtifactSchema, runAgent } from "@codepawl/core";
 import type { MockCompletionRule, PatchPlan, ScopeAnalysisResult } from "@codepawl/core";
 
 type FixtureMode = "dry-run" | "write";
@@ -63,6 +63,7 @@ export interface PatchQualityMetricResult {
 }
 
 export interface PatchQualityEvalResult {
+  readonly schemaVersion: typeof ARTIFACT_SCHEMA_VERSION;
   readonly runId: string;
   readonly outputDir: string;
   readonly metricsPath: string;
@@ -808,6 +809,7 @@ export async function runPatchQualityEval(
   }
 
   const result: PatchQualityEvalResult = {
+    schemaVersion: ARTIFACT_SCHEMA_VERSION,
     runId,
     outputDir,
     metricsPath: path.join(outputDir, "metrics.json"),
@@ -833,9 +835,11 @@ export async function runPatchQualityEval(
     fixtures,
   };
 
-  await fs.writeFile(result.metricsPath, JSON.stringify(result, null, 2), "utf-8");
-  await fs.writeFile(result.reportPath, renderEvalReport(result), "utf-8");
-  return result;
+  const validatedResult = PatchQualityEvalMetricsArtifactSchema.parse(result) as PatchQualityEvalResult;
+
+  await fs.writeFile(validatedResult.metricsPath, JSON.stringify(validatedResult, null, 2), "utf-8");
+  await fs.writeFile(validatedResult.reportPath, renderEvalReport(validatedResult), "utf-8");
+  return validatedResult;
 }
 
 export function getPatchQualityFixtureCount(): number {

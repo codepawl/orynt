@@ -36,6 +36,15 @@ import {
   SCAN_MAX_FILES,
   SCAN_MAX_BYTES,
 } from "../safety";
+import { GitignoreMatcher, isPathIgnored } from "../gitignore";
+import {
+  ARTIFACT_SCHEMA_VERSION,
+  AppliedFilesArtifactSchema,
+  PatchPlanArtifactSchema,
+  RunArtifactSchema,
+  SelectedFilesArtifactSchema,
+  TraceArtifactSchema,
+} from "../state/evidence";
 
 const execAsync = promisify(exec);
 
@@ -1483,10 +1492,23 @@ export function createRepoScanNode(): AgentNode {
 
     async function scanDirectory(
       dir: string,
-      rootDir: string
+      rootDir: string,
+      matchers: ReadonlyArray<GitignoreMatcher>
     ): Promise<{ path: string; sizeBytes: number; isDir: boolean }[]> {
       if (fileCount >= SCAN_MAX_FILES) return [];
       const results: { path: string; sizeBytes: number; isDir: boolean }[] = [];
+
+      let currentMatchers = matchers;
+      const gitignorePath = path.join(dir, ".gitignore");
+      try {
+        const gitignoreContent = await fs.readFile(gitignorePath, "utf-8");
+        const relativeDir = path.relative(rootDir, dir).replace(/\\/g, "/");
+        const newMatcher = new GitignoreMatcher(gitignoreContent, relativeDir);
+        currentMatchers = [...matchers, newMatcher];
+      } catch {
+        // No .gitignore in this directory, or read error
+      }
+
       let entries: ReturnType<typeof Object.create> = [];
       try {
         entries = await fs.readdir(dir, { withFileTypes: true });
@@ -1496,14 +1518,19 @@ export function createRepoScanNode(): AgentNode {
       for (const entry of entries) {
         if (fileCount >= SCAN_MAX_FILES) break;
         const fullPath = path.join(dir, entry.name);
-        const relativePath = path.relative(rootDir, fullPath);
+        const relativePath = path.relative(rootDir, fullPath).replace(/\\/g, "/");
 
         if (SCAN_IGNORED_DIRS.has(entry.name)) {
           continue;
         }
 
+        const isDir = entry.isDirectory();
+        if (isPathIgnored(relativePath, isDir, currentMatchers)) {
+          continue;
+        }
+
         // Skip secret files during scan
-        if (!entry.isDirectory() && isSecretFile(entry.name)) {
+        if (!isDir && isSecretFile(entry.name)) {
           if (ledger) {
             ledger.recordEvent("system", `skipped_secret_file:${relativePath}`, "warning", {
               reason: "secret file excluded from scan",
@@ -1512,13 +1539,13 @@ export function createRepoScanNode(): AgentNode {
           continue;
         }
 
-        if (entry.isDirectory()) {
+        if (isDir) {
           results.push({
             path: relativePath,
             sizeBytes: 0,
             isDir: true,
           });
-          const subResults = await scanDirectory(fullPath, rootDir);
+          const subResults = await scanDirectory(fullPath, rootDir, currentMatchers);
           results.push(...subResults);
         } else if (entry.isFile()) {
           let size = 0;
@@ -1537,7 +1564,7 @@ export function createRepoScanNode(): AgentNode {
       return results;
     }
 
-    const files = await scanDirectory(workspaceDir, workspaceDir);
+    const files = await scanDirectory(workspaceDir, workspaceDir, []);
 
     if (ledger) {
       ledger.recordEvent("system", "repo_scan_complete", "info", {
@@ -2413,7 +2440,45 @@ export function createValidationNode(): AgentNode {
         },
       ],
     };
-};
+  };
+}
+
+export function createValidationRetryNode(): AgentNode {
+  return async (state) => {
+    const ledger = activeLedgers.get(state.context.sessionId);
+    const repoRoot = state.context.workspaceDir;
+    const createdFiles = state.writeResult?.created ?? [];
+
+    for (const relativePath of createdFiles) {
+      const targetPath = path.join(repoRoot, relativePath);
+      try {
+        await fs.rm(targetPath, { force: true });
+        if (ledger) {
+          ledger.recordEvent("system", `retry_cleanup_delete:${relativePath}`, "info", {
+            reason: "cleaning up file created in failed validation attempt before retry",
+          });
+        }
+      } catch {
+        // best-effort cleanup
+      }
+    }
+
+    const currentAttempt = state.validationRetryAttempt ?? 0;
+    const nextAttempt = currentAttempt + 1;
+
+    if (ledger) {
+      ledger.recordEvent("system", "validation_retry_triggered", "warning", {
+        attemptNumber: nextAttempt,
+        maxRetries: state.context.validationMaxRetries,
+        revertedFiles: createdFiles,
+      });
+    }
+
+    return {
+      validationRetryAttempt: nextAttempt,
+      writeResult: undefined,
+    };
+  };
 }
 
 export function createTraceExportNode(): AgentNode {
@@ -2426,17 +2491,30 @@ export function createTraceExportNode(): AgentNode {
 
     // Write patch-plan.json
     const patchPlan = state.patchPlan ?? { chunks: [], rationale: "No patch plan generated." };
+    const patchPlanArtifact = PatchPlanArtifactSchema.parse({
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      runId,
+      rationale: patchPlan.rationale,
+      chunks: patchPlan.chunks,
+      groundingNotes: patchPlan.groundingNotes,
+      rejectedChunks: patchPlan.rejectedChunks,
+    });
     await fs.writeFile(
       path.join(runDir, "patch-plan.json"),
-      JSON.stringify(patchPlan, null, 2),
+      JSON.stringify(patchPlanArtifact, null, 2),
       "utf-8"
     );
 
     // Write selected-files.json
     const selectedFiles = state.fileSelectionResult ?? { selectedFiles: [] };
+    const selectedFilesArtifact = SelectedFilesArtifactSchema.parse({
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      runId,
+      selectedFiles: selectedFiles.selectedFiles,
+    });
     await fs.writeFile(
       path.join(runDir, "selected-files.json"),
-      JSON.stringify(selectedFiles, null, 2),
+      JSON.stringify(selectedFilesArtifact, null, 2),
       "utf-8"
     );
 
@@ -2447,17 +2525,30 @@ export function createTraceExportNode(): AgentNode {
       skipped: [],
       rejected: [],
     };
+    const appliedFilesArtifact = AppliedFilesArtifactSchema.parse({
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      runId,
+      attempted: writeResult.attempted,
+      created: writeResult.created,
+      skipped: writeResult.skipped,
+      rejected: writeResult.rejected,
+    });
     await fs.writeFile(
       path.join(runDir, "applied-files.json"),
-      JSON.stringify(writeResult, null, 2),
+      JSON.stringify(appliedFilesArtifact, null, 2),
       "utf-8"
     );
 
     if (ledger) {
       const summary = ledger.getSummary();
+      const traceArtifact = TraceArtifactSchema.parse({
+        schemaVersion: ARTIFACT_SCHEMA_VERSION,
+        runId,
+        ...summary,
+      });
       await fs.writeFile(
         path.join(runDir, "trace.json"),
-        JSON.stringify(summary, null, 2),
+        JSON.stringify(traceArtifact, null, 2),
         "utf-8"
       );
     }
@@ -2523,6 +2614,41 @@ export function createReportExportNode(): AgentNode {
       readiness,
     };
 
+    const runArtifactPayload = {
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      runId,
+      success: !state.error && (!validationAttempted || validationSuccess),
+      mode: state.context.dryRun ? "dry-run" : "write",
+      error: state.error ?? null,
+      durationMs,
+      tokenUsage,
+      validationMaxRetries: state.context.validationMaxRetries ?? 0,
+      validationRetryAttempt: state.validationRetryAttempt ?? 0,
+      readiness: readiness ? {
+        status: readiness.status,
+        reasons: [...readiness.reasons],
+        blockers: [...readiness.blockers],
+        warnings: [...readiness.warnings],
+      } : undefined,
+      validationDecision: validationDecision ? {
+        source: validationDecision.source,
+        confidence: validationDecision.confidence,
+        reason: validationDecision.reason,
+        command: validationDecision.command,
+      } : undefined,
+      writeSummary: {
+        attempted: writeResult.attempted,
+        created: writeResult.created.length,
+        skipped: writeResult.skipped.length,
+        rejected: writeResult.rejected.length,
+      },
+      filesCreated: [...writeResult.created],
+      filesSkipped: writeResult.skipped.map(s => ({ file: s.file, reason: s.reason })),
+      filesRejected: writeResult.rejected.map(r => ({ file: r.file, reason: r.reason })),
+    };
+
+    const validatedRunArtifact = RunArtifactSchema.parse(runArtifactPayload);
+
     const runDir = state.context.outputDir;
     await fs.mkdir(runDir, { recursive: true });
 
@@ -2577,11 +2703,26 @@ export function createReportExportNode(): AgentNode {
       riskNotes.push("Validation failed — review errors before merging.");
     }
 
+    type EvidenceFailureCategory =
+      | "none"
+      | "readiness_blocked"
+      | "validation_failed"
+      | "validation_unavailable"
+      | "write_policy_blocked"
+      | "provider_output_failed"
+      | "runtime_error";
+
+    const redactReportText = (value: string): string =>
+      value
+        .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+        .replace(/sk-[A-Za-z0-9_-]{12,}/g, "sk-[REDACTED]")
+        .replace(/[A-Za-z0-9_-]{32,}/g, "[REDACTED_TOKEN]");
+
     // GitHub-ready Markdown report
     const validationSection = validationAttempted
       ? [
           `**Validation Decision:** ${validationDecision?.source ?? "unavailable"} (confidence ${validationDecision?.confidence ?? 0})`,
-          validationDecision?.reason ? `- Reason: ${validationDecision.reason}` : "",
+          validationDecision?.reason ? `- Reason: ${redactReportText(validationDecision.reason)}` : "",
           validationDecision?.command ? `- Command: \`${validationDecision.command}\`` : "",
           ...(state.validationResult?.commandsRun.length
             ? state.validationResult.commandsRun.map((cmd) => {
@@ -2591,12 +2732,181 @@ export function createReportExportNode(): AgentNode {
               return `**${label}:** \`${cmd.command}\`\n` +
                 `- Exit Code: ${cmd.exitCode}\n` +
                 `- Duration: ${cmd.durationMs}ms\n` +
-                (cmd.stdout ? `- Stdout:\n\`\`\`\n${cmd.stdout.slice(0, 2000)}\n\`\`\`\n` : "") +
-                (cmd.stderr ? `- Stderr:\n\`\`\`\n${cmd.stderr.slice(0, 2000)}\n\`\`\`\n` : "");
+                (cmd.stdout ? `<details><summary>Stdout Log</summary>\n\n\`\`\`\n${redactReportText(cmd.stdout.slice(0, 2000))}\n\`\`\`\n</details>\n` : "") +
+                (cmd.stderr ? `<details><summary>Stderr Log</summary>\n\n\`\`\`\n${redactReportText(cmd.stderr.slice(0, 2000))}\n\`\`\`\n</details>\n` : "");
             })
             : ["No validation command was executed."])
         ].join("\n")
       : "_Not run._";
+
+    const traceSummaryForEvidence = ledger?.getSummary();
+    const providerCallsForEvidence = traceSummaryForEvidence?.llmCallsCount ?? 0;
+    const traceEventsForEvidence = traceSummaryForEvidence?.events ?? [];
+    const errorEventsForEvidence = traceEventsForEvidence.filter((event) => event.severity === "error").length;
+    const warningEventsForEvidence = traceEventsForEvidence.filter((event) => event.severity === "warning").length;
+    const selectedFileCountForEvidence = state.fileSelectionResult?.selectedFiles.length ?? 0;
+    const plannedFileCountForEvidence = new Set(state.patchPlan?.chunks.map((chunk) => chunk.file) ?? []).size;
+    const patchChunkCountForEvidence = state.patchPlan?.chunks.length ?? 0;
+    const rejectedPatchCountForEvidence = rejectedPatchChunks.length;
+    const writeAttemptCountForEvidence = writeResult.attempted;
+    const writeCreatedCountForEvidence = writeResult.created.length;
+    const writeSkippedCountForEvidence = writeResult.skipped.length;
+    const writeRejectedCountForEvidence = writeResult.rejected.length;
+    const validationStateForEvidence = validationAttempted
+      ? validationSuccess
+        ? "passed"
+        : "failed"
+      : "not_run";
+    const validationSourceForEvidence = validationDecision?.source ?? "not_run";
+    const readinessStatusForEvidence = readiness?.status ?? "not_checked";
+    const runStatusForEvidence = validatedRunArtifact.success ? "success" : "failed";
+    const artifactDirectoryForEvidence = state.context.outputDir;
+    const artifactNameForEvidence = `openpawl-artifacts-${runId}`;
+
+    const failureCategoryForEvidence: EvidenceFailureCategory = (() => {
+      if (validatedRunArtifact.success) {
+        return "none";
+      }
+      if (readiness && readiness.status !== "ready") {
+        return "readiness_blocked";
+      }
+      if (writeModeNoSafeCreateFailure || writeRejectedCountForEvidence > 0) {
+        return "write_policy_blocked";
+      }
+      if (validationDecision?.source === "unavailable") {
+        return "validation_unavailable";
+      }
+      if (validationAttempted && !validationSuccess) {
+        return "validation_failed";
+      }
+      if (
+        state.error &&
+        /provider|schema_validation|ungrounded_provider_output|invalid json|parse/i.test(state.error)
+      ) {
+        return "provider_output_failed";
+      }
+      return "runtime_error";
+    })();
+
+    const failureReasonForEvidence = (() => {
+      if (failureCategoryForEvidence === "none") {
+        return "No failure detected.";
+      }
+      if (failureCategoryForEvidence === "readiness_blocked") {
+        const blockers = readiness?.blockers.length ? readiness.blockers.join("; ") : "readiness gate blocked run";
+        return redactReportText(blockers);
+      }
+      if (failureCategoryForEvidence === "validation_failed") {
+        const validationErrors = state.validationResult?.errors?.length
+          ? state.validationResult.errors.join("; ")
+          : "validation command failed";
+        return redactReportText(validationErrors);
+      }
+      if (failureCategoryForEvidence === "write_policy_blocked") {
+        return "write policy rejected all unsafe or unsupported changes";
+      }
+      if (failureCategoryForEvidence === "validation_unavailable") {
+        return "validation command could not be selected or executed";
+      }
+      return redactReportText(state.error ?? "runtime failure");
+    })();
+
+    const primaryOutcomeForEvidence = (() => {
+      if (failureCategoryForEvidence === "none") {
+        return patchApplied
+          ? "Run completed and safe patch chunks were applied."
+          : "Run completed in dry-run mode; review artifacts before applying changes.";
+      }
+      if (failureCategoryForEvidence === "readiness_blocked") {
+        return "Run stopped before patch planning because repository readiness checks did not pass.";
+      }
+      if (failureCategoryForEvidence === "write_policy_blocked") {
+        return "Run stopped during write application because write policy rejected the proposed changes.";
+      }
+      if (failureCategoryForEvidence === "validation_failed") {
+        return "Run produced evidence, but validation failed.";
+      }
+      if (failureCategoryForEvidence === "validation_unavailable") {
+        return "Run produced evidence, but validation was unavailable.";
+      }
+      if (failureCategoryForEvidence === "provider_output_failed") {
+        return "Run stopped because provider output could not be safely used.";
+      }
+      return "Run stopped because of a runtime error.";
+    })();
+
+    const nextActionForEvidence = (() => {
+      if (failureCategoryForEvidence === "none") {
+        return patchApplied ? "Inspect applied-files.json and validation output." : "Inspect patch-plan.json and report.md.";
+      }
+      if (failureCategoryForEvidence === "readiness_blocked") {
+        return "Resolve readiness blockers before rerunning.";
+      }
+      if (failureCategoryForEvidence === "write_policy_blocked") {
+        return "Review patch-plan.json for unsafe writes or unsupported file targets.";
+      }
+      if (failureCategoryForEvidence === "validation_failed") {
+        return "Inspect validation output and retry after fixing the reported failures.";
+      }
+      return "Inspect trace.json and run.json for the terminal failure event.";
+    })();
+
+    const evidenceFailureSummary =
+      failureCategoryForEvidence === "none"
+        ? ""
+        : `
+### Failure Summary
+
+- Category: \`${failureCategoryForEvidence}\`
+- Reason: ${failureReasonForEvidence}
+- Next action: ${nextActionForEvidence}
+`;
+
+    const githubActionsUrlForEvidence = process.env["OPENPAWL_GITHUB_ACTIONS_URL"];
+    const githubActionsRowForEvidence = githubActionsUrlForEvidence
+      ? `| GitHub Actions URL | ${redactReportText(githubActionsUrlForEvidence)} |\n`
+      : "";
+
+    const evidenceSummary = `## Evidence Summary
+
+| Field | Value |
+|---|---|
+| schemaVersion | \`${ARTIFACT_SCHEMA_VERSION}\` |
+| Run ID | \`${runId}\` |
+${githubActionsRowForEvidence}| Artifact name | \`${artifactNameForEvidence}\` |
+| Artifact directory | \`${artifactDirectoryForEvidence}\` |
+| Report path | \`${artifactDirectoryForEvidence}/report.md\` |
+| Trace path | \`${artifactDirectoryForEvidence}/trace.json\` |
+| Mode | \`${state.context.dryRun ? "dry-run" : "write"}\` |
+| Status | \`${runStatusForEvidence}\` |
+| Failure category | \`${failureCategoryForEvidence}\` |
+| Readiness | \`${readinessStatusForEvidence}\` |
+| Validation | \`${validationStateForEvidence}\` |
+| Validation source | \`${validationSourceForEvidence}\` |
+| Provider calls | \`${providerCallsForEvidence}\` |
+| Trace warnings/errors | \`${warningEventsForEvidence}/${errorEventsForEvidence}\` |
+| Selected files | \`${selectedFileCountForEvidence}\` |
+| Planned files/chunks | \`${plannedFileCountForEvidence}/${patchChunkCountForEvidence}\` |
+| Rejected patch chunks | \`${rejectedPatchCountForEvidence}\` |
+| Write attempted/created/skipped/rejected | \`${writeAttemptCountForEvidence}/${writeCreatedCountForEvidence}/${writeSkippedCountForEvidence}/${writeRejectedCountForEvidence}\` |
+| Duration | \`${durationMs}ms\` |
+| Tokens | \`${tokenUsage.total}\` |
+
+**Primary outcome:** ${primaryOutcomeForEvidence}
+
+**Next action:** ${nextActionForEvidence}
+${evidenceFailureSummary}
+### Artifact Links
+
+- GitHub artifact name: \`${artifactNameForEvidence}\`
+- Artifact directory: \`${artifactDirectoryForEvidence}\`
+- Run artifact: \`${artifactDirectoryForEvidence}/run.json\`
+- Trace artifact: \`${artifactDirectoryForEvidence}/trace.json\`
+- Selected files artifact: \`${artifactDirectoryForEvidence}/selected-files.json\`
+- Patch plan artifact: \`${artifactDirectoryForEvidence}/patch-plan.json\`
+- Applied files artifact: \`${artifactDirectoryForEvidence}/applied-files.json\`
+- Human report: \`${artifactDirectoryForEvidence}/report.md\`
+`;
 
     const traceTimeline = ledger
       ? ledger
@@ -2638,20 +2948,23 @@ ${readiness.warnings.length > 0 ? `**Warnings:**\n${readiness.warnings.map((warn
 > **Status:** ${validationSuccess ? "✅ SUCCESS" : "❌ FAILED"}
 > **Duration:** ${durationMs}ms
 > **Tokens Used:** ${tokenUsage.total} (in: ${tokenUsage.input}, out: ${tokenUsage.output})
+> **Validation Retry Attempts:** ${state.validationRetryAttempt ?? 0} / ${state.context.validationMaxRetries ?? 0}
+
+${evidenceSummary}
 
 ---
 
 ## 📋 Task Summary
 
-**Task:** ${state.query}
+**Task:** ${redactReportText(state.query)}
 
-${state.scopeAnalysisResult ? `**Scope Rationale:** ${state.scopeAnalysisResult.rationale}` : ""}
+${state.scopeAnalysisResult ? `**Scope Rationale:** ${redactReportText(state.scopeAnalysisResult.rationale)}` : ""}
 
 ${readinessSection}
 
 ---
 
-${state.error ? `## Error\n\n\`\`\`\n${state.error}\n\`\`\`\n\n---\n\n` : ""}
+${state.error ? `## Error\n\n\`\`\`\n${redactReportText(state.error)}\n\`\`\`\n\n---\n\n` : ""}
 
 ${contextSection}
 
@@ -2676,7 +2989,7 @@ ${
   scopeRejections.length > 0
     ? `### Rejected/un-grounded scope proposals
 
-${scopeRejections.map((entry) => `- ${entry}`).join("\n")}`
+${scopeRejections.map((entry) => `- ${redactReportText(entry)}`).join("\n")}`
     : ""
 }
 
@@ -2687,7 +3000,7 @@ ${scopeRejections.map((entry) => `- ${entry}`).join("\n")}`
 ${
   state.fileSelectionResult && state.fileSelectionResult.selectedFiles.length > 0
     ? state.fileSelectionResult.selectedFiles
-        .map((f) => `- \`${f.path}\` — ${f.reason}`)
+        .map((f) => `- \`${f.path}\` — ${redactReportText(f.reason)}`)
         .join("\n")
     : "_No files selected._"
 }
@@ -2698,13 +3011,13 @@ ${
 
 ${
   state.patchPlan
-    ? `**Rationale:** ${state.patchPlan.rationale}
+    ? `**Rationale:** ${redactReportText(state.patchPlan.rationale)}
 
 Patch plans are metadata-only in the current MVP. They describe intended file-level work and do not include code diffs or replacement content.
 
 | # | Type | File | Description |
 |---|------|------|-------------|
-${state.patchPlan.chunks.map((c, i) => `| ${i + 1} | \`${c.type}\` | \`${c.file}\` | ${c.description} |`).join("\n")}
+${state.patchPlan.chunks.map((c, i) => `| ${i + 1} | \`${c.type}\` | \`${c.file}\` | ${redactReportText(c.description)} |`).join("\n")}
 
 **Applied:** ${patchApplied ? "✅ Yes" : "⏭️ No (dry-run or no chunks)"}`
     : "_No patch plan generated._"
@@ -2724,17 +3037,17 @@ Created files:
 ${writeResult.created.map((file) => `- \`${file}\``).join("\n") || "_None_"}
 
 Skipped files:
-${writeResult.skipped.map((item) => `- \`${item.file}\` (${item.reason})`).join("\n") || "_None_"}
+${writeResult.skipped.map((item) => `- \`${item.file}\` (${redactReportText(item.reason)})`).join("\n") || "_None_"}
 
 Rejected files:
-${writeResult.rejected.map((item) => `- \`${item.file}\` (${item.reason})`).join("\n") || "_None_"}`
+${writeResult.rejected.map((item) => `- \`${item.file}\` (${redactReportText(item.reason)})`).join("\n") || "_None_"}`
 }
 
 ${
   patchRejections.length > 0
     ? `### Rejected/un-grounded patch chunks
 
-${patchRejections.map((entry) => `- ${entry}`).join("\n")}`
+${patchRejections.map((entry) => `- ${redactReportText(entry)}`).join("\n")}`
     : ""
 }
 
@@ -2758,7 +3071,7 @@ ${traceTimeline}
 
 ## ⚠️ Risk Notes
 
-${riskNotes.length > 0 ? riskNotes.map((n) => `- ${n}`).join("\n") : "_No risk notes._"}
+${riskNotes.length > 0 ? riskNotes.map((n) => `- ${redactReportText(n)}`).join("\n") : "_No risk notes._"}
 
 ---
 
@@ -2766,7 +3079,7 @@ ${riskNotes.length > 0 ? riskNotes.map((n) => `- ${n}`).join("\n") : "_No risk n
 
 ${
   state.error
-        ? `1. Review the error: \`${state.error}\`\n2. Fix the underlying issue and re-run.`
+        ? `1. Review the error: \`${redactReportText(state.error)}\`\n2. Fix the underlying issue and re-run.`
         : validationSuccess
           ? patchApplied
             ? "1. Review the applied patch in the run artifacts.\n2. Run your full test suite.\n3. Open a pull request if satisfied."
@@ -2781,7 +3094,7 @@ _Generated by [Openpawl](https://github.com/codepawl/codepawl) — server-side c
     await fs.writeFile(path.join(runDir, "report.md"), reportMd, "utf-8");
     await fs.writeFile(
       path.join(runDir, "run.json"),
-      JSON.stringify(reportResult, null, 2),
+      JSON.stringify(validatedRunArtifact, null, 2),
       "utf-8"
     );
 

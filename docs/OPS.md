@@ -13,6 +13,7 @@ Required env vars (see `.env.example` for the full list):
 - `VITE_CLERK_PUBLISHABLE_KEY` for Clerk auth in the web app
 - `VITE_TURNSTILE_SITE_KEY` for the contact/newsletter forms
 - `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` for analytics
+- `GITHUB_MARKETPLACE_WEBHOOK_SECRET` for the GitHub Marketplace webhook at `https://codepawl.com/api/github/marketplace`
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for the API
 - `RESEND_API_KEY` in test mode (sends to a single sink email)
 - `TURNSTILE_SECRET_KEY` for the always-pass dev keys provided by Cloudflare
@@ -56,11 +57,18 @@ Never commit `.env`, `.env.local`, or any file containing real keys. `.env.examp
 ### Web (apps/web)
 
 - **Trigger**: push to `main` (production), push to any other branch (preview)
-- **Build command**: `bun install && bun --filter @codepawl/web build`
+- **Build command**: `bun install --frozen-lockfile && bun run build:cf`
+- **Package build command**: `bun run --filter @codepawl/web build:cf`
 - **Output**: `apps/web/dist/client/` and `apps/web/dist/server/server.mjs` for local preview; Cloudflare deploys from `wrangler.jsonc` and the TanStack Start server entry
 - **Production deploy**: `cd apps/web && bun run deploy` (promotes to live)
 - **Non-production deploy**: `cd apps/web && npx wrangler versions upload` (preview URL only, no traffic shift)
 - **Preview**: `cd apps/web && bun run preview`
+- **GitHub Marketplace webhook secret**: `cd apps/web && wrangler secret put GITHUB_MARKETPLACE_WEBHOOK_SECRET`
+
+#### GitHub Marketplace Webhook Verification Log
+
+- `2026-06-11T07:31:03Z`: Deployed `codepawl` Worker version `62f4439b-9bbf-440a-9a9d-e88a72c3b34b` from commit `73de9f3`. `GET https://codepawl.com/api/github/marketplace` returned `405` with `Allow: POST`, confirming the route is live. GitHub Marketplace test delivery is still pending because Cloudflare reported no configured Worker secrets; set `GITHUB_MARKETPLACE_WEBHOOK_SECRET` in Cloudflare and use the same secret in the GitHub Marketplace listing before redelivery. No GitHub delivery ID is available yet.
+- `2026-06-11T07:42:54Z`: Final manual webhook verification completed for `https://codepawl.com/api/github/marketplace` with content type `application/json`. Cloudflare Worker secret `GITHUB_MARKETPLACE_WEBHOOK_SECRET` exists. Valid signed `marketplace_purchase` `purchased` POST returned `200` with `{"status":"ok","event":"marketplace_purchase","action":"purchased"}`. Invalid signature returned `401` with `invalid_signature`. GET returned `405` with `Allow: POST`. GitHub Marketplace Test Delivery status was not separately recorded in this repo; no delivery payload, signature, or secret was committed.
 
 ### API (apps/api)
 

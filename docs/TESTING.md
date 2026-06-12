@@ -6,7 +6,11 @@
 
 **Integration tests** cover the FastAPI HTTP layer end-to-end against a test Supabase project. Every endpoint in `docs/API.md` has at least one happy-path and one failure-path test.
 
-**E2E tests** cover the critical user flows that matter for revenue or trust: newsletter signup, contact form submission, product page render with stats. Use Playwright against a local dev environment.
+**E2E tests** cover fast web smoke checks for the homepage, Marketplace-critical
+Openpawl pages, legal/status pages, and Cloud Evidence Hub local-preview copy.
+Use Playwright against local preview or production before deploys. Do not make
+Playwright a blocker for every tiny local edit unless the change affects routing,
+navigation, public copy, hydration, or deploy readiness.
 
 **Type checking** is enforced and runs in CI. Mypy strict on Python. TS `strict: true` plus `noUncheckedIndexedAccess: true`. Failing types block merge.
 
@@ -14,17 +18,56 @@
 
 - Python: `pytest` plus `pytest-asyncio` for async tests, `httpx` for FastAPI client
 - TypeScript: `vitest` for unit, `@testing-library/react` for component tests
-- E2E: `@playwright/test`
+- E2E: `@playwright/test` with Chromium only by default
+
+## Playwright smoke
+
+Install the repo-local browser once:
+
+```bash
+bunx playwright install chromium
+```
+
+If browser launch reports missing Linux system dependencies, try the dependency
+installer where permitted:
+
+```bash
+bunx playwright install --with-deps chromium
+```
+
+If OS dependency installation is blocked, use an already installed Chrome/Chromium
+channel for fallback while documenting the blocker. The current local fallback
+uses the Chrome channel when `/usr/bin/google-chrome` or
+`/usr/bin/google-chrome-stable` is available, because Playwright's managed
+Chromium package does not currently support every Linux distribution.
+
+Run local smoke against a built preview server managed by Playwright:
+
+```bash
+bun run test:e2e
+```
+
+Run production smoke:
+
+```bash
+PLAYWRIGHT_BASE_URL=https://codepawl.com bun run test:e2e
+```
+
+Convenience scripts:
+
+```bash
+bun run test:e2e:prod
+bun run test:e2e:headed
+bun run test:e2e:ui
+```
 
 ## Coverage targets
 
 - Unit: no hard percentage target. Every service module must have tests for its public functions. Internal helpers can be tested transitively.
 - Integration: every endpoint in `docs/API.md` has happy + at least one failure path tested.
-- E2E: the following flows must have green Playwright tests before each deploy:
-  - Newsletter signup including confirm link (uses Resend test mode)
-  - Contact form submission
-  - Landing page loads with hero cycler visible
-  - Product detail page loads with stats badge
+- E2E: the fast Playwright route smoke should be green before deploys that touch
+  web routes, navigation, Cloud Evidence Hub copy, legal/status pages, or
+  public product positioning.
 
 ## Definition of done
 

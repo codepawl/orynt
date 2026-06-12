@@ -20,24 +20,24 @@ const clerkAppearance = {
     colorNeutral: "#3a3935",
     colorBorder: "#141414",
     colorRing: "#8f4d36",
-    borderRadius: "0",
+    borderRadius: "10px",
     fontFamily: "var(--font-body)",
     fontFamilyButtons: "var(--font-body)",
   },
   elements: {
-    cardBox: "border-2 border-ink-4 shadow-[8px_8px_0_var(--ink-4)]",
-    card: "bg-ink-1 text-fg-1",
+    cardBox: "cp-card border-2 border-ink-4 shadow-[8px_8px_0_var(--ink-4)]",
+    card: "cp-card bg-ink-1 text-fg-1",
     headerTitle: "font-display text-fg-1",
     headerSubtitle: "text-fg-3",
     socialButtonsBlockButton:
       "cp-hover-contained border border-ink-4 bg-ink-0 text-fg-1 hover:bg-ink-2",
     formFieldInput:
-      "border-2 border-ink-4 bg-ink-0 text-fg-1 focus:shadow-[0_0_0_3px_rgba(143,77,54,0.22)]",
+      "cp-control border-2 border-ink-4 bg-ink-0 text-fg-1 focus:shadow-[0_0_0_3px_rgba(143,77,54,0.22)]",
     formButtonPrimary:
       "cp-hover-contained bg-ratchet text-ink-0 hover:bg-ratchet-hot hover:text-ink-0",
     footerActionLink: "text-ratchet hover:text-ratchet-hot",
     userButtonPopoverCard:
-      "border-2 border-ink-4 bg-ink-1 text-fg-1 shadow-[8px_8px_0_var(--ink-4)]",
+      "cp-card border-2 border-ink-4 bg-ink-1 text-fg-1 shadow-[8px_8px_0_var(--ink-4)]",
     userButtonPopoverActionButton:
       "cp-hover-contained text-fg-1 hover:bg-ink-2 hover:text-ratchet",
     userButtonPopoverActionButtonText: "text-fg-1",

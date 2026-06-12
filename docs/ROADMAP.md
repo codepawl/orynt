@@ -2,21 +2,37 @@
 
 ## Openpawl Release Roadmap
 
+Openpawl runtime development now belongs in the public
+`codepawl/openpawl@v0.5.3` release line and later public releases. The private
+`packages/core`, `packages/cli`, and `packages/shared` directories are frozen
+compatibility copies until package-removal audit work proves they can be
+deleted safely.
+
 ### Release history snapshot
 
 - `v0.1.0-alpha.1`: Mock-first monorepo foundation, local dry-run, metadata-only patch plans, and PR workflow verification without production write mode.
 - `v0.1.0-alpha.2`: Experimental OpenAI-compatible provider, structured-output retry, safer diagnostics, and GitHub workflow hardening.
 - `v0.1.0-alpha.3`: `json_schema` strict mode, context compaction with budgets, grounding/rejection of provider paths, dry-run scope fallback for ungrounded proposals, and safe write-mode v0 guardrails.
 - `v0.1.0-alpha.9`: first external installability cut with repo-root config, reusable workflow template, install docs, and safer write-mode defaults.
-- `v0.1.0-alpha.10`: maintainer mention UX with exact `@openpawl` commands, dry-run-only mention triggers, direct CLI workflow invocation that bypasses the root Turbo script, and live issue/PR verification on GitHub Actions runs `27208458149`, `27208687623`, `27208690487`, and `27208692054`.
+  - `v0.1.0-alpha.10`: maintainer mention UX with exact `@openpawl` commands, dry-run-only mention triggers, direct public Openpawl CLI workflow invocation that bypasses the target repo root Turbo script, and live issue/PR verification on GitHub Actions runs `27208458149`, `27208687623`, `27208690487`, and `27208692054`.
 - `v0.1.0-beta.1`: approval write mode with bot-branch PR creation, safe create-chunk write policy, and a deterministic patch quality harness.
 - `v0.2.0`: patch-quality reliability layer released. Harness expanded to 50 fixtures, with reliability metrics, failure taxonomy, and common add-tests safe-generation coverage.
+- `v0.2.1`: post-release external installability patch. Fixed workflows to run the Openpawl CLI from a dynamically checked out `.openpawl-src` repository to resolve dependency-resolution failures in target repositories.
+- `v0.2.2`: trigger command parity and workflow dispatch ergonomics patch. Added support for `/openpawl plan` and `/openpawl fix failing tests` slash dry-run commands, enabled manual `workflow_dispatch` trigger on the reusable workflow, and aligned trigger input schemas.
+- `v0.3.0`: repository scanning reliability with `.gitignore` / `.openpawl-src` awareness and optional validation retry-loop.
+- `v0.4.0`: Trace/Evidence Layer released with schema-versioned machine-readable artifacts and cross-artifact consistency checks.
+- `v0.5.0`: Evidence UX Layer released with report/comment Evidence Summary, Failure Summary, and GitHub Actions artifact context while preserving schema v1 artifacts.
+- `v0.5.1`: post-release reproducibility and GitHub Actions warning patch for v0.5.0.
+- `v0.5.2`: Marketplace positioning and Action metadata patch for the reviewable agent work message.
+- `v0.5.3`: Action evidence bundle patch adding `openpawl-evidence-bundle.json` for local CodePawl Cloud Evidence preview while preserving schema v1 artifacts.
 
 ### Maturity plan
 
 - **Alpha:** CLI + dry-run + trace + CI verified; real-provider runs are experimental.
-- **Beta (current):** v0.2.0 release; safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
+- **Beta (current):** v0.5.3 release; safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
 - **v0.2 Reliability (released):** 50-fixture deterministic patch-quality regression harness and failure-taxonomy coverage complete; live GitHub dry-run smoke pass achieved in `27273286439`.
+- **v0.4 Trace/Evidence (released):** schema-backed JSON artifact contracts for run, trace, patch-plan, selected-files, applied-files, and eval metrics. Markdown reports remain human-readable.
+- **v0.5 Evidence UX (released):** present existing schema v1 evidence more clearly in `report.md` and GitHub issue/PR comments without changing autonomous behavior or artifact JSON contracts.
 - **RC:** validate on multiple real repositories, publish provider compatibility matrix, and stabilize failure/retry behavior.
 - **0.1.0 stable:** safe write-mode and release packaging readiness for external users.
 
@@ -46,7 +62,7 @@
 4. Update docs and release notes:
    - README and install docs list `/openpawl apply` and `openpawl-approved`
    - external install docs describe the new `contents: write` permission for approval writes
-   - preserve direct `@codepawl/cli` workflow invocation
+   - preserve direct public Openpawl CLI workflow invocation
 
 **Validation commands:**
 
@@ -127,7 +143,7 @@ Read these before starting:
 ## Phase 2: Design system and fonts
 
 <goal>
-Port the design tokens and three variable fonts from the provided template into `apps/web`. Tailwind v4 `@theme` generates utilities matching the tokens. Sharp corners enforced globally. Dark mode default with light-mode opt-in via `next-themes`.
+Port the design tokens and three variable fonts from the provided template into `apps/web`. Tailwind v4 `@theme` generates utilities matching the tokens. Original phase guidance enforced sharp corners globally; current radius guidance is rounded-industrial and documented in `docs/UI.md` and `.agents/design/CODEPAWL_DESIGN_SYSTEM.md`. Dark mode default with light-mode opt-in via `next-themes`.
 </goal>
 
 <context>
@@ -142,8 +158,8 @@ Read these before starting:
 - Copy the 6 TTF files (Fraunces, Fraunces-Italic, InterTight, InterTight-Italic, JetBrainsMono, JetBrainsMono-Italic) into `apps/web/public/fonts/`
 - Create `apps/web/lib/fonts.ts` declaring three `localFont` instances with `variable` set to `--font-display`, `--font-body`, `--font-mono`. Use `display: 'swap'`
 - Create `apps/web/styles/design-tokens.css` porting the `:root` block from `colors_and_type.css` (all ink, fg, ratchet, blueprint, semantic, spacing, type-scale, motion, layout tokens)
-- Create `apps/web/app/globals.css` that imports Tailwind, imports design tokens, defines an `@theme` block mapping color, font, spacing, and radius tokens so Tailwind utilities (`bg-ink-1`, `text-fg-2`, `font-display`, `rounded-md` (which resolves to 0), etc.) generate correctly
-- Override all radius utilities to resolve to 0 except `rounded-full` (which keeps pill behavior)
+- Create `apps/web/app/globals.css` that imports Tailwind, imports design tokens, defines an `@theme` block mapping color, font, spacing, and radius tokens so Tailwind utilities (`bg-ink-1`, `text-fg-2`, `font-display`, `rounded-md`, etc.) generate correctly
+- Radius guidance superseded by the rounded-industrial system: interactive and content surfaces use `--cp-radius-*`; structural frames stay mostly sharp.
 - Apply the three font variables to `<html>` in `apps/web/app/layout.tsx`
 - Install `next-themes`, wrap the app in `ThemeProvider` with `attribute="class"` and `defaultTheme="dark"`
 - Verify variable font axes work: Fraunces uses `opsz` and `SOFT` per the template's `font-variation-settings`
@@ -153,7 +169,7 @@ Read these before starting:
 <verification>
 - Run: `bun --filter @codepawl/web build` (zero warnings about font loading)
 - Manual check: open localhost, all three fonts render correctly. Inspect computed `font-family` on a `.font-display` element
-- Manual check: `rounded-lg`, `rounded-xl`, `rounded-md` all visually have 0 radius. `rounded-full` produces a pill
+- Manual check: `rounded-lg`, `rounded-xl`, `rounded-md`, and `rounded-full` map to the shared rounded-industrial radius scale
 - Manual check: light/dark toggle switches background and foreground colors smoothly
 - Manual check: variable font axes work, Fraunces italic on the test heading renders with `opsz` 144 and `SOFT` 50
 </verification>
@@ -162,7 +178,7 @@ Read these before starting:
 - [x] All fonts load locally with zero network calls to Google Fonts
 - [x] Tailwind utilities `bg-ink-0` through `bg-ink-6`, `text-fg-1` through `text-fg-5`, `bg-ratchet`, `border-ratchet` all generate
 - [x] Dark mode default, light mode toggle works
-- [x] Sharp corners enforced globally
+- [x] Original sharp-corner pass completed; current system uses rounded-industrial surface radii
 - [x] CSS file size budget: tokens + Tailwind output under 50KB gzipped before any component code
 </done_when>
 

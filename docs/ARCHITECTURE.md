@@ -80,28 +80,43 @@ Internal layout:
 - `app/jobs/` APScheduler job definitions: `sync_github_stats.py`.
 - `migrations/` Supabase SQL migrations, timestamped.
 
-### packages/core (TypeScript)
+### packages/core (TypeScript, frozen Openpawl duplicate)
 
-- **Responsibility**: Implement the Openpawl core agent framework, including LangGraph agent orchestration (`StateGraph`), the auditing and token-tracking trace ledger (`TraceLedger`), and state memory interfaces (`MemoryManager`).
+- **Responsibility**: Frozen private duplicate of the Openpawl core agent framework.
 - **Path**: `packages/core/`
 - **Depends on**: `@codepawl/shared`
-- **Depended on by**: `@codepawl/cli`, `apps/web` (future integration)
+- **Depended on by**: private compatibility scripts only
+- **Source of truth**: `codepawl/openpawl@v0.5.3` and later public Openpawl releases
 
-### packages/cli (TypeScript)
+Runtime behavior changes must be made in the public Openpawl repository first,
+then consumed here through a public Action release. Do not delete this package
+until workspace scripts, lockfile entries, and workflow references no longer
+require it.
 
-- **Responsibility**: Expose CLI tools to execute, test, and debug coding agents.
+### packages/cli (TypeScript, frozen Openpawl duplicate)
+
+- **Responsibility**: Frozen private duplicate of the Openpawl CLI tools.
 - **Path**: `packages/cli/`
 - **Depends on**: `@codepawl/core`, `@codepawl/shared`
-- **Depended on by**: Local developer terminal runs
+- **Depended on by**: private compatibility scripts only
+- **Source of truth**: `codepawl/openpawl@v0.5.3` and later public Openpawl releases
 
-### packages/shared (TypeScript)
+Private workflows now run the public release from `.openpawl-src` instead of
+this local CLI package.
 
-- **Responsibility**: Shared types and JSON schemas used by both web and API. Generated from Pydantic models via `datamodel-code-generator`.
+### packages/shared (TypeScript, transitional private package)
+
+- **Responsibility**: Shared website/API types plus frozen duplicate Openpawl shared types.
 - **Path**: `packages/shared/`
 - **Depends on**: nothing
-- **Depended on by**: `apps/web`, `@codepawl/core`, `@codepawl/cli`
+- **Depended on by**: `apps/web`, frozen `@codepawl/core`, frozen `@codepawl/cli`
+- **Openpawl source of truth**: `codepawl/openpawl@v0.5.3` and later public Openpawl releases
 
 Generation flow: Pydantic models are source of truth, JSON Schema is emitted from FastAPI's OpenAPI doc, TypeScript types are generated into `packages/shared/src/generated/`. Hand-written types live in `packages/shared/src/types/`.
+
+`packages/shared` is not safe to delete yet because `apps/web` still imports
+`@codepawl/shared`. Replace the website/API type dependency with a private
+website-specific package before removing this duplicate.
 
 ## Sequence diagrams
 

@@ -14,6 +14,7 @@
     "dev:all": "turbo run dev",
     "dev:cli": "turbo run dev --filter=@codepawl/cli",
     "build": "turbo run build",
+    "build:cf": "bun run --filter @codepawl/web build:cf",
     "start": "turbo run start --filter=@codepawl/web",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
@@ -29,6 +30,9 @@
     "test:e2e": "cd apps/web && bunx playwright test --reporter=line",
     "test:e2e:attached": "cd apps/web && PLAYWRIGHT_SKIP_WEBSERVER=1 bunx playwright test --reporter=line",
     "test:e2e:web": "cd apps/web && CI=true bunx playwright test --reporter=line",
+    "test:e2e:prod": "cd apps/web && PLAYWRIGHT_BASE_URL=https://codepawl.com bunx playwright test --reporter=line",
+    "test:e2e:headed": "cd apps/web && bunx playwright test --headed --reporter=line",
+    "test:e2e:ui": "cd apps/web && bunx playwright test --ui",
     "deploy": "cd apps/web && bun run deploy",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --port 8000",
     "test:api": "cd apps/api && uv run pytest",
@@ -39,6 +43,7 @@
     "postcss": "8.5.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "turbo": "^2.9.16"
   }
 }

@@ -111,9 +111,9 @@
     "products": [
       {
         "id": "openpawl",
-        "name": "OpenPawl",
+        "name": "Openpawl",
         "slug": "openpawl",
-        "tagline": "A team of agents in your terminal.",
+        "tagline": "Open coordination runtime for coding agents.",
         "status": "beta",
         "github_repo": "codepawl/openpawl",
         "display_order": 1

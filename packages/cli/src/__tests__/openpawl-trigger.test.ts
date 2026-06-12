@@ -80,9 +80,20 @@ describe("Openpawl comment command parser", () => {
     expect(parsed).toBeNull();
   });
 
-  it("does not parse unsupported slash commands", () => {
-    expect(parseOpenPawlCommand("/openpawl plan")).toBeNull();
-    expect(parseOpenPawlCommand("/openpawl fix failing tests")).toBeNull();
+  it("parses slash commands for plan and fix failing tests", () => {
+    const planParsed = parseOpenPawlCommand("/openpawl plan");
+    expect(planParsed).not.toBeNull();
+    expect(planParsed).toMatchObject({
+      command: "plan",
+      prefix: "/",
+    });
+
+    const fixParsed = parseOpenPawlCommand("/openpawl fix failing tests");
+    expect(fixParsed).not.toBeNull();
+    expect(fixParsed).toMatchObject({
+      command: "fix failing tests",
+      prefix: "/",
+    });
   });
 
   it("parses slash-only apply command", () => {
@@ -163,6 +174,10 @@ describe("Openpawl trigger resolver with local GitHub event fixtures", () => {
     ["@openpawl plan", OPENPAWL_PLAN_TASK, false],
     ["@openpawl add tests", OPENPAWL_ADD_TESTS_TASK, false],
     ["@openpawl fix failing tests", OPENPAWL_FIX_FAILING_TESTS_TASK, true],
+    ["/openpawl review", OPENPAWL_REVIEW_TASK, true],
+    ["/openpawl plan", OPENPAWL_PLAN_TASK, false],
+    ["/openpawl add tests", OPENPAWL_ADD_TESTS_TASK, false],
+    ["/openpawl fix failing tests", OPENPAWL_FIX_FAILING_TESTS_TASK, true],
   ])("resolves %s as a dry-run task", (body, expectedTask, isPullRequest) => {
     const resolution = resolveOpenPawlTriggerFromEvent(
       {

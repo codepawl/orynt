@@ -30,8 +30,8 @@ const JOURNEY_STEPS = [
     problem:
       "Multi-agent work becomes hard to trust when tasks, shared state, and recovery ownership are spread across scripts and chat logs.",
     response:
-      "OpenPawl provides a runtime layer for coordinated AI agents with clearer state, task boundaries, and recovery hooks.",
-    layer: "OpenPawl / coordinated agent runtime",
+      "Openpawl turns agent tasks into reviewable plans, validations, guarded changes, traceable artifacts, and explicit maintainer approval before beta write mode.",
+    layer: "Openpawl / coordination runtime",
   },
   {
     id: "cost",

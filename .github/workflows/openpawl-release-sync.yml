@@ -1,0 +1,115 @@
+name: Openpawl Release Sync
+
+on:
+  repository_dispatch:
+    types: [openpawl_release_published]
+
+concurrency:
+  group: openpawl-release-sync-${{ github.event.client_payload.tag || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  sync:
+    name: Validate and open release sync PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Write dispatch payload
+        env:
+          OPENPAWL_RELEASE_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        run: |
+          node -e 'require("node:fs").writeFileSync(`${process.env.RUNNER_TEMP}/openpawl-release-dispatch.json`, process.env.OPENPAWL_RELEASE_PAYLOAD)'
+
+      - name: Validate payload and sync release metadata
+        run: bun scripts/sync-openpawl-release.ts --payload "$RUNNER_TEMP/openpawl-release-dispatch.json"
+
+      - name: Verify sync output
+        run: bun scripts/sync-openpawl-release.ts --payload "$RUNNER_TEMP/openpawl-release-dispatch.json" --check
+
+      - name: Typecheck web
+        run: bun --filter @codepawl/web typecheck
+
+      - name: Test web
+        run: bun --filter @codepawl/web test
+
+      - name: Build web
+        run: bun --filter @codepawl/web build
+
+      - name: Run e2e
+        run: bun run test:e2e
+
+      - name: Smoke critical routes and Marketplace webhook
+        run: |
+          cd apps/web
+          bun run preview --host 127.0.0.1 --port 4181 &
+          preview_pid=$!
+          trap 'kill "$preview_pid"' EXIT
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS http://127.0.0.1:4181/ >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          for route in / /openpawl /openpawl/install /openpawl/docs /openpawl/support /cloud/evidence /privacy /terms /security; do
+            curl -fsS "http://127.0.0.1:4181${route}" >/dev/null
+          done
+          headers="$(curl -sS -D - -o /dev/null -w 'HTTP_STATUS:%{http_code}' http://127.0.0.1:4181/api/github/marketplace)"
+          printf '%s\n' "$headers" | grep -q "HTTP_STATUS:405"
+          printf '%s\n' "$headers" | grep -qi "^allow: POST"
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Compute PR metadata
+        id: pr
+        run: |
+          tag="$(node -e 'const p=require(`${process.env.RUNNER_TEMP}/openpawl-release-dispatch.json`); process.stdout.write(p.tag)')"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "branch=automation/openpawl-release-$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: ${{ steps.pr.outputs.branch }}
+          title: "chore(openpawl): sync ${{ steps.pr.outputs.tag }} release metadata"
+          commit-message: "chore(openpawl): sync ${{ steps.pr.outputs.tag }} release metadata"
+          labels: |
+            automation
+            openpawl
+          body: |
+            Sync CodePawl website/docs release metadata from the public Openpawl release dispatch.
+
+            Release: ${{ github.event.client_payload.releaseUrl }}
+            Source: ${{ github.event.client_payload.source }}
+            Tag: ${{ steps.pr.outputs.tag }}
+            Cloud Evidence: `${{ github.event.client_payload.capabilities.cloudEvidence }}`
+
+            Validation performed by this workflow:
+            - `bun install --frozen-lockfile`
+            - `bun scripts/sync-openpawl-release.ts --check`
+            - `bun --filter @codepawl/web typecheck`
+            - `bun --filter @codepawl/web test`
+            - `bun --filter @codepawl/web build`
+            - `bun run test:e2e`
+            - route smoke for Marketplace-critical pages
+            - webhook GET smoke expecting `405` with `Allow: POST`
+            - `git diff --check`
+
+            This workflow opens or updates a PR only. It does not auto-merge or deploy.

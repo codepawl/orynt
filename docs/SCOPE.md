@@ -4,7 +4,7 @@
 
 - **Marketing site shell.** Nav, footer, dark mode default, sticky header, sharp-corner design system.
 - **Landing page** with hero (auto-cycling 6-product showcase), formats section, features grid, SDK demo, pricing teaser, testimonials, final CTA.
-- **Six product pages** under `/products/[slug]` for OpenPawl, Featcat, HebbMem, TurboQuant, Cachepawl, KStudio. Each pulls live GitHub stats.
+- **Product and architecture pages** under `/products/[slug]`, led by Openpawl as the available coordination runtime and roadmap layers for future CodePawl surfaces. Public source links can show GitHub stats where relevant.
 - **Research page** at `/research` listing curated AI/ML papers and short notes. MDX-authored.
 - **Docs page** at `/docs` rendering MDX from internal product repos via GitHub API (deferred until phase 6).
 - **Blog** at `/blog/[slug]` MDX with custom components (code block, repo card, KaTeX, YouTube embed).

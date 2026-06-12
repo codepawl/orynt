@@ -7,7 +7,7 @@
 
 /* Tailwind v4 @theme block. Aliases raw design tokens onto the names that
  * Tailwind expects so utilities like bg-ink-0, text-fg-2, font-display,
- * rounded-md (forced to 0 per ADR-006) all generate correctly.
+ * and rounded-md all generate correctly.
  */
 @theme {
   /* Colors */
@@ -44,18 +44,19 @@
     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --font-sans: var(--font-body);
 
-  /* Sharp corners — every Tailwind radius utility resolves to 0 except
-   * rounded-full (which keeps Tailwind's default pill behavior at 1e5px).
+  /* Rounded-industrial radius scale. Structural layout stays mostly sharp;
+   * interactive and content surfaces use these shared radii.
    */
   --radius-none: 0;
-  --radius-xs: 0;
-  --radius-sm: 0;
-  --radius-md: 0;
-  --radius-lg: 0;
-  --radius-xl: 0;
-  --radius-2xl: 0;
-  --radius-3xl: 0;
-  --radius-4xl: 0;
+  --radius-xs: var(--cp-radius-sm);
+  --radius-sm: var(--cp-radius-sm);
+  --radius-md: var(--cp-radius-md);
+  --radius-lg: var(--cp-radius-lg);
+  --radius-xl: var(--cp-radius-xl);
+  --radius-2xl: var(--cp-radius-2xl);
+  --radius-3xl: var(--cp-radius-2xl);
+  --radius-4xl: var(--cp-radius-2xl);
+  --radius-full: var(--cp-radius-pill);
 }
 
 /* Body defaults port the template's html/body rules. */
@@ -105,7 +106,32 @@ body {
   box-shadow: 5px 5px 0 var(--ink-4);
 }
 
+.cp-card {
+  border-radius: var(--cp-radius-lg);
+}
+
+.cp-panel {
+  border-radius: var(--cp-radius-xl);
+}
+
+.cp-control {
+  border-radius: var(--cp-radius-md);
+}
+
+.cp-small-surface {
+  border-radius: var(--cp-radius-sm);
+}
+
+.cp-menu {
+  border-radius: var(--cp-radius-lg);
+}
+
+.cp-pill {
+  border-radius: var(--cp-radius-pill);
+}
+
 .cp-hover-lift {
+  border-radius: var(--cp-radius-lg);
   transform: translate3d(0, 0, 0);
   transition:
     transform 180ms linear,
@@ -133,6 +159,7 @@ body {
 }
 
 .cp-hover-frame {
+  border-radius: var(--cp-radius-lg);
   transition:
     box-shadow 180ms linear,
     border-color 180ms linear,
@@ -149,6 +176,7 @@ body {
 }
 
 .cp-hover-contained {
+  border-radius: var(--cp-radius-md);
   transform: translate3d(0, 0, 0);
   transition:
     transform 140ms linear,
@@ -171,6 +199,7 @@ body {
 }
 
 .cp-hover-button {
+  border-radius: var(--cp-radius-md);
   transform: translate3d(0, 0, 0);
   transition:
     transform 140ms linear,
@@ -257,6 +286,7 @@ body {
 }
 
 .tracepawl-new-badge {
+  border-radius: var(--cp-radius-sm);
   border: 1px solid var(--ratchet);
   background: color-mix(in srgb, var(--ratchet) 14%, transparent);
   color: var(--ratchet);
@@ -309,6 +339,7 @@ body {
 .product-badge-soon {
   display: inline-flex;
   align-items: center;
+  border-radius: var(--cp-radius-sm);
   gap: 0.35rem;
   border: 1px solid currentColor;
   font-family: var(--font-mono);
@@ -331,6 +362,7 @@ body {
 
 .product-pulse-dot {
   background: var(--ratchet);
+  border-radius: var(--cp-radius-pill);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--ratchet) 42%, transparent);
   display: inline-block;
   height: 0.45rem;
@@ -432,12 +464,14 @@ body {
   color: var(--fg-3);
 }
 .cp-code {
+  border-radius: var(--cp-radius-lg);
   font-family: var(--font-mono);
   font-size: var(--fs-code);
   background: var(--code-bg);
   color: var(--syn-fg);
 }
 .cp-inline-code {
+  border-radius: var(--cp-radius-sm);
   border: 1px solid var(--ink-4);
   background: var(--ink-1);
   color: var(--fg-1);
@@ -454,6 +488,7 @@ body {
   color: var(--ratchet);
 }
 .cp-button {
+  border-radius: var(--cp-radius-md);
   font-family: var(--font-body);
   font-size: 0.92rem;
   font-weight: var(--fw-semi);
@@ -614,11 +649,11 @@ em.cp-em {
 
 .cl-userButtonAvatarBox {
   border: 0;
-  border-radius: 9999px;
+  border-radius: var(--cp-radius-pill);
 }
 
 .cl-userButtonTrigger {
-  border-radius: 9999px;
+  border-radius: var(--cp-radius-pill);
 }
 
 /* Respect reduced motion globally per the accessibility bar in docs/UI.md. */

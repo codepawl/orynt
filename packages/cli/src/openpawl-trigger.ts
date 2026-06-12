@@ -204,9 +204,6 @@ export function parseOpenPawlCommand(commentBody: string): ParsedOpenPawlCommand
         sourceLine: line,
       };
     }
-    if (prefix === "/" && normalizedCommand !== "review" && normalizedCommand !== "add tests") {
-      continue;
-    }
     if (!task) {
       continue;
     }

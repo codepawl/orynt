@@ -49,6 +49,7 @@ export interface AgentContext {
   readonly contextMaxBytes?: number;
   readonly contextMaxChars?: number;
   readonly structuredOutputMode?: "json_schema" | "json_object";
+  readonly validationMaxRetries?: number;
 }
 
 export interface ContextPackBudget {
@@ -130,6 +131,7 @@ export interface AgentState {
   
   // Error state if any execution failed
   readonly error: string | null;
+  readonly validationRetryAttempt?: number;
 
   // Milestone 1 Node Results
   readonly repoScanResult?: RepoScanResult;
@@ -175,6 +177,7 @@ export interface RunOptions {
   readonly contextMaxBytes?: number;
   readonly contextMaxChars?: number;
   readonly structuredOutputMode?: "json_schema" | "json_object";
+  readonly validationMaxRetries?: number;
 }
 
 export interface RunResult {

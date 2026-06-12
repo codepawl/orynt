@@ -3,6 +3,14 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { runAgent } from "../runner";
+import {
+  AppliedFilesArtifactSchema,
+  PatchPlanArtifactSchema,
+  RunArtifactSchema,
+  RunArtifactSetSchema,
+  SelectedFilesArtifactSchema,
+  TraceArtifactSchema,
+} from "../state/evidence";
 
 // Path to the bundled mock fixture
 const FIXTURE_PATH = path.join(
@@ -28,6 +36,22 @@ async function expectRequiredArtifacts(runDir: string): Promise<void> {
     const stat = await fs.stat(path.join(runDir, file)).catch(() => null);
     expect(stat, `Expected artifact ${file} to exist`).not.toBeNull();
   }
+}
+
+async function expectSchemaValidArtifactSet(runDir: string): Promise<void> {
+  const run = RunArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")));
+  const trace = TraceArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "trace.json"), "utf-8")));
+  const patchPlan = PatchPlanArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "patch-plan.json"), "utf-8")));
+  const selectedFiles = SelectedFilesArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "selected-files.json"), "utf-8")));
+  const appliedFiles = AppliedFilesArtifactSchema.parse(JSON.parse(await fs.readFile(path.join(runDir, "applied-files.json"), "utf-8")));
+
+  expect(() => RunArtifactSetSchema.parse({
+    run,
+    trace,
+    patchPlan,
+    selectedFiles,
+    appliedFiles,
+  })).not.toThrow();
 }
 
 async function writeJsonFixture(filePath: string, payload: unknown): Promise<void> {
@@ -101,6 +125,7 @@ describe("runAgent — dry-run mode", () => {
 
     // All required artifact files must exist
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
   });
 
   it("writes artifacts to an explicit outDir when provided", async () => {
@@ -118,6 +143,9 @@ describe("runAgent — dry-run mode", () => {
     expect(result.tracePath).toBe(path.join(outDir, "trace.json"));
 
     await expectRequiredArtifacts(outDir);
+    const report = await fs.readFile(path.join(outDir, "report.md"), "utf-8");
+    expect(report).toContain(`- Artifact directory: \`${outDir}\``);
+    expect(report).toContain(`- Run artifact: \`${path.join(outDir, "run.json")}\``);
 
     const defaultRunDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     const defaultDirStat = await fs.stat(defaultRunDir).catch(() => null);
@@ -173,6 +201,12 @@ describe("runAgent — dry-run mode", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+    expect(report).toContain("## Evidence Summary");
+    expect(report).toContain("| schemaVersion | `1` |");
+    expect(report).toContain("| Failure category | `validation_failed` |");
+    expect(report).toContain("### Failure Summary");
+    expect(report).toContain("- Category: `validation_failed`");
   });
 
   it("succeeds when patch plan is empty in dry-run mode", async () => {
@@ -561,6 +595,43 @@ describe("runAgent — dry-run mode", () => {
     expect(report).toContain(result.runId);
     expect(report).toContain("Dry-run");
     expect(report).toContain(task);
+    expect(report).toContain("## Evidence Summary");
+    expect(report).toContain("| schemaVersion | `1` |");
+    expect(report).toContain("| Failure category | `none` |");
+    expect(report).toContain("### Artifact Links");
+    expect(report).toContain(`openpawl-artifacts-${result.runId}`);
+  });
+
+  it("report.md includes GitHub Actions evidence when provided by workflow env", async () => {
+    const previousUrl = process.env["OPENPAWL_GITHUB_ACTIONS_URL"];
+    process.env["OPENPAWL_GITHUB_ACTIONS_URL"] = "https://github.com/codepawl/codepawl/actions/runs/123";
+
+    try {
+      const result = await runAgent({
+        query: "review changes and suggest improvements",
+        workspaceDir: tmpDir,
+        dryRun: true,
+        testCommand: "echo ok",
+        mockFixturePath: FIXTURE_PATH,
+      });
+
+      const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
+      const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
+
+      expect(report).toContain(
+        "| GitHub Actions URL | https://github.com/codepawl/codepawl/actions/runs/123 |",
+      );
+      expect(report).toContain(`| Artifact name | \`openpawl-artifacts-${result.runId}\` |`);
+      expect(report).toContain(`| Artifact directory | \`${runDir}\` |`);
+      expect(report).toContain(`| Report path | \`${path.join(runDir, "report.md")}\` |`);
+      expect(report).toContain(`| Trace path | \`${path.join(runDir, "trace.json")}\` |`);
+    } finally {
+      if (previousUrl === undefined) {
+        delete process.env["OPENPAWL_GITHUB_ACTIONS_URL"];
+      } else {
+        process.env["OPENPAWL_GITHUB_ACTIONS_URL"] = previousUrl;
+      }
+    }
   });
 
   it("report.md includes a Context Pack section with compaction metadata", async () => {
@@ -761,11 +832,10 @@ describe("runAgent — readiness gate", () => {
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
 
-    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
-      readiness?: {
-        status: string;
-      };
-    };
+    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8"));
+    // Assert run.json conforms to the stable RunArtifactSchema
+    expect(() => RunArtifactSchema.parse(runArtifact)).not.toThrow();
+    await expectSchemaValidArtifactSet(runDir);
     expect(runArtifact.readiness?.status).toBe("ready");
   });
 
@@ -788,6 +858,10 @@ describe("runAgent — readiness gate", () => {
     expect(report).toContain("## 🚦 Readiness Gate");
     expect(report).toContain("**Status:** needs_clarification");
     expect(report).toContain("Readiness gate blocked execution because the task is under-specified.");
+    expect(report).toContain("## Evidence Summary");
+    expect(report).toContain("| Failure category | `readiness_blocked` |");
+    expect(report).toContain("| Provider calls | `0` |");
+    expect(report).toContain("### Failure Summary");
     await expectRequiredArtifacts(runDir);
   });
 
@@ -808,11 +882,10 @@ describe("runAgent — readiness gate", () => {
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
 
-    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
-      readiness?: {
-        status: string;
-      };
-    };
+    const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8"));
+    // Assert run.json conforms to the stable RunArtifactSchema
+    expect(() => RunArtifactSchema.parse(runArtifact)).not.toThrow();
+    await expectSchemaValidArtifactSet(runDir);
     expect(runArtifact.readiness?.status).toBe("unsupported");
   });
 
@@ -973,6 +1046,7 @@ describe("runAgent — readiness gate", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
 
     const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
       readiness?: {
@@ -1147,7 +1221,9 @@ describe("runAgent — write mode safety guardrails", () => {
     expect(result.state.writeResult?.created).toEqual(["packages/core/src/__tests__/trace-ledger.generated.test.ts"]);
     expect(result.state.writeResult?.skipped).toEqual([]);
     expect(result.state.writeResult?.rejected).toEqual([]);
-    expect(applied).toEqual({
+    expect(applied).toMatchObject({
+      schemaVersion: "1",
+      runId: result.runId,
       attempted: 1,
       created: ["packages/core/src/__tests__/trace-ledger.generated.test.ts"],
       skipped: [],
@@ -1202,6 +1278,7 @@ describe("runAgent — write mode safety guardrails", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
     const runArtifact = JSON.parse(await fs.readFile(path.join(runDir, "run.json"), "utf-8")) as {
       success: boolean;
       error: string | null;
@@ -1212,6 +1289,8 @@ describe("runAgent — write mode safety guardrails", () => {
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("**Overall:** Not run");
     expect(report).toContain("Not run");
+    expect(report).toContain("| Failure category | `write_policy_blocked` |");
+    expect(report).toContain("### Failure Summary");
     expect(report).toContain("Write mode failed before validation because no safe create chunks were available.");
     expect(report).not.toContain("Validation failed — review errors before merging.");
   });
@@ -1419,6 +1498,7 @@ describe("runAgent — write mode safety guardrails", () => {
     await expectRequiredArtifacts(runDir);
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("**Overall:** Not run");
+    expect(report).toContain("| Failure category | `write_policy_blocked` |");
     expect(report).toContain("Write mode failed before validation because no safe create chunks were available.");
   });
 
@@ -1539,9 +1619,12 @@ describe("runAgent — write mode safety guardrails", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
     const report = await fs.readFile(path.join(runDir, "report.md"), "utf-8");
     expect(report).toContain("Validation Result");
     expect(report).toContain("❌ FAILED");
+    expect(report).toContain("| Failure category | `validation_failed` |");
+    expect(report).toContain("### Failure Summary");
   });
 });
 
@@ -1731,6 +1814,7 @@ describe("runAgent — error handling", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
   });
 
   it("exports artifacts when provider JSON fails schema validation", async () => {
@@ -1771,6 +1855,7 @@ describe("runAgent — error handling", () => {
 
     const runDir = path.join(tmpDir, ".codepawl", "runs", result.runId);
     await expectRequiredArtifacts(runDir);
+    await expectSchemaValidArtifactSet(runDir);
 
     const traceRaw = await fs.readFile(path.join(runDir, "trace.json"), "utf-8");
     const trace = JSON.parse(traceRaw) as { events: Array<{ name: string; payload: unknown }> };
@@ -2068,6 +2153,9 @@ describe("runAgent — error handling", () => {
     expect(traceRaw).not.toContain(secret);
     expect(traceRaw).not.toContain("Return JSON object only");
     expect(traceRaw).toContain("sk-[REDACTED]");
+    const reportRaw = await fs.readFile(path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md"), "utf-8");
+    expect(reportRaw).not.toContain(secret);
+    expect(reportRaw).toContain("sk-[REDACTED]");
   });
 
   it("records provider_schema_repaired when patch_plan aliases are safely repaired", async () => {
@@ -2453,5 +2541,132 @@ describe("runAgent — error handling", () => {
     );
     expect(report).toContain("Rejected/un-grounded patch chunks");
     expect(report).toContain("tests/shell/run_trace_ledger_tests.sh");
+  });
+
+  it("executes the validation retry loop on failure, cleaning up intermediate files", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, ".gitignore"),
+      `
+validation-retry-fixture.json
+validate.js
+count.txt
+`,
+      "utf-8"
+    );
+
+    const retryFixturePath = path.join(tmpDir, "validation-retry-fixture.json");
+    
+    // We mock the LLM responses
+    const scopeResponse = {
+      rationale: "Propose test creation.",
+      affectedModules: ["packages/core/src"],
+      proposedFilesToModify: [],
+      proposedFilesToCreate: ["packages/core/src/__tests__/retry-test.test.ts"]
+    };
+    
+    const firstPatchResponse = {
+      rationale: "Initial patch attempt.",
+      chunks: [
+        {
+          type: "create",
+          file: "packages/core/src/__tests__/retry-test.test.ts",
+          description: "export const value = 'initial';"
+        }
+      ]
+    };
+    
+    const secondPatchResponse = {
+      rationale: "Fixed patch attempt.",
+      chunks: [
+        {
+          type: "create",
+          file: "packages/core/src/__tests__/retry-test.test.ts",
+          description: "export const value = 'fixed';"
+        }
+      ]
+    };
+
+    await fs.writeFile(
+      retryFixturePath,
+      JSON.stringify([
+        {
+          matchLastMessage: "Scope Context Pack",
+          response: {
+            content: JSON.stringify(scopeResponse),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 5 }
+          }
+        },
+        {
+          matchLastMessage: '"validationSuccess":null',
+          response: {
+            content: JSON.stringify(firstPatchResponse),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 5 }
+          }
+        },
+        {
+          matchLastMessage: '"validationSuccess":false',
+          response: {
+            content: JSON.stringify(secondPatchResponse),
+            finishReason: "stop",
+            usage: { inputTokens: 5, outputTokens: 5 }
+          }
+        }
+      ]),
+      "utf-8"
+    );
+
+    // Create the validate.js script that fails on first call, then passes on second call
+    const validateScriptPath = path.join(tmpDir, "validate.js");
+    const countFilePath = path.join(tmpDir, "count.txt");
+    await fs.writeFile(
+      validateScriptPath,
+      `
+      const fs = require('fs');
+      let count = 0;
+      if (fs.existsSync('${countFilePath.replace(/\\/g, "/")}' )) {
+        count = parseInt(fs.readFileSync('${countFilePath.replace(/\\/g, "/")}', 'utf8'), 10);
+      }
+      fs.writeFileSync('${countFilePath.replace(/\\/g, "/")}', (count + 1).toString(), 'utf8');
+      if (count === 0) {
+        process.exit(1);
+      }
+      process.exit(0);
+      `,
+      "utf-8"
+    );
+
+    // Run the agent with write mode and validationMaxRetries set to 2
+    const result = await runAgent({
+      query: "add unit tests",
+      workspaceDir: tmpDir,
+      dryRun: false,
+      validationMaxRetries: 2,
+      testCommand: `node ${validateScriptPath}`,
+      mockFixturePath: retryFixturePath,
+    });
+
+    expect(result.success, `Agent failed with error: ${result.error}. State error: ${result.state.error}. Steps: ${JSON.stringify(result.state.steps.map(s => ({ node: s.nodeName, action: s.action, output: s.output })))}`).toBe(true);
+    expect(result.error).toBeNull();
+    
+    // Check that retry occurred and retry attempt was recorded
+    expect(result.state.validationRetryAttempt).toBe(1);
+
+    // Check that count.txt contains 2 runs
+    const countVal = await fs.readFile(countFilePath, "utf-8");
+    expect(countVal.trim()).toBe("2");
+
+    // Check that report.md details are printed
+    const reportPath = path.join(tmpDir, ".codepawl", "runs", result.runId, "report.md");
+    const reportContent = await fs.readFile(reportPath, "utf-8");
+    expect(reportContent).toContain("Validation Retry Attempts:** 1 / 2");
+
+    // Check that created file exists and has the 'fixed' content
+    const createdFileContent = await fs.readFile(
+      path.join(tmpDir, "packages/core/src/__tests__/retry-test.test.ts"),
+      "utf-8"
+    );
+    expect(createdFileContent).toContain("fixed");
   });
 });

@@ -4,6 +4,109 @@ All notable changes for Openpawl.
 
 ## Openpawl Release History
 
+## [0.5.1] - 2026-06-11
+
+### Fixed
+
+- Restored clean-clone reproducibility by adding the missing Clerk UI module declaration used by the web app typecheck.
+- Removed the stale `openpawl-install-smoke` gitlink that caused GitHub Actions checkout cleanup warnings because no `.gitmodules` entry existed.
+- Updated GitHub workflows and install samples to current checkout/upload/comment action majors and removed the temporary forced Node runtime override.
+- Propagated the GitHub Actions run URL through the reusable workflow and sample workflow so report artifacts include the same evidence context as the in-repo workflow.
+- Renamed the Evidence Summary schema row to `schemaVersion` to match the JSON artifact contract wording.
+
+### Compatibility
+
+- Artifact JSON schemaVersion remains `"1"`.
+- Write safety gates, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, bounded retry behavior, and trace legacy compatibility are unchanged.
+
+## [0.5.0] - 2026-06-11
+
+### Added
+
+- v0.5 Evidence UX Layer:
+  - `report.md` now starts with an Evidence Summary derived from existing schema v1 run, trace, patch-plan, selected-files, and applied-files evidence.
+  - Evidence Summary includes run ID, GitHub Actions URL when supplied by the workflow, artifact name, artifact directory, report path, trace path, status, readiness, validation, provider-call count, file/chunk counts, and write summary counts.
+  - Failure reports include a short Failure Summary with normalized presentation-only categories.
+  - GitHub issue/PR comments include run ID, Actions URL, artifact name, artifact directory, report path, and trace path when available.
+
+### Verified
+
+- `bun run typecheck`
+- `bun run test`
+- `bun --filter @codepawl/cli dev -- eval patch-quality --out-dir /tmp/codepawl-cp024-followup-eval --limit 50`
+- live GitHub `workflow_dispatch` dry-run smoke:
+  - Run URL: `https://github.com/codepawl/codepawl/actions/runs/27323506270`
+  - GitHub run ID: `27323506270`
+  - Openpawl run ID: `run_1781151538660_qpej6x`
+  - Artifact: `openpawl-artifacts-run_1781151538660_qpej6x`
+  - Report: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781151538660_qpej6x/report.md`
+  - Trace: `/home/runner/work/codepawl/codepawl/.codepawl/runs/run_1781151538660_qpej6x/trace.json`
+
+### Compatibility
+
+- Artifact JSON schemaVersion remains `"1"`.
+- Write safety gates, approval/apply policy, validation precedence, unsafe write rejection, beta create-only guardrails, `.gitignore` scanning, bounded retry behavior, and trace legacy compatibility are unchanged.
+
+## [0.4.0] - 2026-06-11
+
+### Added
+
+- v0.4 Trace/Evidence Layer:
+  - Added `schemaVersion: "1"` contracts for machine-readable run artifacts: `run.json`, `trace.json`, `patch-plan.json`, `selected-files.json`, and `applied-files.json`.
+  - Added schema-backed patch-quality `metrics.json` output.
+  - Added cross-artifact consistency checks for run IDs, trace event correlation, and write summary/applied-file counts.
+  - Kept `report.md` human-readable only, with no machine-readable front matter, to preserve GitHub comment readability.
+
+### Verified
+
+- `bun run typecheck`
+- `bun run test`
+- `bun --filter @codepawl/cli dev -- eval patch-quality --limit 50`
+- dry-run and expected-failure smokes with schema-valid artifacts
+
+## [0.3.0] - 2026-06-11
+
+### Added
+
+- `.gitignore`-aware repository scanning:
+  - Implemented a dependency-free, robust `.gitignore` parser and matcher (`GitignoreMatcher` and `globToRegex`) supporting wildcard, directory, and negation patterns.
+  - Updated `createRepoScanNode` to dynamically read and load local `.gitignore` files relative to their subdirectories during repository traversal.
+  - Added `.openpawl-src` to `SCAN_IGNORED_DIRS` to prevent scanning monorepo files during checkout.
+- Optional, bounded validation retry-loop:
+  - Added conditional retry logic to the agent execution graph. If validation fails, the agent automatically cleans up and deletes any temporary files created during the failed attempt, increments the retry attempt, and restarts planning from a clean state.
+  - Retry behavior is optional (defaults to `0` / disabled) and strictly bounded by the `validationMaxRetries` config parameter.
+  - Exposed via the `--validation-max-retries` CLI flag for `codepawl run` and config parsing.
+
+### Fixed
+
+- Mock LLM Provider rule match safety:
+  - Fixed a collision bug where repository scans of mock JSON fixtures would leak rule triggers (like `"Scope Context Pack"`) into LLM prompt contexts and falsely match rules. Resolved by stripping the serialized `"context"` block from user messages in the mock provider.
+
+## [0.2.2] - 2026-06-11
+
+### Added
+
+- Trigger command parity:
+  - Enabled `/openpawl plan` and `/openpawl fix failing tests` slash commands to resolve as dry-run tasks, bringing full parity to the trigger command set between slash `/` and mention `@` prefixes.
+  - Added positive unit tests and updated command resolution specs to assert proper trigger matching.
+
+### Changed
+
+- Reusable workflow ergonomics:
+  - Enabled manual triggering of the reusable workflow (`.github/workflows/openpawl-run.yml`) by adding the `workflow_dispatch` trigger event.
+  - Aligned input parameters (optionality and defaults) with the standalone copy-pasteable workflow, adding a choice menu for `mode` and defaulting `task` to review changes.
+  - Bumped default `openpawl_ref` in workflow definitions to `v0.2.2`.
+
+## [0.2.1] - 2026-06-11
+
+### Fixed
+
+- Post-release external installability patch:
+  - Updated copy-paste sample workflow (`docs/samples/openpawl.workflow.yml`) and reusable workflow (`.github/workflows/openpawl-run.yml`) to dynamically checkout `codepawl/codepawl` under `.openpawl-src`.
+  - Configured workflows to execute `@codepawl/cli` using `--cwd .openpawl-src` and target the absolute path of the repository, preventing dependency-resolution failures in target repos that do not contain Openpawl.
+  - Added automated cleanup steps to delete `.openpawl-src` before PR branches are created or once execution finishes.
+  - Updated installation documentation (`docs/OPENPAWL_INSTALL.md`) to reflect the new dynamic repository checkout process.
+
 ## [0.2.0] - 2026-06-10
 
 ### Added
@@ -167,7 +270,12 @@ All notable changes for Openpawl.
 
 ## [Unreleased]
 
-### No unreleased items.
+### Added
+
+- Added v0.5 Evidence UX presentation work:
+  - `report.md` now starts with a compact Evidence Summary derived from existing run, trace, patch-plan, selected-files, and applied-files evidence.
+  - Failure reports include normalized presentation-only failure categories and a short Failure Summary.
+  - GitHub issue/PR comments include run ID, Actions URL, artifact name, and report/trace artifact paths when available.
 
 ### Scope
 

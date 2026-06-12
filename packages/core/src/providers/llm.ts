@@ -147,6 +147,25 @@ export class MockLlmProvider implements LlmProvider {
     await this.loadRules();
 
     const lastMessage = messages[messages.length - 1]?.content ?? "";
+    let matchableLastMessage = lastMessage;
+    const newlineIndex = lastMessage.indexOf("\n");
+    if (newlineIndex !== -1) {
+      const firstLine = lastMessage.substring(0, newlineIndex);
+      const rest = lastMessage.substring(newlineIndex + 1).trim();
+      try {
+        const parsed = JSON.parse(rest);
+        if (parsed && typeof parsed === "object") {
+          const cleanParsed = { ...parsed };
+          if ("context" in cleanParsed) {
+            delete cleanParsed.context;
+          }
+          matchableLastMessage = firstLine + "\n" + JSON.stringify(cleanParsed);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const firstMessage = messages.find(m => m.role === "user")?.content ?? "";
     const firstLineOfLastMessage = lastMessage.trimStart().split(/\r?\n/, 2)[0] ?? "";
 
@@ -178,7 +197,10 @@ export class MockLlmProvider implements LlmProvider {
       }
 
       if (rule.matchLastMessage) {
-        isMatch = isMatch && hasPatternMatch(firstLineOfLastMessage, rule.matchLastMessage);
+        isMatch = isMatch && (
+          hasPatternMatch(firstLineOfLastMessage, rule.matchLastMessage) ||
+          hasPatternMatch(matchableLastMessage, rule.matchLastMessage)
+        );
       }
 
       if (isMatch && !rule.matchQuery && !rule.matchLastMessage) {

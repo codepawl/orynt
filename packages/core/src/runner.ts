@@ -14,10 +14,19 @@ import {
   createPatchPlanNode,
   createOptionalPatchApplyNode,
   createValidationNode,
+  createValidationRetryNode,
   createTraceExportNode,
   createReportExportNode,
 } from "./agent/nodes";
 import type { RunOptions, RunResult } from "./state/schema";
+import {
+  ARTIFACT_SCHEMA_VERSION,
+  AppliedFilesArtifactSchema,
+  PatchPlanArtifactSchema,
+  RunArtifactSchema,
+  SelectedFilesArtifactSchema,
+  TraceArtifactSchema,
+} from "./state/evidence";
 
 /**
  * Default mock fixture path used when no fixture is specified.
@@ -62,6 +71,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     contextMaxBytes,
     contextMaxChars,
     structuredOutputMode,
+    validationMaxRetries,
   } = options;
 
   // Resolve workspace directory
@@ -118,6 +128,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   graph.addNode("patch_plan", createPatchPlanNode(llm));
   graph.addNode("optional_patch_apply", createOptionalPatchApplyNode());
   graph.addNode("validation", createValidationNode());
+  graph.addNode("validation_retry", createValidationRetryNode());
   graph.addNode("trace_export", createTraceExportNode());
   graph.addNode("report_export", createReportExportNode());
 
@@ -128,7 +139,26 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   graph.addEdge("file_selection", "patch_plan");
   graph.addEdge("patch_plan", "optional_patch_apply");
   graph.addEdge("optional_patch_apply", "validation");
-  graph.addEdge("validation", "trace_export");
+
+  graph.addConditionalEdge(
+    "validation",
+    (state) => {
+      const validationFailed = state.validationResult?.success === false;
+      const currentAttempt = state.validationRetryAttempt ?? 0;
+      const maxRetries = state.context.validationMaxRetries ?? 0;
+
+      if (validationFailed && currentAttempt < maxRetries && !state.context.dryRun) {
+        return "retry";
+      }
+      return "continue";
+    },
+    {
+      retry: "validation_retry",
+      continue: "trace_export",
+    }
+  );
+
+  graph.addEdge("validation_retry", "patch_plan");
   graph.addEdge("trace_export", "report_export");
 
   graph.setEntryPoint("intake");
@@ -155,6 +185,7 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       contextMaxBytes: contextBudget.maxBytes,
       contextMaxChars: contextBudget.maxChars,
       structuredOutputMode: providerConfig.structuredOutputMode,
+      validationMaxRetries: validationMaxRetries ?? 0,
     },
     nextNode: null,
     isComplete: false,
@@ -179,45 +210,123 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
     try {
       await fs.mkdir(runDir, { recursive: true });
       const summary = ledger.getSummary();
+      const traceArtifact = TraceArtifactSchema.parse({
+        schemaVersion: ARTIFACT_SCHEMA_VERSION,
+        runId,
+        ...summary,
+      });
       await fs.writeFile(
         path.join(runDir, "trace.json"),
-        JSON.stringify(summary, null, 2),
+        JSON.stringify(traceArtifact, null, 2),
         "utf-8"
       );
-      const errorReport = `# Openpawl Run Report\n\n**Run ID:** \`${runId}\`\n**Status:** ❌ ABORTED\n\n## Error\n\n\`\`\`\n${runError}\n\`\`\`\n`;
+      const redactedRunError = runError
+        ? runError
+            .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+            .replace(/sk-[A-Za-z0-9_-]{12,}/g, "sk-[REDACTED]")
+            .replace(/[A-Za-z0-9_-]{32,}/g, "[REDACTED_TOKEN]")
+        : "Unknown runtime error";
+      const githubActionsUrl = process.env["OPENPAWL_GITHUB_ACTIONS_URL"];
+      const githubActionsRow = githubActionsUrl ? `| GitHub Actions URL | ${githubActionsUrl} |\n` : "";
+      const errorReport = `# Openpawl Run Report
+
+**Run ID:** \`${runId}\`
+**Status:** ❌ ABORTED
+
+## Evidence Summary
+
+| Field | Value |
+|---|---|
+| schemaVersion | \`${ARTIFACT_SCHEMA_VERSION}\` |
+| Run ID | \`${runId}\` |
+${githubActionsRow}| Artifact name | \`openpawl-artifacts-${runId}\` |
+| Artifact directory | \`${runDir}\` |
+| Report path | \`${runDir}/report.md\` |
+| Trace path | \`${runDir}/trace.json\` |
+| Status | \`failed\` |
+| Failure category | \`runtime_error\` |
+| Trace events | \`${summary.events.length}\` |
+
+**Primary outcome:** Run stopped before the normal report exporter completed.
+
+**Next action:** Inspect trace.json and run.json for the terminal failure event.
+
+### Failure Summary
+
+- Category: \`runtime_error\`
+- Reason: ${redactedRunError}
+- Next action: Inspect trace.json and run.json for the terminal failure event.
+
+### Artifact Links
+
+- GitHub artifact name: \`openpawl-artifacts-${runId}\`
+- Artifact directory: \`${runDir}\`
+- Run artifact: \`${runDir}/run.json\`
+- Trace artifact: \`${runDir}/trace.json\`
+- Human report: \`${runDir}/report.md\`
+
+## Error
+
+\`\`\`
+${redactedRunError}
+\`\`\`
+`;
       await fs.writeFile(path.join(runDir, "report.md"), errorReport, "utf-8");
+      const abortedRunArtifact = RunArtifactSchema.parse({
+        schemaVersion: ARTIFACT_SCHEMA_VERSION,
+        runId,
+        success: false,
+        mode: "dry-run",
+        error: runError,
+        durationMs: 0,
+        tokenUsage: { input: 0, output: 0, total: 0 },
+        validationMaxRetries: 0,
+        validationRetryAttempt: 0,
+        readiness: {
+          status: "unsupported",
+          reasons: ["Run aborted before graph execution."],
+          blockers: ["Runner initialization failed before execution"],
+          warnings: [],
+        },
+        writeSummary: { attempted: 0, created: 0, skipped: 0, rejected: 0 },
+        filesCreated: [],
+        filesSkipped: [],
+        filesRejected: [],
+      });
       await fs.writeFile(
         path.join(runDir, "run.json"),
-        JSON.stringify(
-          {
-            runId,
-            success: false,
-            error: runError,
-            readiness: {
-              status: "unsupported",
-              reasons: ["Run aborted before graph execution."],
-              blockers: ["Runner initialization failed before execution"],
-              warnings: [],
-            },
-          },
-          null,
-          2
-        ),
+        JSON.stringify(abortedRunArtifact, null, 2),
         "utf-8"
       );
       await fs.writeFile(
         path.join(runDir, "patch-plan.json"),
-        JSON.stringify({ chunks: [], rationale: "Run aborted before patch plan." }, null, 2),
+        JSON.stringify(PatchPlanArtifactSchema.parse({
+          schemaVersion: ARTIFACT_SCHEMA_VERSION,
+          runId,
+          chunks: [],
+          rationale: "Run aborted before patch plan.",
+        }), null, 2),
         "utf-8"
       );
       await fs.writeFile(
         path.join(runDir, "selected-files.json"),
-        JSON.stringify({ selectedFiles: [] }, null, 2),
+        JSON.stringify(SelectedFilesArtifactSchema.parse({
+          schemaVersion: ARTIFACT_SCHEMA_VERSION,
+          runId,
+          selectedFiles: [],
+        }), null, 2),
         "utf-8"
       );
       await fs.writeFile(
         path.join(runDir, "applied-files.json"),
-        JSON.stringify({ attempted: 0, created: [], skipped: [], rejected: [] }, null, 2),
+        JSON.stringify(AppliedFilesArtifactSchema.parse({
+          schemaVersion: ARTIFACT_SCHEMA_VERSION,
+          runId,
+          attempted: 0,
+          created: [],
+          skipped: [],
+          rejected: [],
+        }), null, 2),
         "utf-8"
       );
     } catch { /* best-effort */ }
@@ -237,7 +346,8 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
   const traceSummary = ledger.getSummary();
   const validationFailed = finalState.validationResult?.success === false;
 
-  // If the run completed (finalState exists) but had an error, write best-effort artifacts
+  // If the run completed (finalState exists) but had an error, write best-effort artifacts.
+  // createReportExportNode writes a schema-validated run.json — no extra write needed here.
   if (runError) {
     try {
       await fs.mkdir(runDir, { recursive: true });
@@ -245,23 +355,6 @@ export async function runAgent(options: RunOptions): Promise<RunResult> {
       const reportExportNode = createReportExportNode();
       await traceExportNode(finalState);
       await reportExportNode(finalState);
-      const finalReadiness = finalState.readinessGateResult;
-      const finalValidationDecision = finalState.validationResult?.validationDecision;
-      await fs.writeFile(
-        path.join(runDir, "run.json"),
-        JSON.stringify(
-          {
-            runId,
-            success: false,
-            error: runError,
-            readiness: finalReadiness,
-            validationDecision: finalValidationDecision,
-          },
-          null,
-          2
-        ),
-        "utf-8"
-      );
     } catch { /* best-effort */ }
   }
 

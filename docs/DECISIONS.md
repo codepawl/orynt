@@ -97,16 +97,19 @@ ADR-style log of architectural decisions. Append new decisions; do not edit hist
 
 **Date**: 2026-05-19
 **Status**: accepted
+**Amended**: Rounded-industrial migration keeps structural architecture mostly sharp, but interactive and content surfaces now use the shared `--cp-radius-*` scale.
 
 **Context**: The brand identity is sharp corners. Default Tailwind utilities (`rounded-md`, `rounded-lg`, etc.) and most component libraries assume rounded corners. Leaving this to convention will result in drift the moment a contributor copy-pastes a utility.
 
-**Decision**: In the Tailwind v4 `@theme` block, set all `--radius-*` tokens to `0` except `--radius-full` (which keeps pill behavior). Tailwind utilities `rounded`, `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, `rounded-2xl`, `rounded-3xl` all resolve to `0` in this project.
+**Original decision**: In the Tailwind v4 `@theme` block, set all `--radius-*` tokens to `0` except `--radius-full` (which keeps pill behavior). Tailwind utilities `rounded`, `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, `rounded-2xl`, `rounded-3xl` all resolve to `0` in this project.
 
 **Alternatives considered**:
 - **Lint rule against radius utilities**: works but is reactive instead of preventive
 - **Convention only, enforce in code review**: leaks regularly
 
-**Consequences**: A contributor cannot accidentally introduce rounded corners. Pills explicitly use `rounded-full`. If we ever want soft corners on a specific section, we declare a custom radius and apply it explicitly.
+**Original consequences**: A contributor cannot accidentally introduce rounded corners. Pills explicitly use `rounded-full`. If we ever want soft corners on a specific section, we declare a custom radius and apply it explicitly.
+
+**Current guidance**: Use centralized radius tokens for buttons, inputs, cards, dropdowns, badges, and code blocks. Preserve square section dividers, concrete grids, architectural motifs, and large structural frames.
 
 ---
 

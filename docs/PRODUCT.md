@@ -2,19 +2,26 @@
 
 ## Openpawl release maturity (CLI agent engine)
 
+Openpawl runtime source of truth is the public repository at
+`codepawl/openpawl@v0.5.3`. Private `packages/core`, `packages/cli`, and
+`packages/shared` are frozen compatibility copies and are not the active
+development surface.
+
 - **Alpha history**
   - `v0.1.0-alpha.1`: Foundation, deterministic mock provider, local dry-run, PR workflow verification, metadata-only patch planning.
   - `v0.1.0-alpha.2`: Experimental provider integration, structured-output retry/failure diagnostics, safe trace metadata.
   - `v0.1.0-alpha.3`: `json_schema` strict provider mode, context compaction, grounding/rejection of invented paths, dry-run scope fallback, and safe write-mode v0 (create-only test files).
   - `v0.1.0-alpha.9`: first external installability cut with repo-root config, reusable workflow template, install docs, and safer write-mode defaults.
-  - `v0.1.0-alpha.10`: exact `@openpawl` mention UX with dry-run-only comment triggers, direct `@codepawl/cli` workflow invocation, and live issue/PR verification.
+  - `v0.1.0-alpha.10`: exact `@openpawl` mention UX with dry-run-only comment triggers, direct public Openpawl CLI workflow invocation, and live issue/PR verification.
   - `v0.1.0-beta.1`: approval write mode with `/openpawl apply` and `openpawl-approved`, bot-branch PR persistence, and deterministic patch quality harness.
 
 - **Current publish posture**
-  - Keep GitHub Releases as the release mechanism for beta.
-  - Do not publish to npm until package metadata, license, exports, and install path are fully verified.
-  - NPM alpha publish is acceptable only after clean install from a packed tarball in a temporary repo.
-  - Stable publish should wait for safe write-mode and broader real-repo validations.
+  - Use the public `codepawl/openpawl@v0.5.3` Action release for installs.
+  - Openpawl `v0.5.3+` Action runs produce `openpawl-evidence-bundle.json`
+    for local browser preview in CodePawl Cloud Evidence Hub.
+  - Do not publish npm packages from this private repository.
+  - Keep the GitHub Marketplace listing pending until the listing URL exists and has been verified.
+  - Stable publish should wait for safe write-mode and broader real-repo validations in the public Openpawl repository.
 
 - **Next maturity gates**
   - RC: multiple real repositories validated, provider compatibility matrix completed.
@@ -22,13 +29,13 @@
 
 ## What we are building
 
-CodePawl is a server-side coding-agent ecosystem designed for autonomous software development. The core product is **Openpawl**, an open-source autonomous agent engine. Internally, it relies on advanced **Trace Ledger** and **Memory** modules to coordinate agent execution and maintain state history. The project also houses a product catalog (supporting tools like Featcat, HebbMem, TurboQuant, Cachepawl, and KStudio), curated AI/ML research, technical documentation, and waitlist signups.
+CodePawl makes coding agents work together. It is infrastructure for coordinated agent work - plans, evidence, guardrails, memory, replay, and cloud workflows. The core product is **Openpawl**, an open runtime for coding-agent coordination. It turns agent tasks into plans, validations, guarded changes, and traceable run evidence. The first supported surface is GitHub Actions with conservative write-mode guardrails. The project also houses a product catalog, curated AI/ML research, technical documentation, and waitlist signups.
 
 ## Who it is for
 
 Primary audience, in priority order:
 
-1. **AI/ML engineers building production agents.** They want vetted libraries and agent orchestration frameworks like Openpawl that they can drop into a stack. They evaluate by reading the README, checking last commit date, and skimming benchmarks.
+1. **AI/ML engineers building production agents.** They want vetted libraries and guarded automation workflows like Openpawl that they can evaluate safely. They evaluate by reading the README, checking last commit date, and skimming validation evidence.
 2. **ML practitioners and researchers** reproducing papers or exploring memory, quantization, hybrid architectures. They want code that runs and reports that show the numbers held up.
 3. **AI-curious developers** following the field through curated, low-noise channels. They want a non-Twitter, non-HN, AI-focused feed.
 
@@ -49,7 +56,7 @@ AI/ML output is scattered. New libraries land on GitHub, get a tweet, get an HN 
 
 One surface for: products you can run, research you can reproduce, news you can trust. Built by people shipping the same kind of work.
 
-The differentiator is not "another AI news site." It is the **product catalog**: our flagship open-source developer agent engine **Openpawl** and its supporting tools (Featcat, HebbMem, TurboQuant, Cachepawl, KStudio) maintained by the same team, with shared design language and a coherent story about agents, memory, and compute.
+The differentiator is not "another AI news site." It is the **product catalog**: our flagship coordination runtime **Openpawl** and its supporting tools maintained by the same team, with shared design language and a coherent story about coordination, evidence, memory, and compute.
 
 ## Success metric for MVP
 

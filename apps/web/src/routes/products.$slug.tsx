@@ -6,6 +6,7 @@ import {
   productBadgeClass,
   productStateClass,
 } from "@/components/marketing/products";
+import { OpenpawlLanding } from "@/components/marketing/openpawl-landing";
 import { Route as productsRoute } from "./products";
 
 const API_FETCH_TIMEOUT_MS = 2500;
@@ -22,9 +23,18 @@ export const Route = createRoute({
   },
   head: ({ loaderData }) => ({
     meta: [
-      { title: loaderData?.product.name ?? "Product" },
+      {
+        title:
+          loaderData?.product.slug === "openpawl"
+            ? "Openpawl by CodePawl - Coordination runtime for coding agents"
+            : (loaderData?.product.name ?? "Product"),
+      },
       { name: "description", content: loaderData?.product.tagline ?? "" },
     ],
+    links:
+      loaderData?.product.slug === "openpawl"
+        ? [{ rel: "canonical", href: "https://codepawl.com/openpawl" }]
+        : undefined,
   }),
   component: ProductDetailPage,
 });
@@ -45,7 +55,11 @@ async function fetchStats(slug: string): Promise<{ stars: number } | null> {
 function ProductDetailPage() {
   const { product, stats } = Route.useLoaderData();
 
-  if (product.availability === "announced_soon") {
+  if (product.slug === "openpawl") {
+    return <OpenpawlLanding />;
+  }
+
+  if (product.availability === "upcoming" || product.availability === "roadmap") {
     return (
       <article className="mx-auto max-w-[1240px] px-6 py-20">
         <p className="cp-marker mb-6">
@@ -55,7 +69,7 @@ function ProductDetailPage() {
         <p className="cp-lead text-fg-2 mt-4 max-w-2xl">{product.tagline}</p>
 
         <section
-          className={`border-ink-4 mt-12 border p-6 ${productStateClass(product)}`}
+          className={`cp-card border-ink-4 mt-12 border p-6 ${productStateClass(product)}`}
         >
           <span className={productBadgeClass(product)}>
             {productAvailabilityLabel(product)}
@@ -69,7 +83,7 @@ function ProductDetailPage() {
             rel="noopener noreferrer"
             className="cp-button bg-ratchet text-ink-0 hover:bg-ratchet-hot mt-8 inline-flex border-2 border-ratchet px-5 py-3 transition-colors"
           >
-            Get early access on GitHub
+            View roadmap source
           </a>
         </section>
       </article>
