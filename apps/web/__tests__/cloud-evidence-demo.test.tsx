@@ -46,6 +46,9 @@ describe("CloudEvidenceDemo", () => {
     expect(screen.getByText(/Local preview only. Artifact contents are not uploaded or stored./i)).toBeTruthy();
     expect(screen.queryByText(/upload your artifacts/i)).toBeNull();
     expect(screen.queryByText(/start a free trial/i)).toBeNull();
+    expect(screen.getByRole("link", { name: "Join Cloud waitlist" }).getAttribute("href")).toBe(
+      "/cloud/waitlist?source=cloud_evidence_demo",
+    );
   });
 
   test("previews a valid Openpawl artifact bundle locally", () => {

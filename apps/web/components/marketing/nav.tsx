@@ -80,7 +80,7 @@ export function Nav() {
             </li>
             <li>
               <Link
-                href="/contact"
+                href="/cloud/waitlist?source=nav_cloud_waitlist"
                 className="cp-hover-link cp-nav text-fg-3 hover:text-fg-1 transition-colors"
               >
                 Cloud Waitlist

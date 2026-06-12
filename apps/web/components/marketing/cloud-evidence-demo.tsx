@@ -414,7 +414,7 @@ function EvidenceRunContent({
           </p>
           <div className="mt-6 flex flex-col gap-3">
             <a
-              href="/contact"
+              href="/cloud/waitlist?source=cloud_evidence_demo"
               className="cp-hover-button cp-button inline-flex items-center justify-center border-2 border-ink-4 bg-ink-4 px-5 py-3 text-ink-1 transition-colors hover:bg-ratchet focus:outline-none focus:ring-4 focus:ring-ratchet/20"
             >
               Join Cloud waitlist

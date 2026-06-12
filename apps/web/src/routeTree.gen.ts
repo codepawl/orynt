@@ -20,6 +20,7 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as OpenpawlRouteImport } from './routes/openpawl'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as ContactRouteImport } from './routes/contact'
+import { Route as CloudRouteImport } from './routes/cloud'
 import { Route as CareersRouteImport } from './routes/careers'
 import { Route as BlogRouteImport } from './routes/blog'
 import { Route as IndexRouteImport } from './routes/index'
@@ -31,8 +32,10 @@ import { Route as OpenpawlInstallRouteImport } from './routes/openpawl.install'
 import { Route as OpenpawlDocsRouteImport } from './routes/openpawl.docs'
 import { Route as NewsletterConfirmRouteImport } from './routes/newsletter.confirm'
 import { Route as DocsSplatRouteImport } from './routes/docs.$'
+import { Route as CloudWaitlistRouteImport } from './routes/cloud.waitlist'
 import { Route as CloudEvidenceRouteImport } from './routes/cloud.evidence'
 import { Route as ApiGithubMarketplaceRouteImport } from './routes/api.github.marketplace'
+import { Route as ApiCloudWaitlistRouteImport } from './routes/api.cloud.waitlist'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -87,6 +90,11 @@ const DocsRoute = DocsRouteImport.update({
 const ContactRoute = ContactRouteImport.update({
   id: '/contact',
   path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CloudRoute = CloudRouteImport.update({
+  id: '/cloud',
+  path: '/cloud',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CareersRoute = CareersRouteImport.update({
@@ -144,14 +152,24 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => DocsRoute,
 } as any)
+const CloudWaitlistRoute = CloudWaitlistRouteImport.update({
+  id: '/waitlist',
+  path: '/waitlist',
+  getParentRoute: () => CloudRoute,
+} as any)
 const CloudEvidenceRoute = CloudEvidenceRouteImport.update({
-  id: '/cloud/evidence',
-  path: '/cloud/evidence',
-  getParentRoute: () => rootRouteImport,
+  id: '/evidence',
+  path: '/evidence',
+  getParentRoute: () => CloudRoute,
 } as any)
 const ApiGithubMarketplaceRoute = ApiGithubMarketplaceRouteImport.update({
   id: '/api/github/marketplace',
   path: '/api/github/marketplace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCloudWaitlistRoute = ApiCloudWaitlistRouteImport.update({
+  id: '/api/cloud/waitlist',
+  path: '/api/cloud/waitlist',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -159,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/blog': typeof BlogRoute
   '/careers': typeof CareersRoute
+  '/cloud': typeof CloudRouteWithChildren
   '/contact': typeof ContactRoute
   '/docs': typeof DocsRouteWithChildren
   '/openpawl': typeof OpenpawlRouteWithChildren
@@ -171,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/cloud/evidence': typeof CloudEvidenceRoute
+  '/cloud/waitlist': typeof CloudWaitlistRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
   '/openpawl/docs': typeof OpenpawlDocsRoute
@@ -179,12 +199,14 @@ export interface FileRoutesByFullPath {
   '/products/$slug': typeof ProductsSlugRoute
   '/docs/': typeof DocsIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/api/cloud/waitlist': typeof ApiCloudWaitlistRoute
   '/api/github/marketplace': typeof ApiGithubMarketplaceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/blog': typeof BlogRoute
   '/careers': typeof CareersRoute
+  '/cloud': typeof CloudRouteWithChildren
   '/contact': typeof ContactRoute
   '/openpawl': typeof OpenpawlRouteWithChildren
   '/pricing': typeof PricingRoute
@@ -195,6 +217,7 @@ export interface FileRoutesByTo {
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/cloud/evidence': typeof CloudEvidenceRoute
+  '/cloud/waitlist': typeof CloudWaitlistRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
   '/openpawl/docs': typeof OpenpawlDocsRoute
@@ -203,6 +226,7 @@ export interface FileRoutesByTo {
   '/products/$slug': typeof ProductsSlugRoute
   '/docs': typeof DocsIndexRoute
   '/products': typeof ProductsIndexRoute
+  '/api/cloud/waitlist': typeof ApiCloudWaitlistRoute
   '/api/github/marketplace': typeof ApiGithubMarketplaceRoute
 }
 export interface FileRoutesById {
@@ -210,6 +234,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/blog': typeof BlogRoute
   '/careers': typeof CareersRoute
+  '/cloud': typeof CloudRouteWithChildren
   '/contact': typeof ContactRoute
   '/docs': typeof DocsRouteWithChildren
   '/openpawl': typeof OpenpawlRouteWithChildren
@@ -222,6 +247,7 @@ export interface FileRoutesById {
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/cloud/evidence': typeof CloudEvidenceRoute
+  '/cloud/waitlist': typeof CloudWaitlistRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
   '/openpawl/docs': typeof OpenpawlDocsRoute
@@ -230,6 +256,7 @@ export interface FileRoutesById {
   '/products/$slug': typeof ProductsSlugRoute
   '/docs/': typeof DocsIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/api/cloud/waitlist': typeof ApiCloudWaitlistRoute
   '/api/github/marketplace': typeof ApiGithubMarketplaceRoute
 }
 export interface FileRouteTypes {
@@ -238,6 +265,7 @@ export interface FileRouteTypes {
     | '/'
     | '/blog'
     | '/careers'
+    | '/cloud'
     | '/contact'
     | '/docs'
     | '/openpawl'
@@ -250,6 +278,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/terms'
     | '/cloud/evidence'
+    | '/cloud/waitlist'
     | '/docs/$'
     | '/newsletter/confirm'
     | '/openpawl/docs'
@@ -258,12 +287,14 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/docs/'
     | '/products/'
+    | '/api/cloud/waitlist'
     | '/api/github/marketplace'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/blog'
     | '/careers'
+    | '/cloud'
     | '/contact'
     | '/openpawl'
     | '/pricing'
@@ -274,6 +305,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/terms'
     | '/cloud/evidence'
+    | '/cloud/waitlist'
     | '/docs/$'
     | '/newsletter/confirm'
     | '/openpawl/docs'
@@ -282,12 +314,14 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/docs'
     | '/products'
+    | '/api/cloud/waitlist'
     | '/api/github/marketplace'
   id:
     | '__root__'
     | '/'
     | '/blog'
     | '/careers'
+    | '/cloud'
     | '/contact'
     | '/docs'
     | '/openpawl'
@@ -300,6 +334,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/terms'
     | '/cloud/evidence'
+    | '/cloud/waitlist'
     | '/docs/$'
     | '/newsletter/confirm'
     | '/openpawl/docs'
@@ -308,6 +343,7 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/docs/'
     | '/products/'
+    | '/api/cloud/waitlist'
     | '/api/github/marketplace'
   fileRoutesById: FileRoutesById
 }
@@ -315,6 +351,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BlogRoute: typeof BlogRoute
   CareersRoute: typeof CareersRoute
+  CloudRoute: typeof CloudRouteWithChildren
   ContactRoute: typeof ContactRoute
   DocsRoute: typeof DocsRouteWithChildren
   OpenpawlRoute: typeof OpenpawlRouteWithChildren
@@ -326,8 +363,8 @@ export interface RootRouteChildren {
   SiteRoute: typeof SiteRoute
   StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
-  CloudEvidenceRoute: typeof CloudEvidenceRoute
   NewsletterConfirmRoute: typeof NewsletterConfirmRoute
+  ApiCloudWaitlistRoute: typeof ApiCloudWaitlistRoute
   ApiGithubMarketplaceRoute: typeof ApiGithubMarketplaceRoute
 }
 
@@ -410,6 +447,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cloud': {
+      id: '/cloud'
+      path: '/cloud'
+      fullPath: '/cloud'
+      preLoaderRoute: typeof CloudRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/careers': {
       id: '/careers'
       path: '/careers'
@@ -487,12 +531,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof DocsRoute
     }
+    '/cloud/waitlist': {
+      id: '/cloud/waitlist'
+      path: '/waitlist'
+      fullPath: '/cloud/waitlist'
+      preLoaderRoute: typeof CloudWaitlistRouteImport
+      parentRoute: typeof CloudRoute
+    }
     '/cloud/evidence': {
       id: '/cloud/evidence'
-      path: '/cloud/evidence'
+      path: '/evidence'
       fullPath: '/cloud/evidence'
       preLoaderRoute: typeof CloudEvidenceRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof CloudRoute
     }
     '/api/github/marketplace': {
       id: '/api/github/marketplace'
@@ -501,8 +552,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGithubMarketplaceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cloud/waitlist': {
+      id: '/api/cloud/waitlist'
+      path: '/api/cloud/waitlist'
+      fullPath: '/api/cloud/waitlist'
+      preLoaderRoute: typeof ApiCloudWaitlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
+
+interface CloudRouteChildren {
+  CloudEvidenceRoute: typeof CloudEvidenceRoute
+  CloudWaitlistRoute: typeof CloudWaitlistRoute
+}
+
+const CloudRouteChildren: CloudRouteChildren = {
+  CloudEvidenceRoute: CloudEvidenceRoute,
+  CloudWaitlistRoute: CloudWaitlistRoute,
+}
+
+const CloudRouteWithChildren = CloudRoute._addFileChildren(CloudRouteChildren)
 
 interface DocsRouteChildren {
   DocsSplatRoute: typeof DocsSplatRoute
@@ -550,6 +620,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BlogRoute: BlogRoute,
   CareersRoute: CareersRoute,
+  CloudRoute: CloudRouteWithChildren,
   ContactRoute: ContactRoute,
   DocsRoute: DocsRouteWithChildren,
   OpenpawlRoute: OpenpawlRouteWithChildren,
@@ -561,8 +632,8 @@ const rootRouteChildren: RootRouteChildren = {
   SiteRoute: SiteRoute,
   StatusRoute: StatusRoute,
   TermsRoute: TermsRoute,
-  CloudEvidenceRoute: CloudEvidenceRoute,
   NewsletterConfirmRoute: NewsletterConfirmRoute,
+  ApiCloudWaitlistRoute: ApiCloudWaitlistRoute,
   ApiGithubMarketplaceRoute: ApiGithubMarketplaceRoute,
 }
 export const routeTree = rootRouteImport

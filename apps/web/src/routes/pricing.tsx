@@ -35,7 +35,7 @@ const TIERS = [
     name: "Cloud",
     price: "Waitlist",
     note: "Upcoming evidence and team workflow layer.",
-    cta: { href: "/contact", label: "Join waitlist" },
+    cta: { href: "/cloud/waitlist?source=pricing_cloud", label: "Join waitlist" },
     demo: { href: "/cloud/evidence", label: "View evidence demo" },
     features: [
       "Not generally available yet",

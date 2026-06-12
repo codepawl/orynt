@@ -342,7 +342,7 @@ export function ModernistLanding() {
                   </BlockPress>
                   <BlockPress className="inline-flex">
                     <Link
-                      href="/contact"
+                      href="/cloud/waitlist?source=home_cloud_waitlist"
                       className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
                     >
                       Join Cloud waitlist

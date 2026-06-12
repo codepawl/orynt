@@ -9,10 +9,13 @@ import { Route as productsIndexRoute } from "./routes/products.index";
 import { Route as productDetailRoute } from "./routes/products.$slug";
 import { Route as researchRoute } from "./routes/research";
 import { Route as blogRoute } from "./routes/blog";
+import { Route as cloudRoute } from "./routes/cloud";
 import { Route as cloudEvidenceRoute } from "./routes/cloud.evidence";
+import { Route as cloudWaitlistRoute } from "./routes/cloud.waitlist";
 import { Route as contactRoute } from "./routes/contact";
 import { Route as careersRoute } from "./routes/careers";
 import { Route as newsletterConfirmRoute } from "./routes/newsletter.confirm";
+import { Route as cloudWaitlistApiRoute } from "./routes/api.cloud.waitlist";
 import { Route as githubMarketplaceRoute } from "./routes/api.github.marketplace";
 import { Route as docsRoute } from "./routes/docs";
 import { Route as docsIndexRoute } from "./routes/docs.index";
@@ -33,7 +36,9 @@ const routeTree = rootRoute.addChildren([
     productsRoute.addChildren([productsIndexRoute, productDetailRoute]),
     researchRoute,
     blogRoute,
+    cloudRoute,
     cloudEvidenceRoute,
+    cloudWaitlistRoute,
     contactRoute,
     careersRoute,
     newsletterConfirmRoute,
@@ -47,6 +52,7 @@ const routeTree = rootRoute.addChildren([
     securityRoute,
     docsRoute.addChildren([docsIndexRoute, docsProductRoute]),
   ]),
+  cloudWaitlistApiRoute,
   githubMarketplaceRoute,
 ]);
 

@@ -3,6 +3,8 @@ import { expect, test } from "@playwright/test";
 const smokeRoutes = [
   "/",
   "/openpawl",
+  "/cloud",
+  "/cloud/waitlist",
   "/cloud/evidence",
   "/openpawl/install",
   "/openpawl/docs",
@@ -42,5 +44,35 @@ test.describe("CodePawl web smoke", () => {
     await expect(page.getByText(/no artifact contents are sent to CodePawl servers/i)).toBeVisible();
     await expect(page.getByText(/Upcoming, waitlist-only/i)).toBeVisible();
     await expect(page.getByText(/CodePawl Cloud Evidence Hub is upcoming/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Join Cloud waitlist" })).toHaveAttribute(
+      "href",
+      "/cloud/waitlist?source=cloud_evidence_demo",
+    );
+  });
+
+  test("/cloud waitlist captures source-tagged form submissions", async ({ page }) => {
+    await page.route("**/api/cloud/waitlist", async (route) => {
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", emailStatus: "sent" }),
+      });
+    });
+
+    await page.goto("/cloud/waitlist?source=cloud_evidence_demo");
+    await page.getByRole("textbox", { name: "Email", exact: true }).fill("smoke@example.com");
+    await page.getByLabel("Role or use case").fill("Platform engineer");
+    await page.getByLabel("Workflow need").selectOption("review_openpawl_run_evidence");
+    await page.getByLabel("Optional notes").fill("Smoke test only; no artifacts.");
+    await page.getByRole("button", { name: "Join Cloud Evidence waitlist" }).click();
+
+    await expect(page.getByText(/Check your inbox for confirmation/i)).toBeVisible();
+  });
+
+  test("GitHub Marketplace webhook rejects GET with Allow POST", async ({ request }) => {
+    const response = await request.get("/api/github/marketplace");
+
+    expect(response.status()).toBe(405);
+    expect(response.headers()["allow"]).toBe("POST");
   });
 });

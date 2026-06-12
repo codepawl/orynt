@@ -65,6 +65,51 @@ Never commit `.env`, `.env.local`, or any file containing real keys. `.env.examp
 - **Preview**: `cd apps/web && bun run preview`
 - **GitHub Marketplace webhook secret**: `cd apps/web && wrangler secret put GITHUB_MARKETPLACE_WEBHOOK_SECRET`
 
+#### Cloud Evidence Waitlist
+
+`POST /api/cloud/waitlist` captures email, role/use case, workflow need, source
+tag, and optional notes. The form must never ask for artifact contents, source
+code, prompts, traces, logs, credentials, or secrets. CodePawl Cloud is
+upcoming; the current Evidence Hub preview is local/browser-only.
+
+Production email is sent through Resend from the Worker. Configure required
+values as Cloudflare Worker secrets:
+
+```bash
+cd apps/web
+bunx wrangler secret put RESEND_API_KEY
+bunx wrangler secret put RESEND_FROM
+bunx wrangler secret put WAITLIST_NOTIFY_TO
+```
+
+Optionally add waitlist contacts to a Resend audience before email sends:
+
+```bash
+cd apps/web
+bunx wrangler secret put RESEND_AUDIENCE_ID
+```
+
+Check secret names without printing values:
+
+```bash
+cd apps/web
+bunx wrangler secret list
+```
+
+Production smoke:
+
+```bash
+curl -fsS https://codepawl.com/cloud >/dev/null
+curl -fsS https://codepawl.com/cloud/waitlist >/dev/null
+curl -fsS https://codepawl.com/cloud/evidence >/dev/null
+curl -fsS -X POST https://codepawl.com/api/cloud/waitlist \
+  -H 'Content-Type: application/json' \
+  --data '{"email":"waitlist-smoke@codepawl.com","roleUseCase":"Production smoke","workflowNeed":"review_openpawl_run_evidence","source":"manual","notes":"Smoke test only; no artifacts."}' >/dev/null
+curl -fsS -D - -o /dev/null https://codepawl.com/api/github/marketplace
+```
+
+The final command must return `405` with `Allow: POST`.
+
 #### GitHub Marketplace Webhook Verification Log
 
 - `2026-06-11T07:31:03Z`: Deployed `codepawl` Worker version `62f4439b-9bbf-440a-9a9d-e88a72c3b34b` from commit `73de9f3`. `GET https://codepawl.com/api/github/marketplace` returned `405` with `Allow: POST`, confirming the route is live. GitHub Marketplace test delivery is still pending because Cloudflare reported no configured Worker secrets; set `GITHUB_MARKETPLACE_WEBHOOK_SECRET` in Cloudflare and use the same secret in the GitHub Marketplace listing before redelivery. No GitHub delivery ID is available yet.
