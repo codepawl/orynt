@@ -4,6 +4,7 @@ const smokeRoutes = [
   "/",
   "/openpawl",
   "/cloud",
+  "/cloud/status",
   "/cloud/waitlist",
   "/cloud/evidence",
   "/openpawl/install",
@@ -47,6 +48,32 @@ test.describe("CodePawl web smoke", () => {
     await expect(page.getByRole("link", { name: "Join Cloud waitlist" })).toHaveAttribute(
       "href",
       "/cloud/waitlist?source=cloud_evidence_demo",
+    );
+  });
+
+  test("/cloud/status keeps roadmap and availability copy clear", async ({ page }) => {
+    await page.goto("/cloud/status");
+
+    await expect(page.getByRole("heading", { name: "Cloud Evidence status and roadmap." })).toBeVisible();
+    await expect(
+      page.getByText(/Waitlist is open, the Evidence Hub preview is local\/browser-only/i),
+    ).toBeVisible();
+    await expect(page.getByText(/hosted Cloud Evidence review is upcoming/i)).toBeVisible();
+    await expect(page.getByText(/not an uptime page, SLA, or production availability claim/i)).toBeVisible();
+    await expect(
+      page.getByText(/There is no hosted artifact upload, customer artifact storage, billing/i),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "X @codepawl" })).toHaveAttribute(
+      "href",
+      "https://x.com/codepawl",
+    );
+    await expect(page.getByRole("link", { name: "Threads @codepawl" })).toHaveAttribute(
+      "href",
+      "https://www.threads.com/@codepawl?igshid=NTc4MTIwNjQ2YQ==",
+    );
+    await expect(page.getByRole("link", { name: "Evidence Hub", exact: true })).toHaveAttribute(
+      "href",
+      "/cloud/evidence",
     );
   });
 

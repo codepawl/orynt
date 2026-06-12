@@ -11,6 +11,7 @@ import { Route as researchRoute } from "./routes/research";
 import { Route as blogRoute } from "./routes/blog";
 import { Route as cloudRoute } from "./routes/cloud";
 import { Route as cloudEvidenceRoute } from "./routes/cloud.evidence";
+import { Route as cloudStatusRoute } from "./routes/cloud.status";
 import { Route as cloudWaitlistRoute } from "./routes/cloud.waitlist";
 import { Route as contactRoute } from "./routes/contact";
 import { Route as careersRoute } from "./routes/careers";
@@ -38,6 +39,7 @@ const routeTree = rootRoute.addChildren([
     blogRoute,
     cloudRoute,
     cloudEvidenceRoute,
+    cloudStatusRoute,
     cloudWaitlistRoute,
     contactRoute,
     careersRoute,

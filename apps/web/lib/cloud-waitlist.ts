@@ -10,6 +10,7 @@ export const CLOUD_WAITLIST_SOURCE_TAGS = new Set([
   "cloud_page_secondary",
   "cloud_waitlist_page",
   "cloud_evidence_demo",
+  "cloud_status",
   "artifact_preview_feedback",
   "pricing_cloud",
   "nav_cloud_waitlist",

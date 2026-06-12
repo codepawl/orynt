@@ -126,4 +126,15 @@ describe("Cloud waitlist API", () => {
       error: { code: "validation_failed", message },
     });
   });
+
+  test("accepts the Cloud status source tag", async () => {
+    const response = await handleCloudWaitlistRequest(
+      waitlistRequest({ ...validPayload, source: "cloud_status" }),
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      emailStatus: "skipped_missing_env",
+    });
+  });
 });

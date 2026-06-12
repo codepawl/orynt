@@ -49,6 +49,12 @@ export function CloudPage() {
         >
           Open browser-only Evidence Hub
         </Link>
+        <Link
+          href="/cloud/status"
+          className="cp-hover-button cp-button inline-flex items-center justify-center border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2"
+        >
+          View status roadmap
+        </Link>
       </div>
 
       <section className="mt-14 grid gap-6 md:grid-cols-3">

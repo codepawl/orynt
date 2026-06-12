@@ -9,13 +9,23 @@ vi.mock("@/components/link", () => ({
 }));
 
 import { CloudWaitlistForm } from "../components/marketing/cloud-waitlist-form";
+import { CLOUD_UPDATE_LOG } from "../lib/cloud-status";
 import { CloudPage } from "../src/routes/cloud";
+import { CloudStatusPage } from "../src/routes/cloud.status";
 import { CloudWaitlistPage } from "../src/routes/cloud.waitlist";
 
 describe("Cloud Evidence waitlist pages", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/");
     vi.restoreAllMocks();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
   });
 
   test("/cloud keeps upcoming, local-only, privacy-safe copy and CTA hierarchy", () => {
@@ -37,8 +47,50 @@ describe("Cloud Evidence waitlist pages", () => {
     expect(screen.getByRole("link", { name: /Open browser-only Evidence Hub/i }).getAttribute("href")).toBe(
       "/cloud/evidence",
     );
+    expect(screen.getByRole("link", { name: /View status roadmap/i }).getAttribute("href")).toBe(
+      "/cloud/status",
+    );
     expect(screen.getByRole("link", { name: /Share workflow needs/i }).getAttribute("href")).toBe(
       "/cloud/waitlist?source=cloud_page_secondary",
+    );
+  });
+
+  test("/cloud/status renders status cards, roadmap, update log, and CTAs", () => {
+    render(<CloudStatusPage />);
+
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Cloud Evidence status and roadmap.",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Waitlist is open/i)).toBeTruthy();
+    expect(screen.getAllByText(/local\/browser-only/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/hosted Cloud Evidence review is upcoming/i)).toBeTruthy();
+    expect(screen.getByText(/avoids uptime claims/i)).toBeTruthy();
+    expect(screen.getAllByText(/no hosted artifact upload/i).length).toBeGreaterThan(0);
+
+    for (const title of ["Waitlist", "Resend email", "Browser preview", "Hosted review", "Artifact storage"]) {
+      expect(screen.getByRole("heading", { name: title })).toBeTruthy();
+    }
+    for (const period of ["Now", "Next", "Later"]) {
+      expect(screen.getByText(period)).toBeTruthy();
+    }
+    for (const item of CLOUD_UPDATE_LOG) {
+      expect(screen.getByText(item.title)).toBeTruthy();
+    }
+
+    expect(screen.getAllByRole("link", { name: /Join/i })[0]?.getAttribute("href")).toBe(
+      "/cloud/waitlist?source=cloud_status",
+    );
+    expect(screen.getByRole("link", { name: "X @codepawl" }).getAttribute("href")).toBe(
+      "https://x.com/codepawl",
+    );
+    expect(screen.getByRole("link", { name: "Threads @codepawl" }).getAttribute("href")).toBe(
+      "https://www.threads.com/@codepawl?igshid=NTc4MTIwNjQ2YQ==",
+    );
+    expect(screen.getByRole("link", { name: "Evidence Hub" }).getAttribute("href")).toBe(
+      "/cloud/evidence",
     );
   });
 

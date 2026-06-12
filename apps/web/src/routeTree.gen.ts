@@ -33,6 +33,7 @@ import { Route as OpenpawlDocsRouteImport } from './routes/openpawl.docs'
 import { Route as NewsletterConfirmRouteImport } from './routes/newsletter.confirm'
 import { Route as DocsSplatRouteImport } from './routes/docs.$'
 import { Route as CloudWaitlistRouteImport } from './routes/cloud.waitlist'
+import { Route as CloudStatusRouteImport } from './routes/cloud.status'
 import { Route as CloudEvidenceRouteImport } from './routes/cloud.evidence'
 import { Route as ApiGithubMarketplaceRouteImport } from './routes/api.github.marketplace'
 import { Route as ApiCloudWaitlistRouteImport } from './routes/api.cloud.waitlist'
@@ -157,6 +158,11 @@ const CloudWaitlistRoute = CloudWaitlistRouteImport.update({
   path: '/waitlist',
   getParentRoute: () => CloudRoute,
 } as any)
+const CloudStatusRoute = CloudStatusRouteImport.update({
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => CloudRoute,
+} as any)
 const CloudEvidenceRoute = CloudEvidenceRouteImport.update({
   id: '/evidence',
   path: '/evidence',
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/cloud/evidence': typeof CloudEvidenceRoute
+  '/cloud/status': typeof CloudStatusRoute
   '/cloud/waitlist': typeof CloudWaitlistRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/cloud/evidence': typeof CloudEvidenceRoute
+  '/cloud/status': typeof CloudStatusRoute
   '/cloud/waitlist': typeof CloudWaitlistRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
@@ -247,6 +255,7 @@ export interface FileRoutesById {
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/cloud/evidence': typeof CloudEvidenceRoute
+  '/cloud/status': typeof CloudStatusRoute
   '/cloud/waitlist': typeof CloudWaitlistRoute
   '/docs/$': typeof DocsSplatRoute
   '/newsletter/confirm': typeof NewsletterConfirmRoute
@@ -278,6 +287,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/terms'
     | '/cloud/evidence'
+    | '/cloud/status'
     | '/cloud/waitlist'
     | '/docs/$'
     | '/newsletter/confirm'
@@ -305,6 +315,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/terms'
     | '/cloud/evidence'
+    | '/cloud/status'
     | '/cloud/waitlist'
     | '/docs/$'
     | '/newsletter/confirm'
@@ -334,6 +345,7 @@ export interface FileRouteTypes {
     | '/status'
     | '/terms'
     | '/cloud/evidence'
+    | '/cloud/status'
     | '/cloud/waitlist'
     | '/docs/$'
     | '/newsletter/confirm'
@@ -538,6 +550,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CloudWaitlistRouteImport
       parentRoute: typeof CloudRoute
     }
+    '/cloud/status': {
+      id: '/cloud/status'
+      path: '/status'
+      fullPath: '/cloud/status'
+      preLoaderRoute: typeof CloudStatusRouteImport
+      parentRoute: typeof CloudRoute
+    }
     '/cloud/evidence': {
       id: '/cloud/evidence'
       path: '/evidence'
@@ -564,11 +583,13 @@ declare module '@tanstack/react-router' {
 
 interface CloudRouteChildren {
   CloudEvidenceRoute: typeof CloudEvidenceRoute
+  CloudStatusRoute: typeof CloudStatusRoute
   CloudWaitlistRoute: typeof CloudWaitlistRoute
 }
 
 const CloudRouteChildren: CloudRouteChildren = {
   CloudEvidenceRoute: CloudEvidenceRoute,
+  CloudStatusRoute: CloudStatusRoute,
   CloudWaitlistRoute: CloudWaitlistRoute,
 }
 
