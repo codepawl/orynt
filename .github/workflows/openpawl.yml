@@ -126,6 +126,7 @@ jobs:
           # Capture the latest run ID from the target repository.
           RUN_DIR=$(ls -td "$GITHUB_WORKSPACE/$OPENPAWL_REPO_PATH"/.codepawl/runs/run_* 2>/dev/null | head -1)
           if [ -n "$RUN_DIR" ]; then
+            RUN_DIR=$(realpath "$RUN_DIR")
             RUN_ID=$(basename "$RUN_DIR")
             echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
             echo "run_dir=${RUN_DIR}" >> "$GITHUB_OUTPUT"

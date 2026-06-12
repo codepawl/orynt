@@ -29,7 +29,7 @@ describe("Openpawl workflow invocation", () => {
   it("keeps the sample workflow pinned to the public Action release", async () => {
     const workflow = await readText(SAMPLE_WORKFLOW_PATH);
 
-    expect(workflow).toContain("uses: codepawl/openpawl@v0.5.1");
+    expect(workflow).toContain("uses: codepawl/openpawl@v0.5.3");
     expect(workflow).not.toContain("uses: codepawl/openpawl@main");
     expect(workflow).not.toContain("repository: codepawl/codepawl");
     expect(workflow).not.toContain("bun run dev:cli -- openpawl-trigger");
@@ -44,7 +44,7 @@ describe("Openpawl workflow invocation", () => {
     expect(workflow).not.toContain("cat > /tmp/openpawl-manual-pr.md <<EOF");
     expect(workflow).not.toContain("cat > /tmp/openpawl-pr-body.md <<EOF");
 
-    expect(sampleWorkflow).toContain("uses: codepawl/openpawl@v0.5.1");
+    expect(sampleWorkflow).toContain("uses: codepawl/openpawl@v0.5.3");
     expect(sampleWorkflow).not.toContain("cat > /tmp/openpawl-manual-pr.md <<EOF");
     expect(sampleWorkflow).not.toContain("cat > /tmp/openpawl-pr-body.md <<EOF");
   });

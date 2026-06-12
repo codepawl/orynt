@@ -14,6 +14,7 @@
     "dev:all": "turbo run dev",
     "dev:cli": "turbo run dev --filter=@codepawl/cli",
     "build": "turbo run build",
+    "build:cf": "bun run --filter @codepawl/web build:cf",
     "start": "turbo run start --filter=@codepawl/web",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

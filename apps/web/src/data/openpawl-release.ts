@@ -4,7 +4,7 @@ export const OPENPAWL_RELEASE = {
   repository: "codepawl/openpawl",
   repositoryUrl: "https://github.com/codepawl/openpawl",
   releaseUrl: "https://github.com/codepawl/openpawl/releases/tag/v0.5.3",
-  publishedAt: "2026-06-12T00:00:00Z",
+  publishedAt: "2026-06-12T08:50:39.467Z",
   docs: {
     readme: "https://github.com/codepawl/openpawl/blob/v0.5.3/README.md",
     install: "https://github.com/codepawl/openpawl/blob/v0.5.3/docs/OPENPAWL_INSTALL.md",

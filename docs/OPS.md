@@ -57,7 +57,8 @@ Never commit `.env`, `.env.local`, or any file containing real keys. `.env.examp
 ### Web (apps/web)
 
 - **Trigger**: push to `main` (production), push to any other branch (preview)
-- **Build command**: `bun install && bun --filter @codepawl/web build`
+- **Build command**: `bun install --frozen-lockfile && bun run build:cf`
+- **Package build command**: `bun run --filter @codepawl/web build:cf`
 - **Output**: `apps/web/dist/client/` and `apps/web/dist/server/server.mjs` for local preview; Cloudflare deploys from `wrangler.jsonc` and the TanStack Start server entry
 - **Production deploy**: `cd apps/web && bun run deploy` (promotes to live)
 - **Non-production deploy**: `cd apps/web && npx wrangler versions upload` (preview URL only, no traffic shift)

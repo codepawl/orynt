@@ -198,6 +198,7 @@ jobs:
           fi
 
           if [ -n "$RUN_DIR" ] && [ -d "$RUN_DIR" ]; then
+            RUN_DIR=$(realpath "$RUN_DIR")
             RUN_ID=$(basename "$RUN_DIR")
             echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
             echo "run_dir=${RUN_DIR}" >> "$GITHUB_OUTPUT"

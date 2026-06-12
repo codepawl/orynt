@@ -12,6 +12,7 @@ export default tseslint.config(
       ".turbo/**",
       "e2e/**",
       "__tests__/**",
+      "postcss.config.js",
     ],
   },
   {
