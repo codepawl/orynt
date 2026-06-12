@@ -27,8 +27,9 @@
     "test:web": "bun --filter @codepawl/web test",
     "test:all": "turbo run test",
     "test:e2e": "cd apps/web && bunx playwright test --reporter=line",
-    "test:e2e:attached": "cd apps/web && PLAYWRIGHT_SKIP_WEBSERVER=1 bunx playwright test --reporter=line",
-    "test:e2e:web": "cd apps/web && CI=true bunx playwright test --reporter=line",
+    "test:e2e:prod": "cd apps/web && PLAYWRIGHT_BASE_URL=https://codepawl.com bunx playwright test --reporter=line",
+    "test:e2e:headed": "cd apps/web && bunx playwright test --headed --reporter=line",
+    "test:e2e:ui": "cd apps/web && bunx playwright test --ui",
     "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --port 8000",
     "test:api": "cd apps/api && uv run pytest",
     "lint:api": "cd apps/api && uv run ruff check .",
@@ -38,6 +39,7 @@
     "postcss": "8.5.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "turbo": "^2.9.16"
   }
 }

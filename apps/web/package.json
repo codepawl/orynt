@@ -13,8 +13,10 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
-    "test:e2e:attached": "PLAYWRIGHT_SKIP_WEBSERVER=1 playwright test"
+    "test:e2e": "playwright test --reporter=line",
+    "test:e2e:prod": "PLAYWRIGHT_BASE_URL=https://codepawl.com playwright test --reporter=line",
+    "test:e2e:headed": "playwright test --headed --reporter=line",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@clerk/react": "^6.7.3",
@@ -42,7 +44,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.40.0",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@tanstack/react-router": "^1.170.15",
     "@tanstack/react-start": "^1.168.25",

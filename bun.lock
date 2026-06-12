@@ -5,6 +5,7 @@
     "": {
       "name": "codepawl",
       "devDependencies": {
+        "@playwright/test": "^1.60.0",
         "turbo": "^2.9.16",
       },
     },
@@ -36,7 +37,7 @@
       },
       "devDependencies": {
         "@cloudflare/vite-plugin": "^1.40.0",
-        "@playwright/test": "^1.58.2",
+        "@playwright/test": "^1.60.0",
         "@tailwindcss/postcss": "^4.0.0",
         "@tanstack/react-router": "^1.170.15",
         "@tanstack/react-start": "^1.168.25",
@@ -53,7 +54,7 @@
     },
     "packages/cli": {
       "name": "@codepawl/cli",
-      "version": "0.1.0",
+      "version": "0.5.1",
       "bin": {
         "codepawl": "./src/bin.ts",
       },
@@ -69,7 +70,7 @@
     },
     "packages/core": {
       "name": "@codepawl/core",
-      "version": "0.1.0",
+      "version": "0.5.1",
       "dependencies": {
         "@codepawl/shared": "workspace:*",
         "zod": "^4.4.3",
@@ -82,7 +83,7 @@
     },
     "packages/shared": {
       "name": "@codepawl/shared",
-      "version": "0.0.0",
+      "version": "0.5.1",
       "devDependencies": {
         "typescript": "^5.5.4",
       },
