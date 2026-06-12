@@ -26,16 +26,18 @@ describe("CloudEvidenceDemo", () => {
     expect(screen.getAllByText("report.md").length).toBeGreaterThan(0);
     expect(screen.getAllByText("trace.json").length).toBeGreaterThan(0);
     expect(screen.getAllByText("run.json").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Future intake is designed around six Openpawl v1 artifacts only/i)).toBeTruthy();
   });
 
   test("keeps Cloud copy safe and avoids real-user data intake claims", () => {
     render(<CloudEvidenceDemo />);
 
     expect(screen.getByText(/static demo fixtures only/i)).toBeTruthy();
-    expect(screen.getByText(/no customer artifact intake/i)).toBeTruthy();
+    expect(screen.getAllByText(/no customer artifact intake/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/no billing/i)).toBeTruthy();
     expect(screen.getByText(/no organization RBAC/i)).toBeTruthy();
     expect(screen.getByText(/no production Cloud provisioning/i)).toBeTruthy();
+    expect(screen.getByText(/Upload controls are not enabled/i)).toBeTruthy();
     expect(screen.queryByText(/upload your artifacts/i)).toBeNull();
     expect(screen.queryByText(/start a free trial/i)).toBeNull();
   });

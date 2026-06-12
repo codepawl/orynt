@@ -47,6 +47,7 @@ function TermsPage() {
             "Review AI-generated output before applying it to production systems.",
             "No broad autonomous write behavior is promised by this website.",
             "No hosted Cloud service, billing plan, or production SLA is offered from these pages.",
+            "The Cloud Evidence Hub page is a read-only demo and does not currently accept or store real customer artifacts.",
           ]}
         />
       </InfoCard>
@@ -69,4 +70,3 @@ function TermsPage() {
     </PageShell>
   );
 }
-

@@ -109,19 +109,110 @@ Route names may change to match existing app conventions before implementation.
 
 ## Artifact Intake
 
+CP-002 defines the intake contract only. There is still no public upload route,
+no persistence for customer artifacts, and no production Cloud provisioning.
+`/cloud/evidence` remains a read-only static demo until a later approved
+checkpoint explicitly enables intake.
+
 Accepted files:
 
-- `report.md`
-- `trace.json`
 - `run.json`
+- `trace.json`
 - `patch-plan.json`
 - `selected-files.json`
 - `applied-files.json`
+- `report.md`
+
+Required artifact set:
+
+- A complete intake candidate must include exactly the six accepted artifact
+  names above. Missing required artifacts are rejected.
+- Extra files are not part of the Cloud Evidence Hub contract and must be
+  rejected or ignored before persistence is considered.
+- Archives, source trees, `.git` directories, dependency folders, environment
+  files, credential files, screenshots, logs outside the accepted artifact set,
+  and unrelated repository content are rejected.
+- Artifact paths supplied by clients are treated as untrusted labels. Intake
+  normalizes by accepted artifact name only.
+
+schemaVersion requirements:
+
+- `run.json`, `trace.json`, `patch-plan.json`, `selected-files.json`, and
+  `applied-files.json` must be valid JSON objects with `schemaVersion: "1"`.
+- `schemaVersion` is required on every JSON artifact. Missing, numeric,
+  unsupported, or mixed schema versions are rejected.
+- `runId` must be present in `run.json`; all JSON artifacts with a `runId` must
+  match `run.json`.
+- `trace.json` must keep `traceId` and `runId` consistent with the Openpawl v1
+  run artifact schema.
+- `report.md` is Markdown display content and does not carry `schemaVersion`,
+  but it must correspond to the same run metadata shown by `run.json`.
+
+Size limits for future upload design:
+
+- Total accepted artifact set: 10 MiB maximum.
+- `run.json`: 256 KiB maximum.
+- `trace.json`: 5 MiB maximum.
+- `patch-plan.json`: 1 MiB maximum.
+- `selected-files.json`: 1 MiB maximum.
+- `applied-files.json`: 1 MiB maximum.
+- `report.md`: 512 KiB maximum.
+- These are design limits for a future upload/link flow. CP-002 only validates
+  static demo objects locally in the web app.
+
+Redaction expectations:
+
+- Users must redact secrets, credentials, tokens, private keys, personal data,
+  proprietary source snippets, customer prompts, and sensitive model responses
+  before any future submission.
+- `selected-files.json` may contain file paths and selected content in
+  self-managed Openpawl artifacts, but the hosted intake must warn users not to
+  submit private source content unless a later privacy/security review approves
+  that workflow.
+- Markdown and JSON are displayed as data only. They must not be executed, and
+  rendered Markdown must be sanitized.
+- Intake logs must record validation status, file names, sizes, hashes, and
+  rejection codes only; they must not log artifact bodies.
+
+Rejection reasons:
+
+- `missing_required_artifact`: one or more accepted artifacts is absent.
+- `unknown_artifact`: a file outside the six accepted names was submitted.
+- `unsupported_archive_or_tree`: the submission is an archive/source tree rather
+  than the flat accepted artifact set.
+- `oversized_artifact`: one file exceeds its per-file limit.
+- `oversized_artifact_set`: combined artifacts exceed the total limit.
+- `invalid_json`: a JSON artifact cannot be parsed as a JSON object.
+- `wrong_schema_version`: JSON artifact schemaVersion is missing or not `"1"`.
+- `run_id_mismatch`: artifact run identifiers do not match `run.json`.
+- `unsafe_payload_text`: artifact text appears to contain secrets, credentials,
+  private keys, or other unsafe-looking sensitive data.
+- `unredacted_source_or_prompt`: artifact text appears to include source code,
+  prompts, traces, or model output that has not been approved for hosted intake.
+- `unsupported_openpawl_version`: artifacts do not match the supported Openpawl
+  artifact contract for the enabled Cloud checkpoint.
+- `malformed_report`: `report.md` is empty, too large, or cannot be safely
+  displayed as Markdown.
+
+Retention policy for future uploads:
+
+- Before intake is enabled, publish the retention period in product copy and
+  legal pages.
+- Default future retention target: retain accepted artifacts and normalized
+  metadata for 30 days for waitlist/private-preview evidence review, then delete
+  unless a user explicitly requests earlier deletion or a later paid plan
+  defines a different policy.
+- Rejected artifact bodies should not be persisted. Validation events may keep
+  hashed identifiers, sizes, file names, and rejection codes for abuse
+  prevention and auditability.
+- Do not retain full repositories, automatic source snapshots, billing data,
+  organization RBAC state, or team dashboards as part of this checkpoint.
 
 Validation:
 
 - Enforce size limits per file and total upload.
-- Require `run.json` or `report.md` with enough metadata to identify a run.
+- Require the complete six-file artifact set with `run.json` metadata to
+  identify a run.
 - Parse JSON with schema validation where available.
 - Treat Markdown as display content, not executable content.
 - Reject archives containing source trees, `.git`, secrets files, or unrelated repository content.

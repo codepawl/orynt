@@ -1,3 +1,9 @@
+import {
+  CLOUD_EVIDENCE_ACCEPTED_FILES,
+  type CloudEvidenceArtifactSet,
+  validateCloudEvidenceArtifactSet,
+} from "@/lib/cloud-evidence-artifacts";
+
 export type EvidenceArtifact = {
   name: string;
   kind: "report" | "trace" | "run" | "patch-plan" | "selected-files" | "applied-files";
@@ -20,17 +26,100 @@ export type EvidenceRunViewModel = {
   summary: ReadonlyArray<{ label: string; value: string }>;
 };
 
+const DEMO_RUN_ID = "run_demo_openpawl_v051";
+
+export const DEMO_EVIDENCE_ARTIFACT_SET = {
+  "run.json": {
+    schemaVersion: "1",
+    runId: DEMO_RUN_ID,
+    success: true,
+    mode: "dry-run",
+    error: null,
+    durationMs: 0,
+    tokenUsage: { input: 0, output: 0, total: 0 },
+    validationMaxRetries: 0,
+    validationRetryAttempt: 0,
+    readiness: {
+      status: "ready",
+      reasons: ["Static demo fixture for the upcoming Evidence Hub."],
+      blockers: [],
+      warnings: [],
+    },
+    writeSummary: {
+      attempted: 0,
+      created: 0,
+      skipped: 0,
+      rejected: 0,
+    },
+    filesCreated: [],
+    filesSkipped: [],
+    filesRejected: [],
+  },
+  "trace.json": {
+    schemaVersion: "1",
+    traceId: DEMO_RUN_ID,
+    runId: DEMO_RUN_ID,
+    totalDurationMs: 0,
+    stepCount: 0,
+    llmCallsCount: 0,
+    tokenUsage: { input: 0, output: 0, total: 0 },
+    events: [],
+    steps: [],
+  },
+  "patch-plan.json": {
+    schemaVersion: "1",
+    runId: DEMO_RUN_ID,
+    rationale: "Static demo. No repository code or generated patch content is stored.",
+    chunks: [],
+    groundingNotes: ["Demo fixture only; no customer artifact intake is enabled."],
+    rejectedChunks: [],
+  },
+  "selected-files.json": {
+    schemaVersion: "1",
+    runId: DEMO_RUN_ID,
+    selectedFiles: [
+      {
+        path: "demo/path-only-reference.ts",
+        reason: "Path-only demo reference.",
+        content: "[redacted demo placeholder]",
+      },
+    ],
+  },
+  "applied-files.json": {
+    schemaVersion: "1",
+    runId: DEMO_RUN_ID,
+    attempted: 0,
+    created: [],
+    skipped: [],
+    rejected: [],
+  },
+  "report.md": `## Evidence Summary
+
+- Run ID: ${DEMO_RUN_ID}
+- Mode: dry-run
+- Status: success
+- Readiness: ready
+- Validation: passed
+- schemaVersion: 1
+- Report path: .codepawl/runs/${DEMO_RUN_ID}/report.md
+- Trace path: .codepawl/runs/${DEMO_RUN_ID}/trace.json
+
+This demo report is static and does not include customer prompts, repository code, traces, logs, or uploaded artifacts.`,
+} as const satisfies CloudEvidenceArtifactSet;
+
+const DEMO_EVIDENCE_VALIDATION = validateDemoEvidenceArtifactSet();
+
 export const DEMO_EVIDENCE_RUN: EvidenceRunViewModel = {
-  runId: "run_demo_openpawl_v051",
-  status: "success",
+  runId: DEMO_EVIDENCE_VALIDATION.runId,
+  status: DEMO_EVIDENCE_ARTIFACT_SET["run.json"].success ? "success" : "failure",
   readiness: "ready",
   validation: "passed",
-  mode: "dry-run",
-  schemaVersion: "1",
+  mode: DEMO_EVIDENCE_ARTIFACT_SET["run.json"].mode,
+  schemaVersion: DEMO_EVIDENCE_VALIDATION.schemaVersion,
   source: "Static demo fixture based on Openpawl v0.5.1 artifact contracts",
   actionsUrl: "https://github.com/codepawl/openpawl/actions",
-  reportPath: ".codepawl/runs/run_demo_openpawl_v051/report.md",
-  tracePath: ".codepawl/runs/run_demo_openpawl_v051/trace.json",
+  reportPath: `.codepawl/runs/${DEMO_RUN_ID}/report.md`,
+  tracePath: `.codepawl/runs/${DEMO_RUN_ID}/trace.json`,
   artifacts: [
     {
       name: "report.md",
@@ -70,14 +159,14 @@ export const DEMO_EVIDENCE_RUN: EvidenceRunViewModel = {
     },
   ],
   summary: [
-    { label: "Run ID", value: "run_demo_openpawl_v051" },
-    { label: "Mode", value: "dry-run" },
+    { label: "Run ID", value: DEMO_EVIDENCE_VALIDATION.runId },
+    { label: "Mode", value: DEMO_EVIDENCE_ARTIFACT_SET["run.json"].mode },
     { label: "Status", value: "success" },
     { label: "Readiness", value: "ready" },
     { label: "Validation", value: "passed" },
-    { label: "schemaVersion", value: "1" },
+    { label: "schemaVersion", value: DEMO_EVIDENCE_VALIDATION.schemaVersion },
     { label: "Provider calls", value: "0 demo calls" },
-    { label: "Artifact root", value: ".codepawl/runs/run_demo_openpawl_v051/" },
+    { label: "Artifact root", value: `.codepawl/runs/${DEMO_RUN_ID}/` },
   ],
 } as const;
 
@@ -96,6 +185,12 @@ export function CloudEvidenceDemo({ run = DEMO_EVIDENCE_RUN }: { run?: EvidenceR
         The page uses static demo fixtures only. It does not upload, store, or
         process real repository code, prompts, traces, artifacts, billing data,
         or customer workspaces.
+      </p>
+      <p className="cp-body mt-4 max-w-3xl text-fg-2">
+        Future intake is designed around six Openpawl v1 artifacts only:{" "}
+        <code className="cp-inline-code">{CLOUD_EVIDENCE_ACCEPTED_FILES.join(", ")}</code>.
+        Artifacts must be redacted before submission. Upload controls are not
+        enabled in this checkpoint.
       </p>
 
       <section className="border-ink-4 mt-12 grid gap-6 border-y-2 py-6 md:grid-cols-4">
@@ -172,99 +267,55 @@ export function CloudEvidenceDemo({ run = DEMO_EVIDENCE_RUN }: { run?: EvidenceR
           <ArtifactPanel
             id="report-demo"
             title="report.md"
-            body={`## Evidence Summary
-
-- Run ID: ${run.runId}
-- Mode: ${run.mode}
-- Status: ${run.status}
-- Readiness: ${run.readiness}
-- Validation: ${run.validation}
-- schemaVersion: ${run.schemaVersion}
-- Report path: ${run.reportPath}
-- Trace path: ${run.tracePath}
-
-This demo report is static and does not include customer prompts, repository code, traces, logs, or uploaded artifacts.`}
+            body={DEMO_EVIDENCE_VALIDATION.artifacts["report.md"]}
           />
           <ArtifactPanel
             id="run-demo"
             title="run.json"
-            body={JSON.stringify(
-              {
-                schemaVersion: run.schemaVersion,
-                runId: run.runId,
-                mode: run.mode,
-                status: run.status,
-                readiness: run.readiness,
-                validation: run.validation,
-                artifactCount: run.artifacts.length,
-              },
-              null,
-              2,
-            )}
+            body={formatArtifact("run.json")}
           />
           <ArtifactPanel
             id="trace-demo"
             title="trace.json"
-            body={JSON.stringify(
-              {
-                schemaVersion: run.schemaVersion,
-                runId: run.runId,
-                providerCalls: 0,
-                events: [
-                  "demo_fixture_loaded",
-                  "evidence_summary_rendered",
-                  "artifact_list_rendered",
-                ],
-              },
-              null,
-              2,
-            )}
+            body={formatArtifact("trace.json")}
           />
           <ArtifactPanel
             id="patch-plan-demo"
             title="patch-plan.json"
-            body={JSON.stringify(
-              {
-                schemaVersion: run.schemaVersion,
-                runId: run.runId,
-                patches: [],
-                note: "Static demo. No repository code or generated patch content is stored.",
-              },
-              null,
-              2,
-            )}
+            body={formatArtifact("patch-plan.json")}
           />
           <ArtifactPanel
             id="selected-files-demo"
             title="selected-files.json"
-            body={JSON.stringify(
-              {
-                schemaVersion: run.schemaVersion,
-                runId: run.runId,
-                selectedFiles: ["demo/path-only-reference.ts"],
-              },
-              null,
-              2,
-            )}
+            body={formatArtifact("selected-files.json")}
           />
           <ArtifactPanel
             id="applied-files-demo"
             title="applied-files.json"
-            body={JSON.stringify(
-              {
-                schemaVersion: run.schemaVersion,
-                runId: run.runId,
-                appliedFiles: [],
-                writeMode: "not used in this read-only demo",
-              },
-              null,
-              2,
-            )}
+            body={formatArtifact("applied-files.json")}
           />
         </div>
       </section>
     </article>
   );
+}
+
+function formatArtifact(name: Exclude<keyof CloudEvidenceArtifactSet, "report.md">): string {
+  return JSON.stringify(DEMO_EVIDENCE_VALIDATION.artifacts[name], null, 2);
+}
+
+function validateDemoEvidenceArtifactSet() {
+  const result = validateCloudEvidenceArtifactSet(DEMO_EVIDENCE_ARTIFACT_SET);
+
+  if (!result.ok) {
+    throw new Error(
+      `Invalid Cloud Evidence demo fixture: ${result.issues
+        .map((issue) => issue.message)
+        .join("; ")}`,
+    );
+  }
+
+  return result;
 }
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
