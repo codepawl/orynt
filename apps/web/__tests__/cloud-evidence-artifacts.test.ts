@@ -146,6 +146,31 @@ describe("validateCloudEvidenceArtifactSet", () => {
     );
   });
 
+  test("rejects an Openpawl bundle with mismatched nested run IDs", () => {
+    const result = parseCloudEvidenceArtifactBundle(
+      JSON.stringify({
+        ...DEMO_OPENPAWL_EVIDENCE_BUNDLE,
+        artifacts: {
+          ...DEMO_OPENPAWL_EVIDENCE_BUNDLE.artifacts,
+          "patch-plan.json": {
+            ...DEMO_OPENPAWL_EVIDENCE_BUNDLE.artifacts["patch-plan.json"],
+            runId: "run_mismatch",
+          },
+        },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected nested run ID mismatch rejection");
+    expect(result.status).toBe("rejected");
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        code: "run_id_mismatch",
+        artifact: "patch-plan.json",
+      }),
+    );
+  });
+
   test("rejects invalid local preview JSON bundle text", () => {
     const result = parseCloudEvidenceArtifactBundle("{not json");
 

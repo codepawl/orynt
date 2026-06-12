@@ -194,9 +194,9 @@ export function CloudEvidenceDemo({ run = DEMO_EVIDENCE_RUN }: { run?: EvidenceR
         or customer workspaces.
       </p>
       <p className="cp-body mt-4 max-w-3xl text-fg-2">
-        Local preview accepts Openpawl{" "}
+        Local preview accepts Openpawl runs that produce{" "}
         <code className="cp-inline-code">openpawl-evidence-bundle.json</code>{" "}
-        files downloaded from Openpawl run artifacts. Future hosted intake is
+        files for browser-only review. Future hosted intake is
         designed around six Openpawl v1 artifacts only:{" "}
         <code className="cp-inline-code">{CLOUD_EVIDENCE_ACCEPTED_FILES.join(", ")}</code>.
         Artifacts must be redacted before submission. Upload controls are not

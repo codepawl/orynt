@@ -126,6 +126,13 @@ The bundle wrapper is validated locally before rendering and no server-side
 upload, artifact storage, Openpawl runtime change, Marketplace webhook change,
 or production Cloud provisioning is introduced.
 
+CP-005 adds automated browser proof that a synthetic Openpawl
+`openpawl-evidence-bundle.json` fixture can be pasted into `/cloud/evidence`
+and rendered through the local preview Evidence Summary. The inspected
+Openpawl checkout has commit `7c82d4f` on a branch, but no release tag contains
+that commit, so CodePawl copy must not claim bundle export availability for
+Openpawl `v0.5.1` or any other release until the public release/tag is verified.
+
 Accepted local preview shapes:
 
 - Preferred CP-004 shape: an Openpawl `openpawl-evidence-bundle.json` object
@@ -323,7 +330,11 @@ Browser smoke:
 
 Manual QA:
 
-- Upload/link a known Openpawl `v0.5.1` run artifact set.
+- Preview a synthetic Openpawl `openpawl-evidence-bundle.json` fixture locally
+  in the browser.
+- After Openpawl cuts a release containing bundle export, preview a known
+  bundle produced by that release and then update release-specific copy only if
+  the release/tag is verified.
 - Verify summary values match `report.md`, `run.json`, and `trace.json`.
 - Verify artifact viewer handles long JSON and Markdown without clipping.
 - Verify Cloud copy remains upcoming/waitlist-only.
@@ -383,6 +394,21 @@ Manual QA:
      in the browser.
    - No server upload/storage, Openpawl runtime changes, Marketplace webhook
      changes, or production Cloud provisioning were added.
+
+3c. **CP-005 end-to-end Openpawl bundle preview proof**
+   - Added a synthetic Playwright fixture shaped like Openpawl
+     `openpawl-evidence-bundle.json`; no real run data or customer artifacts
+     are committed.
+   - Added browser E2E proof that pasting the synthetic bundle into
+     `/cloud/evidence` renders a valid local preview Evidence Summary, run ID,
+     provider-call count, report content, and no-upload/no-storage copy.
+   - Added browser rejection proof for malformed bundle metadata and mismatched
+     nested artifact run IDs.
+   - Added validator regression coverage for mismatched nested run IDs.
+   - Updated copy to say bundle preview works with Openpawl runs that produce
+     `openpawl-evidence-bundle.json`, without naming a release.
+   - Recorded the Openpawl release dependency: commit `7c82d4f` contains bundle
+     export, but no inspected release tag currently contains that commit.
 
 4. **Waitlist-safe public surface**
    - Add Cloud Evidence Hub overview only if product copy is approved.
