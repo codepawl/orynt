@@ -20,17 +20,17 @@ type LinkItem = {
 };
 
 export const OPENPAWL_REPO = "https://github.com/codepawl/openpawl";
-export const OPENPAWL_RELEASE = "v0.5.1";
+export const OPENPAWL_RELEASE = "v0.5.3";
 export const OPENPAWL_RELEASE_URL =
-  "https://github.com/codepawl/openpawl/releases/tag/v0.5.1";
+  "https://github.com/codepawl/openpawl/releases/tag/v0.5.3";
 export const OPENPAWL_MAIN_DOCS =
   "https://github.com/codepawl/openpawl/tree/main/docs";
 export const OPENPAWL_INSTALL_DOC =
-  "https://github.com/codepawl/openpawl/blob/v0.5.1/docs/OPENPAWL_INSTALL.md";
+  "https://github.com/codepawl/openpawl/blob/v0.5.3/docs/OPENPAWL_INSTALL.md";
 export const OPENPAWL_MARKETPLACE_DOC =
-  "https://github.com/codepawl/openpawl/blob/v0.5.1/docs/MARKETPLACE.md";
+  "https://github.com/codepawl/openpawl/blob/v0.5.3/docs/MARKETPLACE.md";
 export const OPENPAWL_ACTION_METADATA =
-  "https://github.com/codepawl/openpawl/blob/v0.5.1/action.yml";
+  "https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml";
 export const OPENPAWL_ISSUES = "https://github.com/codepawl/openpawl/issues";
 export const OPENPAWL_SECURITY =
   "https://github.com/codepawl/openpawl/security/advisories";

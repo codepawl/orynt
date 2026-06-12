@@ -8,7 +8,8 @@ Create the first hosted evidence surface around Openpawl runs: a Cloud Evidence 
 
 ## MVP Scope
 
-- Upload or link Openpawl run artifacts produced by `codepawl/openpawl@v0.5.1`.
+- Preview Openpawl run bundles produced by `codepawl/openpawl@v0.5.3+` locally
+  in the browser, with no server-side upload or customer artifact storage.
 - Evidence page for a single run.
 - Run summary extracted from `run.json` and `report.md` Evidence Summary.
 - Artifact viewer for `report.md`, `trace.json`, `run.json`, `patch-plan.json`, `selected-files.json`, and `applied-files.json`.
@@ -121,17 +122,24 @@ contents are not uploaded, transmitted to CodePawl servers, or stored by
 CodePawl.
 
 CP-004 adds browser-local preview support for Openpawl
-`openpawl-evidence-bundle.json` files produced by Openpawl commit `7c82d4f`.
-The bundle wrapper is validated locally before rendering and no server-side
-upload, artifact storage, Openpawl runtime change, Marketplace webhook change,
-or production Cloud provisioning is introduced.
+`openpawl-evidence-bundle.json` files. The bundle wrapper is validated locally
+before rendering and no server-side upload, artifact storage, Openpawl runtime
+change, Marketplace webhook change, or production Cloud provisioning is
+introduced.
 
 CP-005 adds automated browser proof that a synthetic Openpawl
 `openpawl-evidence-bundle.json` fixture can be pasted into `/cloud/evidence`
 and rendered through the local preview Evidence Summary. The inspected
-Openpawl checkout has commit `7c82d4f` on a branch, but no release tag contains
-that commit, so CodePawl copy must not claim bundle export availability for
-Openpawl `v0.5.1` or any other release until the public release/tag is verified.
+Openpawl checkout had commit `7c82d4f` on a branch, but no release tag contained
+that commit at CP-005 time, so CodePawl copy did not claim release availability
+before verification.
+
+CP-006 syncs the public website, docs, Marketplace pack, and plan to the
+verified Openpawl `v0.5.3` Action release:
+`https://github.com/codepawl/openpawl/releases/tag/v0.5.3`. Public copy may now
+state that Openpawl `v0.5.3+` produces `openpawl-evidence-bundle.json`, while
+keeping `/cloud/evidence` local/browser-only with no server upload or customer
+artifact storage.
 
 Accepted local preview shapes:
 
@@ -407,8 +415,18 @@ Manual QA:
    - Added validator regression coverage for mismatched nested run IDs.
    - Updated copy to say bundle preview works with Openpawl runs that produce
      `openpawl-evidence-bundle.json`, without naming a release.
-   - Recorded the Openpawl release dependency: commit `7c82d4f` contains bundle
-     export, but no inspected release tag currently contains that commit.
+   - Recorded the Openpawl release dependency: commit `7c82d4f` contained bundle
+     export, but no inspected release tag contained that commit at CP-005 time.
+
+3d. **CP-006 v0.5.3 evidence bundle release sync**
+   - Verified Openpawl `v0.5.3` exists at
+     `https://github.com/codepawl/openpawl/releases/tag/v0.5.3` and includes
+     `openpawl-evidence-bundle.json`.
+   - Updated website, install/docs/support-adjacent copy, Marketplace pack, and
+     this plan to reference Openpawl `v0.5.3+` for evidence bundles.
+   - Kept `/cloud/evidence` local/browser-only. No server upload, customer
+     artifact storage, Marketplace webhook behavior change, Openpawl runtime
+     change, or Cloud general-availability claim was introduced.
 
 4. **Waitlist-safe public surface**
    - Add Cloud Evidence Hub overview only if product copy is approved.

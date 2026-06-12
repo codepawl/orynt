@@ -3,7 +3,7 @@
 ## Openpawl Release Roadmap
 
 Openpawl runtime development now belongs in the public
-`codepawl/openpawl@v0.5.1` release line and later public releases. The private
+`codepawl/openpawl@v0.5.3` release line and later public releases. The private
 `packages/core`, `packages/cli`, and `packages/shared` directories are frozen
 compatibility copies until package-removal audit work proves they can be
 deleted safely.
@@ -23,11 +23,13 @@ deleted safely.
 - `v0.4.0`: Trace/Evidence Layer released with schema-versioned machine-readable artifacts and cross-artifact consistency checks.
 - `v0.5.0`: Evidence UX Layer released with report/comment Evidence Summary, Failure Summary, and GitHub Actions artifact context while preserving schema v1 artifacts.
 - `v0.5.1`: post-release reproducibility and GitHub Actions warning patch for v0.5.0.
+- `v0.5.2`: Marketplace positioning and Action metadata patch for the reviewable agent work message.
+- `v0.5.3`: Action evidence bundle patch adding `openpawl-evidence-bundle.json` for local CodePawl Cloud Evidence preview while preserving schema v1 artifacts.
 
 ### Maturity plan
 
 - **Alpha:** CLI + dry-run + trace + CI verified; real-provider runs are experimental.
-- **Beta (current):** v0.5.1 release; safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
+- **Beta (current):** v0.5.3 release; safe write-mode v0 with explicit test command, no source overwrite, PR workflow verified.
 - **v0.2 Reliability (released):** 50-fixture deterministic patch-quality regression harness and failure-taxonomy coverage complete; live GitHub dry-run smoke pass achieved in `27273286439`.
 - **v0.4 Trace/Evidence (released):** schema-backed JSON artifact contracts for run, trace, patch-plan, selected-files, applied-files, and eval metrics. Markdown reports remain human-readable.
 - **v0.5 Evidence UX (released):** present existing schema v1 evidence more clearly in `report.md` and GitHub issue/PR comments without changing autonomous behavior or artifact JSON contracts.

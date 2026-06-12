@@ -86,7 +86,7 @@ Internal layout:
 - **Path**: `packages/core/`
 - **Depends on**: `@codepawl/shared`
 - **Depended on by**: private compatibility scripts only
-- **Source of truth**: `codepawl/openpawl@v0.5.1` and later public Openpawl releases
+- **Source of truth**: `codepawl/openpawl@v0.5.3` and later public Openpawl releases
 
 Runtime behavior changes must be made in the public Openpawl repository first,
 then consumed here through a public Action release. Do not delete this package
@@ -99,7 +99,7 @@ require it.
 - **Path**: `packages/cli/`
 - **Depends on**: `@codepawl/core`, `@codepawl/shared`
 - **Depended on by**: private compatibility scripts only
-- **Source of truth**: `codepawl/openpawl@v0.5.1` and later public Openpawl releases
+- **Source of truth**: `codepawl/openpawl@v0.5.3` and later public Openpawl releases
 
 Private workflows now run the public release from `.openpawl-src` instead of
 this local CLI package.
@@ -110,7 +110,7 @@ this local CLI package.
 - **Path**: `packages/shared/`
 - **Depends on**: nothing
 - **Depended on by**: `apps/web`, frozen `@codepawl/core`, frozen `@codepawl/cli`
-- **Openpawl source of truth**: `codepawl/openpawl@v0.5.1` and later public Openpawl releases
+- **Openpawl source of truth**: `codepawl/openpawl@v0.5.3` and later public Openpawl releases
 
 Generation flow: Pydantic models are source of truth, JSON Schema is emitted from FastAPI's OpenAPI doc, TypeScript types are generated into `packages/shared/src/generated/`. Hand-written types live in `packages/shared/src/types/`.
 

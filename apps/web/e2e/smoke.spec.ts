@@ -35,6 +35,7 @@ test.describe("CodePawl web smoke", () => {
     await page.goto("/cloud/evidence");
 
     await expect(page.getByText("browser-only preview")).toBeVisible();
+    await expect(page.getByText(/Openpawl v0\.5\.3\+ runs/i)).toBeVisible();
     await expect(
       page.getByText("Local preview only. Artifact contents are not uploaded or stored."),
     ).toBeVisible();

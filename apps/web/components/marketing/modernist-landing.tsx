@@ -330,12 +330,12 @@ export function ModernistLanding() {
                   </BlockPress>
                   <BlockPress className="inline-flex">
                     <a
-                      href="https://github.com/codepawl/openpawl/releases/tag/v0.5.1"
+                      href="https://github.com/codepawl/openpawl/releases/tag/v0.5.3"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="cp-hover-button cp-button inline-flex items-center justify-center gap-2 border-2 border-ink-4 bg-ink-1 px-5 py-3 text-fg-1 transition-colors hover:bg-ink-2 focus:outline-none focus:ring-4 focus:ring-ratchet/20"
                     >
-                      codepawl/openpawl@v0.5.1
+                      codepawl/openpawl@v0.5.3
                       <Github aria-hidden size={16} />
                     </a>
                   </BlockPress>

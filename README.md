@@ -44,7 +44,7 @@ Slash review/test commands keep the existing dry-run behavior. Mention commands 
 
 Write mode remains gated behind `workflow_dispatch` plus repo config, or maintainer approval through `/openpawl apply` or the `openpawl-approved` label. Approved writes create a bot branch and PR instead of mutating an existing PR branch.
 
-The GitHub Actions workflow checks out `codepawl/openpawl@v0.5.1` into
+The GitHub Actions workflow checks out `codepawl/openpawl@v0.5.3` into
 `.openpawl-src` and invokes that public release's `@codepawl/cli` directly so
 trigger and run arguments bypass the private root Turbo script.
 
@@ -67,10 +67,16 @@ Openpawl writes machine-readable JSON artifacts with `schemaVersion: "1"`:
 - `selected-files.json`
 - `applied-files.json`
 - patch-quality `metrics.json`
+- `openpawl-evidence-bundle.json` in Openpawl `v0.5.3+` GitHub Action runs
 
 These JSON artifacts are schema-backed in the public `codepawl/openpawl`
 runtime. `report.md` intentionally remains a human-readable Markdown report for
 GitHub comments and does not carry machine-readable front matter.
+
+`openpawl-evidence-bundle.json` wraps the schema v1 artifact set for local
+browser preview at `https://codepawl.com/cloud/evidence`. CodePawl Cloud
+Evidence Hub remains local-preview/demo only; artifact contents are not uploaded
+or stored by CodePawl during that browser preview.
 
 `report.md` starts with a compact Evidence Summary derived from the JSON artifact evidence already produced by the run: run ID, mode, status, readiness, validation state, provider-call count, selected/planned/applied file counts, normalized presentation-only failure category, and artifact paths. Failure reports include a short Failure Summary before the detailed report sections. GitHub issue/PR comments also include Actions run context, the uploaded artifact name, and report/trace paths when available.
 
@@ -79,7 +85,7 @@ When run from GitHub Actions, the Evidence Summary includes the Actions run URL,
 ## Install
 
 See [docs/OPENPAWL_INSTALL.md](docs/OPENPAWL_INSTALL.md) for the pinned
-`codepawl/openpawl@v0.5.1` install path, permissions, artifacts, reports, and
+`codepawl/openpawl@v0.5.3` install path, permissions, artifacts, reports, and
 security notes.
 
 ## Marketplace Status
@@ -87,5 +93,5 @@ security notes.
 Openpawl is a GitHub Marketplace Action candidate in `codepawl/openpawl`.
 This website keeps Marketplace-critical support, install, docs, status,
 security, privacy, and terms URLs stable for submission. The public Action
-release `v0.5.1` is verified; do not treat the GitHub Marketplace listing as
+release `v0.5.3` is verified; do not treat the GitHub Marketplace listing as
 live until its listing URL has been verified.

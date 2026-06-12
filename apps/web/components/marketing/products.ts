@@ -33,7 +33,7 @@ export const STACK_PRODUCTS: ReadonlyArray<StackProduct> = [
     description:
       "Openpawl is an open runtime for coding-agent coordination. It turns agent tasks into plans, validations, guarded changes, and traceable run evidence. The first supported surface is GitHub Actions.",
     availability: "available",
-    install: "Use codepawl/openpawl@v0.5.1 for the public Action release",
+    install: "Use codepawl/openpawl@v0.5.3 for the public Action release",
     language: "TypeScript",
     current_focus: true,
   },

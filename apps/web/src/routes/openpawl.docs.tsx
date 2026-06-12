@@ -37,7 +37,7 @@ function OpenpawlDocsPage() {
     <PageShell
       eyebrow="openpawl / docs"
       title="Openpawl documentation."
-      lead="Openpawl turns agent tasks into plans, validations, guarded changes, and traceable run evidence. Use the verified v0.5.1 public Action release for the current GitHub Actions surface."
+      lead="Openpawl turns agent tasks into plans, validations, guarded changes, and traceable run evidence. Use the verified v0.5.3 public Action release for the current GitHub Actions surface."
     >
       <InfoCard title="Start here">
         <LinkGrid
@@ -81,7 +81,7 @@ function OpenpawlDocsPage() {
           items={[
             "GitHub Actions is the first supported surface and reports findings before any write path is considered.",
             "Inputs include task, mode, repo path, config path, test command, mock fixture, output directory, and bounded validation retries.",
-            "Reports and JSON artifacts are schema-versioned where applicable.",
+            "Reports and JSON artifacts are schema-versioned where applicable; v0.5.3+ runs also produce openpawl-evidence-bundle.json for browser-local Cloud Evidence preview.",
             "Write mode remains explicit and safety-gated; it is not broad autonomous code modification.",
           ]}
         />

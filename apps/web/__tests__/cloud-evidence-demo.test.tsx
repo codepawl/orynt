@@ -29,6 +29,7 @@ describe("CloudEvidenceDemo", () => {
     expect(screen.getAllByText("trace.json").length).toBeGreaterThan(0);
     expect(screen.getAllByText("run.json").length).toBeGreaterThan(0);
     expect(screen.getByText(/accepts Openpawl/i)).toBeTruthy();
+    expect(screen.getAllByText(/v0\.5\.3\+/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/openpawl-evidence-bundle\.json/i).length).toBeGreaterThan(0);
   });
 

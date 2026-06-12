@@ -194,7 +194,8 @@ export function CloudEvidenceDemo({ run = DEMO_EVIDENCE_RUN }: { run?: EvidenceR
         or customer workspaces.
       </p>
       <p className="cp-body mt-4 max-w-3xl text-fg-2">
-        Local preview accepts Openpawl runs that produce{" "}
+        Local preview accepts Openpawl <code className="cp-inline-code">v0.5.3+</code>{" "}
+        runs that produce{" "}
         <code className="cp-inline-code">openpawl-evidence-bundle.json</code>{" "}
         files for browser-only review. Future hosted intake is
         designed around six Openpawl v1 artifacts only:{" "}
@@ -252,7 +253,8 @@ function LocalPreviewPanel({
         Local preview only. Artifact contents are not uploaded or stored.
       </p>
       <p className="cp-body mt-4 max-w-3xl text-fg-2">
-        Paste an <code className="cp-inline-code">openpawl-evidence-bundle.json</code>{" "}
+        Paste an Openpawl <code className="cp-inline-code">v0.5.3+</code>{" "}
+        <code className="cp-inline-code">openpawl-evidence-bundle.json</code>{" "}
         file or choose it from disk. The legacy six-artifact JSON shape is also
         accepted for CP-003 fixtures. Validation runs in this browser using the
         same static artifact contract helper as the demo, and no artifact

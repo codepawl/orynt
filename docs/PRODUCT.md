@@ -3,7 +3,7 @@
 ## Openpawl release maturity (CLI agent engine)
 
 Openpawl runtime source of truth is the public repository at
-`codepawl/openpawl@v0.5.1`. Private `packages/core`, `packages/cli`, and
+`codepawl/openpawl@v0.5.3`. Private `packages/core`, `packages/cli`, and
 `packages/shared` are frozen compatibility copies and are not the active
 development surface.
 
@@ -16,7 +16,9 @@ development surface.
   - `v0.1.0-beta.1`: approval write mode with `/openpawl apply` and `openpawl-approved`, bot-branch PR persistence, and deterministic patch quality harness.
 
 - **Current publish posture**
-  - Use the public `codepawl/openpawl@v0.5.1` Action release for installs.
+  - Use the public `codepawl/openpawl@v0.5.3` Action release for installs.
+  - Openpawl `v0.5.3+` Action runs produce `openpawl-evidence-bundle.json`
+    for local browser preview in CodePawl Cloud Evidence Hub.
   - Do not publish npm packages from this private repository.
   - Keep the GitHub Marketplace listing pending until the listing URL exists and has been verified.
   - Stable publish should wait for safe write-mode and broader real-repo validations in the public Openpawl repository.

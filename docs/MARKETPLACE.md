@@ -11,7 +11,7 @@ Action source of truth is the public repository at
 Openpawl is a Marketplace candidate. Do not claim the listing is live until the
 GitHub Marketplace listing URL exists and has been verified.
 
-Use `v0.5.1` for release-pinned Action install instructions. Keep Marketplace
+Use `v0.5.3` for release-pinned Action install instructions. Keep Marketplace
 listing copy pending until the GitHub Marketplace listing URL exists and has
 been verified.
 
@@ -29,10 +29,10 @@ been verified.
 ## Public Source URLs
 
 - Source repository: `https://github.com/codepawl/openpawl`
-- Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.5.1`
-- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.1/action.yml`
-- Install docs: `https://github.com/codepawl/openpawl/blob/v0.5.1/docs/OPENPAWL_INSTALL.md`
-- Marketplace docs: `https://github.com/codepawl/openpawl/blob/v0.5.1/docs/MARKETPLACE.md`
+- Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.5.3`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml`
+- Install docs: `https://github.com/codepawl/openpawl/blob/v0.5.3/docs/OPENPAWL_INSTALL.md`
+- Marketplace docs: `https://github.com/codepawl/openpawl/blob/v0.5.3/docs/MARKETPLACE.md`
 - Current docs tree: `https://github.com/codepawl/openpawl/tree/main/docs`
 - Support issues: `https://github.com/codepawl/openpawl/issues`
 - Security advisories: `https://github.com/codepawl/openpawl/security/advisories`
@@ -53,6 +53,11 @@ been verified.
 - State that Openpawl is dry-run-first and self-managed.
 - State that write behavior requires explicit maintainer approval and remains
   constrained by the Action safety gates.
+- State that Openpawl `v0.5.3+` can produce
+  `openpawl-evidence-bundle.json` for browser-local CodePawl Cloud Evidence
+  preview.
+- State that CodePawl Cloud Evidence Hub is local-preview/demo only and does
+  not upload or store customer artifact contents.
 
 ## Webhook Notes
 
