@@ -277,6 +277,19 @@ Route smoke:
 - Existing Marketplace-critical routes remain 200.
 - `/api/github/marketplace` GET remains 405 with `Allow: POST`.
 
+Browser smoke:
+
+- Keep HTTP route smoke as the fastest default validation layer.
+- Use Playwright as a focused browser UI smoke layer for deploy/pre-release
+  checks, not as a required blocker for every small local task.
+- Local preview smoke: `bun run test:e2e`.
+- Production smoke: `PLAYWRIGHT_BASE_URL=https://codepawl.com bun run test:e2e`.
+- Chromium is the only default Playwright project. On `ubuntu26.04-x64`,
+  `bunx playwright install chromium` may fail because Playwright does not
+  support managed Chromium for that platform; use the documented system Chrome
+  channel fallback when `/usr/bin/google-chrome` or
+  `/usr/bin/google-chrome-stable` is available.
+
 Manual QA:
 
 - Upload/link a known Openpawl `v0.5.1` run artifact set.
