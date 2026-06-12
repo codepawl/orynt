@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import { DEMO_EVIDENCE_ARTIFACT_SET } from "../components/marketing/cloud-evidence-demo";
-import { validateCloudEvidenceArtifactSet } from "../lib/cloud-evidence-artifacts";
+import {
+  parseCloudEvidenceArtifactBundle,
+  validateCloudEvidenceArtifactSet,
+} from "../lib/cloud-evidence-artifacts";
 
 describe("validateCloudEvidenceArtifactSet", () => {
   test("accepts a valid artifact set", () => {
@@ -61,6 +64,24 @@ describe("validateCloudEvidenceArtifactSet", () => {
       expect.objectContaining({
         code: "unsafe_payload_text",
         artifact: "report.md",
+      }),
+    );
+  });
+
+  test("parses a valid local preview JSON bundle", () => {
+    const result = parseCloudEvidenceArtifactBundle(JSON.stringify(DEMO_EVIDENCE_ARTIFACT_SET));
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects invalid local preview JSON bundle text", () => {
+    const result = parseCloudEvidenceArtifactBundle("{not json");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected parse rejection");
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        code: "invalid_json",
       }),
     );
   });

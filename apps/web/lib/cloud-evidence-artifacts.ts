@@ -27,11 +27,12 @@ export type CloudEvidenceValidationIssue = {
     | "missing_required_artifact"
     | "unknown_artifact"
     | "oversized_artifact"
+    | "invalid_json"
     | "wrong_schema_version"
     | "invalid_artifact_shape"
     | "run_id_mismatch"
     | "unsafe_payload_text";
-  artifact?: CloudEvidenceAcceptedFile;
+  artifact?: string;
   message: string;
 };
 
@@ -48,6 +49,42 @@ export type CloudEvidenceValidationResult =
       status: "rejected" | "blocked";
       issues: ReadonlyArray<CloudEvidenceValidationIssue>;
     };
+
+export function parseCloudEvidenceArtifactBundle(text: string): CloudEvidenceValidationResult {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      status: "rejected",
+      issues: [
+        {
+          code: "invalid_json",
+          message:
+            "Preview bundle must be valid JSON with accepted artifact filenames as top-level keys.",
+        },
+      ],
+    };
+  }
+
+  if (!isPlainObject(parsed)) {
+    return {
+      ok: false,
+      status: "rejected",
+      issues: [
+        {
+          code: "invalid_artifact_shape",
+          message:
+            "Preview bundle must be a JSON object with accepted artifact filenames as top-level keys.",
+        },
+      ],
+    };
+  }
+
+  return validateCloudEvidenceArtifactSet(parsed);
+}
 
 const JSON_ARTIFACTS = CLOUD_EVIDENCE_ACCEPTED_FILES.filter(
   (file) => file !== "report.md",

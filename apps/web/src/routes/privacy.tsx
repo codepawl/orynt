@@ -61,10 +61,13 @@ function PrivacyPage() {
 
       <InfoCard title="Cloud Evidence Hub demo">
         <p>
-          The public Cloud Evidence Hub page is a read-only demo. CodePawl does
-          not currently enable real artifact intake, customer artifact upload,
-          or hosted storage for Openpawl reports, traces, prompts, source code,
-          or workflow artifacts through that page.
+          The public Cloud Evidence Hub page is a read-only demo with an
+          optional browser-local preview. Pasted or selected preview artifacts
+          are validated in your browser and are not transmitted to CodePawl
+          servers, uploaded, or stored by CodePawl. CodePawl does not currently
+          enable real artifact intake, customer artifact upload, or hosted
+          storage for Openpawl reports, traces, prompts, source code, or
+          workflow artifacts through that page.
         </p>
       </InfoCard>
 

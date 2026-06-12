@@ -114,6 +114,12 @@ no persistence for customer artifacts, and no production Cloud provisioning.
 `/cloud/evidence` remains a read-only static demo until a later approved
 checkpoint explicitly enables intake.
 
+CP-003 adds browser-local artifact preview only. Users may paste or select a
+single local JSON bundle shaped as the six accepted artifact filenames below,
+and validation runs entirely in the browser with the web-side helper. Artifact
+contents are not uploaded, transmitted to CodePawl servers, or stored by
+CodePawl.
+
 Accepted files:
 
 - `run.json`
@@ -303,6 +309,21 @@ Manual QA:
    - Define upload/link request shape.
    - Add validation and rejection cases.
    - Decide storage abstraction.
+
+3a. **CP-003 client-side artifact preview**
+   - Added browser-only preview to `/cloud/evidence`; no server-side upload,
+     endpoint, or storage was introduced.
+   - Preview accepts pasted or selected local JSON bundles with top-level keys
+     for `run.json`, `trace.json`, `patch-plan.json`, `selected-files.json`,
+     `applied-files.json`, and `report.md`.
+   - Reuses the web-side artifact validation helper for schemaVersion, required
+     artifacts, local size limits, run ID consistency, artifact shape, and
+     unsafe-looking payload text.
+   - Renders the same Evidence Summary and artifact panels for valid local
+     artifacts.
+   - Shows explicit rejection/blocking reasons for invalid local bundles.
+   - Added copy and legal clarifications: "Local preview only. Artifact contents
+     are not uploaded or stored."
 
 4. **Waitlist-safe public surface**
    - Add Cloud Evidence Hub overview only if product copy is approved.
