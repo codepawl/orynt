@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { OPENPAWL_RELEASE as OPENPAWL_RELEASE_METADATA } from "@/src/data/openpawl-release";
+
 type PageShellProps = {
   eyebrow: string;
   title: ReactNode;
@@ -19,18 +21,15 @@ type LinkItem = {
   external?: boolean;
 };
 
-export const OPENPAWL_REPO = "https://github.com/codepawl/openpawl";
-export const OPENPAWL_RELEASE = "v0.5.3";
-export const OPENPAWL_RELEASE_URL =
-  "https://github.com/codepawl/openpawl/releases/tag/v0.5.3";
-export const OPENPAWL_MAIN_DOCS =
-  "https://github.com/codepawl/openpawl/tree/main/docs";
-export const OPENPAWL_INSTALL_DOC =
-  "https://github.com/codepawl/openpawl/blob/v0.5.3/docs/OPENPAWL_INSTALL.md";
-export const OPENPAWL_MARKETPLACE_DOC =
-  "https://github.com/codepawl/openpawl/blob/v0.5.3/docs/MARKETPLACE.md";
+export const OPENPAWL_REPO = OPENPAWL_RELEASE_METADATA.repositoryUrl;
+export const OPENPAWL_RELEASE = OPENPAWL_RELEASE_METADATA.tag;
+export const OPENPAWL_ACTION_REF = OPENPAWL_RELEASE_METADATA.actionRef;
+export const OPENPAWL_RELEASE_URL = OPENPAWL_RELEASE_METADATA.releaseUrl;
+export const OPENPAWL_MAIN_DOCS = OPENPAWL_RELEASE_METADATA.docs.mainDocs;
+export const OPENPAWL_INSTALL_DOC = OPENPAWL_RELEASE_METADATA.docs.install;
+export const OPENPAWL_MARKETPLACE_DOC = OPENPAWL_RELEASE_METADATA.docs.marketplace;
 export const OPENPAWL_ACTION_METADATA =
-  "https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml";
+  `${OPENPAWL_RELEASE_METADATA.repositoryUrl}/blob/${OPENPAWL_RELEASE_METADATA.tag}/action.yml`;
 export const OPENPAWL_ISSUES = "https://github.com/codepawl/openpawl/issues";
 export const OPENPAWL_SECURITY =
   "https://github.com/codepawl/openpawl/security/advisories";

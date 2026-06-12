@@ -5,6 +5,7 @@ import {
   CodeBlock,
   InfoCard,
   InlineLink,
+  OPENPAWL_ACTION_REF,
   OPENPAWL_INSTALL_DOC,
   OPENPAWL_RELEASE,
   OPENPAWL_RELEASE_URL,
@@ -21,7 +22,7 @@ export const Route = createRoute({
       {
         name: "description",
         content:
-          "Install the first supported Openpawl surface: GitHub Actions for reviewable agent work from the verified v0.5.3 public release tag.",
+          `Install the first supported Openpawl surface: GitHub Actions for reviewable agent work from the verified ${OPENPAWL_RELEASE} public release tag.`,
       },
     ],
   }),
@@ -33,7 +34,7 @@ function OpenpawlInstallPage() {
     <PageShell
       eyebrow="openpawl / install"
       title="Install the first supported Openpawl surface."
-      lead="Openpawl is an open runtime for coding-agent coordination. Its first supported surface is dry-run-default GitHub Actions for reviewable agent work. Pin the verified v0.5.3 release tag while the GitHub Marketplace listing remains pending."
+      lead={`Openpawl is an open runtime for coding-agent coordination. Its first supported surface is dry-run-default GitHub Actions for reviewable agent work. Pin the verified ${OPENPAWL_RELEASE} release tag while the GitHub Marketplace listing remains pending.`}
     >
       <InfoCard title="Pinned release workflow">
         <CodeBlock>{`jobs:
@@ -43,7 +44,7 @@ function OpenpawlInstallPage() {
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: codepawl/openpawl@v0.5.3
+      - uses: ${OPENPAWL_ACTION_REF}
         with:
           task: "review changes and suggest improvements"
           mode: "dry-run"

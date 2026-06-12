@@ -37,7 +37,7 @@ function OpenpawlDocsPage() {
     <PageShell
       eyebrow="openpawl / docs"
       title="Openpawl documentation."
-      lead="Openpawl turns agent tasks into plans, validations, guarded changes, and traceable run evidence. Use the verified v0.5.3 public Action release for the current GitHub Actions surface."
+      lead={`Openpawl turns agent tasks into plans, validations, guarded changes, and traceable run evidence. Use the verified ${OPENPAWL_RELEASE} public Action release for the current GitHub Actions surface.`}
     >
       <InfoCard title="Start here">
         <LinkGrid
