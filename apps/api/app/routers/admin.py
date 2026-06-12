@@ -6,8 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, EmailStr, Field
 from supabase import Client
 
-from app.config import Settings, get_settings
-from app.dependencies import get_supabase_client, require_admin
+from app.dependencies import SettingsDep, get_supabase_client, require_admin
 from app.jobs.sync_github_stats import sync as sync_stats_job
 from app.repositories.product_repo import ProductRepo, SupabaseProductRepo
 from app.repositories.product_stats_repo import ProductStatsRepo, SupabaseProductStatsRepo
@@ -21,25 +20,25 @@ router = APIRouter(
 )
 
 
-def get_product_repo_admin(
+async def get_product_repo_admin(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> ProductRepo:
     return SupabaseProductRepo(client)
 
 
-def get_product_stats_repo_admin(
+async def get_product_stats_repo_admin(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> ProductStatsRepo:
     return SupabaseProductStatsRepo(client)
 
 
-def get_subscriber_repo_admin(
+async def get_subscriber_repo_admin(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> SubscriberRepo:
     return SupabaseSubscriberRepo(client)
 
 
-def get_submission_repo_admin(
+async def get_submission_repo_admin(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> SubmissionRepo:
     return SupabaseSubmissionRepo(client)
@@ -106,7 +105,7 @@ async def sync_stats(
     payload: SyncStatsRequest | None,
     products: Annotated[ProductRepo, Depends(get_product_repo_admin)],
     stats: Annotated[ProductStatsRepo, Depends(get_product_stats_repo_admin)],
-    settings: Annotated[Settings, Depends(get_settings)],
+    settings: SettingsDep,
 ) -> SyncStatsResponse:
     only = payload.product_ids if payload else None
     tally = await sync_stats_job(

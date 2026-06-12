@@ -8,6 +8,7 @@ export default tseslint.config(
     ignores: [
       "node_modules/**",
       "dist/**",
+      ".open-next/**",
       ".next/**",
       ".turbo/**",
       "e2e/**",
@@ -18,6 +19,14 @@ export default tseslint.config(
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
+    },
+  },
+  {
+    files: ["postcss.config.js"],
+    languageOptions: {
+      globals: {
+        module: "readonly",
+      },
     },
   },
 );

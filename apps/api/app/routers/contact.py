@@ -6,8 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from supabase import Client
 
-from app.config import Settings, get_settings
-from app.dependencies import get_supabase_client
+from app.dependencies import SettingsDep, get_supabase_client
 from app.middleware import limiter
 from app.models.contact import ContactRequest, ContactResponse
 from app.repositories.submission_repo import SubmissionRepo, SupabaseSubmissionRepo
@@ -17,7 +16,7 @@ from app.services.turnstile_service import verify_turnstile
 router = APIRouter(prefix="/api/v1/contact", tags=["contact"])
 
 
-def get_submission_repo(
+async def get_submission_repo(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> SubmissionRepo:
     return SupabaseSubmissionRepo(client)
@@ -46,7 +45,7 @@ async def submit(
     request: Request,
     payload: ContactRequest,
     repo: Annotated[SubmissionRepo, Depends(get_submission_repo)],
-    settings: Annotated[Settings, Depends(get_settings)],
+    settings: SettingsDep,
 ) -> ContactResponse:
     await verify_turnstile(payload.turnstile_token, settings)
     ip = request.client.host if request.client else None

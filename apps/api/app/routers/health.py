@@ -19,12 +19,12 @@ log = structlog.get_logger(__name__)
 
 
 @router.get("/health")
-def liveness() -> dict[str, str]:
+async def liveness() -> dict[str, str]:
     return {"status": "ok", "version": "0.1.0"}
 
 
 @router.get("/health/ready")
-def readiness(
+async def readiness(
     client: Annotated[Client, Depends(get_supabase_client)],
 ) -> JSONResponse:
     try:

@@ -7,16 +7,18 @@ Supabase, no Turnstile, no Resend connection required.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import UTC, datetime
+from typing import Any
 
+import httpx
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from app.config import Settings, get_settings
-from app.dependencies import get_supabase_client
+from app.config import Settings
+from app.dependencies import get_settings_dep, get_supabase_client
 from app.main import create_app
 from app.repositories.product_repo import ProductRepo
 from app.repositories.product_stats_repo import ProductStatsRepo
@@ -252,6 +254,13 @@ def product_stats_repo() -> FakeProductStatsRepo:
     return FakeProductStatsRepo()
 
 
+def _async_override(value: Any) -> Callable[..., Awaitable[Any]]:
+    async def _resolver() -> Any:
+        return value
+
+    return _resolver
+
+
 @pytest.fixture
 def app(
     settings: Settings,
@@ -261,24 +270,44 @@ def app(
     product_stats_repo: ProductStatsRepo,
 ) -> Iterator[FastAPI]:
     reset_sent_emails()
-    application = create_app()
-    application.dependency_overrides[get_settings] = lambda: settings
-    application.dependency_overrides[get_supabase_client] = lambda: object()
-    application.dependency_overrides[get_subscriber_repo] = lambda: subscriber_repo
-    application.dependency_overrides[get_submission_repo] = lambda: submission_repo
-    application.dependency_overrides[get_product_repo] = lambda: product_repo
-    application.dependency_overrides[get_product_stats_repo] = lambda: product_stats_repo
-    application.dependency_overrides[get_product_repo_admin] = lambda: product_repo
-    application.dependency_overrides[get_product_stats_repo_admin] = lambda: product_stats_repo
-    application.dependency_overrides[get_subscriber_repo_admin] = lambda: subscriber_repo
-    application.dependency_overrides[get_submission_repo_admin] = lambda: submission_repo
+    application = create_app(settings=settings)
+    application.dependency_overrides[get_settings_dep] = _async_override(settings)
+    application.dependency_overrides[get_supabase_client] = _async_override(object())
+    application.dependency_overrides[get_subscriber_repo] = _async_override(subscriber_repo)
+    application.dependency_overrides[get_submission_repo] = _async_override(submission_repo)
+    application.dependency_overrides[get_product_repo] = _async_override(product_repo)
+    application.dependency_overrides[get_product_stats_repo] = _async_override(product_stats_repo)
+    application.dependency_overrides[get_product_repo_admin] = _async_override(product_repo)
+    application.dependency_overrides[get_product_stats_repo_admin] = _async_override(
+        product_stats_repo
+    )
+    application.dependency_overrides[get_subscriber_repo_admin] = _async_override(subscriber_repo)
+    application.dependency_overrides[get_submission_repo_admin] = _async_override(submission_repo)
     yield application
     application.dependency_overrides.clear()
 
 
 @pytest.fixture
-def client(app: FastAPI) -> TestClient:
-    return TestClient(app)
+def client(app: FastAPI) -> object:
+    async def _request(method: str, url: str, **kwargs: Any) -> httpx.Response:
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as httpx_client:
+            return await httpx_client.request(method=method, url=url, **kwargs)
+
+    class _SyncClient:
+        def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+            return asyncio.run(_request(method=method, url=url, **kwargs))
+
+        def get(self, url: str, **kwargs: Any) -> httpx.Response:
+            return self.request("GET", url, **kwargs)
+
+        def post(self, url: str, **kwargs: Any) -> httpx.Response:
+            return self.request("POST", url, **kwargs)
+
+    return _SyncClient()
 
 
 @pytest.fixture
