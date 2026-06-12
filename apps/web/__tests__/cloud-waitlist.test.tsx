@@ -61,17 +61,44 @@ describe("Cloud Evidence waitlist pages", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Cloud Evidence status and roadmap.",
+        name: "Cloud Evidence status and roadmap",
       }),
     ).toBeTruthy();
-    expect(screen.getByText(/Waitlist is open/i)).toBeTruthy();
+    expect(screen.getByText(/Track what is live, what is local-only/i)).toBeTruthy();
+    expect(screen.getByText(/Waitlist and Resend email are live/i)).toBeTruthy();
     expect(screen.getAllByText(/local\/browser-only/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/hosted Cloud Evidence review is upcoming/i)).toBeTruthy();
-    expect(screen.getByText(/avoids uptime claims/i)).toBeTruthy();
-    expect(screen.getAllByText(/no hosted artifact upload/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Hosted review is upcoming/i)).toBeTruthy();
+    expect(screen.getByText(/hosted artifact storage is not enabled/i)).toBeTruthy();
+    expect(screen.getByText(/not an uptime page, SLA, or production availability claim/i)).toBeTruthy();
 
-    for (const title of ["Waitlist", "Resend email", "Browser preview", "Hosted review", "Artifact storage"]) {
+    for (const title of [
+      "Waitlist",
+      "Resend email flow",
+      "Evidence Hub preview",
+      "Hosted evidence review",
+      "Hosted artifact storage",
+    ]) {
       expect(screen.getByRole("heading", { name: title })).toBeTruthy();
+    }
+    for (const marker of ["Live", "Local/browser-only", "Upcoming", "Not enabled"]) {
+      expect(screen.getAllByText(marker).length).toBeGreaterThan(0);
+    }
+    for (const roadmapTitle of [
+      "Waitlist capture",
+      "Branded confirmation/internal emails",
+      "Evidence Hub local preview",
+      "Private hosted review intake",
+      "Reviewer inbox for OpenPawl run evidence",
+      "PR evidence summaries",
+      "Basic run quality scoring",
+      "Manual approval workflow",
+      "Team workspaces",
+      "Persistent evidence records with explicit consent",
+      "TracePawl hosted viewer",
+      "Organization audit trails",
+      "Status/incident history after Cloud beta is real",
+    ]) {
+      expect(screen.getByText(roadmapTitle)).toBeTruthy();
     }
     for (const period of ["Now", "Next", "Later"]) {
       expect(screen.getByText(period)).toBeTruthy();
@@ -82,6 +109,9 @@ describe("Cloud Evidence waitlist pages", () => {
 
     expect(screen.getAllByRole("link", { name: /Join/i })[0]?.getAttribute("href")).toBe(
       "/cloud/waitlist?source=cloud_status",
+    );
+    expect(screen.getAllByRole("link", { name: "Cloud overview" })[0]?.getAttribute("href")).toBe(
+      "/cloud",
     );
     expect(screen.getByRole("link", { name: "X @codepawl" }).getAttribute("href")).toBe(
       "https://x.com/codepawl",

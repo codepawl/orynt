@@ -54,15 +54,23 @@ test.describe("CodePawl web smoke", () => {
   test("/cloud/status keeps roadmap and availability copy clear", async ({ page }) => {
     await page.goto("/cloud/status");
 
-    await expect(page.getByRole("heading", { name: "Cloud Evidence status and roadmap." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Cloud Evidence status and roadmap" })).toBeVisible();
     await expect(
-      page.getByText(/Waitlist is open, the Evidence Hub preview is local\/browser-only/i),
+      page.getByText(/Track what is live, what is local-only/i),
     ).toBeVisible();
-    await expect(page.getByText(/hosted Cloud Evidence review is upcoming/i)).toBeVisible();
+    await expect(page.getByText(/Waitlist and Resend email are live/i)).toBeVisible();
+    await expect(page.getByText(/Hosted review is upcoming/i)).toBeVisible();
+    await expect(page.getByText(/hosted artifact storage is not enabled/i)).toBeVisible();
     await expect(page.getByText(/not an uptime page, SLA, or production availability claim/i)).toBeVisible();
-    await expect(
-      page.getByText(/There is no hosted artifact upload, customer artifact storage, billing/i),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Resend email flow", exact: true })).toBeVisible();
+    await expect(page.getByText("Reviewer inbox for OpenPawl run evidence")).toBeVisible();
+    await expect(page.getByText("Persistent evidence records with explicit consent")).toBeVisible();
+    await expect(page.getByText("Status/incident history after Cloud beta is real")).toBeVisible();
+    await expect(page.getByText("Hosted review intake planned")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Cloud overview" }).first()).toHaveAttribute(
+      "href",
+      "/cloud",
+    );
     await expect(page.getByRole("link", { name: "X @codepawl" })).toHaveAttribute(
       "href",
       "https://x.com/codepawl",

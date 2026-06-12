@@ -51,7 +51,7 @@ export function CloudStatusRoadmap() {
           <div>
             <p className="cp-marker mb-4">status</p>
             <h2 id="cloud-status-cards" className="cp-h2 text-fg-1">
-              What is open, preview-only, and upcoming.
+              Current Cloud Evidence status.
             </h2>
           </div>
           <Link
@@ -146,12 +146,18 @@ export function CloudStatusRoadmap() {
         <h2 id="cloud-status-links" className="cp-h2 text-fg-1">
           Follow or review the preview.
         </h2>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Link
             href="/cloud/waitlist?source=cloud_status"
             className="cp-hover-button cp-button inline-flex items-center justify-center border-2 border-ink-4 bg-ratchet px-4 py-3 text-ink-0 transition-colors hover:bg-ratchet-hot"
           >
             Join waitlist
+          </Link>
+          <Link
+            href="/cloud"
+            className="cp-hover-button cp-button inline-flex items-center justify-center border-2 border-ink-4 bg-ink-1 px-4 py-3 text-fg-1 transition-colors hover:bg-ink-2"
+          >
+            Cloud overview
           </Link>
           <a
             href={X_URL}
