@@ -136,7 +136,7 @@ before verification.
 
 CP-006 syncs the public website, docs, Marketplace pack, and plan to the
 verified Openpawl `v0.5.3` Action release:
-`https://github.com/codepawl/openpawl/releases/tag/v0.6.0`. Public copy may now
+`https://github.com/codepawl/openpawl/releases/tag/v0.5.3`. Public copy may now
 state that Openpawl `v0.5.3+` produces `openpawl-evidence-bundle.json`, while
 keeping `/cloud/evidence` local/browser-only with no server upload or customer
 artifact storage.
@@ -420,13 +420,22 @@ Manual QA:
 
 3d. **CP-006 v0.5.3 evidence bundle release sync**
    - Verified Openpawl `v0.5.3` exists at
-     `https://github.com/codepawl/openpawl/releases/tag/v0.6.0` and includes
+     `https://github.com/codepawl/openpawl/releases/tag/v0.5.3` and includes
      `openpawl-evidence-bundle.json`.
    - Updated website, install/docs/support-adjacent copy, Marketplace pack, and
      this plan to reference Openpawl `v0.5.3+` for evidence bundles.
    - Kept `/cloud/evidence` local/browser-only. No server upload, customer
      artifact storage, Marketplace webhook behavior change, Openpawl runtime
      change, or Cloud general-availability claim was introduced.
+
+3e. **v0.6.0 Action-only release sync**
+   - Synced current website, install, docs, and Marketplace references to
+     `codepawl/openpawl@v0.6.0`.
+   - Preserved CP-006 `v0.5.3` evidence-bundle verification notes as
+     historical release records.
+   - Kept `/cloud/evidence` local/browser-only. No server upload, customer
+     artifact storage, Marketplace webhook behavior change, TUI/npm release
+     claim, or Cloud general-availability claim was introduced.
 
 4. **Waitlist-safe public surface**
    - Add Cloud Evidence Hub overview only if product copy is approved.

@@ -43,7 +43,7 @@ CodePawl during that preview.
 
 - Source repository: `https://github.com/codepawl/openpawl`
 - Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.6.0`
-- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.6.0/action.yml`
 - Release install docs: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/OPENPAWL_INSTALL.md`
 - Repository docs: `https://github.com/codepawl/openpawl/tree/main/docs`
 - Support issues: `https://github.com/codepawl/openpawl/issues`

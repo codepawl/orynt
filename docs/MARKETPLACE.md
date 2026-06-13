@@ -30,7 +30,7 @@ been verified.
 
 - Source repository: `https://github.com/codepawl/openpawl`
 - Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.6.0`
-- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.6.0/action.yml`
 - Install docs: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/OPENPAWL_INSTALL.md`
 - Marketplace docs: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/MARKETPLACE.md`
 - Current docs tree: `https://github.com/codepawl/openpawl/tree/main/docs`

@@ -13,7 +13,7 @@ Last production verification: 2026-06-12
 | Feature-card subtitle | `Coding-agent coordination for GitHub Actions` |
 | Publisher/owner | `CodePawl` |
 | Repository | `https://github.com/codepawl/openpawl` |
-| Candidate release | `v0.5.3` |
+| Candidate release | `v0.6.0` |
 | Release URL | `https://github.com/codepawl/openpawl/releases/tag/v0.6.0` |
 | Primary category | `Code quality` |
 | Secondary category | `Testing` |
@@ -49,10 +49,10 @@ GitHub URLs verified with HTTP 200:
 
 - Repository: `https://github.com/codepawl/openpawl`
 - Release: `https://github.com/codepawl/openpawl/releases/tag/v0.6.0`
-- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.6.0/action.yml`
 - Release install guide: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/OPENPAWL_INSTALL.md`
 - Marketplace readiness notes: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/MARKETPLACE.md`
-- Docs tree: `https://github.com/codepawl/openpawl/tree/v0.5.3/docs`
+- Docs tree: `https://github.com/codepawl/openpawl/tree/v0.6.0/docs`
 - Issues/support: `https://github.com/codepawl/openpawl/issues`
 - Security advisories: `https://github.com/codepawl/openpawl/security/advisories`
 
@@ -104,9 +104,7 @@ Security behavior:
 
 ## Release Notes And Metadata Caveat
 
-The pinned public release is `v0.6.0`. It is an Action patch release that adds
-`openpawl-evidence-bundle.json` while preserving the self-managed GitHub
-Actions surface and existing safety gates.
+The pinned public release is `v0.6.0`. It is an Action/Marketplace-only release that stabilizes shared Action contracts, provider config, evidence artifact schema v1, and full artifact smoke validation while preserving the self-managed GitHub Actions surface, local/browser-only Evidence preview, and existing safety gates.
 
 The Marketplace listing copy should use the approved coordination-runtime positioning above while keeping current capabilities concrete: GitHub Actions is the first supported surface, dry-run is default, write mode is guarded, and evidence artifacts are traceable.
 
@@ -135,4 +133,4 @@ These local screenshots are QA artifacts, not committed product assets.
 - Do not claim CodePawl Cloud is available.
 - Do not publish npm packages for this Action submission.
 - Do not change Openpawl runtime behavior as part of Marketplace copy finalization.
-- Keep Marketplace release references pinned to `v0.5.3` unless a new Action release process is explicitly started.
+- Keep Marketplace release references pinned to `v0.6.0` for this Action/Marketplace-only release. Do not imply a TUI/npm release.
