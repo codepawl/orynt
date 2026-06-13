@@ -8,7 +8,7 @@ Create the first hosted evidence surface around Openpawl runs: a Cloud Evidence 
 
 ## MVP Scope
 
-- Preview Openpawl run bundles produced by `codepawl/openpawl@v0.5.3+` locally
+- Preview Openpawl run bundles produced by `codepawl/openpawl@v0.6.0+` locally
   in the browser, with no server-side upload or customer artifact storage.
 - Evidence page for a single run.
 - Run summary extracted from `run.json` and `report.md` Evidence Summary.
@@ -427,6 +427,15 @@ Manual QA:
    - Kept `/cloud/evidence` local/browser-only. No server upload, customer
      artifact storage, Marketplace webhook behavior change, Openpawl runtime
      change, or Cloud general-availability claim was introduced.
+
+3e. **v0.6.0 Action-only release sync**
+   - Synced current website, install, docs, and Marketplace references to
+     `codepawl/openpawl@v0.6.0`.
+   - Preserved CP-006 `v0.5.3` evidence-bundle verification notes as
+     historical release records.
+   - Kept `/cloud/evidence` local/browser-only. No server upload, customer
+     artifact storage, Marketplace webhook behavior change, TUI/npm release
+     claim, or Cloud general-availability claim was introduced.
 
 4. **Waitlist-safe public surface**
    - Add Cloud Evidence Hub overview only if product copy is approved.

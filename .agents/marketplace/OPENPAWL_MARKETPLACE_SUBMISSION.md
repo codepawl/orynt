@@ -13,8 +13,8 @@ Last production verification: 2026-06-12
 | Feature-card subtitle | `Coding-agent coordination for GitHub Actions` |
 | Publisher/owner | `CodePawl` |
 | Repository | `https://github.com/codepawl/openpawl` |
-| Candidate release | `v0.5.3` |
-| Release URL | `https://github.com/codepawl/openpawl/releases/tag/v0.5.3` |
+| Candidate release | `v0.6.0` |
+| Release URL | `https://github.com/codepawl/openpawl/releases/tag/v0.6.0` |
 | Primary category | `Code quality` |
 | Secondary category | `Testing` |
 | Pricing plan | Free, self-managed GitHub Action. No CodePawl Cloud billing or hosted provisioning from the public website. |
@@ -31,7 +31,7 @@ Full description:
 >
 > Openpawl is dry-run by default. Runs produce reviewable reports and schema-versioned artifacts such as `report.md`, `trace.json`, `run.json`, `patch-plan.json`, `selected-files.json`, and `applied-files.json`. Openpawl `v0.5.3+` also produces `openpawl-evidence-bundle.json` for browser-local CodePawl Cloud Evidence preview; CodePawl Cloud is not generally available and the public preview does not upload or store customer artifact contents. Write mode must be selected explicitly and remains constrained by Openpawl safety gates, bot branches, pull requests, and human review.
 >
-> The current public release is `codepawl/openpawl@v0.5.3`. The GitHub Marketplace listing is not live until GitHub provides and verifies a listing URL.
+> The current public release is `codepawl/openpawl@v0.6.0`. The GitHub Marketplace listing is not live until GitHub provides and verifies a listing URL.
 
 ## Required URLs
 
@@ -48,11 +48,11 @@ Production website URLs verified with HTTP 200:
 GitHub URLs verified with HTTP 200:
 
 - Repository: `https://github.com/codepawl/openpawl`
-- Release: `https://github.com/codepawl/openpawl/releases/tag/v0.5.3`
-- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml`
-- Release install guide: `https://github.com/codepawl/openpawl/blob/v0.5.3/docs/OPENPAWL_INSTALL.md`
-- Marketplace readiness notes: `https://github.com/codepawl/openpawl/blob/v0.5.3/docs/MARKETPLACE.md`
-- Docs tree: `https://github.com/codepawl/openpawl/tree/v0.5.3/docs`
+- Release: `https://github.com/codepawl/openpawl/releases/tag/v0.6.0`
+- Action metadata: `https://github.com/codepawl/openpawl/blob/v0.6.0/action.yml`
+- Release install guide: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/OPENPAWL_INSTALL.md`
+- Marketplace readiness notes: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/MARKETPLACE.md`
+- Docs tree: `https://github.com/codepawl/openpawl/tree/v0.6.0/docs`
 - Issues/support: `https://github.com/codepawl/openpawl/issues`
 - Security advisories: `https://github.com/codepawl/openpawl/security/advisories`
 
@@ -104,9 +104,7 @@ Security behavior:
 
 ## Release Notes And Metadata Caveat
 
-The pinned public release is `v0.5.3`. It is an Action patch release that adds
-`openpawl-evidence-bundle.json` while preserving the self-managed GitHub
-Actions surface and existing safety gates.
+The pinned public release is `v0.6.0`. It is an Action/Marketplace-only release that stabilizes shared Action contracts, provider config, evidence artifact schema v1, and full artifact smoke validation while preserving the self-managed GitHub Actions surface, local/browser-only Evidence preview, and existing safety gates.
 
 The Marketplace listing copy should use the approved coordination-runtime positioning above while keeping current capabilities concrete: GitHub Actions is the first supported surface, dry-run is default, write mode is guarded, and evidence artifacts are traceable.
 
@@ -115,7 +113,7 @@ The Marketplace listing copy should use the approved coordination-runtime positi
 Prepare or capture these Marketplace screenshots before final submission:
 
 - Openpawl landing page at `https://codepawl.com/openpawl`.
-- GitHub Action workflow dispatch page or run page showing a pinned `codepawl/openpawl@v0.5.3` workflow.
+- GitHub Action workflow dispatch page or run page showing a pinned `codepawl/openpawl@v0.6.0` workflow.
 - Successful Openpawl Action smoke/run evidence showing the run, report, and artifact upload.
 - Evidence Summary in `report.md` showing run ID, mode, status, readiness, Actions URL, artifact paths, and trace/report paths.
 - GitHub Actions artifact view containing `report.md`, `trace.json`, `run.json`, `patch-plan.json`, `selected-files.json`, `applied-files.json`, and `openpawl-evidence-bundle.json`.
@@ -135,4 +133,4 @@ These local screenshots are QA artifacts, not committed product assets.
 - Do not claim CodePawl Cloud is available.
 - Do not publish npm packages for this Action submission.
 - Do not change Openpawl runtime behavior as part of Marketplace copy finalization.
-- Keep Marketplace release references pinned to `v0.5.3` unless a new Action release process is explicitly started.
+- Keep Marketplace release references pinned to `v0.6.0` for this Action/Marketplace-only release. Do not imply a TUI/npm release.

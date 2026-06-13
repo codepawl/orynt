@@ -3,7 +3,7 @@
 ## Openpawl Release Roadmap
 
 Openpawl runtime development now belongs in the public
-`codepawl/openpawl@v0.5.3` release line and later public releases. The private
+`codepawl/openpawl@v0.6.0` release line and later public releases. The private
 `packages/core`, `packages/cli`, and `packages/shared` directories are frozen
 compatibility copies until package-removal audit work proves they can be
 deleted safely.

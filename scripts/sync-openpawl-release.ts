@@ -81,10 +81,9 @@ const replacements = buildReleaseReplacements(payload);
 const changedFiles: string[] = [];
 
 for (const file of managedFiles) {
-  const next = file.endsWith("openpawl-release.ts")
-    ? buildManifest(payload)
-    : applyReleaseRefs(readFileSync(file, "utf8"), replacements);
   const current = readFileSync(file, "utf8");
+  const next = buildManagedFile(file, current, payload, replacements);
+  validateManagedFile(file, next, payload);
 
   if (current !== next) {
     changedFiles.push(file);
@@ -248,10 +247,32 @@ function buildReleaseReplacements(payload: OpenpawlReleasePayload) {
     actionRef: payload.capabilities.actionRef,
     releaseUrl: payload.releaseUrl,
     docs: payload.docs,
+    actionMetadata: `${githubOpenpawlOrigin}/blob/${payload.tag}/action.yml`,
+    docsTree: `${githubOpenpawlOrigin}/tree/${payload.tag}/docs`,
   };
 }
 
-function applyReleaseRefs(text: string, replacements: ReturnType<typeof buildReleaseReplacements>): string {
+type ReleaseReplacements = ReturnType<typeof buildReleaseReplacements>;
+
+function buildManagedFile(
+  file: string,
+  current: string,
+  payload: OpenpawlReleasePayload,
+  replacements: ReleaseReplacements,
+): string {
+  if (file.endsWith("openpawl-release.ts")) {
+    return buildManifest(payload);
+  }
+  if (file === ".agents/marketplace/OPENPAWL_MARKETPLACE_SUBMISSION.md") {
+    return syncMarketplaceSubmission(current, replacements);
+  }
+  if (file === ".agents/plans/CODEPAWL_CLOUD_EVIDENCE_HUB_PLAN.md") {
+    return syncCloudEvidencePlan(current, replacements);
+  }
+  return applyReleaseRefs(current, replacements);
+}
+
+function applyReleaseRefs(text: string, replacements: ReleaseReplacements): string {
   return text
     .replace(/codepawl\/openpawl@v\d+\.\d+\.\d+/g, replacements.actionRef)
     .replace(
@@ -282,6 +303,14 @@ function applyReleaseRefs(text: string, replacements: ReturnType<typeof buildRel
       /https:\/\/github\.com\/codepawl\/openpawl\/blob\/v\d+\.\d+\.\d+\/PRIVACY\.md/g,
       replacements.docs.privacy,
     )
+    .replace(
+      /https:\/\/github\.com\/codepawl\/openpawl\/blob\/v\d+\.\d+\.\d+\/action\.yml/g,
+      replacements.actionMetadata,
+    )
+    .replace(
+      /https:\/\/github\.com\/codepawl\/openpawl\/tree\/v\d+\.\d+\.\d+\/docs/g,
+      replacements.docsTree,
+    )
     .replace(/candidate release is `v\d+\.\d+\.\d+`/gi, `candidate release is \`${replacements.tag}\``)
     .replace(/public release is `v\d+\.\d+\.\d+`/gi, `public release is \`${replacements.tag}\``)
     .replace(/release `v\d+\.\d+\.\d+`/g, `release \`${replacements.tag}\``)
@@ -290,6 +319,90 @@ function applyReleaseRefs(text: string, replacements: ReturnType<typeof buildRel
     .replace(/`v\d+\.\d+\.\d+` is the verified public Action release tag/g, `\`${replacements.tag}\` is the verified public Action release tag`)
     .replace(/Use `v\d+\.\d+\.\d+` for release-pinned/g, `Use \`${replacements.tag}\` for release-pinned`)
     .replace(/pinned public release is `v\d+\.\d+\.\d+`/gi, `pinned public release is \`${replacements.tag}\``);
+}
+
+function syncMarketplaceSubmission(text: string, replacements: ReleaseReplacements): string {
+  return applyReleaseRefs(text, replacements)
+    .replace(
+      /\| Candidate release \| `v\d+\.\d+\.\d+` \|/,
+      `| Candidate release | \`${replacements.tag}\` |`,
+    )
+    .replace(
+      /The pinned public release is `v\d+\.\d+\.\d+`\. It is an Action patch release that adds\n`openpawl-evidence-bundle\.json` while preserving the self-managed GitHub\nActions surface and existing safety gates\./,
+      `The pinned public release is \`${replacements.tag}\`. It is an Action/Marketplace-only release that stabilizes shared Action contracts, provider config, evidence artifact schema v1, and full artifact smoke validation while preserving the self-managed GitHub Actions surface, local/browser-only Evidence preview, and existing safety gates.`,
+    )
+    .replace(
+      /Keep Marketplace release references pinned to `v\d+\.\d+\.\d+` unless a new Action release process is explicitly started\./,
+      `Keep Marketplace release references pinned to \`${replacements.tag}\` for this Action/Marketplace-only release. Do not imply a TUI/npm release.`,
+    );
+}
+
+function syncCloudEvidencePlan(text: string, replacements: ReleaseReplacements): string {
+  const next = text
+    .replace(
+      /Preview Openpawl run bundles produced by `codepawl\/openpawl@v\d+\.\d+\.\d+\+` locally/,
+      `Preview Openpawl run bundles produced by \`${replacements.actionRef}+\` locally`,
+    )
+    .replace(
+      /verified Openpawl `v0\.5\.3` Action release:\n`https:\/\/github\.com\/codepawl\/openpawl\/releases\/tag\/v\d+\.\d+\.\d+`/,
+      "verified Openpawl `v0.5.3` Action release:\n`https://github.com/codepawl/openpawl/releases/tag/v0.5.3`",
+    )
+    .replace(
+      /Verified Openpawl `v0\.5\.3` exists at\n     `https:\/\/github\.com\/codepawl\/openpawl\/releases\/tag\/v\d+\.\d+\.\d+`/,
+      "Verified Openpawl `v0.5.3` exists at\n     `https://github.com/codepawl/openpawl/releases/tag/v0.5.3`",
+    );
+
+  if (next.includes(`**${replacements.tag} Action-only release sync**`)) {
+    return next;
+  }
+
+  return next.replace(
+    /(\n3d\. \*\*CP-006 v0\.5\.3 evidence bundle release sync\*\*[\s\S]*?or Cloud general-availability claim was introduced\.\n)/,
+    `$1
+3e. **${replacements.tag} Action-only release sync**
+   - Synced current website, install, docs, and Marketplace references to
+     \`${replacements.actionRef}\`.
+   - Preserved CP-006 \`v0.5.3\` evidence-bundle verification notes as
+     historical release records.
+   - Kept \`/cloud/evidence\` local/browser-only. No server upload, customer
+     artifact storage, Marketplace webhook behavior change, TUI/npm release
+     claim, or Cloud general-availability claim was introduced.
+`,
+  );
+}
+
+function validateManagedFile(file: string, text: string, payload: OpenpawlReleasePayload): void {
+  if (file === ".agents/marketplace/OPENPAWL_MARKETPLACE_SUBMISSION.md") {
+    assertTextIncludes(text, `| Candidate release | \`${payload.tag}\` |`, file);
+    assertTextIncludes(text, `| Release URL | \`${payload.releaseUrl}\` |`, file);
+    assertTextIncludes(text, `The current public release is \`${payload.capabilities.actionRef}\``, file);
+    assertTextIncludes(text, `The pinned public release is \`${payload.tag}\`. It is an Action/Marketplace-only release`, file);
+    assertTextIncludes(text, `Action metadata: \`${githubOpenpawlOrigin}/blob/${payload.tag}/action.yml\``, file);
+    assertTextIncludes(text, `Docs tree: \`${githubOpenpawlOrigin}/tree/${payload.tag}/docs\``, file);
+    assertReleaseLockedUrlsUsePayloadTag(file, text, payload.tag);
+  } else if (file === ".agents/plans/CODEPAWL_CLOUD_EVIDENCE_HUB_PLAN.md") {
+    assertTextIncludes(text, "verified Openpawl `v0.5.3` Action release:\n`https://github.com/codepawl/openpawl/releases/tag/v0.5.3`", file);
+    assertTextIncludes(text, "Verified Openpawl `v0.5.3` exists at\n     `https://github.com/codepawl/openpawl/releases/tag/v0.5.3`", file);
+    assertTextIncludes(text, `**${payload.tag} Action-only release sync**`, file);
+    assertTextIncludes(text, payload.capabilities.actionRef, file);
+  } else if (!file.endsWith("openpawl-release.ts")) {
+    assertReleaseLockedUrlsUsePayloadTag(file, text, payload.tag);
+  }
+}
+
+function assertReleaseLockedUrlsUsePayloadTag(file: string, text: string, tag: string): void {
+  const releaseUrlPattern = /https:\/\/github\.com\/codepawl\/openpawl\/(?:blob|tree|releases\/tag)\/(v\d+\.\d+\.\d+)/g;
+  for (const match of text.matchAll(releaseUrlPattern)) {
+    if (match[1] !== tag) {
+      throw new Error(`${file} contains mixed release-locked URL tag ${match[1]}; expected ${tag}.`);
+    }
+  }
+}
+
+function assertTextIncludes(text: string, needle: string, file: string): void {
+  if (!text.includes(needle)) {
+    throw new Error(`${file} is missing expected release metadata: ${needle}`);
+  }
 }
 
 function buildManifest(payload: OpenpawlReleasePayload): string {
