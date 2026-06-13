@@ -27,10 +27,10 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v6
-      - uses: codepawl/openpawl@v0.5.3
+      - uses: codepawl/openpawl@v0.6.0
 ```
 
-`v0.5.3` is the verified public Action release tag. This install guide does not
+`v0.6.0` is the verified public Action release tag. This install guide does not
 claim that the GitHub Marketplace listing is live.
 
 Openpawl `v0.5.3+` GitHub Action runs also produce
@@ -42,9 +42,9 @@ CodePawl during that preview.
 ## Public References
 
 - Source repository: `https://github.com/codepawl/openpawl`
-- Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.5.3`
+- Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.6.0`
 - Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml`
-- Release install docs: `https://github.com/codepawl/openpawl/blob/v0.5.3/docs/OPENPAWL_INSTALL.md`
+- Release install docs: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/OPENPAWL_INSTALL.md`
 - Repository docs: `https://github.com/codepawl/openpawl/tree/main/docs`
 - Support issues: `https://github.com/codepawl/openpawl/issues`
 - Security advisories: `https://github.com/codepawl/openpawl/security/advisories`

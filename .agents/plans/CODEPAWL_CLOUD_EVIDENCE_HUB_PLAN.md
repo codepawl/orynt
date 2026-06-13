@@ -8,7 +8,7 @@ Create the first hosted evidence surface around Openpawl runs: a Cloud Evidence 
 
 ## MVP Scope
 
-- Preview Openpawl run bundles produced by `codepawl/openpawl@v0.5.3+` locally
+- Preview Openpawl run bundles produced by `codepawl/openpawl@v0.6.0+` locally
   in the browser, with no server-side upload or customer artifact storage.
 - Evidence page for a single run.
 - Run summary extracted from `run.json` and `report.md` Evidence Summary.
@@ -136,7 +136,7 @@ before verification.
 
 CP-006 syncs the public website, docs, Marketplace pack, and plan to the
 verified Openpawl `v0.5.3` Action release:
-`https://github.com/codepawl/openpawl/releases/tag/v0.5.3`. Public copy may now
+`https://github.com/codepawl/openpawl/releases/tag/v0.6.0`. Public copy may now
 state that Openpawl `v0.5.3+` produces `openpawl-evidence-bundle.json`, while
 keeping `/cloud/evidence` local/browser-only with no server upload or customer
 artifact storage.
@@ -420,7 +420,7 @@ Manual QA:
 
 3d. **CP-006 v0.5.3 evidence bundle release sync**
    - Verified Openpawl `v0.5.3` exists at
-     `https://github.com/codepawl/openpawl/releases/tag/v0.5.3` and includes
+     `https://github.com/codepawl/openpawl/releases/tag/v0.6.0` and includes
      `openpawl-evidence-bundle.json`.
    - Updated website, install/docs/support-adjacent copy, Marketplace pack, and
      this plan to reference Openpawl `v0.5.3+` for evidence bundles.

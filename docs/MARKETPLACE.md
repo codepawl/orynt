@@ -11,7 +11,7 @@ Action source of truth is the public repository at
 Openpawl is a Marketplace candidate. Do not claim the listing is live until the
 GitHub Marketplace listing URL exists and has been verified.
 
-Use `v0.5.3` for release-pinned Action install instructions. Keep Marketplace
+Use `v0.6.0` for release-pinned Action install instructions. Keep Marketplace
 listing copy pending until the GitHub Marketplace listing URL exists and has
 been verified.
 
@@ -29,10 +29,10 @@ been verified.
 ## Public Source URLs
 
 - Source repository: `https://github.com/codepawl/openpawl`
-- Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.5.3`
+- Action release: `https://github.com/codepawl/openpawl/releases/tag/v0.6.0`
 - Action metadata: `https://github.com/codepawl/openpawl/blob/v0.5.3/action.yml`
-- Install docs: `https://github.com/codepawl/openpawl/blob/v0.5.3/docs/OPENPAWL_INSTALL.md`
-- Marketplace docs: `https://github.com/codepawl/openpawl/blob/v0.5.3/docs/MARKETPLACE.md`
+- Install docs: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/OPENPAWL_INSTALL.md`
+- Marketplace docs: `https://github.com/codepawl/openpawl/blob/v0.6.0/docs/MARKETPLACE.md`
 - Current docs tree: `https://github.com/codepawl/openpawl/tree/main/docs`
 - Support issues: `https://github.com/codepawl/openpawl/issues`
 - Security advisories: `https://github.com/codepawl/openpawl/security/advisories`

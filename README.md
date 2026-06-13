@@ -44,7 +44,7 @@ Slash review/test commands keep the existing dry-run behavior. Mention commands 
 
 Write mode remains gated behind `workflow_dispatch` plus repo config, or maintainer approval through `/openpawl apply` or the `openpawl-approved` label. Approved writes create a bot branch and PR instead of mutating an existing PR branch.
 
-The GitHub Actions workflow checks out `codepawl/openpawl@v0.5.3` into
+The GitHub Actions workflow checks out `codepawl/openpawl@v0.6.0` into
 `.openpawl-src` and invokes that public release's `@codepawl/cli` directly so
 trigger and run arguments bypass the private root Turbo script.
 
@@ -85,7 +85,7 @@ When run from GitHub Actions, the Evidence Summary includes the Actions run URL,
 ## Install
 
 See [docs/OPENPAWL_INSTALL.md](docs/OPENPAWL_INSTALL.md) for the pinned
-`codepawl/openpawl@v0.5.3` install path, permissions, artifacts, reports, and
+`codepawl/openpawl@v0.6.0` install path, permissions, artifacts, reports, and
 security notes.
 
 ## Marketplace Status
@@ -93,5 +93,5 @@ security notes.
 Openpawl is a GitHub Marketplace Action candidate in `codepawl/openpawl`.
 This website keeps Marketplace-critical support, install, docs, status,
 security, privacy, and terms URLs stable for submission. The public Action
-release `v0.5.3` is verified; do not treat the GitHub Marketplace listing as
+release `v0.6.0` is verified; do not treat the GitHub Marketplace listing as
 live until its listing URL has been verified.
