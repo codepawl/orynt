@@ -51,6 +51,12 @@ const managedFiles = [
   ".agents/plans/CODEPAWL_CLOUD_EVIDENCE_HUB_PLAN.md",
 ] as const;
 
+const publicWebsiteRouteFiles = [
+  "apps/web/src/routes/openpawl.install.tsx",
+  "apps/web/src/routes/openpawl.docs.tsx",
+  "apps/web/src/routes/openpawl.support.tsx",
+] as const;
+
 const forbiddenPayloadKeys = new Set([
   "artifact",
   "artifacts",
@@ -92,6 +98,8 @@ for (const file of managedFiles) {
     }
   }
 }
+
+validatePublicWebsiteRoutes(payload);
 
 const summary = {
   tag: payload.tag,
@@ -390,11 +398,44 @@ function validateManagedFile(file: string, text: string, payload: OpenpawlReleas
   }
 }
 
+function validatePublicWebsiteRoutes(payload: OpenpawlReleasePayload): void {
+  for (const file of publicWebsiteRouteFiles) {
+    const text = readFileSync(file, "utf8");
+    assertActionRefsUsePayloadTag(file, text, payload.tag);
+    assertReleaseLockedUrlsUsePayloadTag(file, text, payload.tag);
+    assertNoStaleSemver(file, text, payload.tag);
+  }
+
+  const installRoute = readFileSync("apps/web/src/routes/openpawl.install.tsx", "utf8");
+  assertTextIncludes(installRoute, "OPENPAWL_ACTION_REF", "apps/web/src/routes/openpawl.install.tsx");
+  assertTextIncludes(installRoute, "OPENPAWL_INSTALL_DOC", "apps/web/src/routes/openpawl.install.tsx");
+  assertTextIncludes(installRoute, "OPENPAWL_RELEASE_URL", "apps/web/src/routes/openpawl.install.tsx");
+}
+
+function assertActionRefsUsePayloadTag(file: string, text: string, tag: string): void {
+  const actionRefPattern = /codepawl\/openpawl@(v\d+\.\d+\.\d+)/g;
+  for (const match of text.matchAll(actionRefPattern)) {
+    if (match[1] !== tag) {
+      throw new Error(`${file} contains mixed Action ref tag ${match[1]}; expected ${tag}.`);
+    }
+  }
+}
+
 function assertReleaseLockedUrlsUsePayloadTag(file: string, text: string, tag: string): void {
   const releaseUrlPattern = /https:\/\/github\.com\/codepawl\/openpawl\/(?:blob|tree|releases\/tag)\/(v\d+\.\d+\.\d+)/g;
   for (const match of text.matchAll(releaseUrlPattern)) {
     if (match[1] !== tag) {
       throw new Error(`${file} contains mixed release-locked URL tag ${match[1]}; expected ${tag}.`);
+    }
+  }
+}
+
+function assertNoStaleSemver(file: string, text: string, tag: string): void {
+  const semverPattern = /\bv\d+\.\d+\.\d+\+?/g;
+  for (const match of text.matchAll(semverPattern)) {
+    const version = match[0].replace(/\+$/, "");
+    if (version !== tag) {
+      throw new Error(`${file} contains stale Openpawl version text ${match[0]}; expected ${tag}.`);
     }
   }
 }

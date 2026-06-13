@@ -1,6 +1,7 @@
 import { createRoute } from "@tanstack/react-router";
 
 import {
+  OPENPAWL_ACTION_REF,
   BulletList,
   InfoCard,
   InlineLink,
@@ -67,7 +68,11 @@ function OpenpawlSupportPage() {
         <BulletList
           items={[
             "Remove secrets, tokens, private repository content, and proprietary logs.",
-            "Include the workflow event, run mode, Openpawl ref, relevant inputs, and sanitized report excerpts.",
+            <>
+              Include the workflow event, run mode, current Openpawl ref (
+              <code className="cp-inline-code">{OPENPAWL_ACTION_REF}</code>),
+              relevant inputs, and sanitized report excerpts.
+            </>,
             "For security reports, use the private advisory channel instead of public issues.",
           ]}
         />
@@ -83,4 +88,3 @@ function OpenpawlSupportPage() {
     </PageShell>
   );
 }
-

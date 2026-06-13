@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+import { OPENPAWL_RELEASE } from "../src/data/openpawl-release";
+
+const currentOpenpawlTag = OPENPAWL_RELEASE.tag;
+const currentOpenpawlActionRef = OPENPAWL_RELEASE.actionRef;
+const currentOpenpawlInstallDoc = OPENPAWL_RELEASE.docs.install;
+
 const smokeRoutes = [
   "/",
   "/openpawl",
@@ -49,6 +55,32 @@ test.describe("CodePawl web smoke", () => {
       "href",
       "/cloud/waitlist?source=cloud_evidence_demo",
     );
+  });
+
+  test("public Openpawl routes render current release metadata", async ({ page }) => {
+    await page.goto("/openpawl/install");
+
+    await expect(page.getByText(currentOpenpawlTag).first()).toBeVisible();
+    await expect(page.getByText(currentOpenpawlActionRef)).toBeVisible();
+    await expect(page.getByRole("link", { name: "OPENPAWL_INSTALL.md" })).toHaveAttribute(
+      "href",
+      currentOpenpawlInstallDoc,
+    );
+    await expect(page.locator("body")).not.toContainText("codepawl/openpawl@v0.5.3");
+
+    await page.goto("/openpawl/docs");
+
+    await expect(page.getByText(currentOpenpawlTag).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Install guide" })).toHaveAttribute(
+      "href",
+      currentOpenpawlInstallDoc,
+    );
+    await expect(page.locator("body")).not.toContainText("v0.5.3+");
+
+    await page.goto("/openpawl/support");
+
+    await expect(page.getByText(currentOpenpawlActionRef)).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("codepawl/openpawl@v0.5.3");
   });
 
   test("/cloud/status keeps roadmap and availability copy clear", async ({ page }) => {
