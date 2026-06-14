@@ -12,6 +12,14 @@ command find artifacts/jitter_pairs -maxdepth 3 -type f | sort
 cat artifacts/jitter_pairs/labels.json
 ```
 
+Evaluate the generated pair directory:
+
+```bash
+uv run pawlbench-design-eval artifacts/jitter_pairs --out artifacts/pawlbench_eval
+cat artifacts/pawlbench_eval/summary.json
+cat artifacts/pawlbench_eval/pairs.json
+```
+
 Expected output:
 
 ```text
@@ -35,3 +43,5 @@ artifacts/jitter_pairs/
 ```
 
 The current implementation uses deterministic CSS injection only. It does not train a model, launch a product UI, or require a JavaScript build pipeline.
+
+PawlBench Design v0 should pass on the generated directory before adding encoder baselines.

@@ -1,5 +1,7 @@
-"""Benchmark package placeholder for frontend design evaluation."""
+"""Benchmark package for frontend design evaluation."""
 
-__all__ = ["__version__"]
+from pawlbench_design.evaluator import EvalConfig, EvalResult, evaluate_jitter_pairs
 
 __version__ = "0.1.0"
+
+__all__ = ["EvalConfig", "EvalResult", "__version__", "evaluate_jitter_pairs"]

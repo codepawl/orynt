@@ -30,6 +30,12 @@ Then generate deterministic synthetic good/bad UI pairs with:
 uv run codepawl-jitter examples/simple_landing.html --out artifacts/jitter_pairs --seed 42
 ```
 
+Then validate and score the pair directory with PawlBench Design v0:
+
+```bash
+uv run pawlbench-design-eval artifacts/jitter_pairs --out artifacts/pawlbench_eval
+```
+
 ## Repository Layout
 
 ```text
@@ -123,6 +129,22 @@ artifacts/jitter_pairs/
     alignment_bad.png
     hierarchy_bad.html
     hierarchy_bad.png
+```
+
+Evaluate the generated pairs:
+
+```bash
+uv run pawlbench-design-eval artifacts/jitter_pairs --out artifacts/pawlbench_eval
+cat artifacts/pawlbench_eval/summary.json
+cat artifacts/pawlbench_eval/pairs.json
+```
+
+Expected outputs:
+
+```text
+artifacts/pawlbench_eval/
+  summary.json
+  pairs.json
 ```
 
 ## What Is Intentionally Missing

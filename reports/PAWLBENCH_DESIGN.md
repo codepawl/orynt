@@ -27,6 +27,39 @@ The benchmark should start small and inspectable. Each task should have clear in
 - Responsive breakpoint differences
 - Human-labeled preference agreement when labels exist
 
+## v0 Pair Evaluator Contract
+
+PawlBench Design v0 validates and scores generated jitter pair directories before any encoder baseline or Pawl-JEPA microtraining work.
+
+Command:
+
+```bash
+uv run pawlbench-design-eval artifacts/jitter_pairs --out artifacts/pawlbench_eval
+```
+
+Input contract:
+
+- `labels.json` exists at the pair root.
+- `original/screenshot.png` exists.
+- `original/metrics.json` exists.
+- each label variant has `variant_name`, `defect_type`, `severity`, `html_path`, `screenshot_path`, `expected_issue`, and `expected_fix_instruction`.
+- each referenced variant HTML and screenshot exists.
+
+Outputs:
+
+- `summary.json`: aggregate validity, counts, average image deltas, and variants by defect type.
+- `pairs.json`: one record per variant with label metadata and pair-level image metrics.
+
+v0 image metrics:
+
+- `image_width`
+- `image_height`
+- `mean_absolute_pixel_delta`
+- `rms_pixel_delta`
+- `changed_pixel_ratio`
+- `original_file_size_bytes`
+- `variant_file_size_bytes`
+
 ## Baseline Model Comparison Plan
 
 Start with simple baselines before Pawl-JEPA training:

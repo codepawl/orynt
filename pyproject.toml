@@ -8,11 +8,13 @@ dependencies = [
     "codepawl-harness",
     "codepawl-jitter",
     "codepawl-renderer",
+    "pawlbench-design",
 ]
 
 [project.scripts]
 codepawl-render = "codepawl_harness.cli:main"
 codepawl-jitter = "codepawl_harness.jitter_cli:main"
+pawlbench-design-eval = "codepawl_harness.pawlbench_eval_cli:main"
 
 [dependency-groups]
 dev = [
@@ -35,6 +37,7 @@ codepawl-harness = { workspace = true }
 codepawl-jitter = { workspace = true }
 codepawl-renderer = { workspace = true }
 codepawl-metrics = { workspace = true }
+pawlbench-design = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
