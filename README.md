@@ -77,6 +77,15 @@ Then build lightweight non-ML encoder baselines:
 uv run pawlbench-design-embed artifacts/jitter_pairs --out artifacts/encoder_baselines
 ```
 
+Optional frozen vision baselines can be installed and run after local_v1 exists:
+
+```bash
+uv sync --extra vision
+uv run pawlbench-design-vision-embed artifacts/datasets/local_v1 --out artifacts/vision_baselines/local_v1 --models dinov2,siglip
+```
+
+The `vision` extra installs `torch`, `torchvision`, and `transformers`; DINOv2/SigLIP image processors require `torchvision`.
+
 ## Repository Layout
 
 ```text
@@ -285,6 +294,27 @@ Expected outputs:
 artifacts/encoder_baselines/
   embeddings.json
   similarities.json
+  summary.json
+```
+
+Build optional DINOv2/SigLIP frozen vision baselines:
+
+```bash
+uv sync --extra vision
+uv run pawlbench-design-vision-embed artifacts/datasets/local_v1 --out artifacts/vision_baselines/local_v1 --models dinov2,siglip
+cat artifacts/vision_baselines/local_v1/summary.json
+```
+
+The first run downloads model weights through standard Hugging Face cache mechanisms. These are frozen external baselines that future Pawl-JEPA experiments should beat.
+The `vision` extra installs `torch`, `torchvision`, and `transformers`; DINOv2/SigLIP image processors require `torchvision`.
+
+Expected outputs:
+
+```text
+artifacts/vision_baselines/local_v1/
+  embeddings.jsonl
+  similarities.json
+  retrieval.json
   summary.json
 ```
 

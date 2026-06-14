@@ -13,6 +13,11 @@ from pawlbench_design.datasets import (
     validate_dataset,
 )
 from pawlbench_design.evaluator import EvalConfig, EvalResult, evaluate_jitter_pairs
+from pawlbench_design.vision_embeddings import (
+    VisionEmbeddingConfig,
+    VisionEmbeddingResult,
+    build_vision_baselines,
+)
 
 __version__ = "0.1.0"
 
@@ -27,8 +32,11 @@ __all__ = [
     "SplitResult",
     "ValidationConfig",
     "ValidationResult",
+    "VisionEmbeddingConfig",
+    "VisionEmbeddingResult",
     "__version__",
     "build_encoder_baselines",
+    "build_vision_baselines",
     "export_dataset_report",
     "split_dataset",
     "validate_dataset",

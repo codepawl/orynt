@@ -31,3 +31,44 @@ Interpretation:
 If variant DOM or metrics artifacts are missing, `summary.json` includes an explicit warning and that variant gets a zero `dom_layout_stats` vector. This prevents silent fallback values from hiding broken pair artifacts.
 
 These baselines are comparison floors for later optional DINOv2/SigLIP experiments or a Pawl-JEPA microtraining scaffold.
+
+## Optional Frozen Vision Baselines
+
+DINOv2 and SigLIP baselines are optional because they require `torch`, `torchvision`, `transformers`, and model downloads. They are frozen image encoders only; no training happens.
+
+Install optional dependencies:
+
+```bash
+uv sync --extra vision
+```
+
+The Hugging Face DINOv2/SigLIP image processors require `torchvision`. A PIL-only preprocessing fallback may be possible for some models later, but this baseline declares `torchvision` explicitly instead of relying on backend-specific behavior.
+Embedding extraction supports common Hugging Face output shapes including raw tensors, `image_embeds`, `pooler_output`, `last_hidden_state`, and tuple/list tensor outputs. DINOv2 may expose pooled or hidden-state tensors; SigLIP may expose image embeddings or pooled vision outputs depending on the loaded model class.
+
+Run against local_v1:
+
+```bash
+uv run pawlbench-design-vision-embed artifacts/datasets/local_v1 --out artifacts/vision_baselines/local_v1 --models dinov2,siglip
+cat artifacts/vision_baselines/local_v1/summary.json
+cat artifacts/vision_baselines/local_v1/similarities.json
+cat artifacts/vision_baselines/local_v1/retrieval.json
+```
+
+Interpretation:
+
+- Higher original-vs-variant cosine similarity means the frozen encoder sees less visual change.
+- Lower similarity for a defect type can indicate that the jitter produces stronger visual perturbations for that encoder.
+- Retrieval queries each variant against all original screenshots.
+- Top-1 success means the variant's own original is ranked first.
+- Top-5 success is a softer retrieval signal for larger datasets.
+- Pawl-JEPA should beat these frozen external baselines on documented benchmark tasks before microtraining is considered successful.
+
+Expected outputs:
+
+```text
+artifacts/vision_baselines/local_v1/
+  embeddings.jsonl
+  similarities.json
+  retrieval.json
+  summary.json
+```

@@ -20,6 +20,12 @@ pawlbench-design-build = "codepawl_harness.pawlbench_build_cli:main"
 pawlbench-design-validate = "codepawl_harness.pawlbench_validate_cli:main"
 pawlbench-design-split = "codepawl_harness.pawlbench_split_cli:main"
 pawlbench-design-report = "codepawl_harness.pawlbench_report_cli:main"
+pawlbench-design-vision-embed = "codepawl_harness.pawlbench_vision_embed_cli:main"
+
+[project.optional-dependencies]
+vision = [
+    "pawlbench-design[vision]",
+]
 
 [dependency-groups]
 dev = [

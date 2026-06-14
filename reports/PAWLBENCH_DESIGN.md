@@ -260,6 +260,46 @@ If a variant is missing DOM or metrics artifacts, `summary.json` includes a warn
 
 These are not learned encoders. They are sanity-check baselines for later model comparisons.
 
+## Optional Frozen Vision Baseline Contract
+
+PawlBench Design can run optional DINOv2 and SigLIP frozen image encoders over dataset screenshots. These dependencies are not required for normal tests or local harness use.
+
+Install:
+
+```bash
+uv sync --extra vision
+```
+
+The `vision` extra installs `torch`, `torchvision`, and `transformers`. DINOv2/SigLIP image processors require `torchvision`; a PIL-only processor fallback can be considered later but is not relied on for this baseline.
+
+Command:
+
+```bash
+uv run pawlbench-design-vision-embed artifacts/datasets/local_v1 --out artifacts/vision_baselines/local_v1 --models dinov2,siglip
+```
+
+Default model aliases:
+
+- `dinov2`: `facebook/dinov2-small`
+- `siglip`: `google/siglip-base-patch16-224`
+
+Outputs:
+
+- `embeddings.jsonl`: normalized image embeddings for original and variant screenshots.
+- `similarities.json`: cosine similarity between each variant and its own original.
+- `retrieval.json`: variant-to-original retrieval ranks and top-k success.
+- `summary.json`: dataset counts, models, device, average similarities, retrieval accuracy, runtime, warnings, and errors.
+
+Runtime behavior:
+
+- CPU works by default.
+- CUDA is used automatically when available.
+- `--batch-size` controls image batch size.
+- Missing optional dependencies fail with install instructions.
+- Embedding extraction handles common Hugging Face output shapes: raw tensors, `image_embeds`, `pooler_output`, `last_hidden_state`, and tuple/list tensor outputs.
+
+These are frozen external baselines. Pawl-JEPA should beat them on documented PawlBench tasks before it is considered useful.
+
 ## Baseline Model Comparison Plan
 
 Start with simple baselines before Pawl-JEPA training:
@@ -268,6 +308,7 @@ Start with simple baselines before Pawl-JEPA training:
 - screenshot-only image embeddings
 - DOM-only structural summaries
 - combined handcrafted feature vectors
+- optional frozen DINOv2/SigLIP vision embeddings
 - general-purpose multimodal model critique outputs where locally available or explicitly configured
 
 Pawl-JEPA should only be considered useful when it beats these baselines on a documented benchmark task.
