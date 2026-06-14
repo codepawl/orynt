@@ -21,6 +21,13 @@ pawlbench-design-validate = "codepawl_harness.pawlbench_validate_cli:main"
 pawlbench-design-split = "codepawl_harness.pawlbench_split_cli:main"
 pawlbench-design-report = "codepawl_harness.pawlbench_report_cli:main"
 pawlbench-design-vision-embed = "codepawl_harness.pawlbench_vision_embed_cli:main"
+pawlbench-design-label-queue = "codepawl_harness.pawlbench_label_queue_cli:main"
+pawlbench-design-label-validate = "codepawl_harness.pawlbench_label_validate_cli:main"
+pawlbench-design-label-report = "codepawl_harness.pawlbench_label_report_cli:main"
+pawlbench-design-label-app = "codepawl_harness.pawlbench_label_app_cli:main"
+pawlbench-design-label-suggest = "codepawl_harness.pawlbench_label_suggest_cli:main"
+pawlbench-design-label-audit = "codepawl_harness.pawlbench_label_audit_cli:main"
+pawlbench-design-label-set-reviewer = "codepawl_harness.pawlbench_label_set_reviewer_cli:main"
 
 [project.optional-dependencies]
 vision = [

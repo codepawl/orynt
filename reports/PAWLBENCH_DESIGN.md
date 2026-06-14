@@ -233,6 +233,153 @@ Report outputs:
 
 The report includes dataset id, sample count, variant count, failed count, defect distribution, aggregate metric deltas, validation status, known limitations, and the next recommended step.
 
+## Human Labeling v0 Contract
+
+PawlBench Design human labeling v0 creates local pairwise preference and critique labels from existing split JSONL files. It uses only local artifacts and a static HTML review sheet.
+
+Queue command:
+
+```bash
+uv run pawlbench-design-label-queue artifacts/datasets/local_v1_splits/train.jsonl --out artifacts/labels/local_v1_train --seed 42 --limit 100
+```
+
+Queue outputs:
+
+- `queue.jsonl`: one original-vs-variant pair per line.
+- `labels.empty.jsonl`: empty starter file for completed labels.
+- `label_schema.json`: required fields, enums, and tag vocabularies.
+- `review.html`: static local review sheet with screenshots and copyable JSON label templates.
+- `README.md`: local labeling instructions.
+
+Each queue record includes a stable `label_id`, dataset/split/sample/variant metadata, randomized left/right assignment, original and variant artifact paths, expected issue and fix text, defect type, and metric deltas.
+
+Suggestion command:
+
+```bash
+uv run pawlbench-design-label-suggest artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train/suggested_labels.jsonl
+```
+
+Suggestions are deterministic rule outputs from synthetic-jitter metadata. They may prefill preference, tags, severity, reason, fix instruction, and confidence, but they are not human labels until a reviewer confirms, edits, or marks them unclear.
+
+Completed label records include:
+
+- `label_id`, `dataset_id`, `split`, `sample_id`, `variant_name`, `defect_type`
+- `left_item` and `right_item`: `original` or `variant`
+- `preferred`: `left`, `right`, `tie`, or `unclear`
+- `defect_tags` and `quality_tags`
+- `severity`: `none`, `low`, `medium`, or `high`
+- `fix_instruction`, `reason`, `confidence`, `labeler_id`, and `created_at`
+
+Validation command:
+
+```bash
+uv run pawlbench-design-label-validate artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_validation
+```
+
+Validation writes `validation.json` with schema errors, warnings, coverage, duplicate checks, and counts by defect type, preference, and severity. Partial coverage is a warning, not a schema error.
+
+Report command:
+
+```bash
+uv run pawlbench-design-label-report artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_report
+```
+
+Report outputs:
+
+- `report.md`
+- `summary.json`
+
+The report summarizes coverage, preference counts, defect tag counts, quality tag counts, severity counts, common fix instructions, and v0 limitations.
+
+## Local Labeling App v0 Contract
+
+The local labeling app is the default browser workflow for completing human labels from an existing label queue. It is localhost-only by default, uses no database or external service, and stores labels as JSONL on disk.
+
+Command:
+
+```bash
+uv run pawlbench-design-label-app artifacts/labels/local_v1_train --host 127.0.0.1 --port 8765 --labeler-id an
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
+Input directory:
+
+- `queue.jsonl`
+- optional existing `labels.jsonl`
+
+App-written outputs:
+
+- `labels.jsonl`: completed labels, upserted by `label_id`
+- `labeling_state.json`: current index and update timestamp
+
+Endpoints:
+
+- `GET /`: main app
+- `GET /api/queue`: queue summary and enum/tag vocabularies
+- `GET /api/item/{index}`: one queue item and any existing label
+- `POST /api/label`: validate and save one label
+- `GET /api/progress`: completion and coverage summary
+- `GET /image/{label_id}/{side}`: serve only the known left/right screenshot for a queue record
+
+Saving labels copies dataset, split, sample, variant, defect type, and left/right item values from the queue record. The app rejects unknown `label_id` values and invalid schema enums before writing. Label writes are atomic: a temporary file is written in the queue directory and then replaces `labels.jsonl`.
+
+If `suggested_labels.jsonl` exists, the app prefills each item with the matching suggestion. Review actions write `review_status`:
+
+- `confirmed`: suggestion accepted without edits
+- `edited`: reviewer saved manual changes
+- `unclear`: reviewer could not confidently choose
+- `skipped`: item skipped for later review
+
+Keyboard shortcuts:
+
+| Key | Action |
+| --- | --- |
+| Space | Confirm current suggestion and go next |
+| Enter | Save edited form and go next |
+| ArrowRight or `j` | Next item |
+| ArrowLeft or `k` | Previous item |
+| `1` | Select Left better |
+| `2` | Select Right better |
+| `3` | Select Tie |
+| `4` | Select Unclear |
+| `u` | Mark unclear and go next |
+| `s` | Skip current item |
+| `e` | Focus reason/fix edit area |
+| `?` | Show or hide shortcut help |
+| Escape | Close help or blur active control |
+
+Shortcuts are ignored while focus is inside an input, textarea, select, or contenteditable control.
+
+The static `review.html` output remains supported as fallback/manual mode for copy-editing JSONL outside the app.
+
+## Label Provenance Audit Contract
+
+Before labels are used for Pawl-JEPA training manifests, provenance should be audited:
+
+```bash
+uv run pawlbench-design-label-audit artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_audit
+```
+
+Audit outputs:
+
+- `audit.json`
+- `report.md`
+
+The audit flags confirmed or edited labels with missing `reviewed_by`, `reviewed_by == suggested_by`, or `labeler_id` beginning with `codepawl_rule`. It reports coverage by review status, `human_reviewed_count`, `auto_suggested_count`, `rule_reviewed_count`, and `suspicious_confirmed_count`.
+
+Reviewer provenance can be rewritten explicitly without changing preference, tags, severity, reason, or fix instruction:
+
+```bash
+uv run pawlbench-design-label-set-reviewer artifacts/labels/local_v1_train/labels.jsonl --out artifacts/labels/local_v1_train/labels.reviewed.jsonl --reviewed-by an --only-status confirmed
+```
+
+The rewrite command preserves `suggested_by`, `suggested_*`, and `suggestion_confidence`, updates `reviewed_by`, `labeler_id`, and `reviewed_at`, and does not overwrite the input unless `--in-place` is passed.
+
 ## Lightweight Encoder Baseline Contract
 
 Before adding DINOv2, SigLIP, CLIP, Pawl-JEPA, or any heavy ML dependency, PawlBench Design provides cheap deterministic baselines for comparing jittered screenshots to the original.

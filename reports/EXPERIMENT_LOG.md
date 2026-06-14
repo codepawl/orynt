@@ -25,6 +25,20 @@ Before adding dataset samples, confirm the source is allowed by `docs/DATA_POLIC
 - Failure:
 - Next action:
 
+## YYYY-MM-DD - Human Labeling v0
+
+- Objective: Generate a deterministic local label queue, collect pairwise UI preference labels, validate labels, and export a label report.
+- Command: `uv run pawlbench-design-label-queue artifacts/datasets/local_v1_splits/train.jsonl --out artifacts/labels/local_v1_train --seed 42 --limit 100`
+- Command: `uv run pawlbench-design-label-suggest artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train/suggested_labels.jsonl`
+- Command: `uv run pawlbench-design-label-app artifacts/labels/local_v1_train --host 127.0.0.1 --port 8765`
+- Command: `uv run pawlbench-design-label-audit artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_audit`
+- Command: `uv run pawlbench-design-label-validate artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_validation`
+- Command: `uv run pawlbench-design-label-report artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_report`
+- Dataset: `artifacts/labels/local_v1_train/queue.jsonl`
+- Result:
+- Failure:
+- Next action:
+
 ## YYYY-MM-DD - 002 Jitter Pairs
 
 - Objective: Generate deterministic synthetic good/bad UI pairs from `examples/simple_landing.html`.

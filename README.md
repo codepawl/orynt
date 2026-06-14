@@ -63,6 +63,61 @@ uv run pawlbench-design-split artifacts/datasets/local_v1 --out artifacts/datase
 uv run pawlbench-design-report artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_report
 ```
 
+Generate a local-first human labeling queue from the `local_v1` train split:
+
+```bash
+uv run pawlbench-design-label-queue artifacts/datasets/local_v1_splits/train.jsonl --out artifacts/labels/local_v1_train --seed 42 --limit 100
+```
+
+Generate deterministic rule-based suggestions for faster review:
+
+```bash
+uv run pawlbench-design-label-suggest artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train/suggested_labels.jsonl
+```
+
+Start the local labeling app:
+
+```bash
+uv run pawlbench-design-label-app artifacts/labels/local_v1_train --host 127.0.0.1 --port 8765
+```
+
+Then open `http://127.0.0.1:8765`. The app serves one queue item at a time, writes completed labels to `artifacts/labels/local_v1_train/labels.jsonl`, and keeps progress in `artifacts/labels/local_v1_train/labeling_state.json`.
+
+Suggested labels are deterministic synthetic-jitter guesses, not human labels until reviewed. The keyboard-first flow is:
+
+```text
+Space        confirm suggestion and go next
+Enter        save edited form and go next
+1 / 2 / 3 / 4 select left, right, tie, unclear
+j / k        next / previous
+u            mark unclear
+s            skip
+e            focus edit area
+?            show shortcut help
+Escape       close help or blur the active control
+```
+
+The static `artifacts/labels/local_v1_train/review.html` remains available as a manual fallback review sheet. It does not write files; use it to copy completed JSONL records by hand if you do not want to run the local app.
+
+Audit label provenance before using labels for Pawl-JEPA work:
+
+```bash
+uv run pawlbench-design-label-audit artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_audit
+```
+
+If confirmed labels were reviewed under a rule identity, rewrite reviewer provenance explicitly:
+
+```bash
+uv run pawlbench-design-label-set-reviewer artifacts/labels/local_v1_train/labels.jsonl --out artifacts/labels/local_v1_train/labels.reviewed.jsonl --reviewed-by an --only-status confirmed
+```
+
+Validate labels and export a label report:
+
+```bash
+uv run pawlbench-design-label-validate artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_validation
+uv run pawlbench-design-label-report artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_report
+```
+
 Then validate, split, and summarize the dataset:
 
 ```bash

@@ -28,6 +28,7 @@ Any future training data must comply with `docs/DATA_POLICY.md`. Public websites
 - PawlBench Design defines at least one repeatable benchmark task using those artifacts.
 - Simple baselines are measured before training starts.
 - Jitter pairs show measurable differences on known UI perturbations.
+- Human preference and critique labels exist for at least one local split.
 - Data provenance and release constraints are documented before dataset scaling.
 - A microtraining run beats at least one simple baseline on a narrow benchmark task.
 
@@ -37,5 +38,19 @@ Any future training data must comply with `docs/DATA_POLICY.md`. Public websites
 2. Baselines: compute simple metrics and compare trivial embedding or rules-based approaches.
 3. Jitter pairs: generate controlled UI variants for spacing, typography, contrast, hierarchy, and responsiveness.
 4. Data governance: maintain data policy, reference policy, and style taxonomy before scaling local datasets.
-5. Microtrain: train the smallest Pawl-JEPA experiment against one narrow task.
-6. Generation loop: use Pawl-JEPA and PawlBench Design results to guide CodePawl Design generation and critique workflows.
+5. Human labels: collect local JSONL pairwise preference, defect tag, severity, critique reason, and fix-instruction labels from PawlBench split queues through the local label app.
+6. Microtrain: train the smallest Pawl-JEPA experiment against one narrow task.
+7. Generation loop: use Pawl-JEPA and PawlBench Design results to guide CodePawl Design generation and critique workflows.
+
+## Human Label Supervision Path
+
+Human labeling v0 does not train Pawl-JEPA. The local label app writes JSONL supervision that later microtraining can consume:
+
+- Pair preference labels can supervise original-vs-variant ranking objectives.
+- Defect tags and severity can supervise defect classification heads.
+- Free-text reasons and fix instructions can support critique and repair-evaluation tasks.
+- Coverage and label reports should be checked before labels are admitted into any training manifest.
+
+Rule-based synthetic suggestions are useful for faster review but are not human labels. Pawl-JEPA training manifests should include only labels whose `review_status` is `confirmed`, `edited`, or an explicitly handled human-review status.
+
+Before any Pawl-JEPA microtraining run, label provenance must pass audit. Confirmed or edited labels reviewed by `codepawl_rule_v0` should be fixed with the explicit reviewer rewrite command so training manifests separate human review from deterministic suggestions.
