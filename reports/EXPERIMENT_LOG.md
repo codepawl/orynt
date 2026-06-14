@@ -11,6 +11,15 @@ Use one entry per run. Keep commands exact so results can be reproduced.
 - Failure:
 - Next action:
 
+## YYYY-MM-DD - local_v0 Dataset Build
+
+- Objective: Build a deterministic local PawlBench Design dataset from all HTML files in `examples/`.
+- Command: `uv run pawlbench-design-build examples --out artifacts/datasets/local_v0 --seed 42`
+- Dataset: `artifacts/datasets/local_v0/dataset.json`
+- Result:
+- Failure:
+- Next action:
+
 ## YYYY-MM-DD - Experiment Name
 
 - Objective:

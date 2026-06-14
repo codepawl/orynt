@@ -42,6 +42,12 @@ Then validate and score the pair directory with PawlBench Design v0:
 uv run pawlbench-design-eval artifacts/jitter_pairs --out artifacts/pawlbench_eval
 ```
 
+Then build a small local dataset from every HTML example:
+
+```bash
+uv run pawlbench-design-build examples --out artifacts/datasets/local_v0 --seed 42
+```
+
 Then build lightweight non-ML encoder baselines:
 
 ```bash
@@ -176,6 +182,31 @@ artifacts/pawlbench_eval/
   summary.json
   pairs.json
 ```
+
+Build a local multi-sample dataset:
+
+```bash
+uv run pawlbench-design-build examples --out artifacts/datasets/local_v0 --seed 42
+cat artifacts/datasets/local_v0/dataset.json
+```
+
+Expected outputs:
+
+```text
+artifacts/datasets/local_v0/
+  dataset.json
+  samples/
+    simple_landing/
+      labels.json
+      original/
+      jittered/
+    simple_dashboard/
+      labels.json
+      original/
+      jittered/
+```
+
+`dataset.json` records sample status, per-variant artifact paths, failed samples, and aggregate metric deltas by defect type.
 
 Build lightweight encoder baselines:
 

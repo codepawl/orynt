@@ -16,6 +16,7 @@ codepawl-render = "codepawl_harness.cli:main"
 codepawl-jitter = "codepawl_harness.jitter_cli:main"
 pawlbench-design-eval = "codepawl_harness.pawlbench_eval_cli:main"
 pawlbench-design-embed = "codepawl_harness.pawlbench_embed_cli:main"
+pawlbench-design-build = "codepawl_harness.pawlbench_build_cli:main"
 
 [dependency-groups]
 dev = [

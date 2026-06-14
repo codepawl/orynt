@@ -105,6 +105,53 @@ When variant `metrics.json` is available, `pairs.json` also includes:
 - `viewport_fill_ratio_delta`
 - `horizontal_overflow_delta`
 
+## Dataset Builder Contract
+
+PawlBench Design can batch local HTML examples into a structured dataset without adding model inference or hosted services.
+
+Command:
+
+```bash
+uv run pawlbench-design-build examples --out artifacts/datasets/local_v0 --seed 42
+```
+
+Input contract:
+
+- input is a directory.
+- static `.html` files are discovered recursively.
+- `--limit` restricts the sorted input list.
+- default behavior overwrites output atomically for deterministic local reruns.
+- `--no-overwrite` fails if the output directory already exists.
+- one failed HTML sample is recorded and processing continues unless `--fail-fast` is set.
+
+Output contract:
+
+- `dataset.json`: dataset metadata, sample records, failed records, and aggregate metrics.
+- `samples/<sample_id>/labels.json`
+- `samples/<sample_id>/original/{index.html,screenshot.png,dom.json,accessibility.json,metrics.json}`
+- `samples/<sample_id>/jittered/<variant>/{index.html,screenshot.png,dom.json,accessibility.json,metrics.json}`
+- `samples/<sample_id>/eval/{summary.json,pairs.json}` for reused pair-evaluator metrics.
+
+`dataset.json` fields:
+
+- `dataset_id`
+- `source_dir`
+- `output_dir`
+- `seed`
+- `generated_at`
+- `sample_count`
+- `variant_count`
+- `failed_count`
+- `samples`
+- `aggregate_metrics`
+
+Aggregate metrics are grouped by `defect_type`:
+
+- `average_contrast_issue_delta`
+- `average_min_contrast_ratio_delta`
+- `average_font_size_ratio_delta`
+- `average_changed_pixel_ratio`
+
 ## Lightweight Encoder Baseline Contract
 
 Before adding DINOv2, SigLIP, CLIP, Pawl-JEPA, or any heavy ML dependency, PawlBench Design provides cheap deterministic baselines for comparing jittered screenshots to the original.

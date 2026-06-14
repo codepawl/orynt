@@ -39,6 +39,7 @@ def test_key_files_exist() -> None:
         "reports/PAWLBENCH_DESIGN.md",
         "reports/EXPERIMENT_LOG.md",
         "examples/simple_landing.html",
+        "examples/simple_dashboard.html",
         "artifacts/.gitkeep",
     ]
 

@@ -71,3 +71,21 @@ artifacts/jitter_pairs/
 The current implementation uses deterministic CSS injection only. It does not train a model, launch a product UI, or require a JavaScript build pipeline.
 
 PawlBench Design v0 should pass on the generated directory before adding encoder baselines.
+
+## Batch Dataset Build
+
+Build a local dataset from every HTML fixture:
+
+```bash
+uv run pawlbench-design-build examples --out artifacts/datasets/local_v0 --seed 42
+cat artifacts/datasets/local_v0/dataset.json
+```
+
+The builder creates one `samples/<sample_id>/` directory per discovered HTML file, reuses the jitter and render pipeline for original plus variants, and stores aggregate metric deltas in `dataset.json`.
+
+Useful checks:
+
+```bash
+python -m json.tool artifacts/datasets/local_v0/dataset.json
+find artifacts/datasets/local_v0/samples -maxdepth 3 -type f | sort
+```
