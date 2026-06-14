@@ -1,5 +1,5 @@
 # codepawl-jitter
 
-Python package for future UI jitter and perturbation generation.
+Python package for UI jitter and perturbation generation.
 
-Planned responsibilities include creating paired UI variants with controlled changes in spacing, typography, color, hierarchy, responsiveness, and accessibility attributes.
+The first implementation creates deterministic degraded HTML variants for spacing, contrast, alignment, and hierarchy. These variants are intended as synthetic good/bad UI pairs for future Pawl-JEPA data collection.

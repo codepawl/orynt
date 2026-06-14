@@ -4,13 +4,16 @@ version = "0.1.0"
 description = "CLI harness entry points for CodePawl research infrastructure."
 requires-python = ">=3.11"
 dependencies = [
+    "codepawl-jitter",
     "codepawl-renderer",
 ]
 
 [project.scripts]
 codepawl-render = "codepawl_harness.cli:main"
+codepawl-jitter = "codepawl_harness.jitter_cli:main"
 
 [tool.uv.sources]
+codepawl-jitter = { workspace = true }
 codepawl-renderer = { workspace = true }
 
 [build-system]

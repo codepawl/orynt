@@ -20,6 +20,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "codepawl-harness" },
+    { name = "codepawl-jitter" },
     { name = "codepawl-renderer" },
 ]
 
@@ -31,6 +32,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "codepawl-harness", editable = "apps/harness" },
+    { name = "codepawl-jitter", editable = "packages/jitter" },
     { name = "codepawl-renderer", editable = "packages/renderer" },
 ]
 
@@ -47,11 +49,15 @@ name = "codepawl-harness"
 version = "0.1.0"
 source = { editable = "apps/harness" }
 dependencies = [
+    { name = "codepawl-jitter" },
     { name = "codepawl-renderer" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "codepawl-renderer", editable = "packages/renderer" }]
+requires-dist = [
+    { name = "codepawl-jitter", editable = "packages/jitter" },
+    { name = "codepawl-renderer", editable = "packages/renderer" },
+]
 
 [[package]]
 name = "codepawl-jitter"

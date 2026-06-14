@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from codepawl_metrics import build_render_metrics
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, sync_playwright
 
 
@@ -50,6 +51,7 @@ def render_html_file(config: RenderConfig) -> RenderResult:
                 "--disable-gpu",
             ],
         )
+        context = None
         try:
             context = browser.new_context(
                 viewport={
@@ -64,7 +66,7 @@ def render_html_file(config: RenderConfig) -> RenderResult:
             page = context.new_page()
             page.goto(input_path.as_uri(), wait_until="load")
 
-            page.screenshot(path=screenshot_path, full_page=True)
+            capture_screenshot(page, screenshot_path)
             dom = extract_dom_snapshot(page)
             accessibility = extract_accessibility_snapshot(page)
             overflow = extract_overflow_metrics(page)
@@ -80,7 +82,11 @@ def render_html_file(config: RenderConfig) -> RenderResult:
                 overflow=overflow,
             )
         finally:
-            browser.close()
+            try:
+                if context is not None:
+                    context.close()
+            finally:
+                browser.close()
 
     write_json(dom_path, dom)
     write_json(accessibility_path, accessibility)
@@ -146,6 +152,20 @@ def extract_dom_snapshot(page: Page) -> dict[str, Any]:
         }
         """
     )
+
+
+def capture_screenshot(page: Page, screenshot_path: Path) -> None:
+    last_error: PlaywrightError | None = None
+    for _ in range(3):
+        try:
+            page.screenshot(path=screenshot_path, full_page=True)
+            return
+        except PlaywrightError as exc:
+            last_error = exc
+            page.wait_for_timeout(100)
+
+    if last_error is not None:
+        raise last_error
 
 
 def extract_accessibility_snapshot(page: Page) -> dict[str, Any]:

@@ -24,6 +24,12 @@ Run the first harness command with:
 uv run codepawl-render examples/simple_landing.html --out artifacts/render_baseline
 ```
 
+Then generate deterministic synthetic good/bad UI pairs with:
+
+```bash
+uv run codepawl-jitter examples/simple_landing.html --out artifacts/jitter_pairs --seed 42
+```
+
 ## Repository Layout
 
 ```text
@@ -34,7 +40,7 @@ apps/
 packages/
   renderer/              Playwright rendering package.
   metrics/               Basic UI metrics package.
-  jitter/                Future UI perturbation package.
+  jitter/                Deterministic CSS perturbation package.
   generators/            Future fixture and prompt generator package.
   pawl_jepa/             Future model research package.
   pawlbench_design/      Future benchmark package.
@@ -87,6 +93,36 @@ artifacts/render_baseline/
   dom.json
   accessibility.json
   metrics.json
+```
+
+Then run the first jitter pair experiment:
+
+```bash
+uv run codepawl-jitter examples/simple_landing.html --out artifacts/jitter_pairs --seed 42
+command find artifacts/jitter_pairs -maxdepth 3 -type f | sort
+cat artifacts/jitter_pairs/labels.json
+```
+
+Expected outputs:
+
+```text
+artifacts/jitter_pairs/
+  labels.json
+  original/
+    index.html
+    screenshot.png
+    dom.json
+    accessibility.json
+    metrics.json
+  jittered/
+    spacing_bad.html
+    spacing_bad.png
+    contrast_bad.html
+    contrast_bad.png
+    alignment_bad.html
+    alignment_bad.png
+    hierarchy_bad.html
+    hierarchy_bad.png
 ```
 
 ## What Is Intentionally Missing

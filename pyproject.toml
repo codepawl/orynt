@@ -6,11 +6,13 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "codepawl-harness",
+    "codepawl-jitter",
     "codepawl-renderer",
 ]
 
 [project.scripts]
 codepawl-render = "codepawl_harness.cli:main"
+codepawl-jitter = "codepawl_harness.jitter_cli:main"
 
 [dependency-groups]
 dev = [
@@ -30,6 +32,7 @@ members = [
 
 [tool.uv.sources]
 codepawl-harness = { workspace = true }
+codepawl-jitter = { workspace = true }
 codepawl-renderer = { workspace = true }
 codepawl-metrics = { workspace = true }
 

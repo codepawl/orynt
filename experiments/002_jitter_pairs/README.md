@@ -2,4 +2,36 @@
 
 Goal: create controlled UI perturbation pairs from baseline examples and compare render artifacts across the pair.
 
-This experiment waits on the render harness from `001_render_baseline`.
+Synthetic good/bad UI pairs let Pawl-JEPA learn from targeted design defects before real labeled datasets exist. Each pair keeps the clean original HTML and generates degraded variants for spacing, contrast, alignment, and hierarchy.
+
+The first command is:
+
+```bash
+uv run codepawl-jitter examples/simple_landing.html --out artifacts/jitter_pairs --seed 42
+command find artifacts/jitter_pairs -maxdepth 3 -type f | sort
+cat artifacts/jitter_pairs/labels.json
+```
+
+Expected output:
+
+```text
+artifacts/jitter_pairs/
+  labels.json
+  original/
+    index.html
+    screenshot.png
+    dom.json
+    accessibility.json
+    metrics.json
+  jittered/
+    spacing_bad.html
+    spacing_bad.png
+    contrast_bad.html
+    contrast_bad.png
+    alignment_bad.html
+    alignment_bad.png
+    hierarchy_bad.html
+    hierarchy_bad.png
+```
+
+The current implementation uses deterministic CSS injection only. It does not train a model, launch a product UI, or require a JavaScript build pipeline.
