@@ -60,6 +60,31 @@ v0 image metrics:
 - `original_file_size_bytes`
 - `variant_file_size_bytes`
 
+## Lightweight Encoder Baseline Contract
+
+Before adding DINOv2, SigLIP, CLIP, Pawl-JEPA, or any heavy ML dependency, PawlBench Design provides cheap deterministic baselines for comparing jittered screenshots to the original.
+
+Command:
+
+```bash
+uv run pawlbench-design-embed artifacts/jitter_pairs --out artifacts/encoder_baselines
+```
+
+Outputs:
+
+- `embeddings.json`: original and per-variant vectors.
+- `similarities.json`: cosine similarity between each jittered variant and the original for every baseline.
+- `summary.json`: aggregate average similarities and lowest-similarity variant per baseline.
+
+Baseline names:
+
+- `thumbnail_rgb_16x16`: resized RGB screenshot flattened and normalized.
+- `color_histogram_rgb`: fixed RGB channel histograms.
+- `grayscale_edge_density`: simple grayscale edge magnitude summary.
+- `dom_layout_stats`: DOM/layout summary using `original/dom.json` and variant HTML structure.
+
+These are not learned encoders. They are sanity-check baselines for later model comparisons.
+
 ## Baseline Model Comparison Plan
 
 Start with simple baselines before Pawl-JEPA training:

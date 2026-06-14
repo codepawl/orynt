@@ -36,6 +36,12 @@ Then validate and score the pair directory with PawlBench Design v0:
 uv run pawlbench-design-eval artifacts/jitter_pairs --out artifacts/pawlbench_eval
 ```
 
+Then build lightweight non-ML encoder baselines:
+
+```bash
+uv run pawlbench-design-embed artifacts/jitter_pairs --out artifacts/encoder_baselines
+```
+
 ## Repository Layout
 
 ```text
@@ -145,6 +151,22 @@ Expected outputs:
 artifacts/pawlbench_eval/
   summary.json
   pairs.json
+```
+
+Build lightweight encoder baselines:
+
+```bash
+uv run pawlbench-design-embed artifacts/jitter_pairs --out artifacts/encoder_baselines
+cat artifacts/encoder_baselines/summary.json
+```
+
+Expected outputs:
+
+```text
+artifacts/encoder_baselines/
+  embeddings.json
+  similarities.json
+  summary.json
 ```
 
 ## What Is Intentionally Missing
