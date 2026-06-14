@@ -1,8 +1,0 @@
-{
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "codepawl",
-  "account_id": "db6d5e9c21ca2c945ffc837d011f6c6c",
-  "compatibility_date": "2026-06-09",
-  "compatibility_flags": ["nodejs_compat"],
-  "main": "@tanstack/react-start/server-entry"
-}
