@@ -2,6 +2,17 @@
 
 Use one entry per run. Keep commands exact so results can be reproduced.
 
+Before adding dataset samples, confirm the source is allowed by `docs/DATA_POLICY.md`. Private manual style notes under `references/` are not training data by default.
+
+## YYYY-MM-DD - local_v1 Policy Gate
+
+- Objective: Confirm data policy, references policy, and style taxonomy are in place before creating local_v1 examples.
+- Command: `uv run pytest`
+- Dataset: policy docs and style note templates only
+- Result:
+- Failure:
+- Next action: Create 30-50 self-controlled HTML examples for local_v1.
+
 ## YYYY-MM-DD - 002 Jitter Pairs
 
 - Objective: Generate deterministic synthetic good/bad UI pairs from `examples/simple_landing.html`.

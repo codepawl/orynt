@@ -6,6 +6,14 @@ PawlBench Design will evaluate whether CodePawl Design and Pawl-JEPA improve fro
 
 The benchmark should start small and inspectable. Each task should have clear input files, expected artifacts, metrics, and baseline comparisons.
 
+Before scaling beyond local fixtures, dataset work must follow:
+
+- `docs/DATA_POLICY.md`
+- `docs/REFERENCES_POLICY.md`
+- `docs/STYLE_TAXONOMY.md`
+
+PawlBench training and release artifacts should use self-controlled, generated, explicitly permitted, or compatible open-source data. Private style notes are reference material only.
+
 ## Planned Task Types
 
 - Static landing page render quality
@@ -26,6 +34,25 @@ The benchmark should start small and inspectable. Each task should have clear in
 - Spacing and alignment summaries
 - Responsive breakpoint differences
 - Human-labeled preference agreement when labels exist
+
+## Style Taxonomy
+
+Initial human-label and report dimensions are defined in `docs/STYLE_TAXONOMY.md`:
+
+- visual hierarchy
+- spacing rhythm
+- CTA prominence
+- contrast/accessibility
+- density
+- polish
+- generic-AI-slop risk
+- brand fit
+- motion readiness
+- responsive structure
+- dashboard clarity
+- landing-page clarity
+
+These dimensions provide shared language for local_v1 examples, future human labels, reports, and metric-proxy experiments.
 
 ## UI Metrics v1
 

@@ -8,6 +8,12 @@ Pawl-JEPA is a planned JEPA-style UI representation model for frontend design cr
 
 PawlBench Design is the planned benchmark and evaluation suite for measuring frontend design quality, robustness, accessibility, and generation improvements. It will grow from the same local render harness used to collect data for Pawl-JEPA.
 
+Before scaling datasets or adding ML baselines, CodePawl keeps training data separate from private style references:
+
+- [Data Policy](docs/DATA_POLICY.md)
+- [References Policy](docs/REFERENCES_POLICY.md)
+- [Style Taxonomy](docs/STYLE_TAXONOMY.md)
+
 ## Current Milestone
 
 The first milestone is a local render and evaluation harness. Before adding product UI, auth, billing, databases, deployment, hosted inference, or model training, the repo renders static examples locally and collects:
@@ -78,6 +84,8 @@ packages/
   pawlbench_design/      Future benchmark package.
 experiments/             Staged experiment notes.
 reports/                 Research plans and experiment log.
+docs/                    Data policy, reference policy, and style taxonomy.
+references/              Private style-study note templates, not training data.
 examples/                Static examples for local harness tests.
 artifacts/               Local generated outputs, ignored by git.
 tests/                   Scaffold and future harness tests.
@@ -263,3 +271,5 @@ artifacts/encoder_baselines/
 ## What Is Intentionally Missing
 
 This scaffold does not include auth, billing, database code, cloud deployment, hosted inference, model training, or a full frontend product. Those should wait until the render harness and evaluation loop are useful locally.
+
+The repo also intentionally excludes third-party screenshots, logos, brand assets, gallery downloads, and scraped design images. Public websites and design galleries may be used only for private manual style study under the references policy, not as training data by default.
