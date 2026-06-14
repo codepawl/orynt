@@ -20,6 +20,14 @@ cat artifacts/pawlbench_eval/summary.json
 cat artifacts/pawlbench_eval/pairs.json
 ```
 
+Inspect metric deltas in the evaluator output:
+
+```bash
+python -m json.tool artifacts/pawlbench_eval/pairs.json
+```
+
+Each pair record includes `original_metrics`, `variant_metrics`, and deltas including `contrast_issue_delta`, `min_contrast_ratio_delta`, `font_size_ratio_delta`, `viewport_fill_ratio_delta`, and `horizontal_overflow_delta`. The `contrast_bad` variant should show increased contrast issues and a lower minimum contrast ratio than the original.
+
 Expected output:
 
 ```text

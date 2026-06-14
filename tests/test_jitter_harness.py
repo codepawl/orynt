@@ -46,6 +46,29 @@ def test_jitter_command_creates_expected_files(tmp_path: Path) -> None:
         assert (variant_dir / "screenshot.png").stat().st_size > 0
 
 
+def test_contrast_bad_has_accessible_metric_fields(tmp_path: Path) -> None:
+    output_dir = tmp_path / "pairs"
+
+    result = main([str(EXAMPLE), "--out", str(output_dir), "--seed", "42"])
+
+    assert result == 0
+    metrics = json.loads(
+        (output_dir / "jittered" / "contrast_bad" / "metrics.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "contrast_issue_note" not in metrics
+    assert metrics["contrast_checked_text_node_count"] > 0
+    assert metrics["contrast_issue_count"] > 0
+    assert metrics["min_contrast_ratio"] < 4.5
+    assert metrics["average_contrast_ratio"] > 0
+    assert metrics["contrast_issues"]
+    issue = metrics["contrast_issues"][0]
+    assert {"selector", "tag", "text_snippet", "ratio", "threshold"} <= set(issue)
+    assert issue["ratio"] < issue["threshold"]
+
+
 def test_labels_json_has_expected_schema(tmp_path: Path) -> None:
     output_dir = tmp_path / "pairs"
 

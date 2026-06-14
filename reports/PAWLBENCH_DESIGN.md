@@ -27,6 +27,37 @@ The benchmark should start small and inspectable. Each task should have clear in
 - Responsive breakpoint differences
 - Human-labeled preference agreement when labels exist
 
+## UI Metrics v1
+
+Render artifacts include lightweight deterministic metrics extracted from the browser page with Playwright evaluation. These metrics are local-first and do not use model inference.
+
+Contrast metrics traverse visible text elements, read computed foreground color plus effective background color, and apply WCAG-style thresholds:
+
+- `contrast_issue_count`
+- `min_contrast_ratio`
+- `average_contrast_ratio`
+- `contrast_checked_text_node_count`
+- `contrast_issues` samples with selector, tag, text snippet, ratio, and threshold
+
+Typography hierarchy metrics summarize visible text sizing and prominence:
+
+- `max_font_size`
+- `min_font_size`
+- `font_size_ratio`
+- `heading_count`
+- `cta_like_element_count`
+- `hierarchy_warning_count`
+
+Layout metrics summarize visible element boxes and overflow:
+
+- `visible_element_count`
+- `average_element_area`
+- `median_element_area`
+- `viewport_fill_ratio`
+- `horizontal_overflow_px`
+- `vertical_scroll_height`
+- `max_right_overflow_px`
+
 ## v0 Pair Evaluator Contract
 
 PawlBench Design v0 validates and scores generated jitter pair directories before any encoder baseline or Pawl-JEPA microtraining work.
@@ -66,6 +97,13 @@ When variant `metrics.json` is available, `pairs.json` also includes:
 - `body_text_length`
 - `has_horizontal_overflow`
 - `has_vertical_overflow`
+- `original_metrics`
+- `variant_metrics`
+- `contrast_issue_delta`
+- `min_contrast_ratio_delta`
+- `font_size_ratio_delta`
+- `viewport_fill_ratio_delta`
+- `horizontal_overflow_delta`
 
 ## Lightweight Encoder Baseline Contract
 

@@ -70,6 +70,7 @@ def render_html_file(config: RenderConfig) -> RenderResult:
             dom = extract_dom_snapshot(page)
             accessibility = extract_accessibility_snapshot(page)
             overflow = extract_overflow_metrics(page)
+            ui_metrics = extract_ui_metrics(page)
 
             metrics = build_render_metrics(
                 input_path=input_path,
@@ -80,6 +81,7 @@ def render_html_file(config: RenderConfig) -> RenderResult:
                 dom_node_count=count_dom_nodes(dom),
                 body_text_length=extract_body_text_length(page),
                 overflow=overflow,
+                ui_metrics=ui_metrics,
             )
         finally:
             try:
@@ -192,6 +194,254 @@ def extract_overflow_metrics(page: Page) -> dict[str, bool]:
           return {
             has_horizontal_overflow: root.scrollWidth > root.clientWidth,
             has_vertical_overflow: root.scrollHeight > root.clientHeight
+          };
+        }
+        """
+    )
+
+
+def extract_ui_metrics(page: Page) -> dict[str, Any]:
+    return page.evaluate(
+        """
+        () => {
+          const round = (value, places = 4) => {
+            const scale = Math.pow(10, places);
+            return Math.round(value * scale) / scale;
+          };
+
+          const textSnippet = (element) => (
+            element.innerText || element.textContent || ""
+          ).replace(/\\s+/g, " ").trim().slice(0, 80);
+
+          const directText = (element) => Array.from(element.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent || "")
+            .join(" ")
+            .replace(/\\s+/g, " ")
+            .trim();
+
+          const isVisible = (element) => {
+            const style = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== "none"
+              && style.visibility !== "hidden"
+              && Number(style.opacity || "1") > 0
+              && rect.width > 0
+              && rect.height > 0;
+          };
+
+          const parseRgb = (value) => {
+            if (!value || value === "transparent") {
+              return null;
+            }
+            const match = value.match(/rgba?\\(([^)]+)\\)/);
+            if (!match) {
+              return null;
+            }
+            const parts = match[1].split(",").map((part) => part.trim());
+            const alpha = parts.length >= 4 ? Number(parts[3]) : 1;
+            if (!Number.isFinite(alpha) || alpha <= 0) {
+              return null;
+            }
+            const rgb = parts.slice(0, 3).map((part) => Number.parseFloat(part));
+            if (rgb.some((part) => !Number.isFinite(part))) {
+              return null;
+            }
+            return {
+              r: Math.max(0, Math.min(255, Math.round(rgb[0]))),
+              g: Math.max(0, Math.min(255, Math.round(rgb[1]))),
+              b: Math.max(0, Math.min(255, Math.round(rgb[2]))),
+              a: Math.max(0, Math.min(1, alpha))
+            };
+          };
+
+          const composite = (foreground, background) => ({
+            r: Math.round(foreground.r * foreground.a + background.r * (1 - foreground.a)),
+            g: Math.round(foreground.g * foreground.a + background.g * (1 - foreground.a)),
+            b: Math.round(foreground.b * foreground.a + background.b * (1 - foreground.a))
+          });
+
+          const effectiveBackground = (element) => {
+            let current = element;
+            let color = { r: 255, g: 255, b: 255 };
+            while (current && current.nodeType === Node.ELEMENT_NODE) {
+              const parsed = parseRgb(window.getComputedStyle(current).backgroundColor);
+              if (parsed) {
+                color = parsed.a < 1 ? composite(parsed, color) : parsed;
+                if (parsed.a >= 1) {
+                  return color;
+                }
+              }
+              current = current.parentElement;
+            }
+            return color;
+          };
+
+          const luminance = (color) => {
+            const channel = (value) => {
+              const normalized = value / 255;
+              return normalized <= 0.03928
+                ? normalized / 12.92
+                : Math.pow((normalized + 0.055) / 1.055, 2.4);
+            };
+            return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+          };
+
+          const contrastRatio = (foreground, background) => {
+            const lighter = Math.max(luminance(foreground), luminance(background));
+            const darker = Math.min(luminance(foreground), luminance(background));
+            return (lighter + 0.05) / (darker + 0.05);
+          };
+
+          const selectorFor = (element) => {
+            if (element.id) {
+              return `${element.tagName.toLowerCase()}#${CSS.escape(element.id)}`;
+            }
+            const classes = typeof element.className === "string"
+              ? element.className.trim().split(/\\s+/).filter(Boolean).slice(0, 3)
+              : [];
+            if (classes.length > 0) {
+              return `${element.tagName.toLowerCase()}.${classes.map((name) => CSS.escape(name)).join(".")}`;
+            }
+            let index = 1;
+            let sibling = element.previousElementSibling;
+            while (sibling) {
+              if (sibling.tagName === element.tagName) {
+                index += 1;
+              }
+              sibling = sibling.previousElementSibling;
+            }
+            return `${element.tagName.toLowerCase()}:nth-of-type(${index})`;
+          };
+
+          const elements = Array.from(document.body ? document.body.querySelectorAll("*") : []);
+          const textElements = elements.filter((element) => {
+            if (["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "PATH"].includes(element.tagName)) {
+              return false;
+            }
+            if (!isVisible(element)) {
+              return false;
+            }
+            const text = textSnippet(element);
+            if (!text) {
+              return false;
+            }
+            const tag = element.tagName.toLowerCase();
+            return directText(element) || ["a", "button", "label", "input", "textarea", "select"].includes(tag);
+          });
+
+          const contrastChecks = [];
+          const fontSizes = [];
+          let headingCount = 0;
+          let ctaLikeElementCount = 0;
+
+          for (const element of textElements) {
+            const style = window.getComputedStyle(element);
+            const foreground = parseRgb(style.color);
+            const background = effectiveBackground(element);
+            const fontSize = Number.parseFloat(style.fontSize);
+            const fontWeight = Number.parseInt(style.fontWeight, 10) || 400;
+            const tag = element.tagName.toLowerCase();
+            const text = textSnippet(element);
+
+            if (Number.isFinite(fontSize) && fontSize > 0) {
+              fontSizes.push(fontSize);
+            }
+            if (/^h[1-6]$/.test(tag) || element.getAttribute("role") === "heading") {
+              headingCount += 1;
+            }
+            if (
+              tag === "button"
+              || element.getAttribute("role") === "button"
+              || (tag === "a" && (
+                /button|btn|cta|primary|secondary|action/i.test(element.className || "")
+                || /start|view|buy|sign|try|get|contact|review/i.test(text)
+              ))
+            ) {
+              ctaLikeElementCount += 1;
+            }
+
+            if (foreground && background) {
+              const ratio = contrastRatio(foreground, background);
+              const isLarge = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
+              const threshold = isLarge ? 3.0 : 4.5;
+              contrastChecks.push({
+                selector: selectorFor(element),
+                tag,
+                text_snippet: text,
+                ratio,
+                threshold
+              });
+            }
+          }
+
+          const ratios = contrastChecks.map((check) => check.ratio);
+          const contrastIssues = contrastChecks
+            .filter((check) => check.ratio < check.threshold)
+            .slice(0, 12)
+            .map((check) => ({
+              selector: check.selector,
+              tag: check.tag,
+              text_snippet: check.text_snippet,
+              ratio: round(check.ratio, 2),
+              threshold: check.threshold
+            }));
+
+          const visibleElements = elements.filter(isVisible);
+          const areas = visibleElements
+            .map((element) => {
+              const rect = element.getBoundingClientRect();
+              return Math.max(0, rect.width) * Math.max(0, rect.height);
+            })
+            .filter((area) => area > 0)
+            .sort((a, b) => a - b);
+          const totalArea = areas.reduce((sum, area) => sum + area, 0);
+          const medianArea = areas.length === 0
+            ? 0
+            : areas[Math.floor((areas.length - 1) / 2)];
+
+          const root = document.documentElement;
+          const viewportWidth = window.innerWidth || root.clientWidth;
+          const viewportHeight = window.innerHeight || root.clientHeight;
+          const maxRight = visibleElements.reduce((max, element) => {
+            const rect = element.getBoundingClientRect();
+            return Math.max(max, rect.right);
+          }, 0);
+          const horizontalOverflowPx = Math.max(0, root.scrollWidth - root.clientWidth);
+          const maxRightOverflowPx = Math.max(0, maxRight - viewportWidth);
+          const maxFontSize = fontSizes.length ? Math.max(...fontSizes) : 0;
+          const minFontSize = fontSizes.length ? Math.min(...fontSizes) : 0;
+          const fontSizeRatio = minFontSize > 0 ? maxFontSize / minFontSize : 0;
+          const hierarchyWarnings = [
+            headingCount === 0 && textElements.length > 0,
+            ctaLikeElementCount === 0 && textElements.length > 0,
+            fontSizeRatio > 0 && fontSizeRatio < 1.4,
+            fontSizeRatio > 8
+          ].filter(Boolean).length;
+
+          return {
+            contrast_issue_count: contrastChecks.filter((check) => check.ratio < check.threshold).length,
+            min_contrast_ratio: ratios.length ? round(Math.min(...ratios), 2) : 0,
+            average_contrast_ratio: ratios.length
+              ? round(ratios.reduce((sum, ratio) => sum + ratio, 0) / ratios.length, 2)
+              : 0,
+            contrast_checked_text_node_count: contrastChecks.length,
+            contrast_issues: contrastIssues,
+            max_font_size: round(maxFontSize, 2),
+            min_font_size: round(minFontSize, 2),
+            font_size_ratio: round(fontSizeRatio, 4),
+            heading_count: headingCount,
+            cta_like_element_count: ctaLikeElementCount,
+            hierarchy_warning_count: hierarchyWarnings,
+            visible_element_count: visibleElements.length,
+            average_element_area: areas.length ? round(totalArea / areas.length, 2) : 0,
+            median_element_area: round(medianArea, 2),
+            viewport_fill_ratio: viewportWidth > 0 && viewportHeight > 0
+              ? round(Math.min(1, totalArea / (viewportWidth * viewportHeight)), 4)
+              : 0,
+            horizontal_overflow_px: round(horizontalOverflowPx, 2),
+            vertical_scroll_height: round(root.scrollHeight, 2),
+            max_right_overflow_px: round(maxRightOverflowPx, 2)
           };
         }
         """

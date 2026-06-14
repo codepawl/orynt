@@ -18,6 +18,12 @@ The first milestone is a local render and evaluation harness. Before adding prod
 - `metrics.json`
 - reproducible artifact folders for experiments
 
+`metrics.json` now includes deterministic UI metrics v1 extracted from the rendered page:
+
+- contrast checks for visible text, including `contrast_issue_count`, `min_contrast_ratio`, `average_contrast_ratio`, `contrast_checked_text_node_count`, and sampled `contrast_issues`
+- typography hierarchy signals such as `max_font_size`, `min_font_size`, `font_size_ratio`, `heading_count`, `cta_like_element_count`, and `hierarchy_warning_count`
+- layout/spacing signals such as `visible_element_count`, element-area summaries, `viewport_fill_ratio`, `horizontal_overflow_px`, `vertical_scroll_height`, and `max_right_overflow_px`
+
 Run the first harness command with:
 
 ```bash
@@ -160,6 +166,8 @@ uv run pawlbench-design-eval artifacts/jitter_pairs --out artifacts/pawlbench_ev
 cat artifacts/pawlbench_eval/summary.json
 cat artifacts/pawlbench_eval/pairs.json
 ```
+
+Each `pairs.json` record includes an `original_metrics` subset, a `variant_metrics` subset, and simple deltas for contrast, hierarchy scale, viewport fill, and horizontal overflow.
 
 Expected outputs:
 

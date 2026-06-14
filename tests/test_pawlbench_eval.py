@@ -91,6 +91,18 @@ def test_metric_fields_are_numeric(tmp_path: Path) -> None:
         assert isinstance(pair["body_text_length"], int)
         assert isinstance(pair["has_horizontal_overflow"], bool)
         assert isinstance(pair["has_vertical_overflow"], bool)
+        assert isinstance(pair["original_metrics"], dict)
+        assert isinstance(pair["variant_metrics"], dict)
+        assert isinstance(pair["variant_metrics"]["contrast_issue_count"], int)
+        assert isinstance(pair["variant_metrics"]["min_contrast_ratio"], int | float)
+        assert isinstance(pair["variant_metrics"]["font_size_ratio"], int | float)
+        assert isinstance(pair["variant_metrics"]["viewport_fill_ratio"], int | float)
+        assert isinstance(pair["variant_metrics"]["horizontal_overflow_px"], int | float)
+        assert isinstance(pair["contrast_issue_delta"], int | float)
+        assert isinstance(pair["min_contrast_ratio_delta"], int | float)
+        assert isinstance(pair["font_size_ratio_delta"], int | float)
+        assert isinstance(pair["viewport_fill_ratio_delta"], int | float)
+        assert isinstance(pair["horizontal_overflow_delta"], int | float)
         assert pair["dom_path"].endswith("/dom.json")
         assert pair["accessibility_path"].endswith("/accessibility.json")
         assert pair["metrics_path"].endswith("/metrics.json")
@@ -103,3 +115,8 @@ def test_metric_fields_are_numeric(tmp_path: Path) -> None:
         assert pair["variant_file_size_bytes"] > 0
         assert pair["dom_node_count"] > 0
         assert pair["body_text_length"] > 0
+
+    contrast_bad = next(pair for pair in pairs if pair["variant_name"] == "contrast_bad")
+    assert contrast_bad["variant_metrics"]["contrast_issue_count"] > 0
+    assert contrast_bad["contrast_issue_delta"] > 0
+    assert contrast_bad["min_contrast_ratio_delta"] < 0

@@ -63,3 +63,20 @@ def test_metrics_include_basic_fields(tmp_path: Path) -> None:
     assert isinstance(metrics["has_horizontal_overflow"], bool)
     assert isinstance(metrics["has_vertical_overflow"], bool)
     assert metrics["contrast_issue_count"] == 0
+    assert "contrast_issue_note" not in metrics
+    assert metrics["contrast_checked_text_node_count"] > 0
+    assert metrics["min_contrast_ratio"] >= 3
+    assert metrics["average_contrast_ratio"] >= metrics["min_contrast_ratio"]
+    assert isinstance(metrics["contrast_issues"], list)
+    assert metrics["max_font_size"] > metrics["min_font_size"] > 0
+    assert metrics["font_size_ratio"] > 1
+    assert metrics["heading_count"] >= 1
+    assert metrics["cta_like_element_count"] >= 1
+    assert metrics["hierarchy_warning_count"] >= 0
+    assert metrics["visible_element_count"] > 0
+    assert metrics["average_element_area"] > 0
+    assert metrics["median_element_area"] > 0
+    assert 0 < metrics["viewport_fill_ratio"] <= 1
+    assert metrics["horizontal_overflow_px"] >= 0
+    assert metrics["vertical_scroll_height"] >= metrics["viewport_height"]
+    assert metrics["max_right_overflow_px"] >= 0

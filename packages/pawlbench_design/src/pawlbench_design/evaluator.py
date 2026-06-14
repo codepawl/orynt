@@ -45,12 +45,13 @@ def evaluate_jitter_pairs(config: EvalConfig) -> EvalResult:
 
     labels = _load_labels(input_dir)
     original_screenshot = _required_file(input_dir / "original" / "screenshot.png")
-    _required_file(input_dir / "original" / "metrics.json")
+    original_metrics_path = _required_file(input_dir / "original" / "metrics.json")
 
     variants = _validate_variants(input_dir, labels)
     pairs = [
         _build_pair_record(
             original_screenshot=original_screenshot,
+            original_metrics_path=original_metrics_path,
             variant=variant,
         )
         for variant in variants
@@ -121,9 +122,15 @@ def _validate_variants(
     return variants
 
 
-def _build_pair_record(*, original_screenshot: Path, variant: dict[str, Any]) -> dict[str, Any]:
+def _build_pair_record(
+    *,
+    original_screenshot: Path,
+    original_metrics_path: Path,
+    variant: dict[str, Any],
+) -> dict[str, Any]:
     screenshot_path = Path(variant["screenshot_path"])
     image_metrics = _compare_screenshots(original_screenshot, screenshot_path)
+    original_metrics = _read_metric_subset(original_metrics_path)
     record = {
         "variant_name": variant["variant_name"],
         "defect_type": variant["defect_type"],
@@ -140,7 +147,11 @@ def _build_pair_record(*, original_screenshot: Path, variant: dict[str, Any]) ->
         record["accessibility_path"] = variant["accessibility_path"]
     if "metrics_path" in variant:
         record["metrics_path"] = variant["metrics_path"]
-        record.update(_variant_metrics(Path(variant["metrics_path"])))
+        variant_metrics = _read_metric_subset(Path(variant["metrics_path"]))
+        record["original_metrics"] = original_metrics
+        record["variant_metrics"] = variant_metrics
+        record.update(_legacy_variant_metrics(variant_metrics))
+        record.update(_metric_deltas(original_metrics, variant_metrics))
 
     return record
 
@@ -220,8 +231,41 @@ def _resolve_artifact_path(input_dir: Path, raw_path: str) -> Path:
     return (input_dir / path).resolve()
 
 
-def _variant_metrics(metrics_path: Path) -> dict[str, Any]:
+METRIC_SUBSET_FIELDS = (
+    "dom_node_count",
+    "body_text_length",
+    "has_horizontal_overflow",
+    "has_vertical_overflow",
+    "contrast_issue_count",
+    "min_contrast_ratio",
+    "average_contrast_ratio",
+    "contrast_checked_text_node_count",
+    "max_font_size",
+    "min_font_size",
+    "font_size_ratio",
+    "heading_count",
+    "cta_like_element_count",
+    "hierarchy_warning_count",
+    "visible_element_count",
+    "average_element_area",
+    "median_element_area",
+    "viewport_fill_ratio",
+    "horizontal_overflow_px",
+    "vertical_scroll_height",
+    "max_right_overflow_px",
+)
+
+
+def _read_metric_subset(metrics_path: Path) -> dict[str, Any]:
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    fields = {}
+    for field in METRIC_SUBSET_FIELDS:
+        if field in metrics:
+            fields[field] = metrics[field]
+    return fields
+
+
+def _legacy_variant_metrics(variant_metrics: dict[str, Any]) -> dict[str, Any]:
     fields = {}
     for field in (
         "dom_node_count",
@@ -229,9 +273,31 @@ def _variant_metrics(metrics_path: Path) -> dict[str, Any]:
         "has_horizontal_overflow",
         "has_vertical_overflow",
     ):
-        if field in metrics:
-            fields[field] = metrics[field]
+        if field in variant_metrics:
+            fields[field] = variant_metrics[field]
     return fields
+
+
+def _metric_deltas(
+    original_metrics: dict[str, Any],
+    variant_metrics: dict[str, Any],
+) -> dict[str, int | float | None]:
+    delta_fields = {
+        "contrast_issue_delta": "contrast_issue_count",
+        "min_contrast_ratio_delta": "min_contrast_ratio",
+        "font_size_ratio_delta": "font_size_ratio",
+        "viewport_fill_ratio_delta": "viewport_fill_ratio",
+        "horizontal_overflow_delta": "horizontal_overflow_px",
+    }
+    deltas: dict[str, int | float | None] = {}
+    for delta_name, metric_name in delta_fields.items():
+        original_value = original_metrics.get(metric_name)
+        variant_value = variant_metrics.get(metric_name)
+        if isinstance(original_value, int | float) and isinstance(variant_value, int | float):
+            deltas[delta_name] = variant_value - original_value
+        else:
+            deltas[delta_name] = None
+    return deltas
 
 
 def _required_file(path: Path) -> Path:
