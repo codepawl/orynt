@@ -3,10 +3,13 @@ name = "codepawl-renderer"
 version = "0.1.0"
 description = "Local rendering harness package for CodePawl Design research."
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "codepawl-metrics",
+    "playwright>=1.56.0",
+]
 
-[project.scripts]
-codepawl-render = "codepawl_renderer.cli:main"
+[tool.uv.sources]
+codepawl-metrics = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

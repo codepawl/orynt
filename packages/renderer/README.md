@@ -2,7 +2,7 @@
 
 Python package for the future local Playwright render harness.
 
-Planned responsibilities:
+Responsibilities:
 
 - accept an HTML file or URL
 - render it in a reproducible browser context
@@ -11,4 +11,4 @@ Planned responsibilities:
 - collect basic layout and page metrics
 - write artifacts to a local output directory
 
-The current package only exposes a placeholder CLI so the intended command name is reserved.
+The first implementation supports local `.html` files using absolute `file://` URLs and headless Chromium.

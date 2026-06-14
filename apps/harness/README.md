@@ -1,5 +1,11 @@
 # Local Harness App
 
-Placeholder for harness-facing scripts or a small local UI if needed later.
+Command-line entry points for local CodePawl research harnesses.
 
-The next task should implement a Playwright-based render command that can render `examples/simple_landing.html` and write structured artifacts to `artifacts/render_baseline`.
+The first command is `codepawl-render`, which renders a local HTML file with headless Chromium and writes screenshot, DOM, accessibility, and metrics artifacts.
+
+Example:
+
+```bash
+uv run codepawl-render examples/simple_landing.html --out artifacts/render_baseline
+```

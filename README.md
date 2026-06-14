@@ -10,15 +10,15 @@ PawlBench Design is the planned benchmark and evaluation suite for measuring fro
 
 ## Current Milestone
 
-The first milestone is a local render and evaluation harness. Before adding product UI, auth, billing, databases, deployment, hosted inference, or model training, the repo should be able to render static examples locally and collect:
+The first milestone is a local render and evaluation harness. Before adding product UI, auth, billing, databases, deployment, hosted inference, or model training, the repo renders static examples locally and collects:
 
-- screenshots
-- DOM snapshots
-- accessibility snapshots
-- layout and performance metrics
+- `screenshot.png`
+- `dom.json`
+- `accessibility.json`
+- `metrics.json`
 - reproducible artifact folders for experiments
 
-The intended next task is to implement the Playwright render harness behind this command:
+Run the first harness command with:
 
 ```bash
 uv run codepawl-render examples/simple_landing.html --out artifacts/render_baseline
@@ -30,10 +30,10 @@ uv run codepawl-render examples/simple_landing.html --out artifacts/render_basel
 apps/
   site/                  Product web app placeholder.
   design/                CodePawl Design product placeholder.
-  harness/               Local render/evaluation harness placeholder.
+  harness/               Local render/evaluation CLI.
 packages/
-  renderer/              Future Playwright rendering package.
-  metrics/               Future UI metrics package.
+  renderer/              Playwright rendering package.
+  metrics/               Basic UI metrics package.
   jitter/                Future UI perturbation package.
   generators/            Future fixture and prompt generator package.
   pawl_jepa/             Future model research package.
@@ -55,6 +55,7 @@ On Fedora/Linux:
 sudo dnf install -y python3 python3-pip
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
+uv run playwright install chromium
 uv run pytest
 ```
 
@@ -62,7 +63,30 @@ If `uv` is already installed:
 
 ```bash
 uv sync
+uv run playwright install chromium
 uv run pytest
+```
+
+Some Fedora systems need Chromium runtime libraries before Playwright can launch the browser. If Chromium fails to start, install Playwright's Linux dependencies or the equivalent Fedora packages:
+
+```bash
+uv run playwright install-deps chromium
+```
+
+Then run the local render baseline:
+
+```bash
+uv run codepawl-render examples/simple_landing.html --out artifacts/render_baseline
+```
+
+Expected outputs:
+
+```text
+artifacts/render_baseline/
+  screenshot.png
+  dom.json
+  accessibility.json
+  metrics.json
 ```
 
 ## What Is Intentionally Missing

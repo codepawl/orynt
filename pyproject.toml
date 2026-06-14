@@ -5,11 +5,12 @@ description = "Research and product foundation for CodePawl Design, Pawl-JEPA, a
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "codepawl-harness",
     "codepawl-renderer",
 ]
 
 [project.scripts]
-codepawl-render = "codepawl_renderer.cli:main"
+codepawl-render = "codepawl_harness.cli:main"
 
 [dependency-groups]
 dev = [
@@ -18,6 +19,7 @@ dev = [
 
 [tool.uv.workspace]
 members = [
+    "apps/harness",
     "packages/renderer",
     "packages/metrics",
     "packages/jitter",
@@ -27,11 +29,14 @@ members = [
 ]
 
 [tool.uv.sources]
+codepawl-harness = { workspace = true }
 codepawl-renderer = { workspace = true }
+codepawl-metrics = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [
+    "apps/harness/src",
     "packages/renderer/src",
     "packages/metrics/src",
     "packages/jitter/src",

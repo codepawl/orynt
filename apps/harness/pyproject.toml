@@ -1,0 +1,18 @@
+[project]
+name = "codepawl-harness"
+version = "0.1.0"
+description = "CLI harness entry points for CodePawl research infrastructure."
+requires-python = ">=3.11"
+dependencies = [
+    "codepawl-renderer",
+]
+
+[project.scripts]
+codepawl-render = "codepawl_harness.cli:main"
+
+[tool.uv.sources]
+codepawl-renderer = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
