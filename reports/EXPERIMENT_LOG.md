@@ -20,6 +20,17 @@ Use one entry per run. Keep commands exact so results can be reproduced.
 - Failure:
 - Next action:
 
+## YYYY-MM-DD - local_v0 Dataset QA
+
+- Objective: Validate artifacts, generate sample-level splits, and export a dataset report before ML baselines.
+- Command: `uv run pawlbench-design-validate artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_validation`
+- Command: `uv run pawlbench-design-split artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_splits --seed 42`
+- Command: `uv run pawlbench-design-report artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_report`
+- Dataset: `artifacts/datasets/local_v0/dataset.json`
+- Result:
+- Failure:
+- Next action:
+
 ## YYYY-MM-DD - Experiment Name
 
 - Objective:

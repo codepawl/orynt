@@ -48,6 +48,14 @@ Then build a small local dataset from every HTML example:
 uv run pawlbench-design-build examples --out artifacts/datasets/local_v0 --seed 42
 ```
 
+Then validate, split, and summarize the dataset:
+
+```bash
+uv run pawlbench-design-validate artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_validation
+uv run pawlbench-design-split artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_splits --seed 42
+uv run pawlbench-design-report artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_report
+```
+
 Then build lightweight non-ML encoder baselines:
 
 ```bash
@@ -207,6 +215,32 @@ artifacts/datasets/local_v0/
 ```
 
 `dataset.json` records sample status, per-variant artifact paths, failed samples, and aggregate metric deltas by defect type.
+
+Validate, split, and report on the local dataset:
+
+```bash
+uv run pawlbench-design-validate artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_validation
+uv run pawlbench-design-split artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_splits --seed 42
+uv run pawlbench-design-report artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_report
+cat artifacts/datasets/local_v0_validation/validation.json
+cat artifacts/datasets/local_v0_splits/splits.json
+cat artifacts/datasets/local_v0_report/report.md
+```
+
+Expected outputs:
+
+```text
+artifacts/datasets/local_v0_validation/
+  validation.json
+artifacts/datasets/local_v0_splits/
+  splits.json
+  train.jsonl
+  val.jsonl
+  test.jsonl
+artifacts/datasets/local_v0_report/
+  report.md
+  summary.json
+```
 
 Build lightweight encoder baselines:
 

@@ -15,6 +15,9 @@ codepawl-jitter = "codepawl_harness.jitter_cli:main"
 pawlbench-design-eval = "codepawl_harness.pawlbench_eval_cli:main"
 pawlbench-design-embed = "codepawl_harness.pawlbench_embed_cli:main"
 pawlbench-design-build = "codepawl_harness.pawlbench_build_cli:main"
+pawlbench-design-validate = "codepawl_harness.pawlbench_validate_cli:main"
+pawlbench-design-split = "codepawl_harness.pawlbench_split_cli:main"
+pawlbench-design-report = "codepawl_harness.pawlbench_report_cli:main"
 
 [tool.uv.sources]
 codepawl-jitter = { workspace = true }

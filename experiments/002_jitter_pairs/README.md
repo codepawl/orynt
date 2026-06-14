@@ -89,3 +89,23 @@ Useful checks:
 python -m json.tool artifacts/datasets/local_v0/dataset.json
 find artifacts/datasets/local_v0/samples -maxdepth 3 -type f | sort
 ```
+
+## Dataset QA
+
+Validate, split, and report before using the dataset for encoder baselines:
+
+```bash
+uv run pawlbench-design-validate artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_validation
+uv run pawlbench-design-split artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_splits --seed 42
+uv run pawlbench-design-report artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_report
+```
+
+Useful checks:
+
+```bash
+cat artifacts/datasets/local_v0_validation/validation.json
+cat artifacts/datasets/local_v0_splits/splits.json
+cat artifacts/datasets/local_v0_report/report.md
+```
+
+Splits are sample-level, so all variants for a `sample_id` stay in exactly one split.

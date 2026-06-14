@@ -152,6 +152,60 @@ Aggregate metrics are grouped by `defect_type`:
 - `average_font_size_ratio_delta`
 - `average_changed_pixel_ratio`
 
+## Dataset QA Contracts
+
+Validation checks the current dataset format and writes `validation.json`.
+
+Command:
+
+```bash
+uv run pawlbench-design-validate artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_validation
+```
+
+Validation output includes:
+
+- `valid`
+- `errors`
+- `warnings`
+- `sample_count_actual`
+- `variant_count_actual`
+- `defect_type_counts`
+- `metric_coverage`
+
+The validator checks `dataset.json`, count consistency, original artifacts, variant artifacts, required UI metrics v1 fields, and coverage for each defect type.
+
+Splits are deterministic by `sample_id`, not by variant, so variants from one original page do not leak across train/val/test.
+
+Command:
+
+```bash
+uv run pawlbench-design-split artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_splits --seed 42
+```
+
+Split outputs:
+
+- `splits.json`: seed, ratios, sample counts, record counts, split sample IDs, and leakage check.
+- `train.jsonl`
+- `val.jsonl`
+- `test.jsonl`
+
+Default ratios are 80% train, 10% val, and 10% test. Tiny datasets use deterministic floor-based counts, so one or more splits may be empty.
+
+Report export writes a markdown summary plus machine-readable facts.
+
+Command:
+
+```bash
+uv run pawlbench-design-report artifacts/datasets/local_v0 --out artifacts/datasets/local_v0_report
+```
+
+Report outputs:
+
+- `report.md`
+- `summary.json`
+
+The report includes dataset id, sample count, variant count, failed count, defect distribution, aggregate metric deltas, validation status, known limitations, and the next recommended step.
+
 ## Lightweight Encoder Baseline Contract
 
 Before adding DINOv2, SigLIP, CLIP, Pawl-JEPA, or any heavy ML dependency, PawlBench Design provides cheap deterministic baselines for comparing jittered screenshots to the original.
