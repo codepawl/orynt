@@ -85,7 +85,12 @@ def _load_labels(input_dir: Path) -> dict[str, Any]:
     return labels
 
 
-def _validate_variants(input_dir: Path, labels: dict[str, Any]) -> list[dict[str, Any]]:
+def _validate_variants(
+    input_dir: Path,
+    labels: dict[str, Any],
+    *,
+    require_optional_artifacts: bool = True,
+) -> list[dict[str, Any]]:
     variants: list[dict[str, Any]] = []
     for index, variant in enumerate(labels["variants"]):
         if not isinstance(variant, dict):
@@ -105,6 +110,12 @@ def _validate_variants(input_dir: Path, labels: dict[str, Any]) -> list[dict[str
         normalized = dict(variant)
         normalized["html_path"] = str(html_path)
         normalized["screenshot_path"] = str(screenshot_path)
+        for optional_key in ("dom_path", "accessibility_path", "metrics_path"):
+            if optional_key in variant:
+                artifact_path = _resolve_artifact_path(input_dir, variant[optional_key])
+                if require_optional_artifacts:
+                    _required_file(artifact_path)
+                normalized[optional_key] = str(artifact_path)
         variants.append(normalized)
 
     return variants
@@ -113,7 +124,7 @@ def _validate_variants(input_dir: Path, labels: dict[str, Any]) -> list[dict[str
 def _build_pair_record(*, original_screenshot: Path, variant: dict[str, Any]) -> dict[str, Any]:
     screenshot_path = Path(variant["screenshot_path"])
     image_metrics = _compare_screenshots(original_screenshot, screenshot_path)
-    return {
+    record = {
         "variant_name": variant["variant_name"],
         "defect_type": variant["defect_type"],
         "severity": variant["severity"],
@@ -123,6 +134,15 @@ def _build_pair_record(*, original_screenshot: Path, variant: dict[str, Any]) ->
         "screenshot_path": variant["screenshot_path"],
         **image_metrics,
     }
+    if "dom_path" in variant:
+        record["dom_path"] = variant["dom_path"]
+    if "accessibility_path" in variant:
+        record["accessibility_path"] = variant["accessibility_path"]
+    if "metrics_path" in variant:
+        record["metrics_path"] = variant["metrics_path"]
+        record.update(_variant_metrics(Path(variant["metrics_path"])))
+
+    return record
 
 
 def _build_summary(
@@ -198,6 +218,20 @@ def _resolve_artifact_path(input_dir: Path, raw_path: str) -> Path:
     if path.is_absolute():
         return path.resolve()
     return (input_dir / path).resolve()
+
+
+def _variant_metrics(metrics_path: Path) -> dict[str, Any]:
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    fields = {}
+    for field in (
+        "dom_node_count",
+        "body_text_length",
+        "has_horizontal_overflow",
+        "has_vertical_overflow",
+    ):
+        if field in metrics:
+            fields[field] = metrics[field]
+    return fields
 
 
 def _required_file(path: Path) -> Path:

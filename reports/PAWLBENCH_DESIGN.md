@@ -42,8 +42,8 @@ Input contract:
 - `labels.json` exists at the pair root.
 - `original/screenshot.png` exists.
 - `original/metrics.json` exists.
-- each label variant has `variant_name`, `defect_type`, `severity`, `html_path`, `screenshot_path`, `expected_issue`, and `expected_fix_instruction`.
-- each referenced variant HTML and screenshot exists.
+- each label variant has `variant_name`, `defect_type`, `severity`, `html_path`, `screenshot_path`, `dom_path`, `accessibility_path`, `metrics_path`, `expected_issue`, and `expected_fix_instruction`.
+- each referenced variant HTML, screenshot, DOM, accessibility, and metrics artifact exists.
 
 Outputs:
 
@@ -59,6 +59,13 @@ v0 image metrics:
 - `changed_pixel_ratio`
 - `original_file_size_bytes`
 - `variant_file_size_bytes`
+
+When variant `metrics.json` is available, `pairs.json` also includes:
+
+- `dom_node_count`
+- `body_text_length`
+- `has_horizontal_overflow`
+- `has_vertical_overflow`
 
 ## Lightweight Encoder Baseline Contract
 
@@ -81,7 +88,9 @@ Baseline names:
 - `thumbnail_rgb_16x16`: resized RGB screenshot flattened and normalized.
 - `color_histogram_rgb`: fixed RGB channel histograms.
 - `grayscale_edge_density`: simple grayscale edge magnitude summary.
-- `dom_layout_stats`: DOM/layout summary using `original/dom.json` and variant HTML structure.
+- `dom_layout_stats`: DOM/layout summary using real `dom.json` and `metrics.json` artifacts for the original and each variant.
+
+If a variant is missing DOM or metrics artifacts, `summary.json` includes a warning and the variant receives a zero `dom_layout_stats` vector. The baseline must not silently infer replacement layout values from HTML when render artifacts are missing.
 
 These are not learned encoders. They are sanity-check baselines for later model comparisons.
 

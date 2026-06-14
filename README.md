@@ -127,14 +127,30 @@ artifacts/jitter_pairs/
     accessibility.json
     metrics.json
   jittered/
-    spacing_bad.html
-    spacing_bad.png
-    contrast_bad.html
-    contrast_bad.png
-    alignment_bad.html
-    alignment_bad.png
-    hierarchy_bad.html
-    hierarchy_bad.png
+    spacing_bad/
+      index.html
+      screenshot.png
+      dom.json
+      accessibility.json
+      metrics.json
+    contrast_bad/
+      index.html
+      screenshot.png
+      dom.json
+      accessibility.json
+      metrics.json
+    alignment_bad/
+      index.html
+      screenshot.png
+      dom.json
+      accessibility.json
+      metrics.json
+    hierarchy_bad/
+      index.html
+      screenshot.png
+      dom.json
+      accessibility.json
+      metrics.json
 ```
 
 Evaluate the generated pairs:
@@ -159,6 +175,8 @@ Build lightweight encoder baselines:
 uv run pawlbench-design-embed artifacts/jitter_pairs --out artifacts/encoder_baselines
 cat artifacts/encoder_baselines/summary.json
 ```
+
+`dom_layout_stats` uses real `dom.json` and `metrics.json` artifacts for each variant. Missing variant DOM or metrics artifacts are reported in `summary.json` warnings.
 
 Expected outputs:
 

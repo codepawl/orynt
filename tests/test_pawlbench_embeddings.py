@@ -74,6 +74,7 @@ def test_similarities_contain_all_variants_and_baselines(tmp_path: Path) -> None
 
     assert summary["valid"] is True
     assert summary["errors"] == []
+    assert summary["warnings"] == []
     assert summary["variant_count"] == 4
     assert summary["baseline_names"] == BASELINES
     assert set(summary["average_similarity_by_baseline"]) == set(BASELINES)
@@ -100,9 +101,15 @@ def test_embeddings_have_sane_vector_shapes(tmp_path: Path) -> None:
     assert len(original["thumbnail_rgb_16x16"]) == 16 * 16 * 3
     assert len(original["color_histogram_rgb"]) == 24
     assert len(original["grayscale_edge_density"]) == 8
-    assert len(original["dom_layout_stats"]) == 7
+    assert len(original["dom_layout_stats"]) == 11
     for vector in original.values():
         assert all(isinstance(value, int | float) for value in vector)
+
+    for variant in embeddings["variants"]:
+        assert "dom_path" in variant
+        assert "metrics_path" in variant
+        assert len(variant["embeddings"]["dom_layout_stats"]) == 11
+        assert any(value > 0 for value in variant["embeddings"]["dom_layout_stats"])
 
 
 def test_missing_labels_json_fails(tmp_path: Path) -> None:
@@ -125,3 +132,29 @@ def test_missing_screenshot_reference_fails(tmp_path: Path) -> None:
 
     assert result == 2
     assert not (tmp_path / "embeddings" / "similarities.json").exists()
+
+
+def test_missing_variant_dom_metrics_warns_instead_of_silent_fallback(tmp_path: Path) -> None:
+    pair_dir = _generate_pairs(tmp_path)
+    labels_path = pair_dir / "labels.json"
+    labels = json.loads(labels_path.read_text(encoding="utf-8"))
+    first_variant = labels["variants"][0]
+    Path(first_variant["dom_path"]).unlink()
+    Path(first_variant["metrics_path"]).unlink()
+
+    result = embed_main([str(pair_dir), "--out", str(tmp_path / "embeddings")])
+
+    assert result == 0
+    summary = json.loads((tmp_path / "embeddings" / "summary.json").read_text(encoding="utf-8"))
+    embeddings = json.loads(
+        (tmp_path / "embeddings" / "embeddings.json").read_text(encoding="utf-8")
+    )
+    assert summary["warnings"]
+    assert first_variant["variant_name"] in summary["warnings"][0]
+
+    variant_record = next(
+        variant
+        for variant in embeddings["variants"]
+        if variant["variant_name"] == first_variant["variant_name"]
+    )
+    assert variant_record["embeddings"]["dom_layout_stats"] == [0.0] * 11

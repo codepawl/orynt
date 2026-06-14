@@ -62,14 +62,12 @@ def main(argv: list[str] | None = None) -> int:
 
 def _render_variant_screenshots(variants: list[JitterVariant]) -> None:
     for variant in variants:
-        with tempfile.TemporaryDirectory(prefix="codepawl-jitter-render-") as temp_dir:
-            render_result = render_html_file(
-                RenderConfig(
-                    input_path=variant.html_path,
-                    output_dir=Path(temp_dir),
-                )
+        render_html_file(
+            RenderConfig(
+                input_path=variant.html_path,
+                output_dir=variant.html_path.parent,
             )
-            shutil.copyfile(render_result.screenshot_path, variant.screenshot_path)
+        )
 
 
 def _replace_output_dir(stage_dir: Path, output_dir: Path) -> None:

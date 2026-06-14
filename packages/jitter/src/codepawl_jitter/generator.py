@@ -26,6 +26,9 @@ class JitterVariant:
     severity: str
     html_path: Path
     screenshot_path: Path
+    dom_path: Path
+    accessibility_path: Path
+    metrics_path: Path
     expected_issue: str
     expected_fix_instruction: str
 
@@ -106,10 +109,11 @@ def build_labels(
                 "variant_name": variant.variant_name,
                 "defect_type": variant.defect_type,
                 "severity": variant.severity,
-                "html_path": str(public_output_dir / "jittered" / f"{variant.variant_name}.html"),
-                "screenshot_path": str(
-                    public_output_dir / "jittered" / f"{variant.variant_name}.png"
-                ),
+                "html_path": str(public_output_dir / "jittered" / variant.variant_name / "index.html"),
+                "screenshot_path": str(public_output_dir / "jittered" / variant.variant_name / "screenshot.png"),
+                "dom_path": str(public_output_dir / "jittered" / variant.variant_name / "dom.json"),
+                "accessibility_path": str(public_output_dir / "jittered" / variant.variant_name / "accessibility.json"),
+                "metrics_path": str(public_output_dir / "jittered" / variant.variant_name / "metrics.json"),
                 "expected_issue": variant.expected_issue,
                 "expected_fix_instruction": variant.expected_fix_instruction,
             }
@@ -162,8 +166,9 @@ def _build_variants(
 
     variants: list[JitterVariant] = []
     for variant_name, defect_type, css, issue, fix in variant_specs:
-        html_path = jittered_dir / f"{variant_name}.html"
-        screenshot_path = jittered_dir / f"{variant_name}.png"
+        variant_dir = jittered_dir / variant_name
+        variant_dir.mkdir(parents=True, exist_ok=True)
+        html_path = variant_dir / "index.html"
         html_path.write_text(
             inject_jitter_style(
                 source_html,
@@ -180,7 +185,10 @@ def _build_variants(
                 defect_type=defect_type,
                 severity="medium",
                 html_path=html_path,
-                screenshot_path=screenshot_path,
+                screenshot_path=variant_dir / "screenshot.png",
+                dom_path=variant_dir / "dom.json",
+                accessibility_path=variant_dir / "accessibility.json",
+                metrics_path=variant_dir / "metrics.json",
                 expected_issue=issue,
                 expected_fix_instruction=fix,
             )

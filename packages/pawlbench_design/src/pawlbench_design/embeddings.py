@@ -69,24 +69,19 @@ def build_encoder_baselines(config: EmbeddingConfig) -> EmbeddingResult:
     labels = _load_labels(input_dir)
     original_screenshot = _required_file(input_dir / "original" / "screenshot.png")
     original_dom = _required_file(input_dir / "original" / "dom.json")
-    variants = _validate_variants(input_dir, labels)
+    original_metrics = _required_file(input_dir / "original" / "metrics.json")
+    variants = _validate_variants(input_dir, labels, require_optional_artifacts=False)
+    warnings: list[str] = []
 
     original_embeddings = _build_artifact_embeddings(
         screenshot_path=original_screenshot,
         dom_path=original_dom,
-        html_path=input_dir / "original" / "index.html",
+        metrics_path=original_metrics,
+        warnings=warnings,
+        artifact_name="original",
     )
     variant_embeddings = [
-        {
-            "variant_name": variant["variant_name"],
-            "defect_type": variant["defect_type"],
-            "severity": variant["severity"],
-            "embeddings": _build_artifact_embeddings(
-                screenshot_path=Path(variant["screenshot_path"]),
-                dom_path=None,
-                html_path=Path(variant["html_path"]),
-            ),
-        }
+        _build_variant_embedding_record(variant=variant, warnings=warnings)
         for variant in variants
     ]
     embeddings = {
@@ -95,13 +90,19 @@ def build_encoder_baselines(config: EmbeddingConfig) -> EmbeddingResult:
         "original": {
             "screenshot_path": str(original_screenshot),
             "dom_path": str(original_dom),
+            "metrics_path": str(original_metrics),
             "embeddings": original_embeddings,
         },
         "variants": variant_embeddings,
     }
 
     similarities = _build_similarities(original_embeddings, variant_embeddings)
-    summary = _build_summary(input_dir=input_dir, output_dir=output_dir, similarities=similarities)
+    summary = _build_summary(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        similarities=similarities,
+        warnings=warnings,
+    )
 
     embeddings_path = output_dir / "embeddings.json"
     similarities_path = output_dir / "similarities.json"
@@ -125,14 +126,51 @@ def _build_artifact_embeddings(
     *,
     screenshot_path: Path,
     dom_path: Path | None,
-    html_path: Path,
+    metrics_path: Path | None,
+    warnings: list[str],
+    artifact_name: str,
 ) -> dict[str, list[float]]:
     return {
         "thumbnail_rgb_16x16": _thumbnail_rgb_16x16(screenshot_path),
         "color_histogram_rgb": _color_histogram_rgb(screenshot_path),
         "grayscale_edge_density": _grayscale_edge_density(screenshot_path),
-        "dom_layout_stats": _dom_layout_stats(dom_path=dom_path, html_path=html_path),
+        "dom_layout_stats": _dom_layout_stats(
+            dom_path=dom_path,
+            metrics_path=metrics_path,
+            warnings=warnings,
+            artifact_name=artifact_name,
+        ),
     }
+
+
+def _build_variant_embedding_record(
+    *,
+    variant: dict[str, Any],
+    warnings: list[str],
+) -> dict[str, Any]:
+    dom_path = Path(variant["dom_path"]) if "dom_path" in variant else None
+    metrics_path = Path(variant["metrics_path"]) if "metrics_path" in variant else None
+    record = {
+        "variant_name": variant["variant_name"],
+        "defect_type": variant["defect_type"],
+        "severity": variant["severity"],
+        "screenshot_path": variant["screenshot_path"],
+        "html_path": variant["html_path"],
+        "embeddings": _build_artifact_embeddings(
+            screenshot_path=Path(variant["screenshot_path"]),
+            dom_path=dom_path,
+            metrics_path=metrics_path,
+            warnings=warnings,
+            artifact_name=variant["variant_name"],
+        ),
+    }
+    if dom_path is not None:
+        record["dom_path"] = str(dom_path)
+    if "accessibility_path" in variant:
+        record["accessibility_path"] = variant["accessibility_path"]
+    if metrics_path is not None:
+        record["metrics_path"] = str(metrics_path)
+    return record
 
 
 def _thumbnail_rgb_16x16(path: Path) -> list[float]:
@@ -173,12 +211,22 @@ def _grayscale_edge_density(path: Path) -> list[float]:
     return [mean_edge, *ratios, *percentiles]
 
 
-def _dom_layout_stats(*, dom_path: Path | None, html_path: Path) -> list[float]:
-    if dom_path is not None and dom_path.is_file():
-        dom = json.loads(dom_path.read_text(encoding="utf-8"))
-        stats = _stats_from_dom_snapshot(dom)
-    else:
-        stats = _stats_from_html(html_path)
+def _dom_layout_stats(
+    *,
+    dom_path: Path | None,
+    metrics_path: Path | None,
+    warnings: list[str],
+    artifact_name: str,
+) -> list[float]:
+    if dom_path is None or metrics_path is None or not dom_path.is_file() or not metrics_path.is_file():
+        warnings.append(
+            f"{artifact_name}: dom_layout_stats missing dom_path or metrics_path; using zero vector"
+        )
+        return [0.0] * 11
+
+    dom = json.loads(dom_path.read_text(encoding="utf-8"))
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    stats = _stats_from_dom_snapshot(dom)
 
     return [
         _scale(stats["node_count"], 200),
@@ -188,6 +236,10 @@ def _dom_layout_stats(*, dom_path: Path | None, html_path: Path) -> list[float]:
         _scale(stats["total_area"], 2_000_000),
         _scale(stats["average_area"], 500_000),
         _scale(stats["max_area"], 2_000_000),
+        _scale(float(metrics.get("dom_node_count", 0)), 200),
+        _scale(float(metrics.get("body_text_length", 0)), 5000),
+        1.0 if metrics.get("has_horizontal_overflow") else 0.0,
+        1.0 if metrics.get("has_vertical_overflow") else 0.0,
     ]
 
 
@@ -261,6 +313,7 @@ def _build_summary(
     input_dir: Path,
     output_dir: Path,
     similarities: list[dict[str, Any]],
+    warnings: list[str],
 ) -> dict[str, Any]:
     average_similarity_by_baseline = {}
     lowest_similarity_variant_by_baseline = {}
@@ -284,6 +337,7 @@ def _build_summary(
         "variant_count": len(similarities),
         "valid": True,
         "errors": [],
+        "warnings": warnings,
         "baseline_names": BASELINE_NAMES,
         "average_similarity_by_baseline": average_similarity_by_baseline,
         "lowest_similarity_variant_by_baseline": lowest_similarity_variant_by_baseline,

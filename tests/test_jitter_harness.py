@@ -37,9 +37,13 @@ def test_jitter_command_creates_expected_files(tmp_path: Path) -> None:
     assert (output_dir / "labels.json").is_file()
 
     for variant_name in VARIANTS:
-        assert (output_dir / "jittered" / f"{variant_name}.html").is_file()
-        assert (output_dir / "jittered" / f"{variant_name}.png").is_file()
-        assert (output_dir / "jittered" / f"{variant_name}.png").stat().st_size > 0
+        variant_dir = output_dir / "jittered" / variant_name
+        assert (variant_dir / "index.html").is_file()
+        assert (variant_dir / "screenshot.png").is_file()
+        assert (variant_dir / "dom.json").is_file()
+        assert (variant_dir / "accessibility.json").is_file()
+        assert (variant_dir / "metrics.json").is_file()
+        assert (variant_dir / "screenshot.png").stat().st_size > 0
 
 
 def test_labels_json_has_expected_schema(tmp_path: Path) -> None:
@@ -58,8 +62,13 @@ def test_labels_json_has_expected_schema(tmp_path: Path) -> None:
     for variant in labels["variants"]:
         assert variant["defect_type"] in {"spacing", "contrast", "alignment", "hierarchy"}
         assert variant["severity"] == "medium"
-        assert variant["html_path"].endswith(f"{variant['variant_name']}.html")
-        assert variant["screenshot_path"].endswith(f"{variant['variant_name']}.png")
+        assert variant["html_path"].endswith(f"{variant['variant_name']}/index.html")
+        assert variant["screenshot_path"].endswith(f"{variant['variant_name']}/screenshot.png")
+        assert variant["dom_path"].endswith(f"{variant['variant_name']}/dom.json")
+        assert variant["accessibility_path"].endswith(
+            f"{variant['variant_name']}/accessibility.json"
+        )
+        assert variant["metrics_path"].endswith(f"{variant['variant_name']}/metrics.json")
         assert variant["expected_issue"]
         assert variant["expected_fix_instruction"]
 
@@ -70,7 +79,7 @@ def test_same_seed_produces_stable_labels_and_html(tmp_path: Path) -> None:
     first_result = main([str(EXAMPLE), "--out", str(output_dir), "--seed", "42"])
     first_labels = (output_dir / "labels.json").read_text(encoding="utf-8")
     first_html = {
-        variant_name: (output_dir / "jittered" / f"{variant_name}.html").read_text(
+        variant_name: (output_dir / "jittered" / variant_name / "index.html").read_text(
             encoding="utf-8"
         )
         for variant_name in VARIANTS
@@ -79,7 +88,7 @@ def test_same_seed_produces_stable_labels_and_html(tmp_path: Path) -> None:
     second_result = main([str(EXAMPLE), "--out", str(output_dir), "--seed", "42"])
     second_labels = (output_dir / "labels.json").read_text(encoding="utf-8")
     second_html = {
-        variant_name: (output_dir / "jittered" / f"{variant_name}.html").read_text(
+        variant_name: (output_dir / "jittered" / variant_name / "index.html").read_text(
             encoding="utf-8"
         )
         for variant_name in VARIANTS

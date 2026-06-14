@@ -87,6 +87,13 @@ def test_metric_fields_are_numeric(tmp_path: Path) -> None:
         assert isinstance(pair["changed_pixel_ratio"], int | float)
         assert isinstance(pair["original_file_size_bytes"], int)
         assert isinstance(pair["variant_file_size_bytes"], int)
+        assert isinstance(pair["dom_node_count"], int)
+        assert isinstance(pair["body_text_length"], int)
+        assert isinstance(pair["has_horizontal_overflow"], bool)
+        assert isinstance(pair["has_vertical_overflow"], bool)
+        assert pair["dom_path"].endswith("/dom.json")
+        assert pair["accessibility_path"].endswith("/accessibility.json")
+        assert pair["metrics_path"].endswith("/metrics.json")
         assert pair["image_width"] > 0
         assert pair["image_height"] > 0
         assert pair["mean_absolute_pixel_delta"] >= 0
@@ -94,3 +101,5 @@ def test_metric_fields_are_numeric(tmp_path: Path) -> None:
         assert 0 <= pair["changed_pixel_ratio"] <= 1
         assert pair["original_file_size_bytes"] > 0
         assert pair["variant_file_size_bytes"] > 0
+        assert pair["dom_node_count"] > 0
+        assert pair["body_text_length"] > 0

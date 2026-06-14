@@ -26,6 +26,8 @@ Interpretation:
 - `thumbnail_rgb_16x16` catches broad composition and color shifts.
 - `color_histogram_rgb` catches global color distribution changes.
 - `grayscale_edge_density` catches coarse visual complexity changes.
-- `dom_layout_stats` is a cheap structural baseline, not a learned layout model.
+- `dom_layout_stats` uses real per-variant `dom.json` and `metrics.json` artifacts.
+
+If variant DOM or metrics artifacts are missing, `summary.json` includes an explicit warning and that variant gets a zero `dom_layout_stats` vector. This prevents silent fallback values from hiding broken pair artifacts.
 
 These baselines are comparison floors for later optional DINOv2/SigLIP experiments or a Pawl-JEPA microtraining scaffold.

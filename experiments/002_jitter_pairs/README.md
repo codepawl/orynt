@@ -32,15 +32,33 @@ artifacts/jitter_pairs/
     accessibility.json
     metrics.json
   jittered/
-    spacing_bad.html
-    spacing_bad.png
-    contrast_bad.html
-    contrast_bad.png
-    alignment_bad.html
-    alignment_bad.png
-    hierarchy_bad.html
-    hierarchy_bad.png
+    spacing_bad/
+      index.html
+      screenshot.png
+      dom.json
+      accessibility.json
+      metrics.json
+    contrast_bad/
+      index.html
+      screenshot.png
+      dom.json
+      accessibility.json
+      metrics.json
+    alignment_bad/
+      index.html
+      screenshot.png
+      dom.json
+      accessibility.json
+      metrics.json
+    hierarchy_bad/
+      index.html
+      screenshot.png
+      dom.json
+      accessibility.json
+      metrics.json
 ```
+
+`labels.json` points to `html_path`, `screenshot_path`, `dom_path`, `accessibility_path`, and `metrics_path` for each variant.
 
 The current implementation uses deterministic CSS injection only. It does not train a model, launch a product UI, or require a JavaScript build pipeline.
 
