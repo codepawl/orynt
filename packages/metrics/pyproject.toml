@@ -1,0 +1,10 @@
+[project]
+name = "codepawl-metrics"
+version = "0.1.0"
+description = "UI metrics package for CodePawl Design research."
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

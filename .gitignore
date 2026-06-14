@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+.uv-cache/
+.uv-python/
+
+# Local environment
+.env
+.env.*
+
+# Node/browser tooling for future Playwright harness
+node_modules/
+.playwright/
+playwright-report/
+test-results/
+
+# Generated research outputs
+artifacts/*
+!artifacts/.gitkeep
+reports/generated/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

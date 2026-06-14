@@ -1,0 +1,10 @@
+[project]
+name = "pawlbench-design"
+version = "0.1.0"
+description = "Benchmark package placeholder for frontend design evaluation."
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

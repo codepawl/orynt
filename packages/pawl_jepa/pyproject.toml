@@ -1,0 +1,10 @@
+[project]
+name = "pawl-jepa"
+version = "0.1.0"
+description = "Pawl-JEPA research package placeholder."
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

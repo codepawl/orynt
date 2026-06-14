@@ -1,0 +1,13 @@
+[project]
+name = "codepawl-renderer"
+version = "0.1.0"
+description = "Local rendering harness package for CodePawl Design research."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+codepawl-render = "codepawl_renderer.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

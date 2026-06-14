@@ -1,0 +1,41 @@
+[project]
+name = "codepawl"
+version = "0.1.0"
+description = "Research and product foundation for CodePawl Design, Pawl-JEPA, and PawlBench Design."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "codepawl-renderer",
+]
+
+[project.scripts]
+codepawl-render = "codepawl_renderer.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "packages/renderer",
+    "packages/metrics",
+    "packages/jitter",
+    "packages/generators",
+    "packages/pawl_jepa",
+    "packages/pawlbench_design",
+]
+
+[tool.uv.sources]
+codepawl-renderer = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [
+    "packages/renderer/src",
+    "packages/metrics/src",
+    "packages/jitter/src",
+    "packages/generators/src",
+    "packages/pawl_jepa/src",
+    "packages/pawlbench_design/src",
+]
