@@ -54,6 +54,15 @@ Then build a small local dataset from every HTML example:
 uv run pawlbench-design-build examples --out artifacts/datasets/local_v0 --seed 42
 ```
 
+For the larger self-controlled example pack, build `local_v1` from `examples/local_v1`:
+
+```bash
+uv run pawlbench-design-build examples/local_v1 --out artifacts/datasets/local_v1 --seed 42
+uv run pawlbench-design-validate artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_validation
+uv run pawlbench-design-split artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_splits --seed 42
+uv run pawlbench-design-report artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_report
+```
+
 Then validate, split, and summarize the dataset:
 
 ```bash
@@ -223,6 +232,17 @@ artifacts/datasets/local_v0/
 ```
 
 `dataset.json` records sample status, per-variant artifact paths, failed samples, and aggregate metric deltas by defect type.
+
+Build the self-controlled `local_v1` dataset:
+
+```bash
+uv run pawlbench-design-build examples/local_v1 --out artifacts/datasets/local_v1 --seed 42
+uv run pawlbench-design-validate artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_validation
+uv run pawlbench-design-split artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_splits --seed 42
+uv run pawlbench-design-report artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_report
+```
+
+`examples/local_v1/` contains 30 self-authored static HTML pages with fictional product names and no external assets.
 
 Validate, split, and report on the local dataset:
 

@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 from codepawl_harness.pawlbench_build_cli import main as build_main
@@ -9,11 +10,22 @@ from codepawl_harness.pawlbench_validate_cli import main as validate_main
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples"
+SIMPLE_LANDING = EXAMPLES / "simple_landing.html"
+SIMPLE_DASHBOARD = EXAMPLES / "simple_dashboard.html"
+
+
+def _small_examples(tmp_path: Path) -> Path:
+    source_dir = tmp_path / "examples"
+    source_dir.mkdir()
+    shutil.copyfile(SIMPLE_LANDING, source_dir / "simple_landing.html")
+    shutil.copyfile(SIMPLE_DASHBOARD, source_dir / "simple_dashboard.html")
+    return source_dir
 
 
 def _build_dataset(tmp_path: Path) -> Path:
+    source_dir = _small_examples(tmp_path)
     dataset_dir = tmp_path / "dataset"
-    result = build_main([str(EXAMPLES), "--out", str(dataset_dir), "--seed", "42"])
+    result = build_main([str(source_dir), "--out", str(dataset_dir), "--seed", "42"])
     assert result == 0
     return dataset_dir
 

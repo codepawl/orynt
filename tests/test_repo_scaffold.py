@@ -24,6 +24,7 @@ def test_key_directories_exist() -> None:
         "references",
         "references/style_notes",
         "examples",
+        "examples/local_v1",
         "artifacts",
     ]
 
@@ -53,6 +54,7 @@ def test_key_files_exist() -> None:
         "references/style_notes/behance.md",
         "examples/simple_landing.html",
         "examples/simple_dashboard.html",
+        "examples/local_v1/README.md",
         "artifacts/.gitkeep",
     ]
 

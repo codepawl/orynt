@@ -13,6 +13,18 @@ Before adding dataset samples, confirm the source is allowed by `docs/DATA_POLIC
 - Failure:
 - Next action: Create 30-50 self-controlled HTML examples for local_v1.
 
+## YYYY-MM-DD - local_v1 Example Pack
+
+- Objective: Build, validate, split, and report a 30-sample self-controlled HTML fixture pack.
+- Command: `uv run pawlbench-design-build examples/local_v1 --out artifacts/datasets/local_v1 --seed 42`
+- Command: `uv run pawlbench-design-validate artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_validation`
+- Command: `uv run pawlbench-design-split artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_splits --seed 42`
+- Command: `uv run pawlbench-design-report artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_report`
+- Dataset: `artifacts/datasets/local_v1/dataset.json`
+- Result:
+- Failure:
+- Next action:
+
 ## YYYY-MM-DD - 002 Jitter Pairs
 
 - Objective: Generate deterministic synthetic good/bad UI pairs from `examples/simple_landing.html`.

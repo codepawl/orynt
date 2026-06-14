@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 from codepawl_harness.pawlbench_build_cli import main
@@ -6,12 +7,23 @@ from codepawl_harness.pawlbench_build_cli import main
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples"
+SIMPLE_LANDING = EXAMPLES / "simple_landing.html"
+SIMPLE_DASHBOARD = EXAMPLES / "simple_dashboard.html"
+
+
+def _small_examples(tmp_path: Path) -> Path:
+    source_dir = tmp_path / "examples"
+    source_dir.mkdir()
+    shutil.copyfile(SIMPLE_LANDING, source_dir / "simple_landing.html")
+    shutil.copyfile(SIMPLE_DASHBOARD, source_dir / "simple_dashboard.html")
+    return source_dir
 
 
 def test_build_command_processes_multiple_html_files(tmp_path: Path) -> None:
+    source_dir = _small_examples(tmp_path)
     output_dir = tmp_path / "dataset"
 
-    result = main([str(EXAMPLES), "--out", str(output_dir), "--seed", "42"])
+    result = main([str(source_dir), "--out", str(output_dir), "--seed", "42"])
 
     assert result == 0
     dataset = json.loads((output_dir / "dataset.json").read_text(encoding="utf-8"))
@@ -42,12 +54,13 @@ def test_build_command_processes_multiple_html_files(tmp_path: Path) -> None:
 
 
 def test_build_command_is_deterministic_on_rerun(tmp_path: Path) -> None:
+    source_dir = _small_examples(tmp_path)
     output_dir = tmp_path / "dataset"
 
-    first_result = main([str(EXAMPLES), "--out", str(output_dir), "--seed", "42"])
+    first_result = main([str(source_dir), "--out", str(output_dir), "--seed", "42"])
     first_dataset = (output_dir / "dataset.json").read_text(encoding="utf-8")
 
-    second_result = main([str(EXAMPLES), "--out", str(output_dir), "--seed", "42"])
+    second_result = main([str(source_dir), "--out", str(output_dir), "--seed", "42"])
     second_dataset = (output_dir / "dataset.json").read_text(encoding="utf-8")
 
     assert first_result == 0
@@ -56,9 +69,10 @@ def test_build_command_is_deterministic_on_rerun(tmp_path: Path) -> None:
 
 
 def test_build_command_limit(tmp_path: Path) -> None:
+    source_dir = _small_examples(tmp_path)
     output_dir = tmp_path / "dataset"
 
-    result = main([str(EXAMPLES), "--out", str(output_dir), "--seed", "42", "--limit", "1"])
+    result = main([str(source_dir), "--out", str(output_dir), "--seed", "42", "--limit", "1"])
 
     assert result == 0
     dataset = json.loads((output_dir / "dataset.json").read_text(encoding="utf-8"))
