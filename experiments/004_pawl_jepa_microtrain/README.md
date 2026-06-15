@@ -19,6 +19,17 @@ uv run pawl-jepa-sweep artifacts/pawl_jepa/local_v1_manifest_full_labels --out a
 uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_report
 ```
 
+Hard preference microtraining uses reviewed variant-vs-variant labels:
+
+```bash
+uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v1 \
+  --labels data/labels/hard_pref_v1/labels.reviewed.jsonl \
+  --base-splits artifacts/datasets/local_v1_splits \
+  --out artifacts/pawl_jepa/hard_pref_v1_manifest
+uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_run --epochs 10 --batch-size 8 --device auto
+uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v1_run --manifest artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_eval
+```
+
 ## Outputs
 
 - `artifacts/pawl_jepa/local_v1_manifest_full_labels/{manifest.json,train.jsonl,val.jsonl,test.jsonl}`
@@ -26,10 +37,13 @@ uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest
 - `artifacts/pawl_jepa/local_v1_eval_full_labels/{eval_summary.json,pair_scores.jsonl}`
 - `artifacts/pawl_jepa/local_v1_sweep/{sweep_summary.json,runs/seed_*/...}`
 - `artifacts/pawl_jepa/local_v1_report/{report.md,summary.json}`
+- `artifacts/pawl_jepa/hard_pref_v1_manifest/{manifest.json,train.jsonl,val.jsonl,test.jsonl}`
+- `artifacts/pawl_jepa/hard_pref_v1_run/{config.json,metrics.jsonl,train_summary.json,checkpoints/last.pt}`
+- `artifacts/pawl_jepa/hard_pref_v1_eval/{eval_summary.json,pair_scores.jsonl}`
 
 ## Interpretation
 
-The useful signal is whether the scaffold runs deterministically on local screenshots, learns a decreasing or stable loss over a smoke run, and produces pairwise, defect, cosine, retrieval, constant-baseline, and seed-sweep metrics for val/test. Results should be treated as a sanity check only because `local_v1` is intentionally small and current labels all prefer the original UI; pairwise accuracy is not meaningful unless it beats the always-original baseline.
+The useful signal is whether the scaffold runs deterministically on local screenshots, learns a decreasing or stable loss over a smoke run, and produces pairwise, defect, cosine, retrieval, constant-baseline, and seed-sweep metrics for val/test. Original-vs-variant `local_v1` results should be treated as a sanity check only because current labels all prefer the original UI; pairwise accuracy is not meaningful unless it beats the always-original baseline. `hard_pref_v1` is the first discriminative preference benchmark because neither side is original and reviewed preferences can be left or right.
 
 Hard preference labels are the next dataset step for non-trivial A/B supervision:
 
@@ -37,5 +51,3 @@ Hard preference labels are the next dataset step for non-trivial A/B supervision
 uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
 uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v1/review --labeler-id an
 ```
-
-These labels remain outside the current Pawl-JEPA manifest until variant-vs-variant supervision is explicitly added.

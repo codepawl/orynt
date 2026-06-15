@@ -1,10 +1,12 @@
 """Pawl-JEPA microtraining scaffold."""
 
 from pawl_jepa.manifest import (
+    PrepareHardConfig,
     PrepareConfig,
     PrepareResult,
     build_manifest_record,
     load_manifest_records,
+    prepare_hard_manifest,
     prepare_manifest,
     preferred_item_from_label,
 )
@@ -17,6 +19,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "PrepareConfig",
+    "PrepareHardConfig",
     "PrepareResult",
     "ReportConfig",
     "ReportResult",
@@ -26,6 +29,7 @@ __all__ = [
     "build_manifest_record",
     "export_experiment_report",
     "load_manifest_records",
+    "prepare_hard_manifest",
     "prepare_manifest",
     "preferred_item_from_label",
     "run_seed_sweep",

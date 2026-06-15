@@ -6,8 +6,9 @@ import pytest
 from PIL import Image
 
 from codepawl_harness.pawl_jepa_prepare_cli import main as prepare_main
-from pawl_jepa import prepare_manifest, preferred_item_from_label
-from pawl_jepa.manifest import PrepareConfig, load_manifest_records
+from codepawl_harness.pawl_jepa_prepare_hard_cli import main as prepare_hard_main
+from pawl_jepa import prepare_hard_manifest, prepare_manifest, preferred_item_from_label
+from pawl_jepa.manifest import PrepareConfig, PrepareHardConfig, load_manifest_records
 
 
 torch_available = importlib.util.find_spec("torch") is not None
@@ -58,6 +59,58 @@ def _label(split: str, sample_id: str, variant_name: str, defect_type: str) -> d
         "confidence": 4,
         "review_status": "confirmed",
         "reviewed_by": "tester",
+    }
+
+
+def _hard_pair_record(tmp_path: Path, sample_id: str, *, left: str = "contrast_bad", right: str = "spacing_bad") -> dict:
+    left_path = tmp_path / "hard" / sample_id / left / "screenshot.png"
+    right_path = tmp_path / "hard" / sample_id / right / "screenshot.png"
+    _write_png(left_path, (30, 120, 200))
+    _write_png(right_path, (200, 80, 30))
+    left_defect = left.replace("_bad", "")
+    right_defect = right.replace("_bad", "")
+    label_id = f"hard_pref_v1__{sample_id}__{left}__vs__{right}"
+    return {
+        "label_id": label_id,
+        "pair_id": label_id,
+        "pair_kind": "variant_vs_variant",
+        "dataset_id": "local_test",
+        "split": "hard_pref_v1",
+        "sample_id": sample_id,
+        "variant_name": f"{left}__vs__{right}",
+        "defect_type": f"{left_defect}_vs_{right_defect}",
+        "left_item": left,
+        "right_item": right,
+        "left_variant_name": left,
+        "right_variant_name": right,
+        "left_defect_type": left_defect,
+        "right_defect_type": right_defect,
+        "left": {"screenshot_path": str(left_path), "defect_type": left_defect, "variant_name": left},
+        "right": {"screenshot_path": str(right_path), "defect_type": right_defect, "variant_name": right},
+        "suggested_preferred": "right",
+    }
+
+
+def _hard_label(record: dict, preferred: str) -> dict:
+    losing_side = "right" if preferred == "left" else "left"
+    return {
+        "label_id": record["label_id"],
+        "dataset_id": record["dataset_id"],
+        "split": "hard_pref_v1",
+        "sample_id": record["sample_id"],
+        "variant_name": record["variant_name"],
+        "defect_type": record["defect_type"],
+        "left_item": record["left_item"],
+        "right_item": record["right_item"],
+        "preferred": preferred,
+        "severity": "high",
+        "defect_tags": [record[f"{losing_side}_defect_type"]] if preferred in {"left", "right"} else [],
+        "quality_tags": ["practical"],
+        "confidence": 5,
+        "review_status": "confirmed",
+        "reviewed_by": "tester",
+        "taste_profile_id": "codepawl_taste_v0",
+        "suggested_preferred": record.get("suggested_preferred"),
     }
 
 
@@ -217,6 +270,81 @@ def test_prepare_cli_accepts_single_label_argument(tmp_path: Path) -> None:
     assert train[0]["label_source"] == "human_reviewed"
 
 
+def test_prepare_hard_manifest_assigns_splits_and_fields(tmp_path: Path) -> None:
+    base_splits = _splits_dir(
+        tmp_path,
+        {
+            "train": [_split_record(tmp_path, "train", "sample_a", "spacing_bad", "spacing")],
+            "val": [_split_record(tmp_path, "val", "sample_b", "contrast_bad", "contrast")],
+            "test": [_split_record(tmp_path, "test", "sample_c", "alignment_bad", "alignment")],
+        },
+    )
+    hard_dir = tmp_path / "hard_pref_v1"
+    records = [
+        _hard_pair_record(tmp_path, "sample_a"),
+        _hard_pair_record(tmp_path, "sample_b", left="alignment_bad", right="hierarchy_bad"),
+        _hard_pair_record(tmp_path, "sample_c", left="hierarchy_bad", right="spacing_bad"),
+    ]
+    _write_jsonl(hard_dir / "hard_pairs.jsonl", records)
+    labels_path = tmp_path / "hard.labels.jsonl"
+    _write_jsonl(labels_path, [_hard_label(records[0], "left"), _hard_label(records[1], "right")])
+
+    result = prepare_hard_manifest(
+        PrepareHardConfig(
+            hard_pairs_dir=hard_dir,
+            labels_path=labels_path,
+            base_splits_dir=base_splits,
+            output_dir=tmp_path / "hard_manifest",
+        )
+    )
+
+    train = load_manifest_records(result.output_dir, "train")
+    val = load_manifest_records(result.output_dir, "val")
+    test = load_manifest_records(result.output_dir, "test")
+    assert len(train) == 1
+    assert len(val) == 1
+    assert test == []
+    assert train[0]["pair_kind"] == "variant_vs_variant"
+    assert train[0]["preferred_item"] == "left"
+    assert train[0]["nonpreferred_side"] == "right"
+    assert train[0]["defect_type"] == "spacing"
+    assert train[0]["left_screenshot_path"].endswith("contrast_bad/screenshot.png")
+    assert train[0]["right_screenshot_path"].endswith("spacing_bad/screenshot.png")
+    assert train[0]["taste_profile_id"] == "codepawl_taste_v0"
+    assert val[0]["split"] == "val"
+    assert result.summary["record_counts"] == {"test": 0, "train": 1, "val": 1}
+    assert result.summary["preferred_counts_by_split"]["train"] == {"left": 1}
+    assert result.summary["pair_kind_counts"] == {"variant_vs_variant": 2}
+
+
+def test_prepare_hard_cli_writes_manifest(tmp_path: Path) -> None:
+    base_splits = _splits_dir(
+        tmp_path,
+        {
+            "train": [
+                _split_record(tmp_path, "train", "sample_a", "spacing_bad", "spacing"),
+                _split_record(tmp_path, "train", "sample_b", "contrast_bad", "contrast"),
+            ],
+            "val": [_split_record(tmp_path, "val", "sample_c", "alignment_bad", "alignment")],
+            "test": [_split_record(tmp_path, "test", "sample_d", "hierarchy_bad", "hierarchy")],
+        },
+    )
+    hard_dir = tmp_path / "hard_pref_v1"
+    record = _hard_pair_record(tmp_path, "sample_a")
+    _write_jsonl(hard_dir / "hard_pairs.jsonl", [record])
+    labels_path = tmp_path / "hard.labels.jsonl"
+    _write_jsonl(labels_path, [_hard_label(record, "left")])
+    out = tmp_path / "hard_manifest"
+
+    result = prepare_hard_main(
+        [str(hard_dir), "--labels", str(labels_path), "--base-splits", str(base_splits), "--out", str(out)]
+    )
+
+    assert result == 0
+    assert (out / "manifest.json").is_file()
+    assert load_manifest_records(out, "train")[0]["pair_kind"] == "variant_vs_variant"
+
+
 @pytestmark_torch
 def test_model_forward_shapes() -> None:
     import torch
@@ -358,6 +486,57 @@ def test_eval_defect_majority_and_confusion_metrics() -> None:
     assert summary["defect_per_class_metrics"]["contrast"]["precision"] == pytest.approx(0.5)
 
 
+def test_eval_hard_pair_baselines() -> None:
+    from pawl_jepa.evaluate import summarize_scores
+
+    scores = [
+        {
+            "label_id": "a",
+            "pair_kind": "variant_vs_variant",
+            "preferred_item": "left",
+            "pairwise_correct": True,
+            "defect_type": "spacing",
+            "defect_prediction": "spacing",
+            "suggested_preferred": "left",
+            "cosine_similarity": 0.9,
+            "latent_loss": 0.2,
+            "label_source": "human_reviewed",
+            "_original_embedding": [1.0, 0.0],
+            "_variant_embedding": [1.0, 0.0],
+            "sample_id": "a",
+        },
+        {
+            "label_id": "b",
+            "pair_kind": "variant_vs_variant",
+            "preferred_item": "right",
+            "pairwise_correct": False,
+            "defect_type": "alignment",
+            "defect_prediction": "spacing",
+            "suggested_preferred": "left",
+            "cosine_similarity": 0.7,
+            "latent_loss": 0.4,
+            "label_source": "human_reviewed",
+            "_original_embedding": [0.0, 1.0],
+            "_variant_embedding": [0.0, 1.0],
+            "sample_id": "b",
+        },
+    ]
+    records = [
+        {"pair_kind": "variant_vs_variant", "preferred": "left", "label_source": "human_reviewed"},
+        {"pair_kind": "variant_vs_variant", "preferred": "right", "label_source": "human_reviewed"},
+    ]
+
+    summary = summarize_scores(scores, records)
+
+    assert summary["pairwise_preference_accuracy"] == 0.5
+    assert summary["always_left_accuracy"] == 0.5
+    assert summary["always_right_accuracy"] == 0.5
+    assert summary["suggestion_baseline_accuracy"] == 0.5
+    assert summary["pairwise_lift_over_best_constant"] == 0.0
+    assert summary["defect_accuracy_on_losing_side"] == 0.5
+    assert "always_prefer_original_accuracy" not in summary
+
+
 def _tiny_manifest(tmp_path: Path) -> Path:
     records_by_split = {
         "train": [
@@ -398,6 +577,46 @@ def _tiny_manifest_with_eval_labels(tmp_path: Path) -> Path:
     ).output_dir
 
 
+def _tiny_hard_manifest(tmp_path: Path) -> Path:
+    base_splits = _splits_dir(
+        tmp_path,
+        {
+            "train": [
+                _split_record(tmp_path, "train", "sample_a", "spacing_bad", "spacing"),
+                _split_record(tmp_path, "train", "sample_b", "contrast_bad", "contrast"),
+            ],
+            "val": [_split_record(tmp_path, "val", "sample_c", "alignment_bad", "alignment")],
+            "test": [_split_record(tmp_path, "test", "sample_d", "hierarchy_bad", "hierarchy")],
+        },
+    )
+    hard_dir = tmp_path / "hard_pref_v1"
+    records = [
+        _hard_pair_record(tmp_path, "sample_a"),
+        _hard_pair_record(tmp_path, "sample_b", left="alignment_bad", right="hierarchy_bad"),
+        _hard_pair_record(tmp_path, "sample_c", left="contrast_bad", right="spacing_bad"),
+        _hard_pair_record(tmp_path, "sample_d", left="hierarchy_bad", right="spacing_bad"),
+    ]
+    _write_jsonl(hard_dir / "hard_pairs.jsonl", records)
+    labels_path = tmp_path / "hard.labels.jsonl"
+    _write_jsonl(
+        labels_path,
+        [
+            _hard_label(records[0], "left"),
+            _hard_label(records[1], "right"),
+            _hard_label(records[2], "left"),
+            _hard_label(records[3], "right"),
+        ],
+    )
+    return prepare_hard_manifest(
+        PrepareHardConfig(
+            hard_pairs_dir=hard_dir,
+            labels_path=labels_path,
+            base_splits_dir=base_splits,
+            output_dir=tmp_path / "hard_manifest",
+        )
+    ).output_dir
+
+
 @pytestmark_torch
 def test_dataset_image_loading_with_tiny_images(tmp_path: Path) -> None:
     from pawl_jepa.data import PawlJepaDataset
@@ -408,6 +627,45 @@ def test_dataset_image_loading_with_tiny_images(tmp_path: Path) -> None:
     assert item["original"].shape == (3, 32, 32)
     assert item["variant"].shape == (3, 32, 32)
     assert item["pairwise_mask"] == 1.0
+
+
+@pytestmark_torch
+def test_hard_dataset_maps_preferred_and_skips_tie(tmp_path: Path) -> None:
+    from pawl_jepa.data import PawlJepaDataset
+
+    base_splits = _splits_dir(
+        tmp_path,
+        {
+            "train": [
+                _split_record(tmp_path, "train", "sample_a", "spacing_bad", "spacing"),
+                _split_record(tmp_path, "train", "sample_b", "contrast_bad", "contrast"),
+            ],
+            "val": [_split_record(tmp_path, "val", "sample_c", "alignment_bad", "alignment")],
+            "test": [_split_record(tmp_path, "test", "sample_d", "hierarchy_bad", "hierarchy")],
+        },
+    )
+    hard_dir = tmp_path / "hard_pref_v1"
+    left_record = _hard_pair_record(tmp_path, "sample_a")
+    tie_record = _hard_pair_record(tmp_path, "sample_b")
+    _write_jsonl(hard_dir / "hard_pairs.jsonl", [left_record, tie_record])
+    labels_path = tmp_path / "hard.labels.jsonl"
+    _write_jsonl(labels_path, [_hard_label(left_record, "left"), _hard_label(tie_record, "tie")])
+    manifest = prepare_hard_manifest(
+        PrepareHardConfig(
+            hard_pairs_dir=hard_dir,
+            labels_path=labels_path,
+            base_splits_dir=base_splits,
+            output_dir=tmp_path / "hard_manifest",
+        )
+    ).output_dir
+
+    items = PawlJepaDataset(manifest, split="train", image_size=32)
+
+    assert items[0]["pairwise_mask"] == 1.0
+    assert items[0]["preference_target"] == 1.0
+    assert items[0]["defect_target"] >= 0
+    assert items[1]["pairwise_mask"] == 0.0
+    assert items[1]["defect_target"] == -1
 
 
 @pytestmark_torch
@@ -450,6 +708,45 @@ def test_cpu_train_and_eval_smoke(tmp_path: Path) -> None:
         ]
         is not None
     )
+
+
+@pytestmark_torch
+def test_hard_pair_train_and_eval_smoke(tmp_path: Path) -> None:
+    from pawl_jepa.evaluate import EvalConfig, evaluate_micro_model
+    from pawl_jepa.train import TrainConfig, train_micro_model
+
+    manifest_dir = _tiny_hard_manifest(tmp_path)
+    run = train_micro_model(
+        TrainConfig(
+            manifest_dir=manifest_dir,
+            output_dir=tmp_path / "hard_run",
+            epochs=1,
+            batch_size=2,
+            image_size=32,
+            embedding_dim=8,
+            hidden_dim=16,
+            device="cpu",
+        )
+    )
+    eval_result = evaluate_micro_model(
+        EvalConfig(
+            run_dir=run.output_dir,
+            manifest_dir=manifest_dir,
+            output_dir=tmp_path / "hard_eval",
+            batch_size=2,
+            device="cpu",
+        )
+    )
+
+    val_summary = eval_result.summary["splits"]["val"]
+    assert "pairwise_preference_accuracy" in val_summary
+    assert "always_left_accuracy" in val_summary
+    assert "always_right_accuracy" in val_summary
+    assert "random_preference_accuracy" in val_summary
+    assert "suggestion_baseline_accuracy" in val_summary
+    assert "pairwise_lift_over_best_constant" in val_summary
+    assert "defect_accuracy_on_losing_side" in val_summary
+    assert "always_prefer_original_accuracy" not in val_summary
 
 
 @pytestmark_torch

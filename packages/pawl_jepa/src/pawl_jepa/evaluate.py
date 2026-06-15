@@ -108,23 +108,46 @@ def score_split(torch, model, loader, device, weights: LossWeights) -> list[dict
             for index, record in enumerate(batch["records"]):
                 original_score = float(outputs["original_score"][index].detach().cpu())
                 variant_score = float(outputs["variant_score"][index].detach().cpu())
+                pair_kind = str(record.get("pair_kind", "original_vs_variant"))
                 preferred_item = record.get("preferred_item")
-                comparable = preferred_item in {"original", "variant"}
+                comparable = preferred_item in {"left", "right"} if pair_kind == "variant_vs_variant" else preferred_item in {"original", "variant"}
                 correct = None
+                predicted_preferred = None
+                left_score = None
+                right_score = None
                 if comparable:
-                    correct = (
-                        original_score >= variant_score
-                        if preferred_item == "original"
-                        else variant_score >= original_score
-                    )
+                    if pair_kind == "variant_vs_variant":
+                        target_side = record.get("training_target_side")
+                        source_side = record.get("training_source_side")
+                        predicted_preferred = target_side if original_score >= variant_score else source_side
+                        correct = predicted_preferred == preferred_item
+                        if target_side == "left":
+                            left_score = original_score
+                            right_score = variant_score
+                        else:
+                            left_score = variant_score
+                            right_score = original_score
+                    else:
+                        correct = (
+                            original_score >= variant_score
+                            if preferred_item == "original"
+                            else variant_score >= original_score
+                        )
+                        predicted_preferred = "original" if original_score >= variant_score else "variant"
                 scores.append(
                     {
                         "split": record["split"],
                         "label_id": record["label_id"],
                         "sample_id": record["sample_id"],
                         "variant_name": record["variant_name"],
+                        "pair_kind": pair_kind,
                         "defect_type": record.get("defect_type"),
+                        "left_defect_type": record.get("left_defect_type"),
+                        "right_defect_type": record.get("right_defect_type"),
                         "preferred_item": preferred_item,
+                        "preferred_side": record.get("preferred_side"),
+                        "predicted_preferred": predicted_preferred,
+                        "suggested_preferred": record.get("suggested_preferred"),
                         "label_source": record.get("label_source"),
                         "label_file": record.get("label_file"),
                         "review_status": record.get("review_status"),
@@ -132,6 +155,8 @@ def score_split(torch, model, loader, device, weights: LossWeights) -> list[dict
                         "metric_deltas": record.get("metric_deltas", {}),
                         "original_score": original_score,
                         "variant_score": variant_score,
+                        "left_score": left_score,
+                        "right_score": right_score,
                         "pairwise_correct": correct,
                         "latent_loss": float(losses["latent_loss"].detach().cpu()),
                         "cosine_similarity": float(cosines[index].detach().cpu()),
@@ -159,6 +184,8 @@ def summarize_scores(
     *,
     random_seed: int = 42,
 ) -> dict[str, Any]:
+    if records and all(record.get("pair_kind") == "variant_vs_variant" for record in records):
+        return summarize_hard_pair_scores(scores, records, random_seed=random_seed)
     comparable = [score for score in scores if score["pairwise_correct"] is not None]
     defect_correct = [
         score
@@ -224,6 +251,52 @@ def summarize_scores(
     }
 
 
+def summarize_hard_pair_scores(
+    scores: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+    *,
+    random_seed: int = 42,
+) -> dict[str, Any]:
+    comparable = [score for score in scores if score["pairwise_correct"] is not None]
+    defect_correct = [
+        score
+        for score in scores
+        if score["defect_prediction"] is not None and score.get("defect_type") in DEFECT_TYPES
+    ]
+    pairwise_accuracy = accuracy_from_correct(comparable)
+    always_left = always_prefer_side_accuracy(comparable, "left")
+    always_right = always_prefer_side_accuracy(comparable, "right")
+    best_constant = max(value for value in (always_left, always_right) if value is not None) if comparable else None
+    human_reviewed_count = sum(
+        1 for record in records if normalize_label_source(record.get("label_source")) == "human_reviewed"
+    )
+    preferred_counts = Counter(record.get("preferred") for record in records)
+    return {
+        "record_count": len(scores),
+        "pairwise_preference_accuracy": pairwise_accuracy,
+        "always_left_accuracy": always_left,
+        "always_right_accuracy": always_right,
+        "random_preference_accuracy": random_left_right_accuracy(comparable, seed=random_seed),
+        "suggestion_baseline_accuracy": suggestion_baseline_accuracy(comparable),
+        "pairwise_lift_over_best_constant": lift(pairwise_accuracy, best_constant),
+        "defect_accuracy_on_losing_side": defect_classification_accuracy(defect_correct),
+        "defect_majority_class_accuracy": defect_majority_class_accuracy(defect_correct),
+        "random_defect_accuracy": random_defect_accuracy(defect_correct, seed=random_seed),
+        "defect_lift_over_majority": lift(defect_classification_accuracy(defect_correct), defect_majority_class_accuracy(defect_correct)),
+        "defect_confusion_matrix": defect_confusion_matrix(defect_correct),
+        "defect_per_class_metrics": defect_per_class_metrics(defect_correct),
+        "average_latent_prediction_loss": (
+            sum(float(score["latent_loss"]) for score in scores) / len(scores) if scores else None
+        ),
+        "retrieval_top1": None,
+        "retrieval_top5": None,
+        "label_coverage_used": human_reviewed_count / len(records) if records else 0,
+        "preferred_counts": dict(sorted(preferred_counts.items())),
+        "tie_unclear_count": sum(preferred_counts.get(key, 0) for key in ("tie", "unclear")),
+        "warnings": hard_pair_warnings(comparable),
+    }
+
+
 def normalize_label_source(label_source: Any) -> str | None:
     if label_source == "reviewed":
         return "human_reviewed"
@@ -244,6 +317,12 @@ def always_prefer_original_accuracy(scores: list[dict[str, Any]]) -> float | Non
     return sum(1 for score in scores if score.get("preferred_item") == "original") / len(scores)
 
 
+def always_prefer_side_accuracy(scores: list[dict[str, Any]], side: str) -> float | None:
+    if not scores:
+        return None
+    return sum(1 for score in scores if score.get("preferred_item") == side) / len(scores)
+
+
 def random_preference_accuracy(scores: list[dict[str, Any]], *, seed: int) -> float | None:
     if not scores:
         return None
@@ -252,6 +331,28 @@ def random_preference_accuracy(scores: list[dict[str, Any]], *, seed: int) -> fl
     for score in sorted(scores, key=lambda item: str(item.get("label_id"))):
         correct += rng.choice(("original", "variant")) == score.get("preferred_item")
     return correct / len(scores)
+
+
+def random_left_right_accuracy(scores: list[dict[str, Any]], *, seed: int) -> float | None:
+    if not scores:
+        return None
+    rng = random.Random(seed)
+    correct = 0
+    for score in sorted(scores, key=lambda item: str(item.get("label_id"))):
+        correct += rng.choice(("left", "right")) == score.get("preferred_item")
+    return correct / len(scores)
+
+
+def suggestion_baseline_accuracy(scores: list[dict[str, Any]]) -> float | None:
+    usable = [
+        score
+        for score in scores
+        if score.get("suggested_preferred") in {"left", "right"}
+        and score.get("preferred_item") in {"left", "right"}
+    ]
+    if not usable:
+        return None
+    return sum(1 for score in usable if score["suggested_preferred"] == score["preferred_item"]) / len(usable)
 
 
 def metric_heuristic_accuracy(scores: list[dict[str, Any]]) -> float | None:
@@ -362,6 +463,17 @@ def split_warnings(
     if comparable and always_original_accuracy == 1.0:
         warnings.append("All labels prefer original; pairwise accuracy is not a discriminative metric.")
     return warnings
+
+
+def hard_pair_warnings(comparable: list[dict[str, Any]]) -> list[str]:
+    if not comparable:
+        return []
+    counts = Counter(score.get("preferred_item") for score in comparable)
+    dominant_side, dominant_count = counts.most_common(1)[0]
+    share = dominant_count / len(comparable)
+    if dominant_side in {"left", "right"} and share >= 0.8:
+        return [f"Preferred side is dominated by {dominant_side}: {share:.1%}."]
+    return []
 
 
 def retrieval_metrics(scores: list[dict[str, Any]]) -> dict[str, float | None]:

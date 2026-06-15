@@ -191,7 +191,18 @@ uv run pawl-jepa-sweep artifacts/pawl_jepa/local_v1_manifest_full_labels --out a
 uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_report
 ```
 
-`eval_summary.json` includes constant and heuristic baselines. Current `local_v1` labels all prefer the original UI, so pairwise accuracy must be interpreted against `always_prefer_original_accuracy` and `pairwise_lift_over_always_original`.
+Prepare, train, and evaluate the first discriminative hard preference benchmark:
+
+```bash
+uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v1 \
+  --labels data/labels/hard_pref_v1/labels.reviewed.jsonl \
+  --base-splits artifacts/datasets/local_v1_splits \
+  --out artifacts/pawl_jepa/hard_pref_v1_manifest
+uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_run --epochs 10 --batch-size 8 --device auto
+uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v1_run --manifest artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_eval
+```
+
+`eval_summary.json` includes constant and heuristic baselines. Current `local_v1` labels all prefer the original UI, so pairwise accuracy must be interpreted against `always_prefer_original_accuracy` and `pairwise_lift_over_always_original`. `hard_pref_v1` records are variant-vs-variant, so hard-pair eval reports always-left, always-right, random, and suggestion baselines instead.
 
 The `jepa` extra installs `torch` only. Pawl-JEPA microtraining uses a small local CNN and does not download DINOv2, SigLIP, or other external model weights. Normal `uv run pytest` remains CPU/GPU agnostic; Torch-only smoke tests are skipped unless the training extra is installed.
 

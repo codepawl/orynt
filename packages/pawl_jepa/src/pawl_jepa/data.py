@@ -34,21 +34,34 @@ class PawlJepaDataset:
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         record = self.records[index]
+        pair_kind = str(record.get("pair_kind", "original_vs_variant"))
         preferred_item = record.get("preferred_item")
-        if preferred_item == "original":
-            preference_target = 1.0
-            pairwise_mask = 1.0
-        elif preferred_item == "variant":
-            preference_target = -1.0
-            pairwise_mask = 1.0
+        if pair_kind == "variant_vs_variant":
+            target_path = record["training_target_screenshot_path"]
+            source_path = record["training_source_screenshot_path"]
+            comparable = preferred_item in {"left", "right"}
+            preference_target = 1.0 if comparable else 0.0
+            pairwise_mask = 1.0 if comparable else 0.0
+            defect_type = str(record.get("defect_type")) if comparable else ""
         else:
-            preference_target = 0.0
-            pairwise_mask = 0.0
-        defect_type = str(record.get("defect_type"))
+            target_path = record.get("training_target_screenshot_path") or record["original_screenshot_path"]
+            source_path = record.get("training_source_screenshot_path") or record["variant_screenshot_path"]
+            if preferred_item == "original":
+                preference_target = 1.0
+                pairwise_mask = 1.0
+            elif preferred_item == "variant":
+                preference_target = -1.0
+                pairwise_mask = 1.0
+            else:
+                preference_target = 0.0
+                pairwise_mask = 0.0
+            defect_type = str(record.get("defect_type"))
+        if record.get("preferred") in {"tie", "unclear"}:
+            defect_type = ""
         return {
             "record": record,
-            "original": load_image_tensor(Path(record["original_screenshot_path"]), self.image_size),
-            "variant": load_image_tensor(Path(record["variant_screenshot_path"]), self.image_size),
+            "original": load_image_tensor(Path(target_path), self.image_size),
+            "variant": load_image_tensor(Path(source_path), self.image_size),
             "defect_target": DEFECT_TO_INDEX.get(defect_type, -1),
             "preference_target": preference_target,
             "pairwise_mask": pairwise_mask,

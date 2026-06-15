@@ -66,7 +66,7 @@ uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/suggested
 uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_report
 ```
 
-These hard-pair labels are variant-vs-variant labels and should remain separate from current Pawl-JEPA manifests until a later task defines how to train on non-original preference pairs.
+These hard-pair labels are variant-vs-variant labels. `hard_pref_v1` is the first discriminative preference benchmark for Pawl-JEPA because neither side is original and reviewed preferences can be left or right.
 
 CodePawl Taste v0 calibrates suggestions toward the current frontend taste profile without overwriting human labels:
 
@@ -97,8 +97,19 @@ uv run pawl-jepa-sweep artifacts/pawl_jepa/local_v1_manifest_full_labels --out a
 uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_report
 ```
 
-The model is intentionally small: a shared CNN image encoder, a predictor MLP from variant embedding to original embedding, a scalar preference head, and an optional defect classifier for spacing, contrast, alignment, and hierarchy. Losses combine latent prediction MSE, pairwise preference ranking when labels are not tie/unclear, and optional defect classification.
+Hard preference pairs use the same microtraining scaffold with a variant-vs-variant manifest:
 
-Pawl-JEPA v0 reporting must compare pairwise accuracy to constant baselines before treating it as signal. Current local labels all prefer the original UI, so `always_prefer_original_accuracy` can be 1.0 and `pairwise_good_vs_bad_accuracy` is not discriminative unless `pairwise_lift_over_always_original` improves. Defect classification should likewise be read against the majority-class baseline and confusion matrix.
+```bash
+uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v1 \
+  --labels data/labels/hard_pref_v1/labels.reviewed.jsonl \
+  --base-splits artifacts/datasets/local_v1_splits \
+  --out artifacts/pawl_jepa/hard_pref_v1_manifest
+uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_run --epochs 10 --batch-size 8 --device auto
+uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v1_run --manifest artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_eval
+```
+
+The model is intentionally small: a shared CNN image encoder, a predictor MLP from nonpreferred embedding to preferred embedding, a scalar preference head, and an optional defect classifier for spacing, contrast, alignment, and hierarchy. Losses combine latent prediction MSE, pairwise preference ranking when labels are not tie/unclear, and optional defect classification.
+
+Pawl-JEPA v0 reporting must compare pairwise accuracy to constant baselines before treating it as signal. Current local labels all prefer the original UI, so `always_prefer_original_accuracy` can be 1.0 and `pairwise_good_vs_bad_accuracy` is not discriminative unless `pairwise_lift_over_always_original` improves. Hard-pair eval reports always-left, always-right, random, and suggestion baselines instead. Defect classification should likewise be read against the majority-class baseline and confusion matrix.
 
 Training dependencies live behind the `jepa` extra. The scaffold uses local screenshots only and does not require DINOv2/SigLIP downloads.

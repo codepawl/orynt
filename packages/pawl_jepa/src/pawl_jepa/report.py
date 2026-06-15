@@ -15,7 +15,7 @@ LIMITATIONS = (
     "Validation and test splits are small.",
     "The current data is dominated by synthetic jitter labels.",
     "The benchmark does not yet include real generated UI failures.",
-    "There are no hard preference pairs where a variant may be better than the original.",
+    "hard_pref_v1 is still a small synthetic-jitter hard preference benchmark.",
 )
 
 
@@ -160,6 +160,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
 
 def render_split_summary(split: str, split_summary: dict[str, Any]) -> list[str]:
+    if "pairwise_preference_accuracy" in split_summary:
+        return render_hard_split_summary(split, split_summary)
     lines = [
         f"### {split}",
         "",
@@ -171,6 +173,28 @@ def render_split_summary(split: str, split_summary: dict[str, Any]) -> list[str]
         f"- Defect accuracy: {fmt(split_summary.get('defect_classification_accuracy'))}",
         f"- Defect majority baseline: {fmt(split_summary.get('defect_majority_class_accuracy'))}",
         f"- Defect lift over majority: {fmt(split_summary.get('defect_lift_over_majority'))}",
+        f"- Retrieval top1: {fmt(split_summary.get('retrieval_top1'))}",
+        f"- Average latent prediction loss: "
+        f"{fmt(split_summary.get('average_latent_prediction_loss'))}",
+    ]
+    for warning in split_summary.get("warnings", []):
+        lines.append(f"- Warning: {warning}")
+    lines.append("")
+    return lines
+
+
+def render_hard_split_summary(split: str, split_summary: dict[str, Any]) -> list[str]:
+    lines = [
+        f"### {split}",
+        "",
+        f"- Pairwise preference accuracy: {fmt(split_summary.get('pairwise_preference_accuracy'))}",
+        f"- Always-left baseline: {fmt(split_summary.get('always_left_accuracy'))}",
+        f"- Always-right baseline: {fmt(split_summary.get('always_right_accuracy'))}",
+        f"- Random preference baseline: {fmt(split_summary.get('random_preference_accuracy'))}",
+        f"- Suggestion baseline: {fmt(split_summary.get('suggestion_baseline_accuracy'))}",
+        f"- Pairwise lift over best constant: "
+        f"{fmt(split_summary.get('pairwise_lift_over_best_constant'))}",
+        f"- Defect accuracy on losing side: {fmt(split_summary.get('defect_accuracy_on_losing_side'))}",
         f"- Retrieval top1: {fmt(split_summary.get('retrieval_top1'))}",
         f"- Average latent prediction loss: "
         f"{fmt(split_summary.get('average_latent_prediction_loss'))}",
