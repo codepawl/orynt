@@ -63,6 +63,15 @@ uv run pawlbench-design-split artifacts/datasets/local_v1 --out artifacts/datase
 uv run pawlbench-design-report artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_report
 ```
 
+Long-running local CLIs show lightweight progress in interactive terminals and stay quiet in CI/non-TTY output. Use `--no-progress` to keep normal final output but hide progress, or `--quiet` to suppress progress and nonessential success logs:
+
+```bash
+uv run pawlbench-design-build examples/local_v1 --out artifacts/datasets/local_v1 --seed 42 --no-progress
+uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_run --quiet
+```
+
+Progress-enabled commands include dataset build, hard-pair generation, label autofill, Pawl-JEPA train/eval/sweep, and batch render work inside dataset builds.
+
 Generate a local-first human labeling queue from the `local_v1` train split:
 
 ```bash

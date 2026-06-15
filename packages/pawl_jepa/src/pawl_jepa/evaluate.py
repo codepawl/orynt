@@ -7,7 +7,7 @@ import random
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pawl_jepa.data import DEFECT_TYPES, PawlJepaDataset, collate_batch
 from pawl_jepa.losses import LossWeights, compute_losses
@@ -25,6 +25,7 @@ class EvalConfig:
     device: str = "auto"
     baseline_summary: Path | None = None
     random_seed: int = 42
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -67,7 +68,15 @@ def evaluate_micro_model(config: EvalConfig) -> EvalResult:
             shuffle=False,
             collate_fn=collate_batch,
         )
-        split_scores = score_split(torch, model, loader, device, weights)
+        split_scores = score_split(
+            torch,
+            model,
+            loader,
+            device,
+            weights,
+            progress_callback=config.progress_callback,
+            split=split,
+        )
         pair_scores.extend(split_scores)
         split_summaries[split] = summarize_scores(
             split_scores,
@@ -91,10 +100,20 @@ def evaluate_micro_model(config: EvalConfig) -> EvalResult:
     return EvalResult(output_dir, summary_path, pair_scores_path, summary)
 
 
-def score_split(torch, model, loader, device, weights: LossWeights) -> list[dict[str, Any]]:
+def score_split(
+    torch,
+    model,
+    loader,
+    device,
+    weights: LossWeights,
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    split: str | None = None,
+) -> list[dict[str, Any]]:
     scores: list[dict[str, Any]] = []
+    total_batches = len(loader)
     with torch.no_grad():
-        for batch in loader:
+        for batch_index, batch in enumerate(loader, start=1):
             original = batch["original"].to(device)
             variant = batch["variant"].to(device)
             outputs = model(original, variant)
@@ -173,6 +192,16 @@ def score_split(torch, model, loader, device, weights: LossWeights) -> list[dict
                         .detach()
                         .cpu()
                         .tolist(),
+                    }
+                )
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "event": "eval_batch",
+                        "split": split,
+                        "batch": batch_index,
+                        "total_batches": total_batches,
+                        "record_count": len(scores),
                     }
                 )
     return scores

@@ -13,10 +13,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from codepawl_jitter import JitterConfig, JitterVariant, generate_jitter_pair_files
 from codepawl_renderer import RenderConfig, render_html_file
+from codepawl_harness.progress import ProgressReporter, add_progress_arguments
 from pawlbench_design import EvalConfig, evaluate_jitter_pairs
 
 
@@ -28,6 +29,7 @@ class BuildConfig:
     limit: int | None = None
     fail_fast: bool = False
     overwrite: bool = True
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -64,12 +66,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Fail if the output dataset directory already exists.",
     )
+    add_progress_arguments(parser)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    progress = ProgressReporter(quiet=args.quiet, no_progress=args.no_progress)
 
     try:
         result = build_dataset(
@@ -80,14 +84,31 @@ def main(argv: list[str] | None = None) -> int:
                 limit=args.limit,
                 fail_fast=args.fail_fast,
                 overwrite=args.overwrite,
+                progress_callback=build_progress_callback(progress),
             )
         )
     except Exception as exc:
         print(f"pawlbench-design-build: {exc}", file=sys.stderr)
         return 2
 
-    print(f"Wrote PawlBench Design dataset to {result.output_dir}")
+    progress.done("dataset build complete")
+    progress.log(f"Wrote PawlBench Design dataset to {result.output_dir}")
     return 0
+
+
+def build_progress_callback(progress: ProgressReporter):
+    def callback(event: dict[str, Any]) -> None:
+        if event.get("event") != "build_sample":
+            return
+        progress.update(
+            "sample "
+            f"{event.get('sample')}/{event.get('total_samples')} "
+            f"failed {event.get('failed_count')} "
+            f"{event.get('sample_id')} "
+            f"{event.get('source_path')}"
+        )
+
+    return callback
 
 
 def build_dataset(config: BuildConfig) -> BuildResult:
@@ -114,8 +135,21 @@ def build_dataset(config: BuildConfig) -> BuildResult:
 
         records: list[dict[str, Any]] = []
         aggregate_rows: list[dict[str, Any]] = []
-        for html_path in html_paths:
+        total_samples = len(html_paths)
+        failed_count = 0
+        for index, html_path in enumerate(html_paths, start=1):
             sample_id = sample_ids[html_path]
+            emit_progress(
+                config.progress_callback,
+                {
+                    "event": "build_sample",
+                    "sample": index,
+                    "total_samples": total_samples,
+                    "failed_count": failed_count,
+                    "sample_id": sample_id,
+                    "source_path": str(html_path),
+                },
+            )
             sample_output_dir = samples_dir / sample_id
             try:
                 record, rows = _build_sample(
@@ -127,6 +161,7 @@ def build_dataset(config: BuildConfig) -> BuildResult:
             except Exception as exc:
                 if config.fail_fast:
                     raise
+                failed_count += 1
                 sample_output_dir.mkdir(parents=True, exist_ok=True)
                 record = {
                     "sample_id": sample_id,
@@ -158,6 +193,11 @@ def build_dataset(config: BuildConfig) -> BuildResult:
         dataset_path=final_dataset_path,
         dataset=json.loads(final_dataset_path.read_text(encoding="utf-8")),
     )
+
+
+def emit_progress(callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:
+    if callback is not None:
+        callback(payload)
 
 
 def _validate_source_dir(source_dir: Path) -> Path:

@@ -7,7 +7,7 @@ import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pawl_jepa.data import PawlJepaDataset, collate_batch
 from pawl_jepa.losses import LossWeights, compute_losses
@@ -32,6 +32,7 @@ class TrainConfig:
     embedding_dim: int = 64
     hidden_dim: int = 128
     defect_head: bool = True
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,11 @@ def train_micro_model(config: TrainConfig) -> TrainResult:
     checkpoints_dir = output_dir / "checkpoints"
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
-    config_payload = asdict(config) | {
+    config_payload = {
+        key: value
+        for key, value in asdict(config).items()
+        if key != "progress_callback"
+    } | {
         "manifest_dir": str(config.manifest_dir.expanduser().resolve()),
         "output_dir": str(output_dir),
         "resolved_device": str(device),
@@ -87,12 +92,22 @@ def train_micro_model(config: TrainConfig) -> TrainResult:
     weights = LossWeights(config.latent_weight, config.preference_weight, config.defect_weight)
     metric_rows: list[dict[str, Any]] = []
     start = time.perf_counter()
+    total_batches = len(loader)
+    emit_progress(
+        config.progress_callback,
+        {
+            "event": "train_start",
+            "epochs": config.epochs,
+            "total_batches": total_batches,
+            "record_count": len(dataset),
+        },
+    )
 
     for epoch in range(1, config.epochs + 1):
         model.train()
         totals = {"total_loss": 0.0, "latent_loss": 0.0, "preference_loss": 0.0, "defect_loss": 0.0}
         seen = 0
-        for batch in loader:
+        for batch_index, batch in enumerate(loader, start=1):
             original = batch["original"].to(device)
             variant = batch["variant"].to(device)
             outputs = model(original, variant)
@@ -104,12 +119,32 @@ def train_micro_model(config: TrainConfig) -> TrainResult:
             seen += batch_size
             for key in totals:
                 totals[key] += float(losses[key].detach().cpu()) * batch_size
+            emit_progress(
+                config.progress_callback,
+                {
+                    "event": "train_batch",
+                    "epoch": epoch,
+                    "epochs": config.epochs,
+                    "batch": batch_index,
+                    "total_batches": total_batches,
+                    "record_count": seen,
+                    "total_loss": float(losses["total_loss"].detach().cpu()),
+                    "latent_loss": float(losses["latent_loss"].detach().cpu()),
+                    "preference_loss": float(losses["preference_loss"].detach().cpu()),
+                    "defect_loss": float(losses["defect_loss"].detach().cpu()),
+                    "elapsed_seconds": time.perf_counter() - start,
+                },
+            )
         row = {
             "epoch": epoch,
             "record_count": seen,
             **{key: value / max(seen, 1) for key, value in totals.items()},
         }
         metric_rows.append(row)
+        emit_progress(
+            config.progress_callback,
+            {"event": "train_epoch_end", "epoch": epoch, "epochs": config.epochs, **row},
+        )
 
     metrics_path = output_dir / "metrics.jsonl"
     write_jsonl(metrics_path, metric_rows)
@@ -133,7 +168,13 @@ def train_micro_model(config: TrainConfig) -> TrainResult:
     }
     summary_path = output_dir / "train_summary.json"
     write_json(summary_path, summary)
+    emit_progress(config.progress_callback, {"event": "train_done", "summary": summary})
     return TrainResult(output_dir, config_path, checkpoint_path, metrics_path, summary_path, summary)
+
+
+def emit_progress(callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:
+    if callback is not None:
+        callback(payload)
 
 
 def seed_everything(torch, seed: int) -> None:

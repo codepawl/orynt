@@ -8,7 +8,7 @@ from collections import Counter
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pawlbench_design.labels import _write_json, _write_jsonl
 from pawlbench_design.taste import load_taste_profile, suggest_label_with_taste
@@ -32,6 +32,7 @@ class HardPairConfig:
     strategy: str = "core_pairs"
     taste_profile_path: Path | None = None
     base_splits_dir: Path | None = None
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -67,10 +68,23 @@ def build_hard_pairs(config: HardPairConfig) -> HardPairResult:
     suggested_labels: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     ok_sample_count = 0
-    for sample in dataset.get("samples", []):
+    samples = list(dataset.get("samples", []))
+    total_samples = len([sample for sample in samples if sample.get("status") == "ok"])
+    for sample in samples:
         if sample.get("status") != "ok":
             continue
         ok_sample_count += 1
+        emit_progress(
+            config.progress_callback,
+            {
+                "event": "hard_pairs_sample",
+                "sample": ok_sample_count,
+                "total_samples": total_samples,
+                "sample_id": sample.get("sample_id"),
+                "record_count": len(records),
+                "skipped_count": len(skipped),
+            },
+        )
         variants = {
             str(variant.get("variant_name")): variant
             for variant in sample.get("variants", [])
@@ -101,6 +115,17 @@ def build_hard_pairs(config: HardPairConfig) -> HardPairResult:
             apply_suggestion_to_record(record, label)
             records.append(record)
             suggested_labels.append(label)
+        emit_progress(
+            config.progress_callback,
+            {
+                "event": "hard_pairs_sample_done",
+                "sample": ok_sample_count,
+                "total_samples": total_samples,
+                "sample_id": sample.get("sample_id"),
+                "record_count": len(records),
+                "skipped_count": len(skipped),
+            },
+        )
 
     summary = build_summary(
         input_dir=input_dir,
@@ -150,6 +175,11 @@ def build_hard_pairs(config: HardPairConfig) -> HardPairResult:
         suggested_labels=suggested_labels,
         summary=summary,
     )
+
+
+def emit_progress(callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:
+    if callback is not None:
+        callback(payload)
 
 
 def hard_pair_record(

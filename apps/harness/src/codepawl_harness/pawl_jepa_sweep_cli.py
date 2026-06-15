@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
+from codepawl_harness.progress import ProgressReporter, add_progress_arguments
 from pawl_jepa.sweep import SweepConfig, run_seed_sweep
 
 
@@ -28,12 +30,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--embedding-dim", type=int, default=64)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--no-defect-head", action="store_true")
+    add_progress_arguments(parser)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    progress = ProgressReporter(quiet=args.quiet, no_progress=args.no_progress)
     try:
         result = run_seed_sweep(
             SweepConfig(
@@ -51,13 +55,28 @@ def main(argv: list[str] | None = None) -> int:
                 embedding_dim=args.embedding_dim,
                 hidden_dim=args.hidden_dim,
                 defect_head=not args.no_defect_head,
+                progress_callback=sweep_progress_callback(progress),
             )
         )
     except Exception as exc:
         print(f"pawl-jepa-sweep: {exc}", file=sys.stderr)
         return 2
-    print(f"Wrote Pawl-JEPA seed sweep to {result.output_dir}")
+    progress.done("seed sweep complete")
+    progress.log(f"Wrote Pawl-JEPA seed sweep to {result.output_dir}")
     return 0
+
+
+def sweep_progress_callback(progress: ProgressReporter):
+    def callback(event: dict[str, Any]) -> None:
+        if event.get("event") != "sweep_phase":
+            return
+        progress.update(
+            f"seed {event.get('seed_index')}/{event.get('seed_total')} "
+            f"current {event.get('seed')} "
+            f"phase {event.get('phase')}"
+        )
+
+    return callback
 
 
 def parse_seeds(raw: str) -> tuple[int, ...]:

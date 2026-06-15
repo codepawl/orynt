@@ -9,7 +9,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pawlbench_design.taste import load_taste_profile, suggest_label_with_taste
 
@@ -135,6 +135,7 @@ class LabelAutofillConfig:
     output_path: Path
     labeler_id: str
     auto_label_method: str = "codepawl_taste_v0"
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -271,7 +272,7 @@ def autofill_labels(config: LabelAutofillConfig) -> LabelAutofillResult:
         raise ValueError("suggestions contain duplicate label_id records")
     labels: list[dict[str, Any]] = []
     missing: list[str] = []
-    for queue_record in queue_records:
+    for index, queue_record in enumerate(queue_records, start=1):
         label_id = str(queue_record.get("label_id") or "")
         suggestion = suggestions_by_id.get(label_id)
         if suggestion is None:
@@ -285,6 +286,15 @@ def autofill_labels(config: LabelAutofillConfig) -> LabelAutofillResult:
                 auto_label_method=config.auto_label_method,
             )
         )
+        emit_progress(
+            config.progress_callback,
+            {
+                "event": "label_autofill_record",
+                "record": index,
+                "total_records": len(queue_records),
+                "label_id": label_id,
+            },
+        )
     if missing:
         raise ValueError(f"suggestions missing label_id records: {', '.join(missing[:10])}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -296,6 +306,11 @@ def autofill_labels(config: LabelAutofillConfig) -> LabelAutofillResult:
         "auto_label_method": config.auto_label_method,
     }
     return LabelAutofillResult(output_path=output_path, labels=labels, summary=summary)
+
+
+def emit_progress(callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:
+    if callback is not None:
+        callback(payload)
 
 
 def resuggest_labels(config: LabelResuggestConfig) -> LabelResuggestResult:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pawl_jepa.evaluate import EvalConfig, evaluate_micro_model
 from pawl_jepa.manifest import write_json
@@ -49,6 +49,7 @@ class SweepConfig:
     embedding_dim: int = 64
     hidden_dim: int = 128
     defect_head: bool = True
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -68,8 +69,18 @@ def run_seed_sweep(config: SweepConfig) -> SweepResult:
 
     run_summaries: list[dict[str, Any]] = []
     warnings: list[str] = []
-    for seed in config.seeds:
+    for seed_index, seed in enumerate(config.seeds, start=1):
         seed_dir = runs_dir / f"seed_{seed}"
+        emit_progress(
+            config.progress_callback,
+            {
+                "event": "sweep_phase",
+                "phase": "train",
+                "seed": seed,
+                "seed_index": seed_index,
+                "seed_total": len(config.seeds),
+            },
+        )
         train_result = train_micro_model(
             TrainConfig(
                 manifest_dir=config.manifest_dir,
@@ -87,6 +98,16 @@ def run_seed_sweep(config: SweepConfig) -> SweepResult:
                 hidden_dim=config.hidden_dim,
                 defect_head=config.defect_head,
             )
+        )
+        emit_progress(
+            config.progress_callback,
+            {
+                "event": "sweep_phase",
+                "phase": "eval",
+                "seed": seed,
+                "seed_index": seed_index,
+                "seed_total": len(config.seeds),
+            },
         )
         eval_result = evaluate_micro_model(
             EvalConfig(
@@ -108,6 +129,15 @@ def run_seed_sweep(config: SweepConfig) -> SweepResult:
                 "splits": eval_result.summary["splits"],
             }
         )
+        emit_progress(
+            config.progress_callback,
+            {
+                "event": "sweep_seed_done",
+                "seed": seed,
+                "seed_index": seed_index,
+                "seed_total": len(config.seeds),
+            },
+        )
 
     split_aggregates = aggregate_splits(run_summaries)
     warnings.extend(aggregate_warnings(split_aggregates))
@@ -121,7 +151,13 @@ def run_seed_sweep(config: SweepConfig) -> SweepResult:
     }
     summary_path = output_dir / "sweep_summary.json"
     write_json(summary_path, summary)
+    emit_progress(config.progress_callback, {"event": "sweep_done", "seed_total": len(config.seeds)})
     return SweepResult(output_dir, summary_path, summary)
+
+
+def emit_progress(callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:
+    if callback is not None:
+        callback(payload)
 
 
 def aggregate_splits(run_summaries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
