@@ -17,6 +17,17 @@ LIMITATIONS = (
     "The benchmark does not yet include real generated UI failures.",
     "hard_pref_v1 is still a small synthetic-jitter hard preference benchmark.",
 )
+HARD_PAIR_LIMITATIONS = (
+    "Hard-pair labels may be reviewed from taste-profile suggestions.",
+    "The suggestion baseline may be inflated and is not an independent reviewer baseline.",
+    "Validation and test splits are still small.",
+    "Losing-side defect distribution may be imbalanced.",
+)
+HARD_PAIR_RECOMMENDATIONS = (
+    "Add generated UI candidate pairs.",
+    "Add blind review mode.",
+    "Add balanced losing-defect evaluation.",
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +36,7 @@ class ReportConfig:
     manifest_dir: Path
     output_dir: Path
     baseline_summary: Path | None = None
+    sweep_summary: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +54,7 @@ def export_experiment_report(config: ReportConfig) -> ReportResult:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     eval_summary = read_json(eval_dir / "eval_summary.json")
+    sweep_summary = read_sweep_summary(config.sweep_summary, eval_dir)
     manifest_summary = read_json(manifest_dir / "manifest.json")
     train_summary = read_optional_train_summary(eval_summary)
     baseline_summary = (
@@ -58,7 +71,8 @@ def export_experiment_report(config: ReportConfig) -> ReportResult:
         "splits": eval_summary.get("splits", {}),
         "train_summary": train_summary,
         "baseline_summary": baseline_summary,
-        "limitations": list(LIMITATIONS),
+        "sweep_summary": sweep_summary,
+        "limitations": limitations(eval_summary),
         "recommendations": recommendations(eval_summary),
     }
 
@@ -73,6 +87,17 @@ def read_json(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise ValueError(f"JSON file is missing: {path}")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def read_sweep_summary(path: Path | None, eval_dir: Path) -> dict[str, Any] | None:
+    candidates: list[Path] = []
+    if path is not None:
+        candidates.append(path.expanduser().resolve())
+    candidates.append(eval_dir / "sweep_summary.json")
+    for candidate in candidates:
+        if candidate.is_file():
+            return read_json(candidate)
+    return None
 
 
 def read_optional_train_summary(eval_summary: dict[str, Any]) -> dict[str, Any] | None:
@@ -93,11 +118,27 @@ def dataset_summary(manifest_summary: dict[str, Any]) -> dict[str, Any]:
         "label_file_count": manifest_summary.get("label_file_count"),
         "label_record_count": manifest_summary.get("label_record_count"),
         "preferred_item_counts": manifest_summary.get("preferred_item_counts", {}),
+        "preferred_counts": manifest_summary.get("preferred_counts", {}),
         "human_reviewed_count_by_split": manifest_summary.get("human_reviewed_count_by_split", {}),
         "synthetic_fallback_count_by_split": manifest_summary.get(
             "synthetic_fallback_count_by_split", {}
         ),
     }
+
+
+def is_hard_pair_eval(eval_summary: dict[str, Any]) -> bool:
+    return any(
+        "pairwise_preference_accuracy" in split
+        for split in eval_summary.get("splits", {}).values()
+        if isinstance(split, dict)
+    )
+
+
+def limitations(eval_summary: dict[str, Any]) -> list[str]:
+    items = list(LIMITATIONS)
+    if is_hard_pair_eval(eval_summary):
+        items.extend(HARD_PAIR_LIMITATIONS)
+    return items
 
 
 def recommendations(eval_summary: dict[str, Any]) -> list[str]:
@@ -113,6 +154,8 @@ def recommendations(eval_summary: dict[str, Any]) -> list[str]:
         for warning in split.get("warnings", [])
     ):
         recs.insert(0, "Prioritize non-trivial labels before changing Pawl-JEPA architecture.")
+    if is_hard_pair_eval(eval_summary):
+        recs.extend(item for item in HARD_PAIR_RECOMMENDATIONS if item not in recs)
     return recs
 
 
@@ -136,12 +179,15 @@ def render_markdown(summary: dict[str, Any]) -> str:
         "- Synthetic fallback counts: "
         f"{format_json(summary['dataset'].get('synthetic_fallback_count_by_split', {}))}",
         f"- Preferred item counts: {format_json(summary['dataset'].get('preferred_item_counts', {}))}",
+        f"- Preferred distribution: {format_json(summary['dataset'].get('preferred_counts', {}))}",
         "",
         "## Evaluation Summary",
         "",
     ]
     for split, split_summary in sorted(summary.get("splits", {}).items()):
         lines.extend(render_split_summary(split, split_summary))
+    if summary.get("sweep_summary"):
+        lines.extend(render_sweep_summary(summary["sweep_summary"]))
     lines.extend(
         [
             "## Baseline Comparison",
@@ -195,6 +241,8 @@ def render_hard_split_summary(split: str, split_summary: dict[str, Any]) -> list
         f"- Pairwise lift over best constant: "
         f"{fmt(split_summary.get('pairwise_lift_over_best_constant'))}",
         f"- Defect accuracy on losing side: {fmt(split_summary.get('defect_accuracy_on_losing_side'))}",
+        f"- Defect majority baseline: {fmt(split_summary.get('defect_majority_class_accuracy'))}",
+        f"- Defect lift over majority: {fmt(split_summary.get('defect_lift_over_majority'))}",
         f"- Retrieval top1: {fmt(split_summary.get('retrieval_top1'))}",
         f"- Average latent prediction loss: "
         f"{fmt(split_summary.get('average_latent_prediction_loss'))}",
@@ -202,6 +250,49 @@ def render_hard_split_summary(split: str, split_summary: dict[str, Any]) -> list
     for warning in split_summary.get("warnings", []):
         lines.append(f"- Warning: {warning}")
     lines.append("")
+    return lines
+
+
+def render_sweep_summary(sweep_summary: dict[str, Any]) -> list[str]:
+    lines = ["## Sweep Summary", ""]
+    for split, split_metrics in sorted(sweep_summary.get("splits", {}).items()):
+        lines.extend([f"### {split} sweep", ""])
+        hard_metrics = (
+            "pairwise_preference_accuracy",
+            "pairwise_lift_over_best_constant",
+            "always_left_accuracy",
+            "always_right_accuracy",
+            "random_preference_accuracy",
+            "suggestion_baseline_accuracy",
+            "defect_accuracy_on_losing_side",
+            "defect_majority_class_accuracy",
+            "defect_lift_over_majority",
+            "average_latent_prediction_loss",
+        )
+        original_metrics = (
+            "pairwise_good_vs_bad_accuracy",
+            "pairwise_lift_over_always_original",
+            "always_prefer_original_accuracy",
+            "metric_heuristic_accuracy",
+            "defect_classification_accuracy",
+            "defect_majority_class_accuracy",
+            "defect_lift_over_majority",
+            "retrieval_top1",
+            "average_latent_prediction_loss",
+        )
+        metrics = hard_metrics if "pairwise_preference_accuracy" in split_metrics else original_metrics
+        for metric in metrics:
+            value = split_metrics.get(metric)
+            if isinstance(value, dict) and value.get("mean") is not None:
+                lines.append(
+                    f"- {metric}: mean {fmt(value.get('mean'))}, std {fmt(value.get('std'))}"
+                )
+        lines.append("")
+    warnings = sweep_summary.get("warnings", [])
+    if warnings:
+        lines.extend(["### Sweep warnings", ""])
+        lines.extend(f"- Warning: {warning}" for warning in warnings)
+        lines.append("")
     return lines
 
 

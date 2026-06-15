@@ -15,9 +15,20 @@ from pawl_jepa.train import TrainConfig, train_micro_model
 SUMMARY_METRICS = (
     "pairwise_good_vs_bad_accuracy",
     "pairwise_lift_over_always_original",
+    "always_prefer_original_accuracy",
+    "metric_heuristic_accuracy",
     "defect_classification_accuracy",
     "defect_lift_over_majority",
+    "defect_majority_class_accuracy",
     "retrieval_top1",
+    "retrieval_top5",
+    "pairwise_preference_accuracy",
+    "pairwise_lift_over_best_constant",
+    "always_left_accuracy",
+    "always_right_accuracy",
+    "random_preference_accuracy",
+    "suggestion_baseline_accuracy",
+    "defect_accuracy_on_losing_side",
     "average_latent_prediction_loss",
 )
 
@@ -98,11 +109,13 @@ def run_seed_sweep(config: SweepConfig) -> SweepResult:
             }
         )
 
+    split_aggregates = aggregate_splits(run_summaries)
+    warnings.extend(aggregate_warnings(split_aggregates))
     summary = {
         "manifest_dir": str(config.manifest_dir.expanduser().resolve()),
         "seeds": list(config.seeds),
         "runs": run_summaries,
-        "splits": aggregate_splits(run_summaries),
+        "splits": split_aggregates,
         "best_seed_by_metric": best_seed_by_metric(run_summaries),
         "warnings": sorted(set(warnings)),
     }
@@ -139,6 +152,32 @@ def mean_std(values: list[float]) -> dict[str, float | None]:
     mean = sum(values) / len(values)
     variance = sum((value - mean) ** 2 for value in values) / len(values)
     return {"mean": mean, "std": math.sqrt(variance)}
+
+
+def aggregate_warnings(split_aggregates: dict[str, dict[str, Any]]) -> list[str]:
+    warnings: list[str] = []
+    for split, metrics in sorted(split_aggregates.items()):
+        suggestion_baseline = metric_mean(metrics, "suggestion_baseline_accuracy")
+        if suggestion_baseline == 1.0:
+            warnings.append(
+                f"{split}: suggestion_baseline_accuracy is 1.0; labels may be "
+                "suggestion-derived and this baseline is not independent."
+            )
+        pairwise_lift = metric_mean(metrics, "pairwise_lift_over_best_constant")
+        if pairwise_lift is not None and pairwise_lift <= 0:
+            warnings.append(f"{split}: model does not beat the constant side baseline.")
+        defect_lift = metric_mean(metrics, "defect_lift_over_majority")
+        if defect_lift is not None and defect_lift <= 0:
+            warnings.append(f"{split}: defect head does not beat the majority class baseline.")
+    return warnings
+
+
+def metric_mean(metrics: dict[str, Any], metric: str) -> float | None:
+    value = metrics.get(metric)
+    if not isinstance(value, dict):
+        return None
+    mean = value.get("mean")
+    return float(mean) if mean is not None else None
 
 
 def best_seed_by_metric(run_summaries: list[dict[str, Any]]) -> dict[str, dict[str, int | float | None]]:

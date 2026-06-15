@@ -776,6 +776,98 @@ def test_seed_sweep_with_tiny_manifest(tmp_path: Path) -> None:
     assert result.summary["best_seed_by_metric"]["val"]["retrieval_top1"] in {1, 2}
 
 
+def test_seed_sweep_aggregates_hard_pair_metrics_and_warnings() -> None:
+    from pawl_jepa.sweep import aggregate_splits, aggregate_warnings
+
+    run_summaries = [
+        {
+            "seed": 1,
+            "splits": {
+                "val": {
+                    "pairwise_preference_accuracy": 0.5,
+                    "pairwise_lift_over_best_constant": 0.0,
+                    "always_left_accuracy": 0.5,
+                    "always_right_accuracy": 0.5,
+                    "random_preference_accuracy": 0.5,
+                    "suggestion_baseline_accuracy": 1.0,
+                    "defect_accuracy_on_losing_side": 0.4,
+                    "defect_lift_over_majority": -0.1,
+                    "defect_majority_class_accuracy": 0.5,
+                    "average_latent_prediction_loss": 0.3,
+                }
+            },
+        },
+        {
+            "seed": 2,
+            "splits": {
+                "val": {
+                    "pairwise_preference_accuracy": 0.7,
+                    "pairwise_lift_over_best_constant": 0.0,
+                    "always_left_accuracy": 0.5,
+                    "always_right_accuracy": 0.5,
+                    "random_preference_accuracy": 0.5,
+                    "suggestion_baseline_accuracy": 1.0,
+                    "defect_accuracy_on_losing_side": 0.5,
+                    "defect_lift_over_majority": 0.0,
+                    "defect_majority_class_accuracy": 0.5,
+                    "average_latent_prediction_loss": 0.1,
+                }
+            },
+        },
+    ]
+
+    aggregates = aggregate_splits(run_summaries)
+
+    val = aggregates["val"]
+    assert val["pairwise_preference_accuracy"]["mean"] == pytest.approx(0.6)
+    assert val["pairwise_lift_over_best_constant"]["mean"] == pytest.approx(0.0)
+    assert val["always_left_accuracy"]["mean"] == pytest.approx(0.5)
+    assert val["always_right_accuracy"]["mean"] == pytest.approx(0.5)
+    assert val["random_preference_accuracy"]["mean"] == pytest.approx(0.5)
+    assert val["suggestion_baseline_accuracy"]["mean"] == pytest.approx(1.0)
+    assert val["defect_accuracy_on_losing_side"]["mean"] == pytest.approx(0.45)
+    assert val["defect_lift_over_majority"]["mean"] == pytest.approx(-0.05)
+    assert val["defect_majority_class_accuracy"]["mean"] == pytest.approx(0.5)
+    assert val["average_latent_prediction_loss"]["mean"] == pytest.approx(0.2)
+
+    warnings = aggregate_warnings(aggregates)
+    assert any("suggestion_baseline_accuracy is 1.0" in warning for warning in warnings)
+    assert any("constant side baseline" in warning for warning in warnings)
+    assert any("majority class baseline" in warning for warning in warnings)
+
+
+def test_seed_sweep_aggregates_original_variant_metrics_compatibly() -> None:
+    from pawl_jepa.sweep import aggregate_splits
+
+    aggregates = aggregate_splits(
+        [
+            {
+                "seed": 1,
+                "splits": {
+                    "val": {
+                        "pairwise_good_vs_bad_accuracy": 0.25,
+                        "pairwise_lift_over_always_original": -0.75,
+                        "always_prefer_original_accuracy": 1.0,
+                        "metric_heuristic_accuracy": 0.5,
+                        "defect_classification_accuracy": 0.25,
+                        "defect_lift_over_majority": -0.5,
+                        "defect_majority_class_accuracy": 0.75,
+                        "retrieval_top1": 0.25,
+                        "retrieval_top5": 1.0,
+                        "average_latent_prediction_loss": 0.4,
+                    }
+                },
+            }
+        ]
+    )
+
+    val = aggregates["val"]
+    assert val["pairwise_good_vs_bad_accuracy"]["mean"] == pytest.approx(0.25)
+    assert val["pairwise_lift_over_always_original"]["mean"] == pytest.approx(-0.75)
+    assert val["retrieval_top1"]["mean"] == pytest.approx(0.25)
+    assert val["pairwise_preference_accuracy"] == {"mean": None, "std": None}
+
+
 def test_report_generation(tmp_path: Path) -> None:
     from pawl_jepa.manifest import write_json
     from pawl_jepa.report import ReportConfig, export_experiment_report
@@ -833,3 +925,89 @@ def test_report_generation(tmp_path: Path) -> None:
     assert "Pawl-JEPA v0 Experiment Report" in report
     assert "Always-original baseline" in report
     assert result.summary["label_coverage"] == {"train": 0.0, "val": 1.0, "test": 1.0}
+
+
+def test_report_generation_supports_hard_pair_eval_and_sweep(tmp_path: Path) -> None:
+    from pawl_jepa.manifest import write_json
+    from pawl_jepa.report import ReportConfig, export_experiment_report
+
+    manifest_dir = tmp_path / "hard_manifest"
+    eval_dir = tmp_path / "hard_eval"
+    sweep_dir = tmp_path / "hard_sweep"
+    manifest_dir.mkdir()
+    eval_dir.mkdir()
+    sweep_dir.mkdir()
+    write_json(
+        manifest_dir / "manifest.json",
+        {
+            "record_counts": {"train": 144, "val": 18, "test": 18},
+            "total_records": 180,
+            "defect_types": ["alignment", "contrast", "hierarchy", "spacing"],
+            "label_file_count": 1,
+            "label_record_count": 180,
+            "preferred_item_counts": {"left": 95, "right": 85},
+            "preferred_counts": {"left": 95, "right": 85},
+            "label_coverage_by_split": {"train": 1.0, "val": 1.0, "test": 1.0},
+            "human_reviewed_count_by_split": {"train": 144, "val": 18, "test": 18},
+            "synthetic_fallback_count_by_split": {"train": 0, "val": 0, "test": 0},
+        },
+    )
+    write_json(
+        eval_dir / "eval_summary.json",
+        {
+            "splits": {
+                "val": {
+                    "pairwise_preference_accuracy": 0.5,
+                    "always_left_accuracy": 0.55,
+                    "always_right_accuracy": 0.45,
+                    "random_preference_accuracy": 0.5,
+                    "suggestion_baseline_accuracy": 1.0,
+                    "pairwise_lift_over_best_constant": -0.05,
+                    "defect_accuracy_on_losing_side": 0.4,
+                    "defect_majority_class_accuracy": 0.6,
+                    "defect_lift_over_majority": -0.2,
+                    "average_latent_prediction_loss": 0.2,
+                    "warnings": [],
+                }
+            },
+        },
+    )
+    write_json(
+        sweep_dir / "sweep_summary.json",
+        {
+            "splits": {
+                "val": {
+                    "pairwise_preference_accuracy": {"mean": 0.5, "std": 0.1},
+                    "pairwise_lift_over_best_constant": {"mean": -0.05, "std": 0.0},
+                    "always_left_accuracy": {"mean": 0.55, "std": 0.0},
+                    "always_right_accuracy": {"mean": 0.45, "std": 0.0},
+                    "random_preference_accuracy": {"mean": 0.5, "std": 0.0},
+                    "suggestion_baseline_accuracy": {"mean": 1.0, "std": 0.0},
+                    "defect_accuracy_on_losing_side": {"mean": 0.4, "std": 0.0},
+                    "defect_majority_class_accuracy": {"mean": 0.6, "std": 0.0},
+                    "defect_lift_over_majority": {"mean": -0.2, "std": 0.0},
+                    "average_latent_prediction_loss": {"mean": 0.2, "std": 0.01},
+                }
+            },
+            "warnings": ["val: suggestion_baseline_accuracy is 1.0; labels may be suggestion-derived."],
+        },
+    )
+
+    result = export_experiment_report(
+        ReportConfig(
+            eval_dir=eval_dir,
+            manifest_dir=manifest_dir,
+            output_dir=tmp_path / "hard_report",
+            sweep_summary=sweep_dir / "sweep_summary.json",
+        )
+    )
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert "Pairwise preference accuracy" in report
+    assert "Pairwise lift over best constant" in report
+    assert "Defect majority baseline" in report
+    assert "Sweep Summary" in report
+    assert "suggestion_baseline_accuracy" in report
+    assert "labels may be reviewed from taste-profile suggestions" in report
+    assert "Add generated UI candidate pairs" in report
+    assert result.summary["sweep_summary"]["splits"]["val"]["pairwise_preference_accuracy"]["mean"] == 0.5

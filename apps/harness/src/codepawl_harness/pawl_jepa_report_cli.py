@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", required=True, help="Prepared manifest directory.")
     parser.add_argument("--out", required=True, help="Output report directory.")
     parser.add_argument("--baseline-summary", help="Optional DINOv2/SigLIP baseline summary JSON.")
+    parser.add_argument("--sweep-summary", help="Optional Pawl-JEPA sweep_summary.json path.")
     return parser
 
 
@@ -31,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
                 manifest_dir=Path(args.manifest),
                 output_dir=Path(args.out),
                 baseline_summary=Path(args.baseline_summary) if args.baseline_summary else None,
+                sweep_summary=Path(args.sweep_summary) if args.sweep_summary else None,
             )
         )
     except Exception as exc:
