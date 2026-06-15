@@ -1,0 +1,45 @@
+{
+  "completed_labels": 90,
+  "confirmed_count": 90,
+  "counts_by_defect_type": {
+    "alignment_vs_hierarchy": 17,
+    "contrast_vs_spacing": 19,
+    "hierarchy_vs_alignment": 13,
+    "hierarchy_vs_spacing": 13,
+    "spacing_vs_contrast": 11,
+    "spacing_vs_hierarchy": 17
+  },
+  "counts_by_preferred": {
+    "left": 43,
+    "right": 47,
+    "tie": 0,
+    "unclear": 0
+  },
+  "counts_by_review_status": {
+    "confirmed": 90,
+    "edited": 0,
+    "skipped": 0,
+    "suggested": 0,
+    "unclear": 0
+  },
+  "counts_by_severity": {
+    "high": 90,
+    "low": 0,
+    "medium": 0,
+    "none": 0
+  },
+  "coverage_ratio": 1.0,
+  "edited_count": 0,
+  "errors": [],
+  "human_reviewed_count": 90,
+  "rule_reviewed_count": 90,
+  "skipped_count": 0,
+  "suggested_count": 0,
+  "suspicious_confirmed_count": 90,
+  "total_queue_records": 90,
+  "unclear_count": 0,
+  "valid": true,
+  "warnings": [
+    "90 confirmed or edited labels have suspicious rule provenance"
+  ]
+}

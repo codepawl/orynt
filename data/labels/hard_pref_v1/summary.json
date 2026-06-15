@@ -1,0 +1,89 @@
+{
+  "agreement": {
+    "average_defect_tag_overlap": 1.0,
+    "compared_count": 90,
+    "preferred_agreement": 1.0,
+    "severity_agreement": 1.0
+  },
+  "common_fix_instructions": [
+    {
+      "count": 57,
+      "fix_instruction": "Restore breathing room so content feels calm, scannable, and comfortable."
+    },
+    {
+      "count": 23,
+      "fix_instruction": "Clarify the primary action and most important content."
+    },
+    {
+      "count": 7,
+      "fix_instruction": "Clean up alignment details enough for the UI to feel intentional and polished."
+    },
+    {
+      "count": 3,
+      "fix_instruction": "Improve contrast only where readability is materially harmed."
+    }
+  ],
+  "completed_labels": 90,
+  "confirmed_count": 90,
+  "coverage_ratio": 1.0,
+  "defect_tag_counts": {
+    "accessibility": 3,
+    "alignment": 7,
+    "contrast": 3,
+    "cta_weak": 23,
+    "hierarchy": 23,
+    "inconsistent_rhythm": 64,
+    "spacing": 57,
+    "too_dense": 57
+  },
+  "defect_type_counts": {
+    "alignment_vs_hierarchy": 17,
+    "contrast_vs_spacing": 19,
+    "hierarchy_vs_alignment": 13,
+    "hierarchy_vs_spacing": 13,
+    "spacing_vs_contrast": 11,
+    "spacing_vs_hierarchy": 17
+  },
+  "edited_count": 0,
+  "errors": [],
+  "human_reviewed_count": 90,
+  "known_limitations": [
+    "v0 labels are local JSONL records without inter-labeler agreement tracking.",
+    "Suggested labels are deterministic rule outputs, not human labels until reviewed.",
+    "Static review HTML does not write files or enforce completion in the browser.",
+    "Labels cover controlled original-vs-jittered pairs, not arbitrary production UI states.",
+    "Partial coverage is allowed so labeling can proceed incrementally."
+  ],
+  "preference_counts": {
+    "left": 43,
+    "right": 47,
+    "tie": 0,
+    "unclear": 0
+  },
+  "quality_tag_counts": {
+    "practical": 90
+  },
+  "review_status_counts": {
+    "confirmed": 90,
+    "edited": 0,
+    "skipped": 0,
+    "suggested": 0,
+    "unclear": 0
+  },
+  "rule_reviewed_count": 90,
+  "severity_counts": {
+    "high": 90,
+    "low": 0,
+    "medium": 0,
+    "none": 0
+  },
+  "skipped_count": 0,
+  "suggested_count": 0,
+  "suspicious_confirmed_count": 90,
+  "total_queue_records": 90,
+  "unclear_count": 0,
+  "valid": true,
+  "warnings": [
+    "90 confirmed or edited labels have suspicious rule provenance"
+  ]
+}
