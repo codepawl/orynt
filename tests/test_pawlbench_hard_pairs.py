@@ -80,9 +80,12 @@ def test_hard_pair_generation_is_deterministic_and_excludes_original(tmp_path: P
 
     assert first.records == second.records
     assert first.summary["pair_count"] == 3
+    assert first.summary["total_records"] == 3
+    assert first.summary["strategy"] == "core_pairs"
     assert all(record["left_item"] != "original" for record in first.records)
     assert all(record["right_item"] != "original" for record in first.records)
     assert {record["pair_kind"] for record in first.records} == {"variant_vs_variant"}
+    assert {record["split"] for record in first.records} == {"hard_pref_v1"}
 
 
 def test_hard_pair_left_right_randomization_stable_for_seed(tmp_path: Path) -> None:
@@ -96,6 +99,106 @@ def test_hard_pair_left_right_randomization_stable_for_seed(tmp_path: Path) -> N
         ("hierarchy_bad", "alignment_bad"),
         ("hierarchy_bad", "spacing_bad"),
     ]
+
+
+def test_hard_pair_all_pairs_generates_six_pairs_per_sample(tmp_path: Path) -> None:
+    dataset_dir = _tiny_dataset(tmp_path)
+
+    result = build_hard_pairs(
+        HardPairConfig(dataset_dir, tmp_path / "hard_pref_v2", seed=42, strategy="all_pairs")
+    )
+
+    assert len(result.records) == 6
+    assert result.summary["sample_count"] == 1
+    assert result.summary["total_records"] == 6
+    assert {record["split"] for record in result.records} == {"hard_pref_v2"}
+    assert {record["pair_type"] for record in result.records} == {
+        "contrast_vs_spacing",
+        "alignment_vs_contrast",
+        "contrast_vs_hierarchy",
+        "alignment_vs_spacing",
+        "hierarchy_vs_spacing",
+        "alignment_vs_hierarchy",
+    }
+    assert all(record["left_item"] != "original" for record in result.records)
+    assert all(record["right_item"] != "original" for record in result.records)
+    assert all(count == 1 for count in result.summary["pair_type_counts"].values())
+    assert result.diagnostics_path.is_file()
+    assert "Total records: 6" in result.diagnostics_path.read_text(encoding="utf-8")
+
+
+def test_hard_pair_all_pairs_output_is_deterministic(tmp_path: Path) -> None:
+    dataset_dir = _tiny_dataset(tmp_path)
+    output_dir = tmp_path / "hard_pref_v2"
+
+    first = build_hard_pairs(
+        HardPairConfig(dataset_dir, output_dir, seed=42, strategy="all_pairs")
+    )
+    second = build_hard_pairs(
+        HardPairConfig(dataset_dir, output_dir, seed=42, strategy="all_pairs")
+    )
+
+    assert first.records == second.records
+    assert first.suggested_labels == second.suggested_labels
+
+
+def test_hard_pair_expected_split_counts_from_base_splits(tmp_path: Path) -> None:
+    dataset_dir = _tiny_dataset(tmp_path)
+    splits_dir = tmp_path / "splits"
+    for split, sample_ids in {
+        "train": ["sample_a"],
+        "val": [],
+        "test": [],
+    }.items():
+        records = [
+            {"sample_id": sample_id, "variant_name": "spacing_bad"}
+            for sample_id in sample_ids
+        ]
+        (splits_dir / f"{split}.jsonl").parent.mkdir(parents=True, exist_ok=True)
+        (splits_dir / f"{split}.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in records),
+            encoding="utf-8",
+        )
+
+    result = build_hard_pairs(
+        HardPairConfig(
+            dataset_dir,
+            tmp_path / "hard_pref_v2",
+            seed=42,
+            strategy="all_pairs",
+            base_splits_dir=splits_dir,
+        )
+    )
+
+    assert result.summary["expected_split_counts"] == {"test": 0, "train": 6, "val": 0}
+
+
+def test_hard_pair_taste_profile_suggestions_work_for_all_pair_types(tmp_path: Path) -> None:
+    dataset_dir = _tiny_dataset(tmp_path)
+    taste_profile = Path("configs/labeling/codepawl_taste_v0.yaml")
+
+    result = build_hard_pairs(
+        HardPairConfig(
+            dataset_dir,
+            tmp_path / "hard_pref_v2",
+            seed=42,
+            strategy="all_pairs",
+            taste_profile_path=taste_profile,
+        )
+    )
+
+    validation = build_label_validation(
+        labels_path=result.suggested_labels_path,
+        queue_path=result.review_queue_path,
+    )
+
+    assert validation["valid"]
+    assert validation["suggested_count"] == 6
+    assert {label["suggested_by"] for label in result.suggested_labels} == {"codepawl_taste_v0"}
+    assert {label["pair_type"] for label in result.suggested_labels} == {
+        record["pair_type"] for record in result.records
+    }
+    assert all("taste_decision_factors" in label for label in result.suggested_labels)
 
 
 def test_hard_pair_suggestions_validate_but_are_not_human_reviewed(tmp_path: Path) -> None:

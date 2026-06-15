@@ -112,7 +112,7 @@ Splits are sample-level, so all variants for a `sample_id` stay in exactly one s
 
 ## Hard Preference Dataset
 
-Create variant-vs-variant hard preference pairs from `local_v1` so pairwise labeling is not limited to original-vs-jittered comparisons:
+Create variant-vs-variant hard preference pairs from `local_v1` so pairwise labeling is not limited to original-vs-jittered comparisons. `hard_pref_v1` is the core smoke set:
 
 ```bash
 uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
@@ -122,3 +122,18 @@ uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labe
 ```
 
 Hard-pair suggestions are deterministic metric heuristics with `review_status: "suggested"` and must be reviewed before they become human labels.
+
+Generate `hard_pref_v2` as the all-pairs benchmark:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 \
+  --out artifacts/datasets/hard_pref_v2 \
+  --seed 42 \
+  --strategy all_pairs \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml \
+  --base-splits artifacts/datasets/local_v1_splits
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
+```
+
+For 30 complete `local_v1` samples, `hard_pref_v2` produces 180 records and writes `diagnostics.md` with pair type distribution.

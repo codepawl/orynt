@@ -17,6 +17,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("input_dir", help="PawlBench dataset directory containing dataset.json.")
     parser.add_argument("--out", required=True, help="Output hard preference dataset directory.")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--strategy",
+        choices=("core_pairs", "all_pairs"),
+        default="core_pairs",
+        help="Hard-pair generation strategy. Defaults to the v1-compatible core pair set.",
+    )
+    parser.add_argument("--taste-profile", help="Optional taste profile YAML path for suggestions.")
+    parser.add_argument("--base-splits", help="Optional base split directory for expected split diagnostics.")
     return parser
 
 
@@ -29,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
                 input_dir=Path(args.input_dir),
                 output_dir=Path(args.out),
                 seed=args.seed,
+                strategy=args.strategy,
+                taste_profile_path=Path(args.taste_profile) if args.taste_profile else None,
+                base_splits_dir=Path(args.base_splits) if args.base_splits else None,
             )
         )
     except Exception as exc:

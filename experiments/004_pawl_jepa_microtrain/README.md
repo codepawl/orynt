@@ -43,11 +43,23 @@ uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v1_run --manifest artifacts/
 
 ## Interpretation
 
-The useful signal is whether the scaffold runs deterministically on local screenshots, learns a decreasing or stable loss over a smoke run, and produces pairwise, defect, cosine, retrieval, constant-baseline, and seed-sweep metrics for val/test. Original-vs-variant `local_v1` results should be treated as a sanity check only because current labels all prefer the original UI; pairwise accuracy is not meaningful unless it beats the always-original baseline. `hard_pref_v1` is the first discriminative preference benchmark because neither side is original and reviewed preferences can be left or right.
+The useful signal is whether the scaffold runs deterministically on local screenshots, learns a decreasing or stable loss over a smoke run, and produces pairwise, defect, cosine, retrieval, constant-baseline, and seed-sweep metrics for val/test. Original-vs-variant `local_v1` results should be treated as a sanity check only because current labels all prefer the original UI; pairwise accuracy is not meaningful unless it beats the always-original baseline. `hard_pref_v1` is the smoke variant-vs-variant set; `hard_pref_v2` is the all-pairs benchmark because neither side is original and reviewed preferences can be left or right.
 
 Hard preference labels are the next dataset step for non-trivial A/B supervision:
 
 ```bash
 uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
 uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v1/review --labeler-id an
+```
+
+Generate the all-pairs benchmark before architecture changes:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 \
+  --out artifacts/datasets/hard_pref_v2 \
+  --seed 42 \
+  --strategy all_pairs \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml \
+  --base-splits artifacts/datasets/local_v1_splits
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
 ```

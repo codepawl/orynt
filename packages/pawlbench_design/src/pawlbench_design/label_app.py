@@ -255,6 +255,7 @@ class LabelAppStore:
             "right_variant_name",
             "left_defect_type",
             "right_defect_type",
+            "pair_type",
             "heuristic_signals",
         ):
             if field in queue_record:
@@ -528,6 +529,7 @@ def _app_html() -> str:
           <span id="sample"></span>
           <span id="variant"></span>
           <span id="defect"></span>
+          <span id="pair-type"></span>
         </div>
         <div id="issue"></div>
         <div id="fix"></div>
@@ -626,6 +628,7 @@ def _app_html() -> str:
       document.getElementById("sample").textContent = `sample: ${{record.sample_id}}`;
       document.getElementById("variant").textContent = `variant: ${{record.variant_name}}`;
       document.getElementById("defect").textContent = `defect: ${{record.defect_type}}`;
+      document.getElementById("pair-type").textContent = record.pair_type ? `pair type: ${{record.pair_type}}` : "";
       document.getElementById("issue").textContent = `Expected issue: ${{record.expected_issue || ""}}`;
       document.getElementById("fix").textContent = `Expected fix: ${{record.expected_fix_instruction || ""}}`;
       document.getElementById("suggestion").textContent = suggestionText(current.suggestion);
@@ -662,7 +665,8 @@ def _app_html() -> str:
         suggestion.suggested_by || "unknown",
       ];
       if (suggestion.taste_profile_id) parts.push(`profile ${{suggestion.taste_profile_id}}`);
-      if (suggestion.suggestion_reason_detail || suggestion.reason) parts.push(suggestion.suggestion_reason_detail || suggestion.reason);
+      if (suggestion.reason) parts.push(suggestion.reason);
+      if (suggestion.suggestion_reason_detail) parts.push(suggestion.suggestion_reason_detail);
       return parts.filter(Boolean).join(" · ");
     }}
 

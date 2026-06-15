@@ -126,7 +126,7 @@ uv run pawlbench-design-label-validate artifacts/labels/local_v1_train/labels.js
 uv run pawlbench-design-label-report artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_report
 ```
 
-Generate variant-vs-variant hard preference pairs for non-trivial A/B review:
+Generate variant-vs-variant hard preference pairs for non-trivial A/B review. `hard_pref_v1` is the small smoke set that preserves the original core pair strategy:
 
 ```bash
 uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
@@ -136,7 +136,20 @@ uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/review/la
 uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_report
 ```
 
-Hard preference suggestions use `review_status: "suggested"` and are not human-reviewed labels until confirmed or edited in the label app.
+Generate the all-pairs benchmark with every unordered pair among `contrast_bad`, `spacing_bad`, `alignment_bad`, and `hierarchy_bad`:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 \
+  --out artifacts/datasets/hard_pref_v2 \
+  --seed 42 \
+  --strategy all_pairs \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml \
+  --base-splits artifacts/datasets/local_v1_splits
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
+```
+
+For `local_v1`, `hard_pref_v2` should contain 180 records. Hard preference suggestions use `review_status: "suggested"` and are not human-reviewed labels until confirmed or edited in the label app. `summary.json` and `diagnostics.md` report pair type counts, suggestion balance, confidence distribution, expected split counts when base splits are provided, and warnings.
 
 Regenerate hard-pair suggestions with CodePawl Taste v0 and diff them against the old suggestions:
 
@@ -191,18 +204,18 @@ uv run pawl-jepa-sweep artifacts/pawl_jepa/local_v1_manifest_full_labels --out a
 uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_report
 ```
 
-Prepare, train, and evaluate the first discriminative hard preference benchmark:
+Prepare, train, and evaluate the all-pairs hard preference benchmark after review:
 
 ```bash
-uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v1 \
-  --labels data/labels/hard_pref_v1/labels.reviewed.jsonl \
+uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v2 \
+  --labels data/labels/hard_pref_v2/labels.reviewed.jsonl \
   --base-splits artifacts/datasets/local_v1_splits \
-  --out artifacts/pawl_jepa/hard_pref_v1_manifest
-uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_run --epochs 10 --batch-size 8 --device auto
-uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v1_run --manifest artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_eval
+  --out artifacts/pawl_jepa/hard_pref_v2_manifest
+uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_run --epochs 10 --batch-size 8 --device auto
+uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v2_run --manifest artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_eval
 ```
 
-`eval_summary.json` includes constant and heuristic baselines. Current `local_v1` labels all prefer the original UI, so pairwise accuracy must be interpreted against `always_prefer_original_accuracy` and `pairwise_lift_over_always_original`. `hard_pref_v1` records are variant-vs-variant, so hard-pair eval reports always-left, always-right, random, and suggestion baselines instead.
+`eval_summary.json` includes constant and heuristic baselines. Current `local_v1` labels all prefer the original UI, so pairwise accuracy must be interpreted against `always_prefer_original_accuracy` and `pairwise_lift_over_always_original`. `hard_pref_v1` records are a smoke variant-vs-variant set; `hard_pref_v2` is the all-pairs benchmark. Hard-pair eval reports always-left, always-right, random, and suggestion baselines.
 
 The `jepa` extra installs `torch` only. Pawl-JEPA microtraining uses a small local CNN and does not download DINOv2, SigLIP, or other external model weights. Normal `uv run pytest` remains CPU/GPU agnostic; Torch-only smoke tests are skipped unless the training extra is installed.
 

@@ -652,6 +652,7 @@ def optional_pair_fields(queue_record: dict[str, Any]) -> dict[str, Any]:
         "right_variant_name",
         "left_defect_type",
         "right_defect_type",
+        "pair_type",
         "heuristic_signals",
     ):
         if key in queue_record:

@@ -57,7 +57,7 @@ Rule-based synthetic suggestions are useful for faster review but are not human 
 
 Before any Pawl-JEPA microtraining run, label provenance must pass audit. Confirmed or edited labels reviewed by `codepawl_rule_v0` should be fixed with the explicit reviewer rewrite command so training manifests separate human review from deterministic suggestions.
 
-Hard preference pairs address the current non-discriminative pairwise setup where all `local_v1` labels prefer the original UI:
+Hard preference pairs address the current non-discriminative pairwise setup where all `local_v1` labels prefer the original UI. `hard_pref_v1` is the smoke hard-pair set:
 
 ```bash
 uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
@@ -66,7 +66,22 @@ uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/suggested
 uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_report
 ```
 
-These hard-pair labels are variant-vs-variant labels. `hard_pref_v1` is the first discriminative preference benchmark for Pawl-JEPA because neither side is original and reviewed preferences can be left or right.
+These hard-pair labels are variant-vs-variant labels. `hard_pref_v1` preserves the original core-pair behavior for compatibility because neither side is original and reviewed preferences can be left or right.
+
+`hard_pref_v2` is the all-pairs benchmark and should be generated before changing Pawl-JEPA architecture:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 \
+  --out artifacts/datasets/hard_pref_v2 \
+  --seed 42 \
+  --strategy all_pairs \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml \
+  --base-splits artifacts/datasets/local_v1_splits
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
+```
+
+For 30 complete `local_v1` samples, `hard_pref_v2` emits 180 records and writes `diagnostics.md` with pair type distribution, suggestion balance, confidence distribution, and expected split counts.
 
 CodePawl Taste v0 calibrates suggestions toward the current frontend taste profile without overwriting human labels:
 
@@ -97,15 +112,15 @@ uv run pawl-jepa-sweep artifacts/pawl_jepa/local_v1_manifest_full_labels --out a
 uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_report
 ```
 
-Hard preference pairs use the same microtraining scaffold with a variant-vs-variant manifest:
+Hard preference pairs use the same microtraining scaffold with a variant-vs-variant manifest. Use reviewed `hard_pref_v2` labels for the all-pairs benchmark:
 
 ```bash
-uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v1 \
-  --labels data/labels/hard_pref_v1/labels.reviewed.jsonl \
+uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v2 \
+  --labels data/labels/hard_pref_v2/labels.reviewed.jsonl \
   --base-splits artifacts/datasets/local_v1_splits \
-  --out artifacts/pawl_jepa/hard_pref_v1_manifest
-uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_run --epochs 10 --batch-size 8 --device auto
-uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v1_run --manifest artifacts/pawl_jepa/hard_pref_v1_manifest --out artifacts/pawl_jepa/hard_pref_v1_eval
+  --out artifacts/pawl_jepa/hard_pref_v2_manifest
+uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_run --epochs 10 --batch-size 8 --device auto
+uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v2_run --manifest artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_eval
 ```
 
 The model is intentionally small: a shared CNN image encoder, a predictor MLP from nonpreferred embedding to preferred embedding, a scalar preference head, and an optional defect classifier for spacing, contrast, alignment, and hierarchy. Losses combine latent prediction MSE, pairwise preference ranking when labels are not tie/unclear, and optional defect classification.

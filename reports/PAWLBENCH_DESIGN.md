@@ -327,7 +327,7 @@ The report summarizes coverage, preference counts, defect tag counts, quality ta
 
 ## Hard Preference Dataset v1
 
-Hard preference v1 creates variant-vs-variant A/B pairs from an existing PawlBench dataset so pairwise labels are not trivially solved by always preferring the original.
+Hard preference datasets create variant-vs-variant A/B pairs from an existing PawlBench dataset so pairwise labels are not trivially solved by always preferring the original. `hard_pref_v1` is the smoke hard-pair set; `hard_pref_v2` is the all-pairs benchmark.
 
 Generation command:
 
@@ -335,22 +335,36 @@ Generation command:
 uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
 ```
 
+All-pairs generation command:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 \
+  --out artifacts/datasets/hard_pref_v2 \
+  --seed 42 \
+  --strategy all_pairs \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml \
+  --base-splits artifacts/datasets/local_v1_splits
+```
+
 Outputs:
 
 - `hard_pairs.jsonl`: one variant-vs-variant pair per line.
 - `suggested_labels.jsonl`: heuristic suggestions with `review_status: "suggested"`.
-- `summary.json`: counts, templates, seed, and warning metadata.
+- `summary.json`: counts, templates, seed, pair type counts, suggestion balance, confidence distribution, expected split counts when supplied, and warning metadata.
+- `diagnostics.md`: human-readable hard-pair diagnostics report.
 - `review/queue.jsonl`: label-app queue for human review.
 - `review/suggested_labels.jsonl`: suggestions beside the review queue for app prefill.
 - `review/README.md`: local review instructions.
 
-Pair templates:
+Core pair templates:
 
 - `contrast_bad` vs `spacing_bad`
 - `hierarchy_bad` vs `alignment_bad`
 - `spacing_bad` vs `hierarchy_bad`
 
 No hard preference pair includes the original UI. Left/right assignment is deterministic by seed. Suggested preference uses metric heuristics: fewer contrast issues, higher minimum contrast ratio, better font-size ratio, fewer hierarchy warnings, and changed-pixel fallback if available. Suggestions are not human labels until a reviewer confirms, edits, or marks them unclear.
+
+The `all_pairs` strategy emits every unordered pair among `contrast_bad`, `spacing_bad`, `alignment_bad`, and `hierarchy_bad`; for 30 complete `local_v1` samples this produces 180 records.
 
 Review, validate, and report commands:
 
@@ -375,6 +389,13 @@ uv run pawlbench-design-label-diff artifacts/datasets/hard_pref_v1/suggested_lab
 ```
 
 Taste-calibrated details use `left_penalty` and `right_penalty`; lower penalty is better.
+
+Review and validate the all-pairs benchmark the same way:
+
+```bash
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
+```
 
 ## Local Labeling App v0 Contract
 
