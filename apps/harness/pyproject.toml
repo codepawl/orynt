@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "codepawl-jitter",
     "codepawl-renderer",
+    "pawl-jepa",
     "pawlbench-design",
 ]
 
@@ -26,11 +27,17 @@ pawlbench-design-label-app = "codepawl_harness.pawlbench_label_app_cli:main"
 pawlbench-design-label-suggest = "codepawl_harness.pawlbench_label_suggest_cli:main"
 pawlbench-design-label-audit = "codepawl_harness.pawlbench_label_audit_cli:main"
 pawlbench-design-label-set-reviewer = "codepawl_harness.pawlbench_label_set_reviewer_cli:main"
+pawl-jepa-prepare = "codepawl_harness.pawl_jepa_prepare_cli:main"
+pawl-jepa-train = "codepawl_harness.pawl_jepa_train_cli:main"
+pawl-jepa-eval = "codepawl_harness.pawl_jepa_eval_cli:main"
+pawl-jepa-sweep = "codepawl_harness.pawl_jepa_sweep_cli:main"
+pawl-jepa-report = "codepawl_harness.pawl_jepa_report_cli:main"
 
 [tool.uv.sources]
 codepawl-jitter = { workspace = true }
 codepawl-renderer = { workspace = true }
 pawlbench-design = { workspace = true }
+pawl-jepa = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

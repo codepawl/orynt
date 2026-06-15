@@ -1,0 +1,399 @@
+"""Evaluation runner for Pawl-JEPA microtraining."""
+
+from __future__ import annotations
+
+import json
+import random
+from collections import Counter, defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from pawl_jepa.data import DEFECT_TYPES, PawlJepaDataset, collate_batch
+from pawl_jepa.losses import LossWeights, compute_losses
+from pawl_jepa.manifest import load_manifest_records, write_json, write_jsonl
+from pawl_jepa.model import ModelConfig, build_model
+from pawl_jepa.torch_utils import import_torch, resolve_device
+
+
+@dataclass(frozen=True)
+class EvalConfig:
+    run_dir: Path
+    manifest_dir: Path
+    output_dir: Path
+    batch_size: int = 8
+    device: str = "auto"
+    baseline_summary: Path | None = None
+    random_seed: int = 42
+
+
+@dataclass(frozen=True)
+class EvalResult:
+    output_dir: Path
+    summary_path: Path
+    pair_scores_path: Path
+    summary: dict[str, Any]
+
+
+def evaluate_micro_model(config: EvalConfig) -> EvalResult:
+    torch = import_torch()
+    output_dir = config.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = config.run_dir.expanduser().resolve()
+    checkpoint_path = run_dir / "checkpoints" / "last.pt"
+    if not checkpoint_path.is_file():
+        raise ValueError(f"checkpoint is missing: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    model_config = ModelConfig(**checkpoint["model_config"])
+    train_config = checkpoint.get("train_config", {})
+    image_size = int(train_config.get("image_size", model_config.image_size))
+    device = resolve_device(config.device)
+    model = build_model(model_config).to(device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+
+    weights = LossWeights(
+        float(train_config.get("latent_weight", 1.0)),
+        float(train_config.get("preference_weight", 0.25)),
+        float(train_config.get("defect_weight", 0.1)),
+    )
+    pair_scores: list[dict[str, Any]] = []
+    split_summaries: dict[str, Any] = {}
+    for split in ("val", "test"):
+        dataset = PawlJepaDataset(config.manifest_dir, split=split, image_size=image_size)
+        loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=config.batch_size,
+            shuffle=False,
+            collate_fn=collate_batch,
+        )
+        split_scores = score_split(torch, model, loader, device, weights)
+        pair_scores.extend(split_scores)
+        split_summaries[split] = summarize_scores(
+            split_scores,
+            load_manifest_records(config.manifest_dir, split),
+            random_seed=config.random_seed,
+        )
+
+    summary = {
+        "run_dir": str(run_dir),
+        "manifest_dir": str(config.manifest_dir.expanduser().resolve()),
+        "splits": split_summaries,
+    }
+    if config.baseline_summary is not None:
+        baseline_path = config.baseline_summary.expanduser().resolve()
+        summary["baseline_summary"] = json.loads(baseline_path.read_text(encoding="utf-8"))
+
+    summary_path = output_dir / "eval_summary.json"
+    pair_scores_path = output_dir / "pair_scores.jsonl"
+    write_json(summary_path, summary)
+    write_jsonl(pair_scores_path, [public_score(score) for score in pair_scores])
+    return EvalResult(output_dir, summary_path, pair_scores_path, summary)
+
+
+def score_split(torch, model, loader, device, weights: LossWeights) -> list[dict[str, Any]]:
+    scores: list[dict[str, Any]] = []
+    with torch.no_grad():
+        for batch in loader:
+            original = batch["original"].to(device)
+            variant = batch["variant"].to(device)
+            outputs = model(original, variant)
+            losses = compute_losses(outputs, batch, weights)
+            cosines = torch.nn.functional.cosine_similarity(
+                outputs["predicted_original"], outputs["original_embedding"], dim=1
+            )
+            defect_predictions = None
+            if outputs.get("defect_logits") is not None:
+                defect_predictions = outputs["defect_logits"].argmax(dim=1).detach().cpu().tolist()
+            for index, record in enumerate(batch["records"]):
+                original_score = float(outputs["original_score"][index].detach().cpu())
+                variant_score = float(outputs["variant_score"][index].detach().cpu())
+                preferred_item = record.get("preferred_item")
+                comparable = preferred_item in {"original", "variant"}
+                correct = None
+                if comparable:
+                    correct = (
+                        original_score >= variant_score
+                        if preferred_item == "original"
+                        else variant_score >= original_score
+                    )
+                scores.append(
+                    {
+                        "split": record["split"],
+                        "label_id": record["label_id"],
+                        "sample_id": record["sample_id"],
+                        "variant_name": record["variant_name"],
+                        "defect_type": record.get("defect_type"),
+                        "preferred_item": preferred_item,
+                        "label_source": record.get("label_source"),
+                        "label_file": record.get("label_file"),
+                        "review_status": record.get("review_status"),
+                        "reviewed_by": record.get("reviewed_by"),
+                        "metric_deltas": record.get("metric_deltas", {}),
+                        "original_score": original_score,
+                        "variant_score": variant_score,
+                        "pairwise_correct": correct,
+                        "latent_loss": float(losses["latent_loss"].detach().cpu()),
+                        "cosine_similarity": float(cosines[index].detach().cpu()),
+                        "defect_prediction": (
+                            DEFECT_TYPES[defect_predictions[index]]
+                            if defect_predictions is not None
+                            else None
+                        ),
+                        "_original_embedding": outputs["original_normalized"][index]
+                        .detach()
+                        .cpu()
+                        .tolist(),
+                        "_variant_embedding": outputs["variant_normalized"][index]
+                        .detach()
+                        .cpu()
+                        .tolist(),
+                    }
+                )
+    return scores
+
+
+def summarize_scores(
+    scores: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+    *,
+    random_seed: int = 42,
+) -> dict[str, Any]:
+    comparable = [score for score in scores if score["pairwise_correct"] is not None]
+    defect_correct = [
+        score
+        for score in scores
+        if score["defect_prediction"] is not None and score.get("defect_type") in DEFECT_TYPES
+    ]
+    cosine_by_defect: dict[str, list[float]] = defaultdict(list)
+    for score in scores:
+        cosine_by_defect[str(score.get("defect_type"))].append(float(score["cosine_similarity"]))
+    retrieval = retrieval_metrics(scores)
+    label_sources = Counter(record.get("label_source") for record in records)
+    pairwise_accuracy = accuracy_from_correct(comparable)
+    always_original_accuracy = always_prefer_original_accuracy(comparable)
+    random_preference = random_preference_accuracy(comparable, seed=random_seed)
+    metric_heuristic = metric_heuristic_accuracy(comparable)
+    defect_accuracy = defect_classification_accuracy(defect_correct)
+    defect_majority = defect_majority_class_accuracy(defect_correct)
+    random_defect = random_defect_accuracy(defect_correct, seed=random_seed)
+    warnings = split_warnings(comparable, always_original_accuracy)
+    pairwise_by_label_source: dict[str, float | None] = {}
+    for label_source in ("human_reviewed", "synthetic_fallback"):
+        source_scores = [
+            score
+            for score in comparable
+            if normalize_label_source(score.get("label_source")) == label_source
+        ]
+        pairwise_by_label_source[label_source] = (
+            sum(1 for score in source_scores if score["pairwise_correct"]) / len(source_scores)
+            if source_scores
+            else None
+        )
+    human_reviewed_count = sum(
+        count
+        for source, count in label_sources.items()
+        if normalize_label_source(source) == "human_reviewed"
+    )
+    return {
+        "record_count": len(scores),
+        "pairwise_good_vs_bad_accuracy": pairwise_accuracy,
+        "pairwise_good_vs_bad_accuracy_by_label_source": pairwise_by_label_source,
+        "always_prefer_original_accuracy": always_original_accuracy,
+        "random_preference_accuracy": random_preference,
+        "metric_heuristic_accuracy": metric_heuristic,
+        "pairwise_lift_over_always_original": lift(pairwise_accuracy, always_original_accuracy),
+        "defect_classification_accuracy": defect_accuracy,
+        "defect_majority_class_accuracy": defect_majority,
+        "random_defect_accuracy": random_defect,
+        "defect_lift_over_majority": lift(defect_accuracy, defect_majority),
+        "defect_confusion_matrix": defect_confusion_matrix(defect_correct),
+        "defect_per_class_metrics": defect_per_class_metrics(defect_correct),
+        "average_latent_prediction_loss": (
+            sum(float(score["latent_loss"]) for score in scores) / len(scores) if scores else None
+        ),
+        "average_cosine_similarity_by_defect_type": {
+            defect_type: sum(values) / len(values)
+            for defect_type, values in sorted(cosine_by_defect.items())
+        },
+        "retrieval_top1": retrieval["top1"],
+        "retrieval_top5": retrieval["top5"],
+        "label_coverage_used": human_reviewed_count / len(records) if records else 0,
+        "skipped_tie_unclear_count": len(scores) - len(comparable),
+        "warnings": warnings,
+    }
+
+
+def normalize_label_source(label_source: Any) -> str | None:
+    if label_source == "reviewed":
+        return "human_reviewed"
+    if label_source in {"human_reviewed", "synthetic_fallback"}:
+        return str(label_source)
+    return None
+
+
+def accuracy_from_correct(scores: list[dict[str, Any]]) -> float | None:
+    if not scores:
+        return None
+    return sum(1 for score in scores if score["pairwise_correct"]) / len(scores)
+
+
+def always_prefer_original_accuracy(scores: list[dict[str, Any]]) -> float | None:
+    if not scores:
+        return None
+    return sum(1 for score in scores if score.get("preferred_item") == "original") / len(scores)
+
+
+def random_preference_accuracy(scores: list[dict[str, Any]], *, seed: int) -> float | None:
+    if not scores:
+        return None
+    rng = random.Random(seed)
+    correct = 0
+    for score in sorted(scores, key=lambda item: str(item.get("label_id"))):
+        correct += rng.choice(("original", "variant")) == score.get("preferred_item")
+    return correct / len(scores)
+
+
+def metric_heuristic_accuracy(scores: list[dict[str, Any]]) -> float | None:
+    usable: list[dict[str, Any]] = []
+    for score in scores:
+        prediction = metric_heuristic_prediction(score)
+        if prediction is None:
+            continue
+        usable.append({"prediction": prediction, "preferred_item": score.get("preferred_item")})
+    if not usable:
+        return None
+    return sum(1 for item in usable if item["prediction"] == item["preferred_item"]) / len(usable)
+
+
+def metric_heuristic_prediction(score: dict[str, Any]) -> str | None:
+    deltas = score.get("metric_deltas") or {}
+    defect_type = score.get("defect_type")
+    if not isinstance(deltas, dict):
+        return None
+    if defect_type == "contrast":
+        if numeric(deltas.get("contrast_issue_delta"), 0) > 0:
+            return "original"
+        if numeric(deltas.get("min_contrast_ratio_delta"), 0) < 0:
+            return "original"
+    elif defect_type == "hierarchy":
+        if abs(numeric(deltas.get("font_size_ratio_delta"), 0)) > 0:
+            return "original"
+        if numeric(deltas.get("hierarchy_warning_count"), 0) > 0:
+            return "original"
+    elif defect_type in {"spacing", "alignment"}:
+        if numeric(deltas.get("changed_pixel_ratio"), 0) > 0:
+            return "original"
+    return None
+
+
+def numeric(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def lift(score: float | None, baseline: float | None) -> float | None:
+    if score is None or baseline is None:
+        return None
+    return score - baseline
+
+
+def defect_classification_accuracy(scores: list[dict[str, Any]]) -> float | None:
+    if not scores:
+        return None
+    return sum(1 for score in scores if score["defect_prediction"] == score["defect_type"]) / len(scores)
+
+
+def defect_majority_class_accuracy(scores: list[dict[str, Any]]) -> float | None:
+    if not scores:
+        return None
+    counts = Counter(str(score.get("defect_type")) for score in scores)
+    return max(counts.values()) / len(scores)
+
+
+def random_defect_accuracy(scores: list[dict[str, Any]], *, seed: int) -> float | None:
+    if not scores:
+        return None
+    rng = random.Random(seed)
+    correct = 0
+    for score in sorted(scores, key=lambda item: str(item.get("label_id"))):
+        correct += rng.choice(DEFECT_TYPES) == score.get("defect_type")
+    return correct / len(scores)
+
+
+def defect_confusion_matrix(scores: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    matrix = {
+        actual: {predicted: 0 for predicted in DEFECT_TYPES}
+        for actual in DEFECT_TYPES
+    }
+    for score in scores:
+        actual = score.get("defect_type")
+        predicted = score.get("defect_prediction")
+        if actual in DEFECT_TYPES and predicted in DEFECT_TYPES:
+            matrix[str(actual)][str(predicted)] += 1
+    return matrix
+
+
+def defect_per_class_metrics(scores: list[dict[str, Any]]) -> dict[str, dict[str, float | int | None]]:
+    metrics: dict[str, dict[str, float | int | None]] = {}
+    for defect_type in DEFECT_TYPES:
+        true_positive = sum(
+            1
+            for score in scores
+            if score.get("defect_type") == defect_type and score.get("defect_prediction") == defect_type
+        )
+        predicted_positive = sum(1 for score in scores if score.get("defect_prediction") == defect_type)
+        actual_positive = sum(1 for score in scores if score.get("defect_type") == defect_type)
+        metrics[defect_type] = {
+            "precision": true_positive / predicted_positive if predicted_positive else None,
+            "recall": true_positive / actual_positive if actual_positive else None,
+            "support": actual_positive,
+        }
+    return metrics
+
+
+def split_warnings(
+    comparable: list[dict[str, Any]],
+    always_original_accuracy: float | None,
+) -> list[str]:
+    warnings: list[str] = []
+    if comparable and always_original_accuracy == 1.0:
+        warnings.append("All labels prefer original; pairwise accuracy is not a discriminative metric.")
+    return warnings
+
+
+def retrieval_metrics(scores: list[dict[str, Any]]) -> dict[str, float | None]:
+    if not scores:
+        return {"top1": None, "top5": None}
+    originals_by_sample = {
+        score["sample_id"]: score["_original_embedding"]
+        for score in sorted(scores, key=lambda item: item["sample_id"])
+    }
+    top1 = 0
+    top5 = 0
+    for score in scores:
+        variant_embedding = score["_variant_embedding"]
+        ranked = sorted(
+            (
+                {
+                    "sample_id": sample_id,
+                    "score": dot_product(variant_embedding, original_embedding),
+                }
+                for sample_id, original_embedding in originals_by_sample.items()
+            ),
+            key=lambda item: (-item["score"], item["sample_id"]),
+        )
+        ids = [item["sample_id"] for item in ranked]
+        top1 += ids[0] == score["sample_id"]
+        top5 += score["sample_id"] in ids[:5]
+    return {"top1": top1 / len(scores), "top5": top5 / len(scores)}
+
+
+def dot_product(left: list[float], right: list[float]) -> float:
+    return sum(a * b for a, b in zip(left, right, strict=True))
+
+
+def public_score(score: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in score.items() if not key.startswith("_")}

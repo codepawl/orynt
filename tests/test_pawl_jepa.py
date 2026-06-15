@@ -1,0 +1,538 @@
+import importlib.util
+import json
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+from codepawl_harness.pawl_jepa_prepare_cli import main as prepare_main
+from pawl_jepa import prepare_manifest, preferred_item_from_label
+from pawl_jepa.manifest import PrepareConfig, load_manifest_records
+
+
+torch_available = importlib.util.find_spec("torch") is not None
+pytestmark_torch = pytest.mark.skipif(not torch_available, reason="requires pawl-jepa training extra")
+
+
+def _write_png(path: Path, color: tuple[int, int, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (16, 16), color).save(path)
+
+
+def _split_record(tmp_path: Path, split: str, sample_id: str, variant_name: str, defect_type: str) -> dict:
+    original = tmp_path / "images" / sample_id / "original.png"
+    variant = tmp_path / "images" / sample_id / variant_name / "variant.png"
+    _write_png(original, (0, 180, 80))
+    _write_png(variant, (180, 0, 80))
+    return {
+        "dataset_id": "local_test",
+        "split": split,
+        "sample_id": sample_id,
+        "variant_name": variant_name,
+        "defect_type": defect_type,
+        "original": {"screenshot_path": str(original)},
+        "variant": {"screenshot_path": str(variant)},
+        "metric_deltas": {"contrast_issue_delta": 1},
+    }
+
+
+def _write_jsonl(path: Path, records: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(record, sort_keys=True) + "\n" for record in records), encoding="utf-8")
+
+
+def _label(split: str, sample_id: str, variant_name: str, defect_type: str) -> dict:
+    return {
+        "label_id": f"local_test__{split}__{sample_id}__{variant_name}",
+        "dataset_id": "local_test",
+        "split": split,
+        "sample_id": sample_id,
+        "variant_name": variant_name,
+        "defect_type": defect_type,
+        "left_item": "original",
+        "right_item": "variant",
+        "preferred": "left",
+        "severity": "medium",
+        "defect_tags": [defect_type],
+        "quality_tags": ["polished"],
+        "confidence": 4,
+        "review_status": "confirmed",
+        "reviewed_by": "tester",
+    }
+
+
+def _splits_dir(tmp_path: Path, records_by_split: dict[str, list[dict]] | None = None) -> Path:
+    splits_dir = tmp_path / "splits"
+    records_by_split = records_by_split or {
+        "train": [_split_record(tmp_path, "train", "sample_a", "spacing_bad", "spacing")],
+        "val": [_split_record(tmp_path, "val", "sample_b", "contrast_bad", "contrast")],
+        "test": [_split_record(tmp_path, "test", "sample_c", "alignment_bad", "alignment")],
+    }
+    for split, records in records_by_split.items():
+        _write_jsonl(splits_dir / f"{split}.jsonl", records)
+    return splits_dir
+
+
+def test_preferred_item_from_left_right_label() -> None:
+    assert preferred_item_from_label({"preferred": "left", "left_item": "original"}) == "original"
+    assert preferred_item_from_label({"preferred": "right", "right_item": "variant"}) == "variant"
+    assert preferred_item_from_label({"preferred": "tie", "left_item": "original"}) == "tie"
+    assert preferred_item_from_label({"preferred": "unclear", "left_item": "variant"}) == "unclear"
+
+
+def test_prepare_manifest_joins_reviewed_labels(tmp_path: Path) -> None:
+    splits_dir = _splits_dir(tmp_path)
+    labels_path = tmp_path / "labels.reviewed.jsonl"
+    label = {
+        "label_id": "local_test__train__sample_a__spacing_bad",
+        "dataset_id": "local_test",
+        "split": "train",
+        "sample_id": "sample_a",
+        "variant_name": "spacing_bad",
+        "defect_type": "spacing",
+        "left_item": "variant",
+        "right_item": "original",
+        "preferred": "right",
+        "severity": "medium",
+        "defect_tags": ["spacing"],
+        "quality_tags": ["polished"],
+        "confidence": 4,
+        "review_status": "confirmed",
+        "reviewed_by": "tester",
+    }
+    _write_jsonl(labels_path, [label])
+
+    result = prepare_manifest(
+        PrepareConfig(splits_dir=splits_dir, labels_path=labels_path, output_dir=tmp_path / "manifest")
+    )
+
+    train = load_manifest_records(result.output_dir, "train")
+    val = load_manifest_records(result.output_dir, "val")
+    assert train[0]["preferred_item"] == "original"
+    assert train[0]["label_source"] == "human_reviewed"
+    assert train[0]["label_file"] == str(labels_path.resolve())
+    assert train[0]["reviewed_by"] == "tester"
+    assert train[0]["metric_deltas"] == {"contrast_issue_delta": 1}
+    assert val[0]["preferred_item"] == "original"
+    assert val[0]["label_source"] == "synthetic_fallback"
+    assert result.summary["record_counts"] == {"test": 1, "train": 1, "val": 1}
+    assert result.summary["label_file_count"] == 1
+    assert result.summary["label_record_count"] == 1
+
+
+def test_prepare_manifest_merges_multiple_label_files(tmp_path: Path) -> None:
+    splits_dir = _splits_dir(tmp_path)
+    train_labels = tmp_path / "train.labels.jsonl"
+    val_labels = tmp_path / "val.labels.jsonl"
+    test_labels = tmp_path / "test.labels.jsonl"
+    _write_jsonl(train_labels, [_label("train", "sample_a", "spacing_bad", "spacing")])
+    _write_jsonl(val_labels, [_label("val", "sample_b", "contrast_bad", "contrast")])
+    _write_jsonl(test_labels, [_label("test", "sample_c", "alignment_bad", "alignment")])
+
+    result = prepare_manifest(
+        PrepareConfig(
+            splits_dir=splits_dir,
+            labels_paths=(train_labels, val_labels, test_labels),
+            output_dir=tmp_path / "manifest",
+        )
+    )
+
+    assert result.summary["label_file_count"] == 3
+    assert result.summary["label_record_count"] == 3
+    assert result.summary["reviewed_label_count"] == 3
+    assert result.summary["label_coverage_by_split"] == {"test": 1.0, "train": 1.0, "val": 1.0}
+    assert result.summary["missing_label_count_by_split"] == {"test": 0, "train": 0, "val": 0}
+    assert result.summary["human_reviewed_count_by_split"] == {"test": 1, "train": 1, "val": 1}
+    assert result.summary["synthetic_fallback_count_by_split"] == {"test": 0, "train": 0, "val": 0}
+
+    assert load_manifest_records(result.output_dir, "val")[0]["label_source"] == "human_reviewed"
+    assert load_manifest_records(result.output_dir, "test")[0]["label_file"] == str(test_labels.resolve())
+
+
+def test_prepare_manifest_allows_identical_duplicate_label_id(tmp_path: Path) -> None:
+    splits_dir = _splits_dir(tmp_path)
+    label = _label("train", "sample_a", "spacing_bad", "spacing")
+    first_labels = tmp_path / "first.labels.jsonl"
+    second_labels = tmp_path / "second.labels.jsonl"
+    _write_jsonl(first_labels, [label])
+    _write_jsonl(second_labels, [label])
+
+    result = prepare_manifest(
+        PrepareConfig(
+            splits_dir=splits_dir,
+            labels_paths=(first_labels, second_labels),
+            output_dir=tmp_path / "manifest",
+        )
+    )
+
+    train = load_manifest_records(result.output_dir, "train")
+    assert train[0]["label_source"] == "human_reviewed"
+    assert train[0]["label_file"] == str(first_labels.resolve())
+    assert result.summary["label_record_count"] == 2
+    assert result.summary["reviewed_label_count"] == 1
+
+
+def test_prepare_manifest_rejects_conflicting_duplicate_label_id(tmp_path: Path) -> None:
+    splits_dir = _splits_dir(tmp_path)
+    first_label = _label("train", "sample_a", "spacing_bad", "spacing")
+    second_label = {**first_label, "preferred": "right"}
+    first_labels = tmp_path / "first.labels.jsonl"
+    second_labels = tmp_path / "second.labels.jsonl"
+    _write_jsonl(first_labels, [first_label])
+    _write_jsonl(second_labels, [second_label])
+
+    with pytest.raises(ValueError, match="conflicting duplicate label_id"):
+        prepare_manifest(
+            PrepareConfig(
+                splits_dir=splits_dir,
+                labels_paths=(first_labels, second_labels),
+                output_dir=tmp_path / "manifest",
+            )
+        )
+
+
+def test_prepare_cli_writes_manifest_files(tmp_path: Path) -> None:
+    splits_dir = _splits_dir(tmp_path)
+    output_dir = tmp_path / "manifest"
+
+    result = prepare_main([str(splits_dir), "--out", str(output_dir)])
+
+    assert result == 0
+    assert (output_dir / "manifest.json").is_file()
+    assert (output_dir / "train.jsonl").is_file()
+    assert (output_dir / "val.jsonl").is_file()
+    assert (output_dir / "test.jsonl").is_file()
+
+
+def test_prepare_cli_accepts_single_label_argument(tmp_path: Path) -> None:
+    splits_dir = _splits_dir(tmp_path)
+    labels_path = tmp_path / "labels.reviewed.jsonl"
+    output_dir = tmp_path / "manifest"
+    _write_jsonl(labels_path, [_label("train", "sample_a", "spacing_bad", "spacing")])
+
+    result = prepare_main([str(splits_dir), "--labels", str(labels_path), "--out", str(output_dir)])
+
+    assert result == 0
+    train = load_manifest_records(output_dir, "train")
+    assert train[0]["label_source"] == "human_reviewed"
+
+
+@pytestmark_torch
+def test_model_forward_shapes() -> None:
+    import torch
+
+    from pawl_jepa.model import ModelConfig, build_model
+
+    model = build_model(ModelConfig(image_size=32, embedding_dim=16, hidden_dim=32))
+    outputs = model(torch.randn(2, 3, 32, 32), torch.randn(2, 3, 32, 32))
+
+    assert outputs["original_embedding"].shape == (2, 16)
+    assert outputs["predicted_original"].shape == (2, 16)
+    assert outputs["defect_logits"].shape == (2, 4)
+
+
+@pytestmark_torch
+def test_loss_calculation() -> None:
+    import torch
+
+    from pawl_jepa.losses import LossWeights, compute_losses
+
+    outputs = {
+        "predicted_original": torch.zeros(2, 4),
+        "original_embedding": torch.ones(2, 4),
+        "original_score": torch.tensor([1.0, 0.0]),
+        "variant_score": torch.tensor([0.0, 1.0]),
+        "defect_logits": torch.randn(2, 4),
+    }
+    batch = {
+        "preference_target": torch.tensor([1.0, -1.0]),
+        "pairwise_mask": torch.tensor([1.0, 1.0]),
+        "defect_target": torch.tensor([0, 1]),
+    }
+
+    losses = compute_losses(outputs, batch, LossWeights())
+
+    assert float(losses["total_loss"]) > 0
+    assert float(losses["latent_loss"]) > 0
+
+
+def test_eval_always_original_baseline_and_warning() -> None:
+    from pawl_jepa.evaluate import summarize_scores
+
+    scores = [
+        {
+            "label_id": "a",
+            "preferred_item": "original",
+            "pairwise_correct": True,
+            "defect_type": "spacing",
+            "defect_prediction": "spacing",
+            "cosine_similarity": 0.9,
+            "latent_loss": 0.2,
+            "label_source": "human_reviewed",
+            "metric_deltas": {"changed_pixel_ratio": 0.2},
+            "_original_embedding": [1.0, 0.0],
+            "_variant_embedding": [1.0, 0.0],
+            "sample_id": "a",
+        },
+        {
+            "label_id": "b",
+            "preferred_item": "original",
+            "pairwise_correct": False,
+            "defect_type": "contrast",
+            "defect_prediction": "spacing",
+            "cosine_similarity": 0.7,
+            "latent_loss": 0.4,
+            "label_source": "human_reviewed",
+            "metric_deltas": {"contrast_issue_delta": 1},
+            "_original_embedding": [0.0, 1.0],
+            "_variant_embedding": [0.0, 1.0],
+            "sample_id": "b",
+        },
+    ]
+
+    summary = summarize_scores(scores, [{"label_source": "human_reviewed"} for _ in scores])
+
+    assert summary["always_prefer_original_accuracy"] == 1.0
+    assert summary["pairwise_good_vs_bad_accuracy"] == 0.5
+    assert summary["pairwise_lift_over_always_original"] == -0.5
+    assert summary["metric_heuristic_accuracy"] == 1.0
+    assert "All labels prefer original" in summary["warnings"][0]
+
+
+def test_eval_defect_majority_and_confusion_metrics() -> None:
+    from pawl_jepa.evaluate import summarize_scores
+
+    scores = [
+        {
+            "label_id": "a",
+            "preferred_item": "original",
+            "pairwise_correct": True,
+            "defect_type": "spacing",
+            "defect_prediction": "spacing",
+            "cosine_similarity": 0.9,
+            "latent_loss": 0.2,
+            "label_source": "human_reviewed",
+            "metric_deltas": {},
+            "_original_embedding": [1.0, 0.0],
+            "_variant_embedding": [1.0, 0.0],
+            "sample_id": "a",
+        },
+        {
+            "label_id": "b",
+            "preferred_item": "variant",
+            "pairwise_correct": False,
+            "defect_type": "spacing",
+            "defect_prediction": "contrast",
+            "cosine_similarity": 0.7,
+            "latent_loss": 0.4,
+            "label_source": "human_reviewed",
+            "metric_deltas": {},
+            "_original_embedding": [0.0, 1.0],
+            "_variant_embedding": [0.0, 1.0],
+            "sample_id": "b",
+        },
+        {
+            "label_id": "c",
+            "preferred_item": "original",
+            "pairwise_correct": True,
+            "defect_type": "contrast",
+            "defect_prediction": "contrast",
+            "cosine_similarity": 0.8,
+            "latent_loss": 0.3,
+            "label_source": "human_reviewed",
+            "metric_deltas": {},
+            "_original_embedding": [1.0, 1.0],
+            "_variant_embedding": [1.0, 1.0],
+            "sample_id": "c",
+        },
+    ]
+
+    summary = summarize_scores(scores, [{"label_source": "human_reviewed"} for _ in scores])
+
+    assert summary["defect_classification_accuracy"] == pytest.approx(2 / 3)
+    assert summary["defect_majority_class_accuracy"] == pytest.approx(2 / 3)
+    assert summary["defect_lift_over_majority"] == pytest.approx(0.0)
+    assert summary["defect_confusion_matrix"]["spacing"]["spacing"] == 1
+    assert summary["defect_confusion_matrix"]["spacing"]["contrast"] == 1
+    assert summary["defect_per_class_metrics"]["spacing"]["recall"] == pytest.approx(0.5)
+    assert summary["defect_per_class_metrics"]["contrast"]["precision"] == pytest.approx(0.5)
+
+
+def _tiny_manifest(tmp_path: Path) -> Path:
+    records_by_split = {
+        "train": [
+            _split_record(tmp_path, "train", "sample_a", "spacing_bad", "spacing"),
+            _split_record(tmp_path, "train", "sample_b", "contrast_bad", "contrast"),
+            _split_record(tmp_path, "train", "sample_c", "alignment_bad", "alignment"),
+            _split_record(tmp_path, "train", "sample_d", "hierarchy_bad", "hierarchy"),
+        ],
+        "val": [_split_record(tmp_path, "val", "sample_e", "spacing_bad", "spacing")],
+        "test": [_split_record(tmp_path, "test", "sample_f", "contrast_bad", "contrast")],
+    }
+    splits_dir = _splits_dir(tmp_path, records_by_split)
+    return prepare_manifest(PrepareConfig(splits_dir=splits_dir, output_dir=tmp_path / "manifest")).output_dir
+
+
+def _tiny_manifest_with_eval_labels(tmp_path: Path) -> Path:
+    records_by_split = {
+        "train": [
+            _split_record(tmp_path, "train", "sample_a", "spacing_bad", "spacing"),
+            _split_record(tmp_path, "train", "sample_b", "contrast_bad", "contrast"),
+            _split_record(tmp_path, "train", "sample_c", "alignment_bad", "alignment"),
+            _split_record(tmp_path, "train", "sample_d", "hierarchy_bad", "hierarchy"),
+        ],
+        "val": [_split_record(tmp_path, "val", "sample_e", "spacing_bad", "spacing")],
+        "test": [_split_record(tmp_path, "test", "sample_f", "contrast_bad", "contrast")],
+    }
+    splits_dir = _splits_dir(tmp_path, records_by_split)
+    val_labels = tmp_path / "val.labels.jsonl"
+    test_labels = tmp_path / "test.labels.jsonl"
+    _write_jsonl(val_labels, [_label("val", "sample_e", "spacing_bad", "spacing")])
+    _write_jsonl(test_labels, [_label("test", "sample_f", "contrast_bad", "contrast")])
+    return prepare_manifest(
+        PrepareConfig(
+            splits_dir=splits_dir,
+            labels_paths=(val_labels, test_labels),
+            output_dir=tmp_path / "manifest",
+        )
+    ).output_dir
+
+
+@pytestmark_torch
+def test_dataset_image_loading_with_tiny_images(tmp_path: Path) -> None:
+    from pawl_jepa.data import PawlJepaDataset
+
+    dataset = PawlJepaDataset(_tiny_manifest(tmp_path), split="train", image_size=32)
+    item = dataset[0]
+
+    assert item["original"].shape == (3, 32, 32)
+    assert item["variant"].shape == (3, 32, 32)
+    assert item["pairwise_mask"] == 1.0
+
+
+@pytestmark_torch
+def test_cpu_train_and_eval_smoke(tmp_path: Path) -> None:
+    from pawl_jepa.evaluate import EvalConfig, evaluate_micro_model
+    from pawl_jepa.train import TrainConfig, train_micro_model
+
+    manifest_dir = _tiny_manifest_with_eval_labels(tmp_path)
+    run = train_micro_model(
+        TrainConfig(
+            manifest_dir=manifest_dir,
+            output_dir=tmp_path / "run",
+            epochs=1,
+            batch_size=2,
+            image_size=32,
+            embedding_dim=8,
+            hidden_dim=16,
+            device="cpu",
+        )
+    )
+    eval_result = evaluate_micro_model(
+        EvalConfig(
+            run_dir=run.output_dir,
+            manifest_dir=manifest_dir,
+            output_dir=tmp_path / "eval",
+            batch_size=2,
+            device="cpu",
+        )
+    )
+
+    assert run.checkpoint_path.is_file()
+    assert run.summary["last_epoch_total_loss"] is not None
+    assert eval_result.summary_path.is_file()
+    assert eval_result.pair_scores_path.is_file()
+    assert eval_result.summary["splits"]["val"]["label_coverage_used"] == 1.0
+    assert eval_result.summary["splits"]["test"]["label_coverage_used"] == 1.0
+    assert (
+        eval_result.summary["splits"]["val"]["pairwise_good_vs_bad_accuracy_by_label_source"][
+            "human_reviewed"
+        ]
+        is not None
+    )
+
+
+@pytestmark_torch
+def test_seed_sweep_with_tiny_manifest(tmp_path: Path) -> None:
+    from pawl_jepa.sweep import SweepConfig, run_seed_sweep
+
+    manifest_dir = _tiny_manifest_with_eval_labels(tmp_path)
+    result = run_seed_sweep(
+        SweepConfig(
+            manifest_dir=manifest_dir,
+            output_dir=tmp_path / "sweep",
+            seeds=(1, 2),
+            epochs=1,
+            batch_size=2,
+            image_size=32,
+            embedding_dim=8,
+            hidden_dim=16,
+            device="cpu",
+        )
+    )
+
+    assert result.summary_path.is_file()
+    assert result.summary["seeds"] == [1, 2]
+    assert (result.output_dir / "runs" / "seed_1" / "run" / "checkpoints" / "last.pt").is_file()
+    assert (result.output_dir / "runs" / "seed_2" / "eval" / "eval_summary.json").is_file()
+    assert "pairwise_good_vs_bad_accuracy" in result.summary["splits"]["val"]
+    assert result.summary["best_seed_by_metric"]["val"]["retrieval_top1"] in {1, 2}
+
+
+def test_report_generation(tmp_path: Path) -> None:
+    from pawl_jepa.manifest import write_json
+    from pawl_jepa.report import ReportConfig, export_experiment_report
+
+    manifest_dir = tmp_path / "manifest"
+    eval_dir = tmp_path / "eval"
+    run_dir = tmp_path / "run"
+    manifest_dir.mkdir()
+    eval_dir.mkdir()
+    run_dir.mkdir()
+    write_json(
+        manifest_dir / "manifest.json",
+        {
+            "record_counts": {"train": 4, "val": 1, "test": 1},
+            "total_records": 6,
+            "defect_types": ["spacing", "contrast"],
+            "label_file_count": 2,
+            "label_record_count": 2,
+            "preferred_item_counts": {"original": 2},
+            "label_coverage_by_split": {"train": 0.0, "val": 1.0, "test": 1.0},
+            "human_reviewed_count_by_split": {"train": 0, "val": 1, "test": 1},
+            "synthetic_fallback_count_by_split": {"train": 4, "val": 0, "test": 0},
+        },
+    )
+    write_json(run_dir / "train_summary.json", {"epochs": 1, "last_epoch_total_loss": 0.5})
+    write_json(
+        eval_dir / "eval_summary.json",
+        {
+            "run_dir": str(run_dir),
+            "splits": {
+                "val": {
+                    "pairwise_good_vs_bad_accuracy": 1.0,
+                    "always_prefer_original_accuracy": 1.0,
+                    "pairwise_lift_over_always_original": 0.0,
+                    "metric_heuristic_accuracy": 1.0,
+                    "defect_classification_accuracy": 0.5,
+                    "defect_majority_class_accuracy": 1.0,
+                    "defect_lift_over_majority": -0.5,
+                    "retrieval_top1": 1.0,
+                    "average_latent_prediction_loss": 0.2,
+                    "warnings": [
+                        "All labels prefer original; pairwise accuracy is not a discriminative metric."
+                    ],
+                }
+            },
+        },
+    )
+
+    result = export_experiment_report(
+        ReportConfig(eval_dir=eval_dir, manifest_dir=manifest_dir, output_dir=tmp_path / "report")
+    )
+
+    report = result.report_path.read_text(encoding="utf-8")
+    assert result.summary_path.is_file()
+    assert "Pawl-JEPA v0 Experiment Report" in report
+    assert "Always-original baseline" in report
+    assert result.summary["label_coverage"] == {"train": 0.0, "val": 1.0, "test": 1.0}

@@ -12,14 +12,16 @@ Any future training data must comply with `docs/DATA_POLICY.md`. Public websites
 - compares original and perturbed UI examples
 - supports critique tasks such as visual hierarchy, spacing, accessibility, and layout consistency
 - produces embeddings or scores that can be evaluated inside PawlBench Design
+- currently includes a small optional microtraining scaffold for proving the local data path
 
 ## What Pawl-JEPA Does Not Do
 
 - it does not replace the product UI
-- it does not train in this scaffold
+- the microtraining scaffold is not the final Pawl-JEPA research model
 - it does not provide hosted inference
 - it does not require auth, billing, databases, or cloud deployment
 - it does not generate production frontend code by itself
+- it does not implement Sub-JEPA or SIGReg yet
 
 ## Minimum Success Gates
 
@@ -54,3 +56,26 @@ Human labeling v0 does not train Pawl-JEPA. The local label app writes JSONL sup
 Rule-based synthetic suggestions are useful for faster review but are not human labels. Pawl-JEPA training manifests should include only labels whose `review_status` is `confirmed`, `edited`, or an explicitly handled human-review status.
 
 Before any Pawl-JEPA microtraining run, label provenance must pass audit. Confirmed or edited labels reviewed by `codepawl_rule_v0` should be fixed with the explicit reviewer rewrite command so training manifests separate human review from deterministic suggestions.
+
+## Microtraining Scaffold v1
+
+The current scaffold proves that CodePawl can train a local UI representation model from PawlBench pairs and reviewed labels:
+
+```bash
+uv sync --extra jepa
+uv run pawl-jepa-prepare artifacts/datasets/local_v1_splits \
+  --labels data/labels/local_v1_train/labels.reviewed.jsonl \
+  --labels data/labels/local_v1_val/labels.reviewed.jsonl \
+  --labels data/labels/local_v1_test/labels.reviewed.jsonl \
+  --out artifacts/pawl_jepa/local_v1_manifest_full_labels
+uv run pawl-jepa-train artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_run_full_labels --epochs 2 --batch-size 8 --device auto
+uv run pawl-jepa-eval artifacts/pawl_jepa/local_v1_run_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_eval_full_labels
+uv run pawl-jepa-sweep artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_sweep --epochs 5 --batch-size 8 --seeds 1,2,3,4,5 --device auto
+uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_report
+```
+
+The model is intentionally small: a shared CNN image encoder, a predictor MLP from variant embedding to original embedding, a scalar preference head, and an optional defect classifier for spacing, contrast, alignment, and hierarchy. Losses combine latent prediction MSE, pairwise preference ranking when labels are not tie/unclear, and optional defect classification.
+
+Pawl-JEPA v0 reporting must compare pairwise accuracy to constant baselines before treating it as signal. Current local labels all prefer the original UI, so `always_prefer_original_accuracy` can be 1.0 and `pairwise_good_vs_bad_accuracy` is not discriminative unless `pairwise_lift_over_always_original` improves. Defect classification should likewise be read against the majority-class baseline and confusion matrix.
+
+Training dependencies live behind the `jepa` extra. The scaffold uses local screenshots only and does not require DINOv2/SigLIP downloads.

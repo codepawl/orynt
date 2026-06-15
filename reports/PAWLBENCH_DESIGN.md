@@ -233,6 +233,30 @@ Report outputs:
 
 The report includes dataset id, sample count, variant count, failed count, defect distribution, aggregate metric deltas, validation status, known limitations, and the next recommended step.
 
+## Pawl-JEPA Consumption Contract
+
+Pawl-JEPA microtraining consumes existing split files rather than re-splitting data, preserving sample-level leakage protection from `pawlbench-design-split`.
+
+Manifest command:
+
+```bash
+uv run pawl-jepa-prepare artifacts/datasets/local_v1_splits --labels data/labels/local_v1_train/labels.reviewed.jsonl --out artifacts/pawl_jepa/local_v1_manifest
+```
+
+Inputs:
+
+- `artifacts/datasets/local_v1_splits/{train,val,test}.jsonl`
+- optional reviewed label JSONL keyed by `label_id`
+
+Outputs:
+
+- `manifest.json`
+- `train.jsonl`
+- `val.jsonl`
+- `test.jsonl`
+
+Each manifest row preserves dataset/sample/variant metadata, original and variant screenshot paths, defect type, metric deltas, label provenance, severity, tags, confidence, reviewer fields, and a normalized `preferred_item`. Reviewed labels use `preferred` plus `left_item`/`right_item` to map randomized A/B choices back to `original`, `variant`, `tie`, or `unclear`. Missing labels fall back to the synthetic assumption that `original` is preferred over `variant`.
+
 ## Human Labeling v0 Contract
 
 PawlBench Design human labeling v0 creates local pairwise preference and critique labels from existing split JSONL files. It uses only local artifacts and a static HTML review sheet.

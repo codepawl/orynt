@@ -65,10 +65,14 @@ dependencies = [
     { name = "codepawl-harness" },
     { name = "codepawl-jitter" },
     { name = "codepawl-renderer" },
+    { name = "pawl-jepa" },
     { name = "pawlbench-design" },
 ]
 
 [package.optional-dependencies]
+jepa = [
+    { name = "pawl-jepa", extra = ["training"] },
+]
 vision = [
     { name = "pawlbench-design", extra = ["vision"] },
 ]
@@ -83,10 +87,12 @@ requires-dist = [
     { name = "codepawl-harness", editable = "apps/harness" },
     { name = "codepawl-jitter", editable = "packages/jitter" },
     { name = "codepawl-renderer", editable = "packages/renderer" },
+    { name = "pawl-jepa", editable = "packages/pawl_jepa" },
+    { name = "pawl-jepa", extras = ["training"], marker = "extra == 'jepa'", editable = "packages/pawl_jepa" },
     { name = "pawlbench-design", editable = "packages/pawlbench_design" },
     { name = "pawlbench-design", extras = ["vision"], marker = "extra == 'vision'", editable = "packages/pawlbench_design" },
 ]
-provides-extras = ["vision"]
+provides-extras = ["vision", "jepa"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0.0" }]
@@ -103,6 +109,7 @@ source = { editable = "apps/harness" }
 dependencies = [
     { name = "codepawl-jitter" },
     { name = "codepawl-renderer" },
+    { name = "pawl-jepa" },
     { name = "pawlbench-design" },
 ]
 
@@ -110,6 +117,7 @@ dependencies = [
 requires-dist = [
     { name = "codepawl-jitter", editable = "packages/jitter" },
     { name = "codepawl-renderer", editable = "packages/renderer" },
+    { name = "pawl-jepa", editable = "packages/pawl_jepa" },
     { name = "pawlbench-design", editable = "packages/pawlbench_design" },
 ]
 
@@ -787,6 +795,19 @@ wheels = [
 name = "pawl-jepa"
 version = "0.1.0"
 source = { editable = "packages/pawl_jepa" }
+
+[package.optional-dependencies]
+training = [
+    { name = "numpy" },
+    { name = "torch" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", marker = "extra == 'training'", specifier = ">=1.26.0" },
+    { name = "torch", marker = "extra == 'training'", specifier = ">=2.0.0" },
+]
+provides-extras = ["training"]
 
 [[package]]
 name = "pawlbench-design"

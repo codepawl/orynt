@@ -4,7 +4,7 @@ CodePawl is the company and platform for AI-assisted frontend design systems. Th
 
 CodePawl Design is planned as an AI frontend design platform that can inspect rendered interfaces, critique UI quality, compare variants, and eventually help generate better frontend work. This repository is intentionally starting with the research and evaluation foundation instead of a polished product shell.
 
-Pawl-JEPA is a planned JEPA-style UI representation model for frontend design critique. Its job is to learn useful representations from rendered UI evidence such as screenshots, DOM structure, accessibility trees, layout metrics, and paired perturbations. It is not implemented yet, and this repo does not train a model today.
+Pawl-JEPA is a planned JEPA-style UI representation model for frontend design critique. Its job is to learn useful representations from rendered UI evidence such as screenshots, DOM structure, accessibility trees, layout metrics, and paired perturbations. The repo now includes a small optional microtraining scaffold for local PawlBench pairs; it is not the final research model and does not provide hosted inference.
 
 PawlBench Design is the planned benchmark and evaluation suite for measuring frontend design quality, robustness, accessibility, and generation improvements. It will grow from the same local render harness used to collect data for Pawl-JEPA.
 
@@ -141,6 +141,25 @@ uv run pawlbench-design-vision-embed artifacts/datasets/local_v1 --out artifacts
 
 The `vision` extra installs `torch`, `torchvision`, and `transformers`; DINOv2/SigLIP image processors require `torchvision`.
 
+Prepare, train, evaluate, sweep, and report the Pawl-JEPA microtraining scaffold with local screenshots and reviewed full-split labels:
+
+```bash
+uv sync --extra jepa
+uv run pawl-jepa-prepare artifacts/datasets/local_v1_splits \
+  --labels data/labels/local_v1_train/labels.reviewed.jsonl \
+  --labels data/labels/local_v1_val/labels.reviewed.jsonl \
+  --labels data/labels/local_v1_test/labels.reviewed.jsonl \
+  --out artifacts/pawl_jepa/local_v1_manifest_full_labels
+uv run pawl-jepa-train artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_run_full_labels --epochs 2 --batch-size 8 --device auto
+uv run pawl-jepa-eval artifacts/pawl_jepa/local_v1_run_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_eval_full_labels
+uv run pawl-jepa-sweep artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_sweep --epochs 5 --batch-size 8 --seeds 1,2,3,4,5 --device auto
+uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest artifacts/pawl_jepa/local_v1_manifest_full_labels --out artifacts/pawl_jepa/local_v1_report
+```
+
+`eval_summary.json` includes constant and heuristic baselines. Current `local_v1` labels all prefer the original UI, so pairwise accuracy must be interpreted against `always_prefer_original_accuracy` and `pairwise_lift_over_always_original`.
+
+The `jepa` extra installs `torch` only. Pawl-JEPA microtraining uses a small local CNN and does not download DINOv2, SigLIP, or other external model weights. Normal `uv run pytest` remains CPU/GPU agnostic; Torch-only smoke tests are skipped unless the training extra is installed.
+
 ## Repository Layout
 
 ```text
@@ -153,7 +172,7 @@ packages/
   metrics/               Basic UI metrics package.
   jitter/                Deterministic CSS perturbation package.
   generators/            Future fixture and prompt generator package.
-  pawl_jepa/             Future model research package.
+  pawl_jepa/             Optional Pawl-JEPA microtraining scaffold.
   pawlbench_design/      Future benchmark package.
 experiments/             Staged experiment notes.
 reports/                 Research plans and experiment log.

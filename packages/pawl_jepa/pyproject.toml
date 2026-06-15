@@ -5,6 +5,12 @@ description = "Pawl-JEPA research package placeholder."
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+training = [
+    "numpy>=1.26.0",
+    "torch>=2.0.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
