@@ -30,3 +30,12 @@ uv run pawl-jepa-report artifacts/pawl_jepa/local_v1_eval_full_labels --manifest
 ## Interpretation
 
 The useful signal is whether the scaffold runs deterministically on local screenshots, learns a decreasing or stable loss over a smoke run, and produces pairwise, defect, cosine, retrieval, constant-baseline, and seed-sweep metrics for val/test. Results should be treated as a sanity check only because `local_v1` is intentionally small and current labels all prefer the original UI; pairwise accuracy is not meaningful unless it beats the always-original baseline.
+
+Hard preference labels are the next dataset step for non-trivial A/B supervision:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v1/review --labeler-id an
+```
+
+These labels remain outside the current Pawl-JEPA manifest until variant-vs-variant supervision is explicitly added.

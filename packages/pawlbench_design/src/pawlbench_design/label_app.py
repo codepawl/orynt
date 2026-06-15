@@ -22,6 +22,7 @@ from pawlbench_design.labels import (
     REVIEW_STATUS_VALUES,
     SEVERITY_VALUES,
     _read_jsonl,
+    queue_item_values,
 )
 
 
@@ -148,7 +149,12 @@ class LabelAppStore:
             raise ValueError(f"label_id is not present in queue: {label_id}")
         record = self.queue_by_id[label_id]
         item = record[f"{side}_item"]
-        raw_path = record[item].get("screenshot_path")
+        side_record = record.get(item)
+        if not isinstance(side_record, dict):
+            side_record = record.get(side)
+        if not isinstance(side_record, dict):
+            raise ValueError(f"{side} item is missing")
+        raw_path = side_record.get("screenshot_path")
         if not isinstance(raw_path, str) or not raw_path:
             raise ValueError(f"{side} screenshot path is missing")
         path = Path(raw_path).expanduser()
@@ -215,7 +221,7 @@ class LabelAppStore:
                 "confidence": payload.get("confidence") or base.get("confidence") or 2,
             }
         reviewer = payload.get("reviewed_by") or payload.get("labeler_id") or self.default_labeler_id
-        return {
+        label = {
             "label_id": label_id,
             "dataset_id": queue_record["dataset_id"],
             "split": queue_record["split"],
@@ -242,6 +248,20 @@ class LabelAppStore:
             "reviewed_by": reviewer,
             "reviewed_at": _now_iso(),
         }
+        for field in (
+            "pair_id",
+            "pair_kind",
+            "left_variant_name",
+            "right_variant_name",
+            "left_defect_type",
+            "right_defect_type",
+            "heuristic_signals",
+        ):
+            if field in queue_record:
+                label[field] = queue_record[field]
+        if "suggestion_reason" in base:
+            label["suggestion_reason"] = base.get("suggestion_reason")
+        return label
 
     def _validate_label(
         self,
@@ -254,10 +274,25 @@ class LabelAppStore:
         for field in ("label_id", "dataset_id", "split", "sample_id", "variant_name", "defect_type"):
             if label.get(field) != queue_record.get(field):
                 errors.append(f"{field} does not match queue")
-        if label.get("left_item") != queue_record.get("left_item"):
+        allowed_items = queue_item_values(queue_record)
+        if label.get("left_item") not in allowed_items:
             errors.append("left_item does not match queue")
-        if label.get("right_item") != queue_record.get("right_item"):
+        elif label.get("left_item") != queue_record.get("left_item"):
+            errors.append("left_item does not match queue")
+        if label.get("right_item") not in allowed_items:
             errors.append("right_item does not match queue")
+        elif label.get("right_item") != queue_record.get("right_item"):
+            errors.append("right_item does not match queue")
+        for field in (
+            "pair_id",
+            "pair_kind",
+            "left_variant_name",
+            "right_variant_name",
+            "left_defect_type",
+            "right_defect_type",
+        ):
+            if field in label and field in queue_record and label[field] != queue_record[field]:
+                errors.append(f"{field} does not match queue")
         if label.get("preferred") not in PREFERRED_VALUES:
             errors.append(f"preferred must be one of: {', '.join(PREFERRED_VALUES)}")
         if label.get("severity") not in SEVERITY_VALUES:

@@ -109,3 +109,16 @@ cat artifacts/datasets/local_v0_report/report.md
 ```
 
 Splits are sample-level, so all variants for a `sample_id` stay in exactly one split.
+
+## Hard Preference Dataset
+
+Create variant-vs-variant hard preference pairs from `local_v1` so pairwise labeling is not limited to original-vs-jittered comparisons:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v1/review --labeler-id an
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/suggested_validation
+uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_report
+```
+
+Hard-pair suggestions are deterministic metric heuristics with `review_status: "suggested"` and must be reviewed before they become human labels.

@@ -57,6 +57,17 @@ Rule-based synthetic suggestions are useful for faster review but are not human 
 
 Before any Pawl-JEPA microtraining run, label provenance must pass audit. Confirmed or edited labels reviewed by `codepawl_rule_v0` should be fixed with the explicit reviewer rewrite command so training manifests separate human review from deterministic suggestions.
 
+Hard preference pairs address the current non-discriminative pairwise setup where all `local_v1` labels prefer the original UI:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v1/review --labeler-id an
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/suggested_validation
+uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_report
+```
+
+These hard-pair labels are variant-vs-variant labels and should remain separate from current Pawl-JEPA manifests until a later task defines how to train on non-original preference pairs.
+
 ## Microtraining Scaffold v1
 
 The current scaffold proves that CodePawl can train a local UI representation model from PawlBench pairs and reviewed labels:

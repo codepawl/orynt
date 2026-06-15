@@ -315,6 +315,42 @@ Report outputs:
 
 The report summarizes coverage, preference counts, defect tag counts, quality tag counts, severity counts, common fix instructions, and v0 limitations.
 
+## Hard Preference Dataset v1
+
+Hard preference v1 creates variant-vs-variant A/B pairs from an existing PawlBench dataset so pairwise labels are not trivially solved by always preferring the original.
+
+Generation command:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
+```
+
+Outputs:
+
+- `hard_pairs.jsonl`: one variant-vs-variant pair per line.
+- `suggested_labels.jsonl`: heuristic suggestions with `review_status: "suggested"`.
+- `summary.json`: counts, templates, seed, and warning metadata.
+- `review/queue.jsonl`: label-app queue for human review.
+- `review/suggested_labels.jsonl`: suggestions beside the review queue for app prefill.
+- `review/README.md`: local review instructions.
+
+Pair templates:
+
+- `contrast_bad` vs `spacing_bad`
+- `hierarchy_bad` vs `alignment_bad`
+- `spacing_bad` vs `hierarchy_bad`
+
+No hard preference pair includes the original UI. Left/right assignment is deterministic by seed. Suggested preference uses metric heuristics: fewer contrast issues, higher minimum contrast ratio, better font-size ratio, fewer hierarchy warnings, and changed-pixel fallback if available. Suggestions are not human labels until a reviewer confirms, edits, or marks them unclear.
+
+Review, validate, and report commands:
+
+```bash
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v1/review --labeler-id an
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/suggested_validation
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_validation
+uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_report
+```
+
 ## Local Labeling App v0 Contract
 
 The local labeling app is the default browser workflow for completing human labels from an existing label queue. It is localhost-only by default, uses no database or external service, and stores labels as JSONL on disk.
@@ -350,7 +386,7 @@ Endpoints:
 - `GET /api/progress`: completion and coverage summary
 - `GET /image/{label_id}/{side}`: serve only the known left/right screenshot for a queue record
 
-Saving labels copies dataset, split, sample, variant, defect type, and left/right item values from the queue record. The app rejects unknown `label_id` values and invalid schema enums before writing. Label writes are atomic: a temporary file is written in the queue directory and then replaces `labels.jsonl`.
+Saving labels copies dataset, split, sample, variant, defect type, and left/right item values from the queue record. For hard preference queues, it also preserves pair metadata such as `pair_id`, left/right variant names, and heuristic signals. The app rejects unknown `label_id` values and invalid schema enums before writing. Label writes are atomic: a temporary file is written in the queue directory and then replaces `labels.jsonl`.
 
 If `suggested_labels.jsonl` exists, the app prefills each item with the matching suggestion. Review actions write `review_status`:
 

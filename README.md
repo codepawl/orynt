@@ -118,6 +118,18 @@ uv run pawlbench-design-label-validate artifacts/labels/local_v1_train/labels.js
 uv run pawlbench-design-label-report artifacts/labels/local_v1_train/labels.jsonl --queue artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train_report
 ```
 
+Generate variant-vs-variant hard preference pairs for non-trivial A/B review:
+
+```bash
+uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 --out artifacts/datasets/hard_pref_v1 --seed 42
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v1/review --labeler-id an
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/suggested_validation
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_validation
+uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_report
+```
+
+Hard preference suggestions use `review_status: "suggested"` and are not human-reviewed labels until confirmed or edited in the label app.
+
 Then validate, split, and summarize the dataset:
 
 ```bash

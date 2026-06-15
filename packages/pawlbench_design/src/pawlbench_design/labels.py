@@ -312,9 +312,11 @@ def build_label_validation(*, labels_path: Path, queue_path: Path) -> dict[str, 
         if label_id and label_id not in queue_ids:
             errors.append(f"line {index}: label_id is not present in queue: {label_id}")
 
-        _validate_enum(errors, index, label, "left_item", ITEM_VALUES)
-        _validate_enum(errors, index, label, "right_item", ITEM_VALUES)
-        if label.get("left_item") == label.get("right_item") and label.get("left_item") in ITEM_VALUES:
+        queue_record = queue_by_id.get(label_id)
+        allowed_items = queue_item_values(queue_record) if queue_record else ITEM_VALUES
+        _validate_enum(errors, index, label, "left_item", allowed_items)
+        _validate_enum(errors, index, label, "right_item", allowed_items)
+        if label.get("left_item") == label.get("right_item") and label.get("left_item") in allowed_items:
             errors.append(f"line {index}: left_item and right_item must differ")
         _validate_enum(errors, index, label, "preferred", PREFERRED_VALUES)
         _validate_enum(errors, index, label, "severity", SEVERITY_VALUES)
@@ -329,10 +331,19 @@ def build_label_validation(*, labels_path: Path, queue_path: Path) -> dict[str, 
         if isinstance(label.get("created_at"), str):
             _validate_iso_datetime(errors, index, label["created_at"])
 
-        if label_id in queue_by_id:
-            queue_record = queue_by_id[label_id]
+        if queue_record is not None:
             for field in ("dataset_id", "split", "sample_id", "variant_name", "defect_type"):
                 if field in label and label[field] != queue_record.get(field):
+                    errors.append(f"line {index}: {field} does not match queue for {label_id}")
+            for field in (
+                "pair_id",
+                "pair_kind",
+                "left_variant_name",
+                "right_variant_name",
+                "left_defect_type",
+                "right_defect_type",
+            ):
+                if field in label and field in queue_record and label[field] != queue_record.get(field):
                     errors.append(f"line {index}: {field} does not match queue for {label_id}")
 
         completed += 1
@@ -423,6 +434,17 @@ def export_label_report(config: LabelReportConfig) -> LabelReportResult:
         summary_path=summary_path,
         summary=summary,
     )
+
+
+def queue_item_values(queue_record: dict[str, Any] | None) -> tuple[str, ...]:
+    if not queue_record:
+        return ITEM_VALUES
+    items = []
+    for side in ("left_item", "right_item"):
+        item = queue_record.get(side)
+        if isinstance(item, str) and item and item not in items:
+            items.append(item)
+    return tuple(items) if items else ITEM_VALUES
 
 
 def _queue_record(record: dict[str, Any], rng: random.Random) -> dict[str, Any]:
