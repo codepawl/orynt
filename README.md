@@ -149,7 +149,21 @@ uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --label
 uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
 ```
 
-For `local_v1`, `hard_pref_v2` should contain 180 records. Hard preference suggestions use `review_status: "suggested"` and are not human-reviewed labels until confirmed or edited in the label app. `summary.json` and `diagnostics.md` report pair type counts, suggestion balance, confidence distribution, expected split counts when base splits are provided, and warnings.
+Use blind review when measuring agreement independent of suggestions:
+
+```bash
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an --blind
+```
+
+For `local_v1`, `hard_pref_v2` should contain 180 records. Hard preference suggestions use `review_status: "suggested"` and are not human-reviewed labels until confirmed or edited in the label app. Blind reviews save `blind_review` and `suggestion_revealed` metadata. `summary.json` and `diagnostics.md` report pair type counts, suggestion balance, confidence distribution, expected split counts when base splits are provided, and warnings.
+
+Create placeholder slots for future/manual generated UI candidate pairs:
+
+```bash
+uv run pawlbench-design-generated-pairs examples/local_v1 --out artifacts/datasets/generated_pref_v0 --seed 42 --limit 20
+```
+
+`generated_pref_v0` is only a scaffold. It marks records as `manual_or_future_generator` and does not fabricate model-generated screenshots or candidates.
 
 Regenerate hard-pair suggestions with CodePawl Taste v0 and diff them against the old suggestions:
 

@@ -1008,6 +1008,9 @@ def test_report_generation_supports_hard_pair_eval_and_sweep(tmp_path: Path) -> 
     assert "Defect majority baseline" in report
     assert "Sweep Summary" in report
     assert "suggestion_baseline_accuracy" in report
-    assert "labels may be reviewed from taste-profile suggestions" in report
+    assert "Labels may be reviewed from taste-profile suggestions" in report
+    assert "All current local_v1 labels prefer the original UI" not in report
+    assert "mean 0.5000, std 0.1000" in report
+    assert "themajority" not in report
     assert "Add generated UI candidate pairs" in report
     assert result.summary["sweep_summary"]["splits"]["val"]["pairwise_preference_accuracy"]["mean"] == 0.5

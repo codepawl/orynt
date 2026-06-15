@@ -30,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--labeler-id",
         help="Default human labeler/reviewer identifier. Defaults to USER or an.",
     )
+    parser.add_argument(
+        "--blind",
+        action="store_true",
+        help="Hide suggestions until the reviewer selects a preference and reveals them.",
+    )
     return parser
 
 
@@ -44,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
                 host=args.host,
                 port=args.port,
                 labeler_id=args.labeler_id,
+                blind=args.blind,
             )
         )
     except Exception as exc:

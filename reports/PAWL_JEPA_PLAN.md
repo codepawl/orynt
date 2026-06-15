@@ -83,6 +83,20 @@ uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested
 
 For 30 complete `local_v1` samples, `hard_pref_v2` emits 180 records and writes `diagnostics.md` with pair type distribution, suggestion balance, confidence distribution, and expected split counts.
 
+Because current hard-pair labels can still track suggestions too closely, collect the next review pass in blind mode before changing Pawl-JEPA architecture:
+
+```bash
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an --blind
+```
+
+Also prepare local placeholder slots for future/manual generated UI candidate comparisons:
+
+```bash
+uv run pawlbench-design-generated-pairs examples/local_v1 --out artifacts/datasets/generated_pref_v0 --seed 42 --limit 20
+```
+
+`generated_pref_v0` is not model-generated data; it is a file-based scaffold marked `manual_or_future_generator`.
+
 CodePawl Taste v0 calibrates suggestions toward the current frontend taste profile without overwriting human labels:
 
 ```bash

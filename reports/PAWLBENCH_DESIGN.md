@@ -397,6 +397,22 @@ uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --label
 uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
 ```
 
+For blind review, start the same local app with `--blind`. The app hides suggestions until the reviewer selects a preference and uses the reveal control:
+
+```bash
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an --blind
+```
+
+Blind saves include `blind_review` and `suggestion_revealed`; label reports include blind review counts and blind preference distribution.
+
+Generated-candidate preference scaffolds reserve local/manual candidate slots without fabricating generated data:
+
+```bash
+uv run pawlbench-design-generated-pairs examples/local_v1 --out artifacts/datasets/generated_pref_v0 --seed 42 --limit 20
+```
+
+The scaffold writes `candidates/`, `review/queue.jsonl`, `summary.json`, and `README.md`; records are marked `manual_or_future_generator`.
+
 ## Local Labeling App v0 Contract
 
 The local labeling app is the default browser workflow for completing human labels from an existing label queue. It is localhost-only by default, uses no database or external service, and stores labels as JSONL on disk.
@@ -405,6 +421,12 @@ Command:
 
 ```bash
 uv run pawlbench-design-label-app artifacts/labels/local_v1_train --host 127.0.0.1 --port 8765 --labeler-id an
+```
+
+Blind command:
+
+```bash
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --host 127.0.0.1 --port 8765 --labeler-id an --blind
 ```
 
 Then open:
@@ -428,6 +450,7 @@ Endpoints:
 - `GET /`: main app
 - `GET /api/queue`: queue summary and enum/tag vocabularies
 - `GET /api/item/{index}`: one queue item and any existing label
+- `GET /api/item/{index}?reveal=1`: reveal suggestions in blind mode
 - `POST /api/label`: validate and save one label
 - `GET /api/progress`: completion and coverage summary
 - `GET /image/{label_id}/{side}`: serve only the known left/right screenshot for a queue record

@@ -137,3 +137,15 @@ uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested
 ```
 
 For 30 complete `local_v1` samples, `hard_pref_v2` produces 180 records and writes `diagnostics.md` with pair type distribution.
+
+Use blind review for the next pass:
+
+```bash
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an --blind
+```
+
+Create placeholder slots for generated/manual candidate comparisons:
+
+```bash
+uv run pawlbench-design-generated-pairs examples/local_v1 --out artifacts/datasets/generated_pref_v0 --seed 42 --limit 20
+```

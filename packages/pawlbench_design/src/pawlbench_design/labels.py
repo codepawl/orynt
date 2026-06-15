@@ -960,6 +960,9 @@ def _label_report_summary(
     defect_tag_counts: Counter[str] = Counter()
     quality_tag_counts: Counter[str] = Counter()
     fix_instructions: Counter[str] = Counter()
+    blind_preference_counts: Counter[str] = Counter()
+    blind_review_count = 0
+    suggestion_revealed_count = 0
     suggested_by_id = {
         label.get("label_id"): label
         for label in labels
@@ -973,6 +976,13 @@ def _label_report_summary(
     for label in labels:
         if not isinstance(label, dict):
             continue
+        if label.get("blind_review") is True:
+            blind_review_count += 1
+            preferred = label.get("preferred")
+            if isinstance(preferred, str):
+                blind_preference_counts[preferred] += 1
+        if label.get("suggestion_revealed") is True:
+            suggestion_revealed_count += 1
         for tag in label.get("defect_tags", []):
             if isinstance(tag, str):
                 defect_tag_counts[tag] += 1
@@ -1002,6 +1012,9 @@ def _label_report_summary(
         "rule_reviewed_count": validation["rule_reviewed_count"],
         "suspicious_confirmed_count": validation["suspicious_confirmed_count"],
         "defect_type_counts": validation["counts_by_defect_type"],
+        "blind_review_count": blind_review_count,
+        "suggestion_revealed_count": suggestion_revealed_count,
+        "blind_preference_distribution": dict(sorted(blind_preference_counts.items())),
         "defect_tag_counts": dict(sorted(defect_tag_counts.items())),
         "quality_tag_counts": dict(sorted(quality_tag_counts.items())),
         "agreement": _agreement_stats(suggested_by_id, human_by_id),
@@ -1032,6 +1045,12 @@ def _label_report_markdown(summary: dict[str, Any]) -> str:
             f"- Human reviewed: {summary['human_reviewed_count']}",
             f"- Rule reviewed: {summary['rule_reviewed_count']}",
             f"- Suspicious confirmed: {summary['suspicious_confirmed_count']}",
+            "",
+        "## Blind Review",
+        "",
+            f"- Blind reviewed: {summary['blind_review_count']}",
+            f"- Suggestions revealed: {summary['suggestion_revealed_count']}",
+            f"- Blind preference distribution: {summary['blind_preference_distribution']}",
             "",
         "## Review Status",
         "",

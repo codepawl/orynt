@@ -165,12 +165,53 @@ def test_label_app_prefills_suggestions(tmp_path: Path) -> None:
     assert item["suggestion"]["fix_instruction"] == "Use the suggested fix."
 
 
+def test_label_app_blind_mode_hides_and_reveals_suggestions(tmp_path: Path) -> None:
+    queue_dir = _queue_dir(tmp_path)
+    _write_suggestions(queue_dir)
+    store = LabelAppStore(queue_dir, blind=True)
+
+    item = store.item(0)
+    revealed = store.item(0, reveal=True)
+
+    assert store.queue_summary()["blind_review"] is True
+    assert item["blind_review"] is True
+    assert item["suggestion"] is None
+    assert item["suggestion_revealed"] is False
+    assert "suggested_preferred" not in item["record"]
+    assert revealed["suggestion"]["preferred"] == "left"
+    assert revealed["suggestion_revealed"] is True
+
+
+def test_label_app_blind_save_records_review_metadata(tmp_path: Path) -> None:
+    queue_dir = _queue_dir(tmp_path)
+    _write_suggestions(queue_dir)
+    store = LabelAppStore(queue_dir, blind=True)
+    label_id = store.queue[0]["label_id"]
+
+    store.save_label(
+        _payload(
+            label_id,
+            review_status="edited",
+            preferred="right",
+            blind_review=True,
+            suggestion_revealed=False,
+        )
+    )
+
+    label = _read_labels(queue_dir / "labels.jsonl")[0]
+    assert label["blind_review"] is True
+    assert label["suggestion_revealed"] is False
+    assert label["preferred"] == "right"
+
+
 def test_label_app_markup_includes_taste_suggestion_fields() -> None:
     html = _app_html()
 
     assert "taste_profile_id" in html
     assert "suggestion_reason_detail" in html
     assert "suggested_by" in html
+    assert "Reveal suggestion" in _app_html(blind=True)
+    assert "blindReview" in _app_html(blind=True)
 
 
 def test_label_app_upserts_labels_without_duplicates(tmp_path: Path) -> None:

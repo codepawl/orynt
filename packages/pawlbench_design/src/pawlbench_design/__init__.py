@@ -13,6 +13,11 @@ from pawlbench_design.datasets import (
     validate_dataset,
 )
 from pawlbench_design.evaluator import EvalConfig, EvalResult, evaluate_jitter_pairs
+from pawlbench_design.generated_pairs import (
+    GeneratedPairConfig,
+    GeneratedPairResult,
+    build_generated_pairs,
+)
 from pawlbench_design.hard_pairs import HardPairConfig, HardPairResult, build_hard_pairs
 from pawlbench_design.label_app import (
     LabelAppConfig,
@@ -66,6 +71,8 @@ __all__ = [
     "EmbeddingResult",
     "EvalConfig",
     "EvalResult",
+    "GeneratedPairConfig",
+    "GeneratedPairResult",
     "HardPairConfig",
     "HardPairResult",
     "LabelAppConfig",
@@ -99,6 +106,7 @@ __all__ = [
     "__version__",
     "audit_labels",
     "build_encoder_baselines",
+    "build_generated_pairs",
     "build_hard_pairs",
     "build_label_queue",
     "build_vision_baselines",

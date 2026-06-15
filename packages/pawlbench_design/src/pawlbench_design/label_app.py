@@ -32,6 +32,7 @@ class LabelAppConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     labeler_id: str | None = None
+    blind: bool = False
 
 
 @dataclass(frozen=True)
@@ -44,9 +45,10 @@ class LabelAppResult:
 class LabelAppStore:
     """Disk-backed queue, label, and state store for the local labeling app."""
 
-    def __init__(self, queue_dir: Path, labeler_id: str | None = None):
+    def __init__(self, queue_dir: Path, labeler_id: str | None = None, blind: bool = False):
         self.queue_dir = queue_dir.expanduser().resolve()
         self.default_labeler_id = labeler_id or os.environ.get("USER") or "an"
+        self.blind = blind
         self.queue_path = self.queue_dir / "queue.jsonl"
         self.labels_path = self.queue_dir / "labels.jsonl"
         self.suggested_labels_path = self.queue_dir / "suggested_labels.jsonl"
@@ -70,20 +72,26 @@ class LabelAppStore:
             "review_status_values": list(REVIEW_STATUS_VALUES),
             "default_labeler_id": self.default_labeler_id,
             "has_suggestions": bool(self.suggestions),
+            "blind_review": self.blind,
         }
 
-    def item(self, index: int) -> dict[str, Any]:
+    def item(self, index: int, *, reveal: bool = False) -> dict[str, Any]:
         if index < 0 or index >= len(self.queue):
             raise IndexError(f"queue index out of range: {index}")
         record = self.queue[index]
         label = self.labels.get(record["label_id"])
         suggestion = self.suggestions.get(record["label_id"])
+        suggestion_revealed = bool(reveal or label)
+        visible_suggestion = suggestion if (not self.blind or suggestion_revealed) else None
+        visible_record = record if (not self.blind or suggestion_revealed) else _blind_record(record)
         return {
             "index": index,
             "total": len(self.queue),
-            "record": record,
+            "record": visible_record,
             "label": label,
-            "suggestion": suggestion,
+            "suggestion": visible_suggestion,
+            "blind_review": self.blind,
+            "suggestion_revealed": suggestion_revealed,
             "left_image_url": f"/image/{record['label_id']}/left",
             "right_image_url": f"/image/{record['label_id']}/right",
         }
@@ -247,6 +255,8 @@ class LabelAppStore:
             "review_status": review_status,
             "reviewed_by": reviewer,
             "reviewed_at": _now_iso(),
+            "blind_review": bool(payload.get("blind_review", self.blind)),
+            "suggestion_revealed": bool(payload.get("suggestion_revealed", not self.blind)),
         }
         for field in (
             "pair_id",
@@ -340,7 +350,7 @@ def run_label_app(config: LabelAppConfig) -> LabelAppResult:
     host = config.host
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise ValueError("label app may only bind to localhost by default")
-    store = LabelAppStore(config.queue_dir, labeler_id=config.labeler_id)
+    store = LabelAppStore(config.queue_dir, labeler_id=config.labeler_id, blind=config.blind)
     handler_class = _handler_class(store)
     server = ThreadingHTTPServer((host, config.port), handler_class)
     print(f"PawlBench Design label app: http://{host}:{config.port}")
@@ -359,13 +369,14 @@ def _handler_class(store: LabelAppStore) -> type[BaseHTTPRequestHandler]:
             parsed = urlparse(self.path)
             try:
                 if parsed.path == "/":
-                    self._send_html(_app_html())
+                    self._send_html(_app_html(blind=store.blind))
                 elif parsed.path == "/api/queue":
                     self._send_json(store.queue_summary())
                 elif parsed.path.startswith("/api/item/"):
                     index = int(parsed.path.rsplit("/", 1)[1])
+                    reveal = "reveal=1" in parsed.query.split("&")
                     store.write_state(index)
-                    self._send_json(store.item(index))
+                    self._send_json(store.item(index, reveal=reveal))
                 elif parsed.path == "/api/progress":
                     self._send_json(store.progress())
                 elif parsed.path.startswith("/image/"):
@@ -453,6 +464,23 @@ def _validate_tags(
             errors.append(f"unsupported {field} tag: {tag}")
 
 
+def _blind_record(record: dict[str, Any]) -> dict[str, Any]:
+    hidden_fields = {
+        "suggested_preferred",
+        "suggested_severity",
+        "suggested_defect_tags",
+        "suggested_by",
+        "suggestion_reason",
+        "suggestion_reason_detail",
+        "suggestion_confidence",
+        "taste_profile_id",
+        "taste_profile_version",
+        "taste_decision_factors",
+        "heuristic_signals",
+    }
+    return {key: value for key, value in record.items() if key not in hidden_fields}
+
+
 def _write_jsonl_atomic(path: Path, records: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as file:
@@ -474,9 +502,10 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _app_html() -> str:
+def _app_html(blind: bool = False) -> str:
     defect_tags = json.dumps(list(DEFECT_TAGS))
     quality_tags = json.dumps(list(QUALITY_TAGS))
+    blind_json = json.dumps(blind)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -559,6 +588,7 @@ def _app_html() -> str:
       <label>Reason<textarea id="reason"></textarea></label>
       <div class="actions">
         <button id="confirm">Confirm suggestion</button>
+        <button class="secondary" id="reveal">Reveal suggestion</button>
         <button class="secondary" id="edit-save">Edit & save</button>
         <button class="warn" id="unclear">Mark unclear</button>
         <button class="secondary" id="prev">Previous</button>
@@ -588,10 +618,12 @@ def _app_html() -> str:
   <script>
     const defectTags = {defect_tags};
     const qualityTags = {quality_tags};
+    const blindReview = {blind_json};
     let currentIndex = 0;
     let total = 0;
     let current = null;
     let dirty = false;
+    let suggestionRevealed = !blindReview;
 
     function checkboxList(target, name, values) {{
       document.getElementById(target).innerHTML = values.map(v =>
@@ -619,10 +651,11 @@ def _app_html() -> str:
       }});
     }}
 
-    async function loadItem(index) {{
+    async function loadItem(index, reveal = false) {{
       if (index < 0 || index >= total) return;
-      current = await api(`/api/item/${{index}}`);
+      current = await api(`/api/item/${{index}}${{reveal ? "?reveal=1" : ""}}`);
       currentIndex = index;
+      suggestionRevealed = Boolean(current.suggestion_revealed);
       const record = current.record;
       document.getElementById("label-id").textContent = record.label_id;
       document.getElementById("sample").textContent = `sample: ${{record.sample_id}}`;
@@ -638,12 +671,13 @@ def _app_html() -> str:
       document.getElementById("left-img").src = current.left_image_url;
       document.getElementById("right-img").src = current.right_image_url;
       fillForm(current.label || current.suggestion, record);
+      updateBlindControls();
       dirty = false;
       await refreshProgress();
     }}
 
     function fillForm(label, record) {{
-      const preferred = label?.preferred || "left";
+      const preferred = label?.preferred || (blindReview ? "" : "left");
       document.querySelectorAll("input[name='preferred']").forEach(el => el.checked = el.value === preferred);
       document.querySelectorAll("input[name='defect_tags']").forEach(el => el.checked = (label?.defect_tags || []).includes(el.value));
       document.querySelectorAll("input[name='quality_tags']").forEach(el => el.checked = (label?.quality_tags || []).includes(el.value));
@@ -654,6 +688,7 @@ def _app_html() -> str:
       if (label?.labeler_id) document.getElementById("labeler-id").value = label.labeler_id;
       document.getElementById("status").textContent = "";
       updateDirty();
+      updateBlindControls();
     }}
 
     function suggestionText(suggestion) {{
@@ -668,6 +703,15 @@ def _app_html() -> str:
       if (suggestion.reason) parts.push(suggestion.reason);
       if (suggestion.suggestion_reason_detail) parts.push(suggestion.suggestion_reason_detail);
       return parts.filter(Boolean).join(" · ");
+    }}
+
+    function updateBlindControls() {{
+      const hasChoice = Boolean(document.querySelector("input[name='preferred']:checked"));
+      const revealButton = document.getElementById("reveal");
+      const confirmButton = document.getElementById("confirm");
+      revealButton.style.display = blindReview && !suggestionRevealed ? "inline-block" : "none";
+      revealButton.disabled = blindReview && !hasChoice;
+      confirmButton.disabled = blindReview && !suggestionRevealed;
     }}
 
     function checked(name) {{
@@ -687,7 +731,9 @@ def _app_html() -> str:
         labeler_id: labelerId,
         reviewed_by: labelerId,
         fix_instruction: document.getElementById("fix-instruction").value,
-        reason: document.getElementById("reason").value
+        reason: document.getElementById("reason").value,
+        blind_review: blindReview,
+        suggestion_revealed: suggestionRevealed
       }};
     }}
 
@@ -704,7 +750,7 @@ def _app_html() -> str:
 
     async function confirmSuggestion() {{
       const labelerId = document.getElementById("labeler-id").value;
-      const payload = dirty ? formPayload("edited") : {{label_id: current.record.label_id, review_status: "confirmed", labeler_id: labelerId, reviewed_by: labelerId}};
+      const payload = dirty ? formPayload("edited") : {{label_id: current.record.label_id, review_status: "confirmed", labeler_id: labelerId, reviewed_by: labelerId, blind_review: blindReview, suggestion_revealed: suggestionRevealed}};
       await postLabel(payload, dirty ? "Saved edited label." : "Confirmed.");
     }}
 
@@ -718,7 +764,12 @@ def _app_html() -> str:
     }}
 
     async function skipCurrent() {{
-      await postLabel({{label_id: current.record.label_id, review_status: "skipped", reviewed_by: document.getElementById("labeler-id").value}}, "Skipped.");
+      await postLabel({{label_id: current.record.label_id, review_status: "skipped", reviewed_by: document.getElementById("labeler-id").value, blind_review: blindReview, suggestion_revealed: suggestionRevealed}}, "Skipped.");
+    }}
+
+    async function revealSuggestion() {{
+      if (!document.querySelector("input[name='preferred']:checked")) return;
+      await loadItem(currentIndex, true);
     }}
 
     async function refreshProgress() {{
@@ -738,6 +789,7 @@ def _app_html() -> str:
     function selectPreferred(value) {{
       document.querySelectorAll("input[name='preferred']").forEach(el => el.checked = el.value === value);
       markDirty();
+      updateBlindControls();
     }}
 
     function isTypingTarget(target) {{
@@ -782,6 +834,7 @@ def _app_html() -> str:
     document.getElementById("next").onclick = () => loadItem(currentIndex + 1);
     document.getElementById("skip").onclick = () => skipCurrent().catch(showError);
     document.getElementById("confirm").onclick = () => confirmSuggestion().catch(showError);
+    document.getElementById("reveal").onclick = () => revealSuggestion().catch(showError);
     document.getElementById("edit-save").onclick = () => saveEdited().catch(showError);
     document.getElementById("unclear").onclick = () => markUnclear().catch(showError);
     document.getElementById("help-overlay").onclick = event => {{ if (event.target.id === "help-overlay") toggleHelp(false); }};

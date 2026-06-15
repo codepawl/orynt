@@ -63,3 +63,15 @@ uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 \
   --base-splits artifacts/datasets/local_v1_splits
 uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
 ```
+
+Use blind review to reduce suggestion leakage before treating `hard_pref_v2` as training signal:
+
+```bash
+uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an --blind
+```
+
+Prepare future/manual generated candidate slots without fabricating model output:
+
+```bash
+uv run pawlbench-design-generated-pairs examples/local_v1 --out artifacts/datasets/generated_pref_v0 --seed 42 --limit 20
+```

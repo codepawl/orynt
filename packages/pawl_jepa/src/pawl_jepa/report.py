@@ -18,9 +18,11 @@ LIMITATIONS = (
     "hard_pref_v1 is still a small synthetic-jitter hard preference benchmark.",
 )
 HARD_PAIR_LIMITATIONS = (
-    "Hard-pair labels may be reviewed from taste-profile suggestions.",
-    "The suggestion baseline may be inflated and is not an independent reviewer baseline.",
+    "Labels may be reviewed from taste-profile suggestions.",
+    "suggestion_baseline_accuracy may be inflated and is not an independent reviewer baseline.",
     "Validation and test splits are still small.",
+    "Generated UI failures are not included yet.",
+    "Blind review has not been used yet.",
     "Losing-side defect distribution may be imbalanced.",
 )
 HARD_PAIR_RECOMMENDATIONS = (
@@ -135,10 +137,9 @@ def is_hard_pair_eval(eval_summary: dict[str, Any]) -> bool:
 
 
 def limitations(eval_summary: dict[str, Any]) -> list[str]:
-    items = list(LIMITATIONS)
     if is_hard_pair_eval(eval_summary):
-        items.extend(HARD_PAIR_LIMITATIONS)
-    return items
+        return list(HARD_PAIR_LIMITATIONS)
+    return list(LIMITATIONS)
 
 
 def recommendations(eval_summary: dict[str, Any]) -> list[str]:

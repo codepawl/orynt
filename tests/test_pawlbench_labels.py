@@ -216,6 +216,8 @@ def test_label_report_outputs_markdown_and_summary(tmp_path: Path) -> None:
     labels = [_valid_label(records[0]), _valid_label(records[1])]
     labels[1]["preferred"] = "right"
     labels[1]["defect_tags"] = ["contrast", "accessibility"]
+    labels[1]["blind_review"] = True
+    labels[1]["suggestion_revealed"] = False
     labels_path = queue_dir / "labels.jsonl"
     labels_path.write_text(
         "".join(json.dumps(label, sort_keys=True) + "\n" for label in labels),
@@ -232,6 +234,10 @@ def test_label_report_outputs_markdown_and_summary(tmp_path: Path) -> None:
     assert summary["preference_counts"]["left"] == 1
     assert summary["preference_counts"]["right"] == 1
     assert summary["defect_tag_counts"]["accessibility"] == 1
+    assert summary["blind_review_count"] == 1
+    assert summary["suggestion_revealed_count"] == 0
+    assert summary["blind_preference_distribution"] == {"right": 1}
+    assert "Blind Review" in report
 
 
 def test_label_suggestions_are_generated_from_queue(tmp_path: Path) -> None:
