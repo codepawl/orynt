@@ -3,6 +3,7 @@ from pathlib import Path
 
 from codepawl_harness.pawlbench_label_queue_cli import main as queue_main
 from codepawl_harness.pawlbench_label_audit_cli import main as audit_main
+from codepawl_harness.pawlbench_label_autofill_cli import main as autofill_main
 from codepawl_harness.pawlbench_label_report_cli import main as report_main
 from codepawl_harness.pawlbench_label_set_reviewer_cli import main as set_reviewer_main
 from codepawl_harness.pawlbench_label_suggest_cli import main as suggest_main
@@ -286,6 +287,58 @@ def test_label_validation_reports_suggestions_separately(tmp_path: Path) -> None
     assert validation["edited_count"] == 0
     assert validation["counts_by_review_status"]["suggested"] == 3
     assert any("no confirmed or edited human labels" in warning for warning in validation["warnings"])
+
+
+def test_label_autofill_creates_weak_auto_labels(tmp_path: Path) -> None:
+    queue_dir = tmp_path / "labels"
+    validation_dir = tmp_path / "validation"
+    report_dir = tmp_path / "report"
+    assert queue_main([str(_split_path(tmp_path)), "--out", str(queue_dir), "--seed", "42"]) == 0
+    suggestions_path = queue_dir / "suggested_labels.jsonl"
+    labels_path = queue_dir / "labels.auto.jsonl"
+    assert suggest_main([str(queue_dir / "queue.jsonl"), "--out", str(suggestions_path)]) == 0
+
+    result = autofill_main(
+        [
+            str(queue_dir / "queue.jsonl"),
+            "--suggestions",
+            str(suggestions_path),
+            "--out",
+            str(labels_path),
+            "--labeler-id",
+            "codepawl_taste_v0_auto",
+        ]
+    )
+
+    assert result == 0
+    queue = _read_jsonl(queue_dir / "queue.jsonl")
+    labels = _read_jsonl(labels_path)
+    assert len(labels) == len(queue)
+    assert all(label["review_status"] == "auto_labeled" for label in labels)
+    assert all(label["label_source"] == "auto_labeled" for label in labels)
+    assert all(label["reviewed_by"] is None and label["reviewed_at"] is None for label in labels)
+    assert all(label["auto_label"] is True for label in labels)
+    assert all(label["auto_label_method"] == "codepawl_taste_v0" for label in labels)
+    assert labels[0]["suggested_by"] == "codepawl_rule_v0"
+
+    assert (
+        validate_main(
+            [str(labels_path), "--queue", str(queue_dir / "queue.jsonl"), "--out", str(validation_dir)]
+        )
+        == 0
+    )
+    validation = json.loads((validation_dir / "validation.json").read_text(encoding="utf-8"))
+    assert validation["auto_labeled_count"] == 3
+    assert validation["human_reviewed_count"] == 0
+    assert validation["confirmed_count"] == 0
+    assert any("auto_labeled weak labels" in warning for warning in validation["warnings"])
+
+    assert report_main([str(labels_path), "--queue", str(queue_dir / "queue.jsonl"), "--out", str(report_dir)]) == 0
+    summary = json.loads((report_dir / "summary.json").read_text(encoding="utf-8"))
+    report = (report_dir / "report.md").read_text(encoding="utf-8")
+    assert summary["auto_labeled_count"] == 3
+    assert "weak machine/rule labels" in report
+    assert "not human-reviewed labels" in report
 
 
 def test_label_report_includes_embedded_suggestion_agreement(tmp_path: Path) -> None:

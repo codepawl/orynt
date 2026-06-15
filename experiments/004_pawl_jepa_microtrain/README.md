@@ -70,6 +70,21 @@ Use blind review to reduce suggestion leakage before treating `hard_pref_v2` as 
 uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an --blind
 ```
 
+If manual review is deferred, use an explicit weak-label bootstrap file and keep it separate from human-reviewed labels:
+
+```bash
+uv run pawlbench-design-label-autofill artifacts/datasets/hard_pref_v2/review/queue.jsonl \
+  --suggestions artifacts/datasets/hard_pref_v2/review/suggested_labels.jsonl \
+  --out artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl \
+  --labeler-id codepawl_taste_v0_auto
+uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v2 \
+  --labels artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl \
+  --base-splits artifacts/datasets/local_v1_splits \
+  --out artifacts/pawl_jepa/hard_pref_v2_auto_manifest
+```
+
+The resulting manifest uses `label_source: "auto_labeled"` and reports auto counts separately. Use this for plumbing and exploratory runs, not final claims.
+
 Prepare future/manual generated candidate slots without fabricating model output:
 
 ```bash

@@ -138,6 +138,18 @@ uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested
 
 For 30 complete `local_v1` samples, `hard_pref_v2` produces 180 records and writes `diagnostics.md` with pair type distribution.
 
+For temporary bootstrapping, promote suggestions into weak auto labels and report them separately from human review:
+
+```bash
+uv run pawlbench-design-label-autofill artifacts/datasets/hard_pref_v2/review/queue.jsonl \
+  --suggestions artifacts/datasets/hard_pref_v2/review/suggested_labels.jsonl \
+  --out artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl \
+  --labeler-id codepawl_taste_v0_auto
+uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/auto_label_report
+```
+
+Auto labels are weak machine/rule labels for bootstrapping, not human-reviewed labels.
+
 Use blind review for the next pass:
 
 ```bash

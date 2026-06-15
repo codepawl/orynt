@@ -17,7 +17,7 @@ from pawlbench_design.taste import load_taste_profile, suggest_label_with_taste
 PREFERRED_VALUES = ("left", "right", "tie", "unclear")
 ITEM_VALUES = ("original", "variant")
 SEVERITY_VALUES = ("none", "low", "medium", "high")
-REVIEW_STATUS_VALUES = ("suggested", "confirmed", "edited", "unclear", "skipped")
+REVIEW_STATUS_VALUES = ("suggested", "confirmed", "edited", "unclear", "skipped", "auto_labeled")
 HUMAN_REVIEW_STATUSES = ("confirmed", "edited", "unclear")
 SUGGESTED_BY = "codepawl_rule_v0"
 DEFECT_TAGS = (
@@ -126,6 +126,22 @@ class LabelSuggestConfig:
 class LabelSuggestResult:
     output_path: Path
     labels: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class LabelAutofillConfig:
+    queue_path: Path
+    suggestions_path: Path
+    output_path: Path
+    labeler_id: str
+    auto_label_method: str = "codepawl_taste_v0"
+
+
+@dataclass(frozen=True)
+class LabelAutofillResult:
+    output_path: Path
+    labels: list[dict[str, Any]]
+    summary: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -242,6 +258,46 @@ def suggest_labels(config: LabelSuggestConfig) -> LabelSuggestResult:
     return LabelSuggestResult(output_path=output_path, labels=labels)
 
 
+def autofill_labels(config: LabelAutofillConfig) -> LabelAutofillResult:
+    queue_path = config.queue_path.expanduser().resolve()
+    suggestions_path = config.suggestions_path.expanduser().resolve()
+    output_path = config.output_path.expanduser().resolve()
+    if not config.labeler_id:
+        raise ValueError("--labeler-id is required")
+    queue_records = _read_jsonl(queue_path)
+    suggestions = _read_jsonl(suggestions_path)
+    suggestions_by_id = {str(label.get("label_id")): label for label in suggestions}
+    if len(suggestions_by_id) != len(suggestions):
+        raise ValueError("suggestions contain duplicate label_id records")
+    labels: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for queue_record in queue_records:
+        label_id = str(queue_record.get("label_id") or "")
+        suggestion = suggestions_by_id.get(label_id)
+        if suggestion is None:
+            missing.append(label_id)
+            continue
+        labels.append(
+            _auto_label_from_suggestion(
+                queue_record=queue_record,
+                suggestion=suggestion,
+                labeler_id=config.labeler_id,
+                auto_label_method=config.auto_label_method,
+            )
+        )
+    if missing:
+        raise ValueError(f"suggestions missing label_id records: {', '.join(missing[:10])}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(output_path, labels)
+    summary = {
+        "total_queue_records": len(queue_records),
+        "auto_labeled_count": len(labels),
+        "labeler_id": config.labeler_id,
+        "auto_label_method": config.auto_label_method,
+    }
+    return LabelAutofillResult(output_path=output_path, labels=labels, summary=summary)
+
+
 def resuggest_labels(config: LabelResuggestConfig) -> LabelResuggestResult:
     queue_path = config.queue_path.expanduser().resolve()
     existing_path = config.existing_labels_path.expanduser().resolve()
@@ -255,6 +311,71 @@ def resuggest_labels(config: LabelResuggestConfig) -> LabelResuggestResult:
     _write_jsonl(output_path, labels)
     summary = suggestion_change_summary(existing_by_id, labels)
     return LabelResuggestResult(output_path=output_path, labels=labels, summary=summary)
+
+
+def _auto_label_from_suggestion(
+    *,
+    queue_record: dict[str, Any],
+    suggestion: dict[str, Any],
+    labeler_id: str,
+    auto_label_method: str,
+) -> dict[str, Any]:
+    label = {
+        "label_id": queue_record["label_id"],
+        "dataset_id": queue_record["dataset_id"],
+        "split": queue_record["split"],
+        "sample_id": queue_record["sample_id"],
+        "variant_name": queue_record["variant_name"],
+        "defect_type": queue_record["defect_type"],
+        "left_item": queue_record["left_item"],
+        "right_item": queue_record["right_item"],
+        "preferred": suggestion.get("preferred"),
+        "defect_tags": suggestion.get("defect_tags", []),
+        "quality_tags": suggestion.get("quality_tags", []),
+        "severity": suggestion.get("severity"),
+        "fix_instruction": suggestion.get("fix_instruction", ""),
+        "reason": suggestion.get("reason", ""),
+        "confidence": suggestion.get("confidence", suggestion.get("suggestion_confidence")),
+        "labeler_id": labeler_id,
+        "created_at": _now_iso(),
+        "suggested_by": suggestion.get("suggested_by"),
+        "suggested_preferred": suggestion.get("preferred"),
+        "suggested_severity": suggestion.get("severity"),
+        "suggested_defect_tags": suggestion.get("defect_tags", []),
+        "suggestion_confidence": suggestion.get("suggestion_confidence", suggestion.get("confidence")),
+        "review_status": "auto_labeled",
+        "label_source": "auto_labeled",
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "blind_review": False,
+        "suggestion_revealed": True,
+        "auto_label": True,
+        "auto_label_method": auto_label_method,
+    }
+    for field in (
+        "pair_id",
+        "pair_kind",
+        "left_variant_name",
+        "right_variant_name",
+        "left_defect_type",
+        "right_defect_type",
+        "pair_type",
+        "heuristic_signals",
+    ):
+        if field in queue_record:
+            label[field] = queue_record[field]
+        elif field in suggestion:
+            label[field] = suggestion[field]
+    for field in (
+        "suggestion_reason",
+        "suggestion_reason_detail",
+        "taste_profile_id",
+        "taste_profile_version",
+        "taste_decision_factors",
+    ):
+        if field in suggestion:
+            label[field] = suggestion[field]
+    return label
 
 
 def diff_labels(config: LabelDiffConfig) -> LabelDiffResult:
@@ -447,7 +568,10 @@ def build_label_validation(*, labels_path: Path, queue_path: Path) -> dict[str, 
     if not total:
         warnings.append("queue is empty")
     human_reviewed = sum(review_status_counts.get(status, 0) for status in HUMAN_REVIEW_STATUSES)
-    if completed and human_reviewed == 0:
+    auto_labeled = review_status_counts.get("auto_labeled", 0)
+    if completed and auto_labeled == completed:
+        warnings.append("label file contains only auto_labeled weak labels; no human-reviewed labels")
+    elif completed and human_reviewed == 0:
         warnings.append("label file contains suggestions but no confirmed or edited human labels")
     if suspicious_confirmed_count:
         warnings.append(
@@ -470,6 +594,7 @@ def build_label_validation(*, labels_path: Path, queue_path: Path) -> dict[str, 
         "edited_count": review_status_counts.get("edited", 0),
         "unclear_count": review_status_counts.get("unclear", 0),
         "skipped_count": review_status_counts.get("skipped", 0),
+        "auto_labeled_count": auto_labeled,
         "human_reviewed_count": human_reviewed,
         "rule_reviewed_count": rule_reviewed_count,
         "suspicious_confirmed_count": suspicious_confirmed_count,
@@ -1008,6 +1133,7 @@ def _label_report_summary(
         "edited_count": validation["edited_count"],
         "unclear_count": validation["unclear_count"],
         "skipped_count": validation["skipped_count"],
+        "auto_labeled_count": validation["auto_labeled_count"],
         "human_reviewed_count": validation["human_reviewed_count"],
         "rule_reviewed_count": validation["rule_reviewed_count"],
         "suspicious_confirmed_count": validation["suspicious_confirmed_count"],
@@ -1043,6 +1169,7 @@ def _label_report_markdown(summary: dict[str, Any]) -> str:
             f"- Coverage ratio: {summary['coverage_ratio']:.3f}",
             f"- Validation valid: {summary['valid']}",
             f"- Human reviewed: {summary['human_reviewed_count']}",
+            f"- Auto labeled: {summary['auto_labeled_count']}",
             f"- Rule reviewed: {summary['rule_reviewed_count']}",
             f"- Suspicious confirmed: {summary['suspicious_confirmed_count']}",
             "",
@@ -1056,6 +1183,13 @@ def _label_report_markdown(summary: dict[str, Any]) -> str:
         "",
     ]
     lines.extend(_count_lines(summary["review_status_counts"]))
+    if summary["auto_labeled_count"]:
+        lines.extend(
+            [
+                "",
+                "Auto labels are weak machine/rule labels for bootstrapping. They are not human-reviewed labels.",
+            ]
+        )
     lines.extend(
         [
             "",

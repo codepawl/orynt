@@ -107,6 +107,17 @@ Escape       close help or blur the active control
 
 The static `artifacts/labels/local_v1_train/review.html` remains available as a manual fallback review sheet. It does not write files; use it to copy completed JSONL records by hand if you do not want to run the local app.
 
+For bootstrapping only, suggestions can be promoted into weak auto labels without marking them as human-reviewed:
+
+```bash
+uv run pawlbench-design-label-autofill artifacts/labels/local_v1_train/queue.jsonl \
+  --suggestions artifacts/labels/local_v1_train/suggested_labels.jsonl \
+  --out artifacts/labels/local_v1_train/labels.auto.jsonl \
+  --labeler-id codepawl_rule_v0_auto
+```
+
+Auto labels use `review_status: "auto_labeled"` and `label_source: "auto_labeled"`. They are acceptable for local bootstrapping, but not for final research claims.
+
 Audit label provenance before using labels for Pawl-JEPA work:
 
 ```bash
@@ -148,6 +159,19 @@ uv run pawlbench-design-hard-pairs artifacts/datasets/local_v1 \
 uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --labeler-id an
 uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
 ```
+
+To skip manual review temporarily and train on weak CodePawl Taste v0 labels, write an explicit auto-label file:
+
+```bash
+uv run pawlbench-design-label-autofill artifacts/datasets/hard_pref_v2/review/queue.jsonl \
+  --suggestions artifacts/datasets/hard_pref_v2/review/suggested_labels.jsonl \
+  --out artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl \
+  --labeler-id codepawl_taste_v0_auto
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/auto_validation
+uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/auto_label_report
+```
+
+The validation and report distinguish `auto_labeled` records from human-reviewed labels and warn when a file is entirely weak auto labels.
 
 Use blind review when measuring agreement independent of suggestions:
 
@@ -228,6 +252,8 @@ uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v2 \
 uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_run --epochs 10 --batch-size 8 --device auto
 uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v2_run --manifest artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_eval
 ```
+
+For bootstrapping with weak auto labels, pass `artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl` to `pawl-jepa-prepare-hard`; the manifest and reports keep `auto_labeled` separate from human-reviewed counts.
 
 `eval_summary.json` includes constant and heuristic baselines. Current `local_v1` labels all prefer the original UI, so pairwise accuracy must be interpreted against `always_prefer_original_accuracy` and `pairwise_lift_over_always_original`. `hard_pref_v1` records are a smoke variant-vs-variant set; `hard_pref_v2` is the all-pairs benchmark. Hard-pair eval reports always-left, always-right, random, and suggestion baselines.
 

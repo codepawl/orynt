@@ -317,6 +317,58 @@ def test_prepare_hard_manifest_assigns_splits_and_fields(tmp_path: Path) -> None
     assert result.summary["pair_kind_counts"] == {"variant_vs_variant": 2}
 
 
+def test_prepare_hard_manifest_accepts_auto_labeled_labels(tmp_path: Path) -> None:
+    base_splits = _splits_dir(
+        tmp_path,
+        {
+            "train": [_split_record(tmp_path, "train", "sample_a", "spacing_bad", "spacing")],
+            "val": [_split_record(tmp_path, "val", "sample_b", "contrast_bad", "contrast")],
+            "test": [_split_record(tmp_path, "test", "sample_c", "alignment_bad", "alignment")],
+        },
+    )
+    hard_dir = tmp_path / "hard_pref_v2"
+    records = [_hard_pair_record(tmp_path, "sample_a"), _hard_pair_record(tmp_path, "sample_b")]
+    _write_jsonl(hard_dir / "hard_pairs.jsonl", records)
+    labels = []
+    for record in records:
+        label = _hard_label(record, "left")
+        label.update(
+            {
+                "review_status": "auto_labeled",
+                "label_source": "auto_labeled",
+                "reviewed_by": None,
+                "reviewed_at": None,
+                "auto_label": True,
+                "auto_label_method": "codepawl_taste_v0",
+                "suggestion_confidence": 5,
+                "taste_decision_factors": [{"factor": "contrast"}],
+            }
+        )
+        labels.append(label)
+    labels_path = tmp_path / "hard.labels.auto.jsonl"
+    _write_jsonl(labels_path, labels)
+
+    result = prepare_hard_manifest(
+        PrepareHardConfig(
+            hard_pairs_dir=hard_dir,
+            labels_path=labels_path,
+            base_splits_dir=base_splits,
+            output_dir=tmp_path / "hard_manifest",
+        )
+    )
+
+    train = load_manifest_records(result.output_dir, "train")
+    val = load_manifest_records(result.output_dir, "val")
+    assert train[0]["label_source"] == "auto_labeled"
+    assert train[0]["auto_label"] is True
+    assert train[0]["auto_label_method"] == "codepawl_taste_v0"
+    assert train[0]["reviewed_by"] is None
+    assert val[0]["label_source"] == "auto_labeled"
+    assert result.summary["human_reviewed_count_by_split"] == {"test": 0, "train": 0, "val": 0}
+    assert result.summary["auto_labeled_count_by_split"] == {"test": 0, "train": 1, "val": 1}
+    assert result.summary["label_source_counts"] == {"auto_labeled": 2}
+
+
 def test_prepare_hard_cli_writes_manifest(tmp_path: Path) -> None:
     base_splits = _splits_dir(
         tmp_path,
@@ -535,6 +587,36 @@ def test_eval_hard_pair_baselines() -> None:
     assert summary["pairwise_lift_over_best_constant"] == 0.0
     assert summary["defect_accuracy_on_losing_side"] == 0.5
     assert "always_prefer_original_accuracy" not in summary
+
+
+def test_eval_summarizes_auto_labeled_hard_pairs_separately() -> None:
+    from pawl_jepa.evaluate import summarize_scores
+
+    scores = [
+        {
+            "label_id": "a",
+            "pair_kind": "variant_vs_variant",
+            "preferred_item": "left",
+            "pairwise_correct": True,
+            "defect_type": "spacing",
+            "defect_prediction": "spacing",
+            "suggested_preferred": "left",
+            "cosine_similarity": 0.9,
+            "latent_loss": 0.2,
+            "label_source": "auto_labeled",
+            "_original_embedding": [1.0, 0.0],
+            "_variant_embedding": [1.0, 0.0],
+            "sample_id": "a",
+        }
+    ]
+    records = [{"pair_kind": "variant_vs_variant", "preferred": "left", "label_source": "auto_labeled"}]
+
+    summary = summarize_scores(scores, records)
+
+    assert summary["label_coverage_used"] == 0
+    assert summary["auto_labeled_count"] == 1
+    assert summary["label_source_counts"] == {"auto_labeled": 1}
+    assert any("weak labels" in warning for warning in summary["warnings"])
 
 
 def _tiny_manifest(tmp_path: Path) -> Path:
@@ -948,8 +1030,10 @@ def test_report_generation_supports_hard_pair_eval_and_sweep(tmp_path: Path) -> 
             "preferred_item_counts": {"left": 95, "right": 85},
             "preferred_counts": {"left": 95, "right": 85},
             "label_coverage_by_split": {"train": 1.0, "val": 1.0, "test": 1.0},
-            "human_reviewed_count_by_split": {"train": 144, "val": 18, "test": 18},
+            "human_reviewed_count_by_split": {"train": 0, "val": 0, "test": 0},
+            "auto_labeled_count_by_split": {"train": 144, "val": 18, "test": 18},
             "synthetic_fallback_count_by_split": {"train": 0, "val": 0, "test": 0},
+            "label_source_counts": {"auto_labeled": 180},
         },
     )
     write_json(
@@ -967,6 +1051,8 @@ def test_report_generation_supports_hard_pair_eval_and_sweep(tmp_path: Path) -> 
                     "defect_majority_class_accuracy": 0.6,
                     "defect_lift_over_majority": -0.2,
                     "average_latent_prediction_loss": 0.2,
+                    "auto_labeled_count": 18,
+                    "label_source_counts": {"auto_labeled": 18},
                     "warnings": [],
                 }
             },
@@ -1008,6 +1094,8 @@ def test_report_generation_supports_hard_pair_eval_and_sweep(tmp_path: Path) -> 
     assert "Defect majority baseline" in report
     assert "Sweep Summary" in report
     assert "suggestion_baseline_accuracy" in report
+    assert "Auto labeled counts" in report
+    assert "weak machine/rule labels" in report
     assert "Labels may be reviewed from taste-profile suggestions" in report
     assert "All current local_v1 labels prefer the original UI" not in report
     assert "mean 0.5000, std 0.1000" in report

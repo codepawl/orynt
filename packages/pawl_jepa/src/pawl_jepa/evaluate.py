@@ -206,7 +206,7 @@ def summarize_scores(
     random_defect = random_defect_accuracy(defect_correct, seed=random_seed)
     warnings = split_warnings(comparable, always_original_accuracy)
     pairwise_by_label_source: dict[str, float | None] = {}
-    for label_source in ("human_reviewed", "synthetic_fallback"):
+    for label_source in ("human_reviewed", "auto_labeled", "synthetic_fallback"):
         source_scores = [
             score
             for score in comparable
@@ -222,6 +222,15 @@ def summarize_scores(
         for source, count in label_sources.items()
         if normalize_label_source(source) == "human_reviewed"
     )
+    auto_labeled_count = sum(
+        count
+        for source, count in label_sources.items()
+        if normalize_label_source(source) == "auto_labeled"
+    )
+    if auto_labeled_count:
+        warnings.append(
+            "This split uses auto_labeled weak labels; treat results as bootstrap signals, not human-reviewed evidence."
+        )
     return {
         "record_count": len(scores),
         "pairwise_good_vs_bad_accuracy": pairwise_accuracy,
@@ -246,6 +255,8 @@ def summarize_scores(
         "retrieval_top1": retrieval["top1"],
         "retrieval_top5": retrieval["top5"],
         "label_coverage_used": human_reviewed_count / len(records) if records else 0,
+        "auto_labeled_count": auto_labeled_count,
+        "label_source_counts": sorted_counter(label_sources),
         "skipped_tie_unclear_count": len(scores) - len(comparable),
         "warnings": warnings,
     }
@@ -270,7 +281,16 @@ def summarize_hard_pair_scores(
     human_reviewed_count = sum(
         1 for record in records if normalize_label_source(record.get("label_source")) == "human_reviewed"
     )
+    auto_labeled_count = sum(
+        1 for record in records if normalize_label_source(record.get("label_source")) == "auto_labeled"
+    )
+    label_source_counts = Counter(record.get("label_source") for record in records)
     preferred_counts = Counter(record.get("preferred") for record in records)
+    warnings = hard_pair_warnings(comparable)
+    if auto_labeled_count:
+        warnings.append(
+            "This split uses auto_labeled weak labels; treat results as bootstrap signals, not human-reviewed evidence."
+        )
     return {
         "record_count": len(scores),
         "pairwise_preference_accuracy": pairwise_accuracy,
@@ -291,18 +311,27 @@ def summarize_hard_pair_scores(
         "retrieval_top1": None,
         "retrieval_top5": None,
         "label_coverage_used": human_reviewed_count / len(records) if records else 0,
+        "auto_labeled_count": auto_labeled_count,
+        "label_source_counts": sorted_counter(label_source_counts),
         "preferred_counts": dict(sorted(preferred_counts.items())),
         "tie_unclear_count": sum(preferred_counts.get(key, 0) for key in ("tie", "unclear")),
-        "warnings": hard_pair_warnings(comparable),
+        "warnings": warnings,
     }
 
 
 def normalize_label_source(label_source: Any) -> str | None:
     if label_source == "reviewed":
         return "human_reviewed"
-    if label_source in {"human_reviewed", "synthetic_fallback"}:
+    if label_source in {"human_reviewed", "auto_labeled", "synthetic_fallback"}:
         return str(label_source)
     return None
+
+
+def sorted_counter(counter: Counter) -> dict[str, int]:
+    return {
+        str(key): count
+        for key, count in sorted(counter.items(), key=lambda item: str(item[0]))
+    }
 
 
 def accuracy_from_correct(scores: list[dict[str, Any]]) -> float | None:

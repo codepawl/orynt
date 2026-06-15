@@ -11,6 +11,7 @@ from typing import Any
 
 SPLITS = ("train", "val", "test")
 HUMAN_REVIEW_STATUSES = {"confirmed", "edited", "unclear"}
+AUTO_LABEL_STATUSES = {"auto_labeled"}
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,7 @@ def prepare_hard_manifest(config: PrepareHardConfig) -> PrepareResult:
     for hard_record in hard_records:
         label_id = str(hard_record.get("label_id") or hard_record.get("pair_id") or "")
         label = labels_by_id.get(label_id)
-        if not label or not is_human_label(label):
+        if not label or not is_usable_label(label):
             continue
         sample_id = str(hard_record["sample_id"])
         split = split_by_sample.get(sample_id)
@@ -201,7 +202,9 @@ def build_manifest_record(
         "left_item": label.get("left_item") if label else "original",
         "right_item": label.get("right_item") if label else "variant",
         "metric_deltas": split_record.get("metric_deltas", {}),
-        "label_source": "human_reviewed" if label else "synthetic_fallback",
+        "label_source": label_source_from_label(label) if label else "synthetic_fallback",
+        "auto_label": bool(label.get("auto_label")) if label else False,
+        "auto_label_method": label.get("auto_label_method") if label else None,
     }
 
 
@@ -295,9 +298,13 @@ def build_hard_manifest_record(
         "review_status": label.get("review_status"),
         "reviewed_by": label.get("reviewed_by"),
         "taste_profile_id": label.get("taste_profile_id"),
-        "label_source": "human_reviewed",
+        "label_source": label_source_from_label(label),
         "label_file": label.get("label_file"),
         "suggested_preferred": label.get("suggested_preferred") or hard_record.get("suggested_preferred"),
+        "suggestion_confidence": label.get("suggestion_confidence"),
+        "taste_decision_factors": label.get("taste_decision_factors", []),
+        "auto_label": bool(label.get("auto_label")),
+        "auto_label_method": label.get("auto_label_method"),
         "heuristic_signals": hard_record.get("heuristic_signals", []),
     }
 
@@ -320,6 +327,20 @@ def side_record_for_hard_pair(hard_record: dict[str, Any], side: str) -> dict[st
 
 def is_human_label(label: dict[str, Any]) -> bool:
     return label.get("review_status") in HUMAN_REVIEW_STATUSES
+
+
+def is_auto_label(label: dict[str, Any]) -> bool:
+    return label.get("review_status") in AUTO_LABEL_STATUSES or label.get("label_source") == "auto_labeled"
+
+
+def is_usable_label(label: dict[str, Any]) -> bool:
+    return is_human_label(label) or is_auto_label(label)
+
+
+def label_source_from_label(label: dict[str, Any]) -> str:
+    if is_auto_label(label):
+        return "auto_labeled"
+    return "human_reviewed"
 
 
 def make_label_id(dataset_id: str, split: str, sample_id: str, variant_name: str) -> str:
@@ -354,6 +375,10 @@ def build_manifest_summary(
         split: sum(1 for record in records_by_split[split] if is_human_reviewed(record))
         for split in SPLITS
     }
+    auto_labeled_count_by_split = {
+        split: sum(1 for record in records_by_split[split] if is_auto_labeled(record))
+        for split in SPLITS
+    }
     synthetic_fallback_count_by_split = {
         split: sum(
             1
@@ -382,6 +407,7 @@ def build_manifest_summary(
         "label_coverage_by_split": label_coverage_by_split,
         "missing_label_count_by_split": missing_label_count_by_split,
         "human_reviewed_count_by_split": human_reviewed_count_by_split,
+        "auto_labeled_count_by_split": auto_labeled_count_by_split,
         "synthetic_fallback_count_by_split": synthetic_fallback_count_by_split,
         "label_source_counts": dict(sorted(label_source_counts.items())),
         "preferred_item_counts": dict(sorted(preferred_counts.items())),
@@ -407,6 +433,15 @@ def build_hard_manifest_summary(
         for split in SPLITS
     }
     defect_pair_counts = Counter(str(record.get("defect_pair")) for record in all_records)
+    label_source_counts = Counter(record.get("label_source") for record in all_records)
+    human_reviewed_count_by_split = {
+        split: sum(1 for record in records_by_split[split] if is_human_reviewed(record))
+        for split in SPLITS
+    }
+    auto_labeled_count_by_split = {
+        split: sum(1 for record in records_by_split[split] if is_auto_labeled(record))
+        for split in SPLITS
+    }
     return {
         "schema_version": "pawl_jepa_hard_pair_manifest_v1",
         "hard_pair_records_path": str(records_path),
@@ -418,6 +453,9 @@ def build_hard_manifest_summary(
         "label_file_count": 1,
         "label_record_count": label_record_count,
         "label_coverage_by_split": label_coverage_by_split,
+        "human_reviewed_count_by_split": human_reviewed_count_by_split,
+        "auto_labeled_count_by_split": auto_labeled_count_by_split,
+        "label_source_counts": dict(sorted(label_source_counts.items())),
         "preferred_counts_by_split": preferred_counts_by_split,
         "preferred_item_counts": dict(sorted(Counter(record.get("preferred_item") for record in all_records).items())),
         "pair_kind_counts": dict(sorted(Counter(record.get("pair_kind") for record in all_records).items())),
@@ -443,6 +481,10 @@ def build_hard_manifest_summary(
 
 def is_human_reviewed(record: dict[str, Any]) -> bool:
     return record.get("label_source") in {"human_reviewed", "reviewed"}
+
+
+def is_auto_labeled(record: dict[str, Any]) -> bool:
+    return record.get("label_source") == "auto_labeled"
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:

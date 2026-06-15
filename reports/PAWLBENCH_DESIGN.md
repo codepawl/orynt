@@ -397,6 +397,19 @@ uv run pawlbench-design-label-app artifacts/datasets/hard_pref_v2/review --label
 uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/suggested_labels.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/suggested_validation
 ```
 
+For a temporary bootstrap run, promote suggestions into weak auto labels without claiming human review:
+
+```bash
+uv run pawlbench-design-label-autofill artifacts/datasets/hard_pref_v2/review/queue.jsonl \
+  --suggestions artifacts/datasets/hard_pref_v2/review/suggested_labels.jsonl \
+  --out artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl \
+  --labeler-id codepawl_taste_v0_auto
+uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/auto_validation
+uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl --queue artifacts/datasets/hard_pref_v2/review/queue.jsonl --out artifacts/datasets/hard_pref_v2/auto_label_report
+```
+
+These records use `review_status: "auto_labeled"` and `label_source: "auto_labeled"`. They are weak machine/rule labels for bootstrapping, not human-reviewed labels or final research evidence.
+
 For blind review, start the same local app with `--blind`. The app hides suggestions until the reviewer selects a preference and uses the reveal control:
 
 ```bash

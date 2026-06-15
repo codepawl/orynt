@@ -122,9 +122,11 @@ def dataset_summary(manifest_summary: dict[str, Any]) -> dict[str, Any]:
         "preferred_item_counts": manifest_summary.get("preferred_item_counts", {}),
         "preferred_counts": manifest_summary.get("preferred_counts", {}),
         "human_reviewed_count_by_split": manifest_summary.get("human_reviewed_count_by_split", {}),
+        "auto_labeled_count_by_split": manifest_summary.get("auto_labeled_count_by_split", {}),
         "synthetic_fallback_count_by_split": manifest_summary.get(
             "synthetic_fallback_count_by_split", {}
         ),
+        "label_source_counts": manifest_summary.get("label_source_counts", {}),
     }
 
 
@@ -137,9 +139,28 @@ def is_hard_pair_eval(eval_summary: dict[str, Any]) -> bool:
 
 
 def limitations(eval_summary: dict[str, Any]) -> list[str]:
+    items: list[str]
     if is_hard_pair_eval(eval_summary):
-        return list(HARD_PAIR_LIMITATIONS)
-    return list(LIMITATIONS)
+        items = list(HARD_PAIR_LIMITATIONS)
+    else:
+        items = list(LIMITATIONS)
+    if uses_auto_labels(eval_summary):
+        items.insert(
+            0,
+            "Auto-labeled records are weak machine/rule labels for bootstrapping, not human-reviewed labels.",
+        )
+    return items
+
+
+def uses_auto_labels(eval_summary: dict[str, Any]) -> bool:
+    for split in eval_summary.get("splits", {}).values():
+        if not isinstance(split, dict):
+            continue
+        if split.get("auto_labeled_count", 0):
+            return True
+        if (split.get("label_source_counts") or {}).get("auto_labeled", 0):
+            return True
+    return False
 
 
 def recommendations(eval_summary: dict[str, Any]) -> list[str]:
@@ -177,8 +198,11 @@ def render_markdown(summary: dict[str, Any]) -> str:
         f"- Coverage by split: {format_json(summary.get('label_coverage', {}))}",
         "- Human reviewed counts: "
         f"{format_json(summary['dataset'].get('human_reviewed_count_by_split', {}))}",
+        "- Auto labeled counts: "
+        f"{format_json(summary['dataset'].get('auto_labeled_count_by_split', {}))}",
         "- Synthetic fallback counts: "
         f"{format_json(summary['dataset'].get('synthetic_fallback_count_by_split', {}))}",
+        f"- Label source counts: {format_json(summary['dataset'].get('label_source_counts', {}))}",
         f"- Preferred item counts: {format_json(summary['dataset'].get('preferred_item_counts', {}))}",
         f"- Preferred distribution: {format_json(summary['dataset'].get('preferred_counts', {}))}",
         "",
