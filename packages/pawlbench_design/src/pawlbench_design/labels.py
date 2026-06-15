@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from pawlbench_design.taste import load_taste_profile, suggest_label_with_taste
+
 
 PREFERRED_VALUES = ("left", "right", "tie", "unclear")
 ITEM_VALUES = ("original", "variant")
@@ -117,12 +119,43 @@ class LabelReportResult:
 class LabelSuggestConfig:
     queue_path: Path
     output_path: Path
+    taste_profile_path: Path | None = None
 
 
 @dataclass(frozen=True)
 class LabelSuggestResult:
     output_path: Path
     labels: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class LabelResuggestConfig:
+    queue_path: Path
+    existing_labels_path: Path
+    output_path: Path
+    taste_profile_path: Path
+
+
+@dataclass(frozen=True)
+class LabelResuggestResult:
+    output_path: Path
+    labels: list[dict[str, Any]]
+    summary: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LabelDiffConfig:
+    old_path: Path
+    new_path: Path
+    output_dir: Path
+
+
+@dataclass(frozen=True)
+class LabelDiffResult:
+    output_dir: Path
+    diff_path: Path
+    report_path: Path
+    diff: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -199,10 +232,44 @@ def suggest_labels(config: LabelSuggestConfig) -> LabelSuggestResult:
     queue_path = config.queue_path.expanduser().resolve()
     output_path = config.output_path.expanduser().resolve()
     records = _read_jsonl(queue_path)
-    labels = [_suggested_label(record) for record in records]
+    if config.taste_profile_path is not None:
+        profile = load_taste_profile(config.taste_profile_path)
+        labels = [suggest_label_with_taste(record, profile) for record in records]
+    else:
+        labels = [_suggested_label(record) for record in records]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     _write_jsonl(output_path, labels)
     return LabelSuggestResult(output_path=output_path, labels=labels)
+
+
+def resuggest_labels(config: LabelResuggestConfig) -> LabelResuggestResult:
+    queue_path = config.queue_path.expanduser().resolve()
+    existing_path = config.existing_labels_path.expanduser().resolve()
+    output_path = config.output_path.expanduser().resolve()
+    profile = load_taste_profile(config.taste_profile_path)
+    queue_records = _read_jsonl(queue_path)
+    existing = _read_jsonl(existing_path)
+    existing_by_id = {str(label.get("label_id")): label for label in existing}
+    labels = [suggest_label_with_taste(record, profile) for record in queue_records]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(output_path, labels)
+    summary = suggestion_change_summary(existing_by_id, labels)
+    return LabelResuggestResult(output_path=output_path, labels=labels, summary=summary)
+
+
+def diff_labels(config: LabelDiffConfig) -> LabelDiffResult:
+    old_path = config.old_path.expanduser().resolve()
+    new_path = config.new_path.expanduser().resolve()
+    output_dir = config.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    old_labels = _read_jsonl(old_path)
+    new_labels = _read_jsonl(new_path)
+    diff = build_label_diff(old_labels, new_labels)
+    diff_path = output_dir / "diff.json"
+    report_path = output_dir / "report.md"
+    _write_json(diff_path, diff)
+    report_path.write_text(label_diff_markdown(diff), encoding="utf-8")
+    return LabelDiffResult(output_dir=output_dir, diff_path=diff_path, report_path=report_path, diff=diff)
 
 
 def audit_labels(config: LabelAuditConfig) -> LabelAuditResult:
@@ -447,6 +514,117 @@ def queue_item_values(queue_record: dict[str, Any] | None) -> tuple[str, ...]:
     return tuple(items) if items else ITEM_VALUES
 
 
+def suggestion_change_summary(
+    old_by_id: dict[str, dict[str, Any]],
+    new_labels: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "total_records": len(new_labels),
+        "changed_preferred_count": changed_count(old_by_id, new_labels, "preferred"),
+        "changed_severity_count": changed_count(old_by_id, new_labels, "severity"),
+        "changed_defect_tags_count": changed_count(old_by_id, new_labels, "defect_tags"),
+        "changed_quality_tags_count": changed_count(old_by_id, new_labels, "quality_tags"),
+    }
+
+
+def changed_count(
+    old_by_id: dict[str, dict[str, Any]],
+    new_labels: list[dict[str, Any]],
+    field: str,
+) -> int:
+    count = 0
+    for label in new_labels:
+        old = old_by_id.get(str(label.get("label_id")))
+        if old is not None and normalized_compare(old.get(field)) != normalized_compare(label.get(field)):
+            count += 1
+    return count
+
+
+def build_label_diff(old_labels: list[dict[str, Any]], new_labels: list[dict[str, Any]]) -> dict[str, Any]:
+    old_by_id = {str(label.get("label_id")): label for label in old_labels}
+    new_by_id = {str(label.get("label_id")): label for label in new_labels}
+    changed_records: list[dict[str, Any]] = []
+    per_defect_type: Counter[str] = Counter()
+    change_counts: Counter[str] = Counter()
+    fields = (
+        "preferred",
+        "severity",
+        "defect_tags",
+        "quality_tags",
+        "reason",
+        "fix_instruction",
+    )
+    for label_id in sorted(set(old_by_id) & set(new_by_id)):
+        old = old_by_id[label_id]
+        new = new_by_id[label_id]
+        changes = {
+            field: {"old": old.get(field), "new": new.get(field)}
+            for field in fields
+            if normalized_compare(old.get(field)) != normalized_compare(new.get(field))
+        }
+        if not changes:
+            continue
+        for field in changes:
+            change_counts[field] += 1
+        defect_type = str(new.get("defect_type") or old.get("defect_type") or "unknown")
+        per_defect_type[defect_type] += 1
+        changed_records.append(
+            {
+                "label_id": label_id,
+                "sample_id": new.get("sample_id") or old.get("sample_id"),
+                "defect_type": defect_type,
+                "changes": changes,
+            }
+        )
+    return {
+        "old_count": len(old_labels),
+        "new_count": len(new_labels),
+        "matched_count": len(set(old_by_id) & set(new_by_id)),
+        "changed_count": len(changed_records),
+        "changed_preferred": change_counts.get("preferred", 0),
+        "changed_severity": change_counts.get("severity", 0),
+        "changed_defect_tags": change_counts.get("defect_tags", 0),
+        "changed_quality_tags": change_counts.get("quality_tags", 0),
+        "changed_reason": change_counts.get("reason", 0),
+        "changed_fix_instruction": change_counts.get("fix_instruction", 0),
+        "per_defect_type_change_counts": dict(sorted(per_defect_type.items())),
+        "examples": changed_records[:10],
+    }
+
+
+def label_diff_markdown(diff: dict[str, Any]) -> str:
+    lines = [
+        "# PawlBench Label Suggestion Diff",
+        "",
+        f"- Old records: {diff['old_count']}",
+        f"- New records: {diff['new_count']}",
+        f"- Matched records: {diff['matched_count']}",
+        f"- Changed records: {diff['changed_count']}",
+        f"- Changed preferred: {diff['changed_preferred']}",
+        f"- Changed severity: {diff['changed_severity']}",
+        f"- Changed defect tags: {diff['changed_defect_tags']}",
+        f"- Changed quality tags: {diff['changed_quality_tags']}",
+        f"- Changed reason: {diff['changed_reason']}",
+        f"- Changed fix instruction: {diff['changed_fix_instruction']}",
+        "",
+        "## Per Defect Type",
+        "",
+    ]
+    for defect_type, count in diff["per_defect_type_change_counts"].items():
+        lines.append(f"- {defect_type}: {count}")
+    lines.extend(["", "## Examples", ""])
+    for example in diff["examples"]:
+        lines.append(f"- `{example['label_id']}`: {', '.join(sorted(example['changes']))}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def normalized_compare(value: Any) -> Any:
+    if isinstance(value, list):
+        return sorted(value)
+    return value
+
+
 def _queue_record(record: dict[str, Any], rng: random.Random) -> dict[str, Any]:
     for field in ("dataset_id", "split", "sample_id", "variant_name", "defect_type"):
         if field not in record:
@@ -621,6 +799,12 @@ def _label_schema() -> dict[str, Any]:
         "defect_tags": list(DEFECT_TAGS),
         "quality_tags": list(QUALITY_TAGS),
         "confidence": {"type": "integer", "minimum": 1, "maximum": 5},
+        "optional_fields": [
+            "taste_profile_id",
+            "taste_profile_version",
+            "suggestion_reason_detail",
+            "taste_decision_factors",
+        ],
         "notes": [
             "Use labels only from contributors who agree labels may be used for research, product development, benchmark release, and model training.",
             "Do not include sensitive personal information in label text.",

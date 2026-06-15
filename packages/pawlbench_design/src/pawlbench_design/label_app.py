@@ -259,8 +259,15 @@ class LabelAppStore:
         ):
             if field in queue_record:
                 label[field] = queue_record[field]
-        if "suggestion_reason" in base:
-            label["suggestion_reason"] = base.get("suggestion_reason")
+        for field in (
+            "suggestion_reason",
+            "suggestion_reason_detail",
+            "taste_profile_id",
+            "taste_profile_version",
+            "taste_decision_factors",
+        ):
+            if field in base:
+                label[field] = base.get(field)
         return label
 
     def _validate_label(
@@ -621,7 +628,7 @@ def _app_html() -> str:
       document.getElementById("defect").textContent = `defect: ${{record.defect_type}}`;
       document.getElementById("issue").textContent = `Expected issue: ${{record.expected_issue || ""}}`;
       document.getElementById("fix").textContent = `Expected fix: ${{record.expected_fix_instruction || ""}}`;
-      document.getElementById("suggestion").textContent = current.suggestion ? `Suggestion: ${{current.suggestion.preferred}} · ${{current.suggestion.severity}} · confidence ${{current.suggestion.suggestion_confidence}}` : "Suggestion: none";
+      document.getElementById("suggestion").textContent = suggestionText(current.suggestion);
       document.getElementById("deltas").textContent = JSON.stringify(record.metric_deltas || {{}}, null, 2);
       document.getElementById("left-title").textContent = `Left: ${{record.left_item}}`;
       document.getElementById("right-title").textContent = `Right: ${{record.right_item}}`;
@@ -644,6 +651,19 @@ def _app_html() -> str:
       if (label?.labeler_id) document.getElementById("labeler-id").value = label.labeler_id;
       document.getElementById("status").textContent = "";
       updateDirty();
+    }}
+
+    function suggestionText(suggestion) {{
+      if (!suggestion) return "Suggestion: none";
+      const parts = [
+        `Suggestion: ${{suggestion.preferred}}`,
+        suggestion.severity,
+        `confidence ${{suggestion.suggestion_confidence || suggestion.confidence || ""}}`,
+        suggestion.suggested_by || "unknown",
+      ];
+      if (suggestion.taste_profile_id) parts.push(`profile ${{suggestion.taste_profile_id}}`);
+      if (suggestion.suggestion_reason_detail || suggestion.reason) parts.push(suggestion.suggestion_reason_detail || suggestion.reason);
+      return parts.filter(Boolean).join(" · ");
     }}
 
     function checked(name) {{

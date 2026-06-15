@@ -285,6 +285,16 @@ uv run pawlbench-design-label-suggest artifacts/labels/local_v1_train/queue.json
 
 Suggestions are deterministic rule outputs from synthetic-jitter metadata. They may prefill preference, tags, severity, reason, fix instruction, and confidence, but they are not human labels until a reviewer confirms, edits, or marks them unclear.
 
+Taste-calibrated suggestions are opt-in:
+
+```bash
+uv run pawlbench-design-label-suggest artifacts/labels/local_v1_train/queue.jsonl \
+  --out artifacts/labels/local_v1_train/suggested_labels.codepawl_taste_v0.jsonl \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml
+```
+
+Taste-calibrated suggestions preserve normal label schema fields and add optional provenance fields such as `taste_profile_id`, `taste_profile_version`, `suggestion_reason_detail`, and `taste_decision_factors`.
+
 Completed label records include:
 
 - `label_id`, `dataset_id`, `split`, `sample_id`, `variant_name`, `defect_type`
@@ -350,6 +360,21 @@ uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/suggested
 uv run pawlbench-design-label-validate artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_validation
 uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labels.jsonl --queue artifacts/datasets/hard_pref_v1/review/queue.jsonl --out artifacts/datasets/hard_pref_v1/label_report
 ```
+
+Regenerate hard-pair suggestions with CodePawl Taste v0 and inspect what changed:
+
+```bash
+uv run pawlbench-design-label-resuggest artifacts/datasets/hard_pref_v1/review/queue.jsonl \
+  --existing-labels artifacts/datasets/hard_pref_v1/suggested_labels.jsonl \
+  --out artifacts/datasets/hard_pref_v1/suggested_labels.codepawl_taste_v0.jsonl \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml
+
+uv run pawlbench-design-label-diff artifacts/datasets/hard_pref_v1/suggested_labels.jsonl \
+  artifacts/datasets/hard_pref_v1/suggested_labels.codepawl_taste_v0.jsonl \
+  --out artifacts/datasets/hard_pref_v1/codepawl_taste_v0_diff
+```
+
+Taste-calibrated details use `left_penalty` and `right_penalty`; lower penalty is better.
 
 ## Local Labeling App v0 Contract
 

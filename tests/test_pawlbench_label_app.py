@@ -165,6 +165,14 @@ def test_label_app_prefills_suggestions(tmp_path: Path) -> None:
     assert item["suggestion"]["fix_instruction"] == "Use the suggested fix."
 
 
+def test_label_app_markup_includes_taste_suggestion_fields() -> None:
+    html = _app_html()
+
+    assert "taste_profile_id" in html
+    assert "suggestion_reason_detail" in html
+    assert "suggested_by" in html
+
+
 def test_label_app_upserts_labels_without_duplicates(tmp_path: Path) -> None:
     queue_dir = _queue_dir(tmp_path)
     store = LabelAppStore(queue_dir)

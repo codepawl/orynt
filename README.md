@@ -75,6 +75,14 @@ Generate deterministic rule-based suggestions for faster review:
 uv run pawlbench-design-label-suggest artifacts/labels/local_v1_train/queue.jsonl --out artifacts/labels/local_v1_train/suggested_labels.jsonl
 ```
 
+Generate taste-calibrated suggestions without changing the legacy rule path:
+
+```bash
+uv run pawlbench-design-label-suggest artifacts/labels/local_v1_train/queue.jsonl \
+  --out artifacts/labels/local_v1_train/suggested_labels.codepawl_taste_v0.jsonl \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml
+```
+
 Start the local labeling app:
 
 ```bash
@@ -129,6 +137,21 @@ uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labe
 ```
 
 Hard preference suggestions use `review_status: "suggested"` and are not human-reviewed labels until confirmed or edited in the label app.
+
+Regenerate hard-pair suggestions with CodePawl Taste v0 and diff them against the old suggestions:
+
+```bash
+uv run pawlbench-design-label-resuggest artifacts/datasets/hard_pref_v1/review/queue.jsonl \
+  --existing-labels artifacts/datasets/hard_pref_v1/suggested_labels.jsonl \
+  --out artifacts/datasets/hard_pref_v1/suggested_labels.codepawl_taste_v0.jsonl \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml
+
+uv run pawlbench-design-label-diff artifacts/datasets/hard_pref_v1/suggested_labels.jsonl \
+  artifacts/datasets/hard_pref_v1/suggested_labels.codepawl_taste_v0.jsonl \
+  --out artifacts/datasets/hard_pref_v1/codepawl_taste_v0_diff
+```
+
+Taste suggestion details report `left_penalty` and `right_penalty`; lower penalty is better.
 
 Then validate, split, and summarize the dataset:
 

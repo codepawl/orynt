@@ -68,6 +68,18 @@ uv run pawlbench-design-label-report artifacts/datasets/hard_pref_v1/review/labe
 
 These hard-pair labels are variant-vs-variant labels and should remain separate from current Pawl-JEPA manifests until a later task defines how to train on non-original preference pairs.
 
+CodePawl Taste v0 calibrates suggestions toward the current frontend taste profile without overwriting human labels:
+
+```bash
+uv run pawlbench-design-label-resuggest artifacts/datasets/hard_pref_v1/review/queue.jsonl \
+  --existing-labels artifacts/datasets/hard_pref_v1/suggested_labels.jsonl \
+  --out artifacts/datasets/hard_pref_v1/suggested_labels.codepawl_taste_v0.jsonl \
+  --taste-profile configs/labeling/codepawl_taste_v0.yaml
+uv run pawlbench-design-label-diff artifacts/datasets/hard_pref_v1/suggested_labels.jsonl artifacts/datasets/hard_pref_v1/suggested_labels.codepawl_taste_v0.jsonl --out artifacts/datasets/hard_pref_v1/codepawl_taste_v0_diff
+```
+
+Taste-calibrated details use `left_penalty` and `right_penalty`; lower penalty is better.
+
 ## Microtraining Scaffold v1
 
 The current scaffold proves that CodePawl can train a local UI representation model from PawlBench pairs and reviewed labels:
