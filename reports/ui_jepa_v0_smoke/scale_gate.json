@@ -1,0 +1,7 @@
+{
+  "allowed": true,
+  "blocked_stages": [],
+  "errors": [],
+  "next_command": "uv run ui-jepa-smoke-b0 /home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2",
+  "schema_version": "ui_jepa_scaling_gate_v1"
+}
