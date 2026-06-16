@@ -317,6 +317,7 @@ Run:
 
 ```bash
 UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jepa_scale_gate_cli \
+  --target all \
   --dataset data/processed/ui_jepa_v0_smoke \
   --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
   --m1-report reports/ui_jepa_v0_smoke/m1_report.json \
@@ -330,12 +331,13 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jep
   --out reports/ui_jepa_v0_smoke/scale_gate.json
 ```
 
-The current gate records `closed_loop_non_oracle_ready: true`, `manual_patch_ready: true`, `manual_review_ready: true`, and `pr_review_foundation_ready: true` when the manual batch report passes. `pr_review_ready` requires an additional valid PR screenshot review report with no severe missing artifacts and passing regression thresholds. `dom_aware_ready` remains false because M2.5 still finds no useful representation signal and no DOM/localization bottleneck has been shown.
+The current strict research gate records `closed_loop_non_oracle_ready: true`, `manual_patch_ready: true`, `manual_review_ready: true`, and `pr_review_foundation_ready: true` when the manual batch report passes. `pr_review_ready` requires an additional valid PR screenshot review report with no severe missing artifacts and passing regression thresholds. `dom_aware_ready` remains false because M2.5 still finds no useful representation signal and no DOM/localization bottleneck has been shown. With `--target all` or `--target dom-aware`, the CLI exits `1` while DOM-aware is blocked.
 
 For Phase 4C, pass the combined manual batch report:
 
 ```bash
 UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jepa_scale_gate_cli \
+  --target pr-review \
   --dataset data/processed/ui_jepa_v0_smoke \
   --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
   --m1-report reports/ui_jepa_v0_smoke/m1_report.json \
@@ -350,6 +352,8 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jep
 ```
 
 `pr_review_foundation_ready` requires manual patch import evidence with enough rendered tasks, success rate above threshold, accessibility/responsive regression rates below threshold, and completed manual review labels. `pr_review_ready` additionally requires a PR screenshot review report whose decision is `approve_visual` or `needs_manual_review`, with clean artifact and regression gates. A high manual patch success rate without labels recommends filling labels; low manual patch success recommends improving contracts or the critic instruction adapter; critic-review disagreement recommends collecting more labels and recalibrating.
+
+For PR screenshot review CI, use `--target pr-review`. It exits `0` when `pr_review_ready: true` even though `dom_aware_ready: false`. The target-specific gate JSON includes `target`, `target_ready`, `exit_code_reason`, `blocked_reasons_by_target`, and `recommended_next_stage_by_target`.
 
 ## Before Real PR Review
 

@@ -3,6 +3,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from codepawl_harness.ui_jepa_scale_gate_cli import main as scale_gate_main
+from pawlbench_design.ui_jepa_smoke import check_ui_jepa_scaling_gate
 from pawlbench_design.ui_pr_review import (
     PR_REVIEW_INPUT_SCHEMA_VERSION,
     PrReviewConfig,
@@ -222,3 +224,150 @@ def test_pr_review_cli_style_explicit_screenshot_paths(tmp_path: Path) -> None:
     assert report["valid"] is True
     assert report["artifact_paths"]["before_screenshot"].endswith("before.png")
     assert report["artifact_paths"]["after_screenshot"].endswith("after.png")
+
+
+def _gate_fixture_reports(tmp_path: Path) -> dict[str, Path]:
+    paths = {
+        "b0": tmp_path / "b0.json",
+        "m1": tmp_path / "m1.json",
+        "m2": tmp_path / "m2.json",
+        "m25": tmp_path / "m25.json",
+        "critic": tmp_path / "critic.json",
+        "loop": tmp_path / "closed_loop.json",
+        "manual_batch": tmp_path / "manual_batch.json",
+        "pr_review": tmp_path / "pr_review.json",
+    }
+    _write_json(paths["b0"], {"real_weights": True, "valid_for_model_selection": True, "metrics_baseline": {"available": True}, "splits": {"val": {"lift_over_best_constant": 0.1}}, "validity_checks": {"failed_conditions": []}})
+    _write_json(paths["m1"], {"valid_m1_baseline": True, "collapse_diagnostics": {"valid": True}, "probe": {"available": True}, "b0_comparison": {"available": True}})
+    _write_json(paths["m2"], {"valid_m2_baseline": True, "collapse_diagnostics": {"valid": True}, "probe": {"available": True}, "comparison": {"valid": True}})
+    _write_json(paths["m25"], {"useful_representation_signal": False, "dom_aware_recommended": False, "recommended_decision": "change_objective_or_strengthen_training_before_dom_aware"})
+    _write_json(paths["critic"], {"valid": True, "critique_json_examples": [{"screen_id": "s"}], "hard_subset_metrics": {"hard_test": {"available": True, "pairwise_accuracy": 0.7}}, "full_test_metrics": {"best_constant_accuracy": 0.5}, "issue_heads": {"spacing": {"available": False, "skipped_reason": "fixture"}}})
+    _write_json(paths["loop"], {"valid": True, "passed_closed_loop_gate": True, "passed_closed_loop_gate_uses_non_oracle_only": True, "set_name": "loop_mixed_50", "noop_baseline": {"false_improvement_detected": False}, "patch_mode": "deterministic_patch", "difficulty_breakdown": {"easy": {"success_rate": 1.0}}, "deterministic_non_oracle_success_rate": 1.0, "accessibility_regression_rate_non_oracle": 0.0, "responsive_regression_rate_non_oracle": 0.0, "manual_review": {"labels_available": True, "matched_label_count": 1}})
+    _write_json(paths["manual_batch"], {"valid": True, "evaluated_task_count": 1, "manual_patch_success_rate": 1.0, "accessibility_regression_rate": 0.0, "responsive_regression_rate": 0.0, "manual_patch_ready": True, "manual_review_ready": True, "blocked_reason": None, "thresholds": {"min_task_count": 1, "min_success_rate": 0.5, "max_regression_rate": 0.1}})
+    _write_json(paths["pr_review"], {"valid": True, "recommended_decision": "approve_visual", "regression_thresholds_pass": True, "severe_missing_artifacts": []})
+    return paths
+
+
+def _gate_args(paths: dict[str, Path], *, target: str, pr_review: Path | None = None, out: Path | None = None) -> list[str]:
+    args = [
+        "--target",
+        target,
+        "--dataset",
+        "data/processed/ui_jepa_v0_smoke",
+        "--b0-report",
+        str(paths["b0"]),
+        "--m1-report",
+        str(paths["m1"]),
+        "--m2-report",
+        str(paths["m2"]),
+        "--m25-report",
+        str(paths["m25"]),
+        "--preference-critic-report",
+        str(paths["critic"]),
+        "--closed-loop-report",
+        str(paths["loop"]),
+        "--manual-batch-report",
+        str(paths["manual_batch"]),
+    ]
+    if pr_review is not None:
+        args.extend(["--pr-review-report", str(pr_review)])
+    if out is not None:
+        args.extend(["--out", str(out)])
+    return args
+
+
+def test_gate_target_fields_pr_review_ready_dom_aware_blocked(tmp_path: Path) -> None:
+    paths = _gate_fixture_reports(tmp_path)
+
+    result = check_ui_jepa_scaling_gate(
+        Path("data/processed/ui_jepa_v0_smoke"),
+        paths["b0"],
+        paths["m1"],
+        paths["m2"],
+        paths["m25"],
+        None,
+        paths["critic"],
+        paths["loop"],
+        paths["manual_batch"],
+        paths["pr_review"],
+        target="pr-review",
+    )
+
+    assert result["target"] == "pr-review"
+    assert result["target_ready"] is True
+    assert result["allowed"] is True
+    assert result["pr_review_ready"] is True
+    assert result["dom_aware_ready"] is False
+    assert result["blocked_reasons_by_target"]["dom-aware"]
+    assert result["recommended_next_stage_by_target"]["pr-review"]
+    assert result["exit_code_reason"] == "pr-review target passed"
+
+
+def test_scale_gate_cli_pr_review_target_exits_zero(tmp_path: Path, capsys) -> None:
+    paths = _gate_fixture_reports(tmp_path)
+
+    code = scale_gate_main(_gate_args(paths, target="pr-review", pr_review=paths["pr_review"], out=tmp_path / "gate.json"))
+
+    captured = capsys.readouterr()
+    gate = json.loads((tmp_path / "gate.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert "target: pr-review" in captured.out
+    assert gate["target_ready"] is True
+    assert gate["pr_review_ready"] is True
+    assert gate["dom_aware_ready"] is False
+
+
+def test_scale_gate_cli_dom_aware_target_stays_blocked(tmp_path: Path, capsys) -> None:
+    paths = _gate_fixture_reports(tmp_path)
+
+    code = scale_gate_main(_gate_args(paths, target="dom-aware", pr_review=paths["pr_review"], out=tmp_path / "gate.json"))
+
+    captured = capsys.readouterr()
+    gate = json.loads((tmp_path / "gate.json").read_text(encoding="utf-8"))
+    assert code == 1
+    assert gate["target"] == "dom-aware"
+    assert gate["target_ready"] is False
+    assert gate["pr_review_ready"] is True
+    assert gate["dom_aware_ready"] is False
+    assert "M2.5 did not find useful representation signal" in captured.err
+
+
+def test_scale_gate_cli_all_target_preserves_strict_block(tmp_path: Path) -> None:
+    paths = _gate_fixture_reports(tmp_path)
+
+    code = scale_gate_main(_gate_args(paths, target="all", pr_review=paths["pr_review"], out=tmp_path / "gate.json"))
+    gate = json.loads((tmp_path / "gate.json").read_text(encoding="utf-8"))
+
+    assert code == 1
+    assert gate["target"] == "all"
+    assert gate["target_ready"] is False
+    assert gate["pr_review_ready"] is True
+    assert gate["dom_aware_ready"] is False
+
+
+def test_scale_gate_cli_pr_review_target_blocks_missing_report(tmp_path: Path, capsys) -> None:
+    paths = _gate_fixture_reports(tmp_path)
+
+    code = scale_gate_main(_gate_args(paths, target="pr-review", pr_review=None, out=tmp_path / "gate.json"))
+
+    captured = capsys.readouterr()
+    gate = json.loads((tmp_path / "gate.json").read_text(encoding="utf-8"))
+    assert code == 1
+    assert gate["target_ready"] is False
+    assert gate["blocked_reasons_by_target"]["pr-review"]
+    assert "PR screenshot review report missing" in captured.err
+
+
+def test_scale_gate_cli_pr_review_target_blocks_malformed_report(tmp_path: Path, capsys) -> None:
+    paths = _gate_fixture_reports(tmp_path)
+    malformed = tmp_path / "malformed_pr_review.json"
+    malformed.write_text("{not json", encoding="utf-8")
+
+    code = scale_gate_main(_gate_args(paths, target="pr-review", pr_review=malformed, out=tmp_path / "gate.json"))
+
+    captured = capsys.readouterr()
+    gate = json.loads((tmp_path / "gate.json").read_text(encoding="utf-8"))
+    assert code == 1
+    assert gate["target_ready"] is False
+    assert "unreadable" in gate["pr_review_gate"]["blocked_reason"]
+    assert "PR screenshot review report is unreadable" in captured.err

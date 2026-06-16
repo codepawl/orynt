@@ -1,5 +1,5 @@
 {
-  "allowed": false,
+  "allowed": true,
   "blocked_reasons_by_target": {
     "all": [
       "M2.5 did not find useful representation signal; do not start DOM-aware JEPA from non-collapse alone",
@@ -27,7 +27,7 @@
     "M2.5 did not find useful representation signal; do not start DOM-aware JEPA from non-collapse alone",
     "M2.5 recommendation does not support DOM-aware JEPA: change_objective_or_strengthen_training_before_dom_aware"
   ],
-  "exit_code_reason": "all target blocked: M2.5 did not find useful representation signal; do not start DOM-aware JEPA from non-collapse alone; M2.5 recommendation does not support DOM-aware JEPA: change_objective_or_strengthen_training_before_dom_aware",
+  "exit_code_reason": "pr-review target passed",
   "legacy_next_command": "Do not start DOM-aware JEPA; harden dataset labels or add a preference-aligned objective, then rerun ui-jepa-m25-ablation.",
   "m1_report": "/home/nxank4/Code/personal/codepawl/reports/ui_jepa_v0_smoke/m1_report.json",
   "m25_report": "/home/nxank4/Code/personal/codepawl/reports/ui_jepa_v0_smoke/m25_diagnostics_report.json",
@@ -69,7 +69,7 @@
   },
   "manual_patch_ready": true,
   "manual_review_ready": true,
-  "next_command": "Do not start DOM-aware JEPA; harden dataset labels or add a preference-aligned objective, then rerun ui-jepa-m25-ablation.",
+  "next_command": "Use the PR review JSON/Markdown/screenshots as CI artifacts; keep GitHub commenting disabled until more local reports are reviewed.",
   "phase_0_5_allowed": true,
   "pr_review_blocked_reason": null,
   "pr_review_foundation_ready": true,
@@ -92,6 +92,6 @@
     "pr-review": "Use the PR review JSON/Markdown/screenshots as CI artifacts; keep GitHub commenting disabled until more local reports are reviewed."
   },
   "schema_version": "ui_jepa_scaling_gate_v1",
-  "target": "all",
-  "target_ready": false
+  "target": "pr-review",
+  "target_ready": true
 }

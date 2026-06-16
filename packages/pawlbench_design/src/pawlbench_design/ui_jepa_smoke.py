@@ -620,7 +620,9 @@ def check_ui_jepa_scaling_gate(
     closed_loop_report: Path | None = None,
     manual_batch_report: Path | None = None,
     pr_review_report: Path | None = None,
+    target: str = "all",
 ) -> dict[str, Any]:
+    target = normalize_gate_target(target)
     dataset_dir = dataset_dir.expanduser().resolve()
     b0_report = b0_report.expanduser().resolve()
     m1_report = m1_report.expanduser().resolve() if m1_report is not None else None
@@ -832,9 +834,61 @@ def check_ui_jepa_scaling_gate(
             or "dom" in str((critic.get("decisions") or {}).get("recommended_next_stage", "")).lower()
         )
     )
+    blocked_reasons_by_target = gate_blocked_reasons_by_target(
+        base_errors=errors,
+        m2_errors=m2_errors,
+        dom_errors=dom_errors,
+        critic_errors=critic_errors,
+        loop_errors=loop_errors,
+        pr_review_foundation_ready=pr_review_foundation_ready,
+        pr_review_ready=pr_review_ready,
+        manual_patch_gate=manual_patch_gate,
+        pr_review_gate=pr_review_gate,
+    )
+    recommended_next_stage_by_target = gate_recommended_next_stage_by_target(
+        next_command=(
+            "uv run ui-loop-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_loop_v0 --set loop_mixed_50 && "
+            "uv run ui-loop-run data/processed/ui_loop_v0/loop_mixed_50 --out reports/ui_loop_v0_mixed_deterministic --patch-mode deterministic_patch"
+            if closed_loop_ready and closed_loop_report is None
+            else (
+            "uv run ui-preference-dataset-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_preference_v0 && "
+            "uv run ui-preference-critic-eval data/processed/ui_preference_v0 --report-out reports/ui_jepa_v0_smoke/preference_critic_report.json"
+            if not errors and not m2_errors and not dom_errors and critic_errors
+            else (
+            "uv run ui-jepa-m25-ablation "
+            f"{dataset_dir} --out checkpoints/ui_jepa_m25 --report-out reports/ui_jepa_v0_smoke/m25_diagnostics_report.json "
+            "--b0-report reports/ui_jepa_v0_smoke/b0_report.json --m1-report reports/ui_jepa_v0_smoke/m1_report.json "
+            "--m2-report reports/ui_jepa_v0_smoke/m2_report.json --device cuda"
+            if not errors and not m2_errors and (m25_report is None or not m25_report.is_file())
+            else (
+            "Do not start DOM-aware JEPA; harden dataset labels or add a preference-aligned objective, then rerun ui-jepa-m25-ablation."
+            if not errors and not m2_errors and dom_errors
+            else (
+            "uv run ui-jepa-m2-train "
+            f"{dataset_dir} --out checkpoints/ui_jepa_m2 --report-out reports/ui_jepa_v0_smoke/m2_report.json "
+            "--b0-report reports/ui_jepa_v0_smoke/b0_report.json --m1-report reports/ui_jepa_v0_smoke/m1_report.json"
+            if not errors and not m2_errors
+            else (
+            "uv run ui-jepa-m1-train "
+            f"{dataset_dir} --out checkpoints/ui_jepa_m1 --report-out reports/ui_jepa_v0_smoke/m1_report.json "
+            "--b0-report reports/ui_jepa_v0_smoke/b0_report.json"
+            if not errors
+            else "uv run ui-jepa-smoke-build --source examples/local_v1 --out data/processed/ui_jepa_v0_smoke --seed 42"
+            )))))
+        ),
+        pr_review_ready=pr_review_ready,
+        pr_review_foundation_ready=pr_review_foundation_ready,
+        pr_review_gate=pr_review_gate,
+    )
+    target_ready = gate_target_ready(target, pr_review_ready=pr_review_ready, dom_aware_ready=dom_aware_ready)
+    exit_code_reason = gate_exit_code_reason(target, target_ready, blocked_reasons_by_target)
+    next_command = recommended_next_stage_by_target.get(target) or recommended_next_stage_by_target["all"]
     return {
         "schema_version": "ui_jepa_scaling_gate_v1",
-        "allowed": dom_aware_ready,
+        "target": target,
+        "target_ready": target_ready,
+        "exit_code_reason": exit_code_reason,
+        "allowed": target_ready,
         "errors": errors + m2_errors + dom_errors + critic_errors + loop_errors,
         "phase_0_5_allowed": not errors,
         "m2_ready": not errors and not m2_errors,
@@ -852,6 +906,8 @@ def check_ui_jepa_scaling_gate(
         "pr_review_gate": pr_review_gate,
         "pr_review_ready": pr_review_ready,
         "pr_review_blocked_reason": None if pr_review_ready else (manual_patch_gate.get("blocked_reason") or pr_review_gate.get("blocked_reason")),
+        "blocked_reasons_by_target": blocked_reasons_by_target,
+        "recommended_next_stage_by_target": recommended_next_stage_by_target,
         "m1_report": str(m1_report) if m1_report is not None else None,
         "m2_report": str(m2_report) if m2_report is not None else None,
         "m2_strong_report": str(m2_strong_report) if m2_strong_report is not None else None,
@@ -863,7 +919,8 @@ def check_ui_jepa_scaling_gate(
         "pr_review_report": str(pr_review_report) if pr_review_report is not None else None,
         "preference_critic_ready": preference_critic_report is not None and not critic_errors,
         "closed_loop_gate_errors": loop_errors,
-        "next_command": (
+        "next_command": next_command,
+        "legacy_next_command": (
             "uv run ui-loop-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_loop_v0 --set loop_mixed_50 && "
             "uv run ui-loop-run data/processed/ui_loop_v0/loop_mixed_50 --out reports/ui_loop_v0_mixed_deterministic --patch-mode deterministic_patch"
             if closed_loop_ready and closed_loop_report is None
@@ -1133,6 +1190,96 @@ def _pr_review_report_gate(pr_review_report: Path | None) -> dict[str, Any]:
         "regression_thresholds_pass": thresholds_pass,
         "severe_missing_artifact_count": len(severe_missing),
     }
+
+
+def normalize_gate_target(target: str) -> str:
+    normalized = str(target or "all").strip().lower().replace("_", "-")
+    if normalized not in {"all", "pr-review", "dom-aware"}:
+        raise ValueError(f"unsupported gate target {target!r}; expected all, pr-review, or dom-aware")
+    return normalized
+
+
+def gate_target_ready(target: str, *, pr_review_ready: bool, dom_aware_ready: bool) -> bool:
+    if target == "pr-review":
+        return pr_review_ready
+    if target == "dom-aware":
+        return dom_aware_ready
+    return dom_aware_ready
+
+
+def gate_exit_code_reason(target: str, target_ready: bool, blocked_reasons_by_target: dict[str, list[str]]) -> str:
+    if target_ready:
+        return f"{target} target passed"
+    reasons = blocked_reasons_by_target.get(target) or blocked_reasons_by_target.get("all") or ["target gate blocked"]
+    return f"{target} target blocked: {'; '.join(reasons)}"
+
+
+def gate_blocked_reasons_by_target(
+    *,
+    base_errors: list[str],
+    m2_errors: list[str],
+    dom_errors: list[str],
+    critic_errors: list[str],
+    loop_errors: list[str],
+    pr_review_foundation_ready: bool,
+    pr_review_ready: bool,
+    manual_patch_gate: dict[str, Any],
+    pr_review_gate: dict[str, Any],
+) -> dict[str, list[str]]:
+    dom_reasons = base_errors + m2_errors + dom_errors + critic_errors + loop_errors
+    pr_reasons: list[str] = []
+    if base_errors:
+        pr_reasons.extend(base_errors)
+    if critic_errors:
+        pr_reasons.extend(critic_errors)
+    if loop_errors:
+        pr_reasons.extend(loop_errors)
+    if not pr_review_foundation_ready:
+        blocked = manual_patch_gate.get("blocked_reason")
+        pr_reasons.append(str(blocked or "PR review foundation evidence is incomplete"))
+    if not pr_review_gate.get("pr_review_report_ready"):
+        blocked = pr_review_gate.get("blocked_reason")
+        pr_reasons.append(str(blocked or "PR screenshot review report is not gate-ready"))
+    if pr_review_ready:
+        pr_reasons = []
+    return {
+        "pr-review": dedupe_reasons(pr_reasons),
+        "dom-aware": dedupe_reasons(dom_reasons or ["DOM-aware JEPA is not recommended by current evidence"]),
+        "all": dedupe_reasons(dom_reasons or ([] if pr_review_ready else pr_reasons)),
+    }
+
+
+def gate_recommended_next_stage_by_target(
+    *,
+    next_command: str,
+    pr_review_ready: bool,
+    pr_review_foundation_ready: bool,
+    pr_review_gate: dict[str, Any],
+) -> dict[str, str]:
+    if pr_review_ready:
+        pr_next = "Use the PR review JSON/Markdown/screenshots as CI artifacts; keep GitHub commenting disabled until more local reports are reviewed."
+    elif not pr_review_foundation_ready:
+        pr_next = "Finish preference critic, non-oracle closed-loop, manual patch, and manual label evidence before PR-review CI."
+    elif not pr_review_gate.get("report_path"):
+        pr_next = "Run ui-pr-review in render or screenshots-only mode and pass --pr-review-report to the gate."
+    else:
+        pr_next = "Fix PR review missing artifacts or regression failures, then rerun ui-pr-review and the pr-review target gate."
+    return {
+        "pr-review": pr_next,
+        "dom-aware": next_command,
+        "all": next_command,
+    }
+
+
+def dedupe_reasons(reasons: list[str]) -> list[str]:
+    seen = set()
+    deduped = []
+    for reason in reasons:
+        text = str(reason or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            deduped.append(text)
+    return deduped
 
 
 def _closed_loop_report_passes_set(report: dict[str, Any], set_name: str) -> bool:

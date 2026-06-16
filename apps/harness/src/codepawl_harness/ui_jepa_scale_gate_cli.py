@@ -24,6 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--preference-critic-report", default=None)
     parser.add_argument("--closed-loop-report", default=None)
     parser.add_argument("--manual-batch-report", default=None)
+    parser.add_argument("--pr-review-report", default=None)
+    parser.add_argument(
+        "--target",
+        default="all",
+        choices=["all", "pr-review", "dom-aware"],
+        help="Gate target for exit code semantics. Default keeps strict DOM-aware research gating.",
+    )
     parser.add_argument("--out", help="Optional path to write the gate result JSON.")
     return parser
 
@@ -41,17 +48,23 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.preference_critic_report) if args.preference_critic_report else None,
         Path(args.closed_loop_report) if args.closed_loop_report else None,
         Path(args.manual_batch_report) if args.manual_batch_report else None,
+        Path(args.pr_review_report) if args.pr_review_report else None,
+        target=args.target,
     )
     if args.out:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if not result["allowed"]:
-        for error in result["errors"]:
+    if not result["target_ready"]:
+        reasons = (result.get("blocked_reasons_by_target") or {}).get(args.target) or result.get("errors") or []
+        for error in reasons:
             print(f"blocked: {error}", file=sys.stderr)
+        print(f"target: {result['target']}", file=sys.stderr)
+        print(f"reason: {result['exit_code_reason']}", file=sys.stderr)
         print(f"next: {result['next_command']}", file=sys.stderr)
         return 1
-    print("UI-JEPA scaling gate passed.")
+    print(f"UI-JEPA scaling gate passed for target: {result['target']}")
+    print(f"reason: {result['exit_code_reason']}")
     return 0
 
 
