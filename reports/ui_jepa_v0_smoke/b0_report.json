@@ -27,7 +27,7 @@
   },
   "failed_or_skipped_reasons": [],
   "git": {
-    "commit": "d2dd552231bf1f753c59383bb2dae8ea99994d15",
+    "commit": "41ccde8edb414dd431fc0d44ede72216e303b106",
     "dirty": true
   },
   "metrics_baseline": {
@@ -172,7 +172,7 @@
     "val": 234
   },
   "real_weights": true,
-  "runtime_seconds": 106.2042,
+  "runtime_seconds": 108.6047,
   "schema_version": "ui_jepa_b0_report_v1",
   "split_counts": {
     "test": 99,

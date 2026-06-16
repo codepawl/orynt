@@ -1,7 +1,7 @@
 # UI-JEPA Model Experiments
 
 Source plan: `docs/ui_jepa_dataset_model_plan.md`.  
-Status: v0 experiment contract with Phase 0.5 smoke benchmark sanity checks. The current repository implements local microtraining, positive pretraining scaffolds, a metrics-only baseline, and an offline-safe B0 report path. M1/M2/M3 remain blocked until a real frozen B0 report passes the scale gate.
+Status: v0 experiment contract with Phase 0.5 smoke benchmark sanity checks plus the first M1 random-block screenshot JEPA baseline. The current repository implements local microtraining, positive pretraining scaffolds, a metrics-only baseline, an offline-safe B0 report path, and M1 train/probe/report CLIs. M2/M3 remain blocked until the real frozen B0 report and a valid non-collapsed M1 report pass the scale gate.
 
 ## Decision Gate
 
@@ -14,7 +14,7 @@ Do not scale UI-JEPA past local smoke work unless all of the following are true:
 - B0 validation lift over the best constant baseline is positive.
 - No severe leakage warnings are present.
 
-M1 random-mask screenshot JEPA and M2 semantic-region screenshot JEPA remain blocked until this gate passes. Later scale decisions must also compare M1/M2/M3 on UI-specific downstream tasks, closed-loop critic-guided edits, and region-grounded critique output.
+M1 random-mask screenshot JEPA is now the first trainable baseline after this gate. M2 semantic-region screenshot JEPA remains blocked until M1 produces a report with non-collapsed embeddings, frozen-probe results, and an M1-vs-B0 comparison. Later scale decisions must also compare M1/M2/M3 on UI-specific downstream tasks, closed-loop critic-guided edits, and region-grounded critique output.
 
 ## Common Inputs
 
@@ -133,8 +133,14 @@ Acceptance:
 
 Current implementation:
 
-- Positive two-view scaffold exists, but it is not random-block JEPA.
-- EMA target encoder and random block masks are not implemented.
+- `uv run ui-jepa-m1-train data/processed/ui_jepa_v0_smoke --out checkpoints/ui_jepa_m1 --report-out reports/ui_jepa_v0_smoke/m1_report.json --b0-report reports/ui_jepa_v0_smoke/b0_report.json` trains M1 and writes a checkpoint plus `m1_report.json`/`m1_report.md`.
+- `uv run ui-jepa-m1-probe data/processed/ui_jepa_v0_smoke --checkpoint checkpoints/ui_jepa_m1/checkpoints/m1_last.pt --report-out reports/ui_jepa_v0_smoke/m1_report.json --b0-report reports/ui_jepa_v0_smoke/b0_report.json` re-exports frozen embeddings and reruns the ranking probe.
+- The loader reads `manifest.jsonl`, `splits.json`, screenshot paths, and metadata pointers for regions/design tokens while using screenshot-only random-block masking.
+- Random-block masking samples one or more target blocks on the patch grid, keeps context as non-target patches, enforces a minimum visible context ratio, and records mask metadata.
+- The model is a compact patch-conv encoder, Transformer context predictor, EMA target encoder, and latent normalized-L2 target prediction loss.
+- Collapse diagnostics include embedding mean/std, feature variance, pairwise cosine distribution, nearest-neighbor diversity, duplicate-neighbor rate, and retrieval examples.
+- Frozen-probe reporting includes train/val/test pairwise accuracy, grouped accuracy by pair family, corruption type, severity bucket, and difficulty, plus lift over best constant, metrics-only comparison, and DINOv2 B0 comparison.
+- `valid_m1_baseline` can be true even when M1 loses to B0. M1 is considered implemented when it is trainable, non-collapsed, probe-comparable, and report-complete.
 
 ## M2: Screenshot Semantic-Region JEPA
 

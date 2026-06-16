@@ -241,6 +241,16 @@ test: 20%
 
 Local smoke exceptions may use 80/10/10 to match existing PawlBench/Pawl-JEPA JSONL helpers.
 
+## M1 Screenshot JEPA Loader
+
+The M1 baseline uses the canonical smoke corpus directly:
+
+- `manifest.jsonl` supplies `screen_id`, screenshot path, dimensions, split group, DOM/accessibility paths, metrics path, and optional metadata pointers.
+- `splits.json` supplies train/val/test membership and pair split groups.
+- Screenshots are loaded with `pawl_jepa.data.normalize_image_padded`, preserving aspect ratio on a fixed square canvas.
+- Region and design-token manifests may be retained as metadata paths for reports/debugging, but M1 does not use semantic regions or design tokens for masking.
+- The same loader is used by JEPA training, frozen embedding export, and the pairwise ranking probe.
+
 ## Validation Tests
 
 Required dataset validation:

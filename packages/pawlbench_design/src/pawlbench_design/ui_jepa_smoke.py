@@ -601,10 +601,12 @@ def run_ui_jepa_b0_baseline(
     return UiJepaSmokeB0Result(output_dir, report_json_path, report_md_path, report)
 
 
-def check_ui_jepa_scaling_gate(dataset_dir: Path, b0_report: Path) -> dict[str, Any]:
+def check_ui_jepa_scaling_gate(dataset_dir: Path, b0_report: Path, m1_report: Path | None = None) -> dict[str, Any]:
     dataset_dir = dataset_dir.expanduser().resolve()
     b0_report = b0_report.expanduser().resolve()
+    m1_report = m1_report.expanduser().resolve() if m1_report is not None else None
     errors: list[str] = []
+    m2_errors: list[str] = []
     validation = build_ui_jepa_smoke_validation(dataset_dir)
     if not validation["valid"]:
         errors.append("canonical smoke dataset validation failed")
@@ -632,15 +634,41 @@ def check_ui_jepa_scaling_gate(dataset_dir: Path, b0_report: Path) -> dict[str, 
         errors.append("semantic regions are missing or empty")
     if not (dataset_dir / "summary.json").is_file():
         errors.append("dataset summary with padded normalization metadata is missing")
+    m1 = {}
+    if m1_report is None:
+        m2_errors.append("M1 report is missing; pass --m1-report reports/ui_jepa_v0_smoke/m1_report.json")
+    elif not m1_report.is_file():
+        m2_errors.append(f"M1 report is missing: {m1_report}")
+    else:
+        m1 = json.loads(m1_report.read_text(encoding="utf-8"))
+        if not m1.get("valid_m1_baseline"):
+            m2_errors.append("M1 report is not a valid trained baseline")
+        if not (m1.get("collapse_diagnostics") or {}).get("valid"):
+            m2_errors.append("M1 embeddings are collapsed or collapse diagnostics are missing")
+        if not (m1.get("probe") or {}).get("available"):
+            m2_errors.append("M1 frozen probe report is missing")
+        if not (m1.get("b0_comparison") or {}).get("available"):
+            m2_errors.append("M1-vs-B0 comparison is missing")
     return {
         "schema_version": "ui_jepa_scaling_gate_v1",
-        "allowed": not errors,
-        "errors": errors,
+        "allowed": not errors and not m2_errors,
+        "errors": errors + m2_errors,
+        "phase_0_5_allowed": not errors,
+        "m2_ready": not errors and not m2_errors,
+        "m1_report": str(m1_report) if m1_report is not None else None,
         "next_command": (
-            "uv run ui-jepa-smoke-b0 "
+            "uv run ui-jepa-m1-train "
+            f"{dataset_dir} --out checkpoints/ui_jepa_m1 --report-out reports/ui_jepa_v0_smoke/m1_report.json "
+            "--b0-report reports/ui_jepa_v0_smoke/b0_report.json"
+            if not errors
+            else "uv run ui-jepa-smoke-b0 "
             f"{dataset_dir} --out reports/ui_jepa_v0_smoke --backend dinov2"
         ),
-        "blocked_stages": ["M1_random_mask_jepa", "M2_semantic_mask_jepa"] if errors else [],
+        "blocked_stages": (
+            ["M1_random_mask_jepa", "M2_semantic_mask_jepa"]
+            if errors
+            else (["M2_semantic_mask_jepa"] if m2_errors else [])
+        ),
     }
 
 

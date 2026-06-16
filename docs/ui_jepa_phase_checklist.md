@@ -79,11 +79,12 @@ Goal from plan: compare random masking versus semantic region masking.
 - [x] Positive train/eval CLIs exist.
   Evidence: `apps/harness/src/codepawl_harness/pawl_jepa_positive_train_cli.py`, `apps/harness/src/codepawl_harness/pawl_jepa_positive_eval_cli.py`.
 - [~] Retrieval-style positive eval exists, but it is not the planned M1/M2 downstream probe suite.
-- [ ] M1 random-block screenshot JEPA is not implemented.
+- [x] M1 random-block screenshot JEPA is implemented as the first trainable screenshot-only baseline.
+  Evidence: `packages/pawl_jepa/src/pawl_jepa/m1.py`, `ui-jepa-m1-train`, `ui-jepa-m1-probe`.
 - [ ] M2 semantic-region screenshot JEPA is not implemented.
-- [ ] Random-block mask sampling with target/context blocks is not implemented.
+- [x] Random-block mask sampling with target/context blocks is implemented for M1.
 - [ ] Semantic region mask sampling is not implemented.
-- [ ] M2 vs M1 vs B0 comparison reports are not implemented.
+- [~] M1 vs B0 comparison reports are implemented; M2 comparison remains blocked until semantic masking exists.
 - [ ] Nearest-neighbor retrieval cluster analysis for UI meaning is not implemented.
 
 ## Phase 2: DOM-Aware JEPA
@@ -127,6 +128,6 @@ Goal from plan: prove real frontend value.
 ## Immediate Next Build Order
 
 1. Produce and validate `data/processed/ui_jepa_v0_smoke` from the existing local corruption dataset.
-2. Keep M1 random masking scoped to a future implementation; Phase 0.5 only opens the readiness gate and does not implement M1.
-3. Keep M2 semantic masking blocked until M1 is comparable and semantic region validation remains green.
+2. Train M1 random-block screenshot JEPA and verify `m1_report.json` is valid, non-collapsed, and comparable to B0.
+3. Keep M2 semantic masking blocked until M1 is comparable, non-collapsed, and semantic region validation remains green.
 4. Do not scale external datasets or train larger UI-JEPA variants until the decision rule in the source plan is satisfied.
