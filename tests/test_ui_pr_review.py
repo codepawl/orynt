@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image
 
 from codepawl_harness.ui_jepa_scale_gate_cli import main as scale_gate_main
+from codepawl_harness.ui_pr_review_ci_cli import PrReviewCiConfig, build_scale_gate_args
 from pawlbench_design.ui_jepa_smoke import check_ui_jepa_scaling_gate
 from pawlbench_design.ui_pr_review import (
     PR_REVIEW_INPUT_SCHEMA_VERSION,
@@ -13,6 +14,7 @@ from pawlbench_design.ui_pr_review import (
     aggregate_pr_review_pilot_reports,
     run_pr_review,
     run_pr_review_pilot,
+    validate_pr_review_ci_artifacts,
     validate_pr_review_pilot_config,
     validate_pr_review_input,
 )
@@ -583,3 +585,93 @@ def test_scale_gate_cli_pr_review_target_blocks_malformed_report(tmp_path: Path,
     assert gate["target_ready"] is False
     assert "unreadable" in gate["pr_review_gate"]["blocked_reason"]
     assert "PR screenshot review report is unreadable" in captured.err
+
+
+def test_pr_review_ci_artifact_validator_accepts_valid_fixture(tmp_path: Path) -> None:
+    _review_fixture(tmp_path)
+    report = run_pr_review(
+        PrReviewConfig(
+            review_id="fixture_pr",
+            output_dir=tmp_path / "reports" / "ui_pr_review_v0",
+            mode="screenshots-only",
+            review_root=tmp_path / "data" / "pr_review_v0",
+        )
+    )
+    gate_path = tmp_path / "reports" / "ui_jepa_v0_smoke" / "scale_gate_pr_review.json"
+    _write_json(gate_path, {"target": "pr-review", "target_ready": True})
+
+    validation = validate_pr_review_ci_artifacts(Path(report["output_dir"]), gate_path)
+
+    assert validation["valid"] is True
+    assert validation["errors"] == []
+    assert validation["review_artifacts"][0]["valid"] is True
+    assert (Path(report["output_dir"]) / "review_metadata.json").is_file()
+
+
+def test_pr_review_ci_artifact_validator_blocks_missing_required_artifact(tmp_path: Path) -> None:
+    _review_fixture(tmp_path)
+    report = run_pr_review(
+        PrReviewConfig(
+            review_id="fixture_pr",
+            output_dir=tmp_path / "reports" / "ui_pr_review_v0",
+            mode="screenshots-only",
+            review_root=tmp_path / "data" / "pr_review_v0",
+        )
+    )
+    gate_path = tmp_path / "reports" / "ui_jepa_v0_smoke" / "scale_gate_pr_review.json"
+    _write_json(gate_path, {"target": "pr-review", "target_ready": True})
+    (Path(report["output_dir"]) / "after.png").unlink()
+
+    validation = validate_pr_review_ci_artifacts(Path(report["output_dir"]), gate_path)
+
+    assert validation["valid"] is False
+    assert any("after_screenshot is missing" in error for error in validation["errors"])
+
+
+def test_pr_review_ci_artifact_validator_blocks_wrong_gate_target(tmp_path: Path) -> None:
+    _review_fixture(tmp_path)
+    report = run_pr_review(
+        PrReviewConfig(
+            review_id="fixture_pr",
+            output_dir=tmp_path / "reports" / "ui_pr_review_v0",
+            mode="screenshots-only",
+            review_root=tmp_path / "data" / "pr_review_v0",
+        )
+    )
+    gate_path = tmp_path / "reports" / "ui_jepa_v0_smoke" / "scale_gate_dom_aware.json"
+    _write_json(gate_path, {"target": "dom-aware", "target_ready": False})
+
+    validation = validate_pr_review_ci_artifacts(Path(report["output_dir"]), gate_path)
+
+    assert validation["valid"] is False
+    assert any("target must be pr-review" in error for error in validation["errors"])
+    assert any("target_ready must be true" in error for error in validation["errors"])
+
+
+def test_pr_review_ci_scale_gate_args_are_target_specific(tmp_path: Path) -> None:
+    config = PrReviewCiConfig(gate_out=tmp_path / "scale_gate_pr_review.json")
+
+    args = build_scale_gate_args(config, tmp_path / "pr_review_report.json")
+
+    assert "--target" in args
+    assert args[args.index("--target") + 1] == "pr-review"
+    assert "--pr-review-report" in args
+    assert str(tmp_path / "pr_review_report.json") in args
+    assert "dom-aware" not in args
+
+
+def test_disabled_pr_visual_review_workflow_template_is_artifact_only() -> None:
+    path = Path(".github/workflows/pr-visual-review.yml.disabled")
+    text = path.read_text(encoding="utf-8")
+
+    assert path.is_file()
+    assert "workflow_dispatch:" in text
+    assert "ui-pr-review" in text
+    assert "ui-jepa-scale-gate" in text
+    assert "--target pr-review" in text
+    assert "actions/upload-artifact" in text
+    assert "ui-pr-review-ci" in text
+    assert "dom-aware" not in text
+    assert "github-script" not in text
+    assert "gh pr comment" not in text
+    assert "pull-requests: write" not in text

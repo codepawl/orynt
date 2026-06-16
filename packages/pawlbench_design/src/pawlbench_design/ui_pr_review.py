@@ -29,6 +29,9 @@ PR_REVIEW_INPUT_SCHEMA_VERSION = "ui_pr_review_v0_input_v1"
 PR_REVIEW_REPORT_SCHEMA_VERSION = "ui_pr_review_v0_report_v1"
 PR_REVIEW_CRITIC_SCHEMA_VERSION = "ui_pr_review_v0_critic_review_v1"
 PR_REVIEW_PATCH_SUMMARY_SCHEMA_VERSION = "ui_pr_review_v0_patch_summary_v1"
+PR_REVIEW_PILOT_SCHEMA_VERSION = "ui_pr_review_v0_pilot_v1"
+PR_REVIEW_PILOT_REPORT_SCHEMA_VERSION = "ui_pr_review_v0_pilot_report_v1"
+PR_REVIEW_CI_ARTIFACT_CONTRACT_SCHEMA_VERSION = "ui_pr_review_v0_ci_artifact_contract_v1"
 SUPPORTED_PR_REVIEW_MODES = {"render", "screenshots-only"}
 PR_REVIEW_DECISIONS = {
     "approve_visual",
@@ -53,6 +56,14 @@ class PrReviewConfig:
     viewport_height: int = 900
 
 
+@dataclass(frozen=True)
+class PrReviewPilotConfig:
+    config_path: Path = Path("data/pr_review_v0/codepawl_web_pilot/metadata.json")
+    output_dir: Path = Path("reports/ui_pr_review_v0/codepawl_web_pilot")
+    reviewer_id: str = ""
+    open_report: bool = False
+
+
 def run_pr_review(config: PrReviewConfig) -> dict[str, Any]:
     start = time.perf_counter()
     if config.mode not in SUPPORTED_PR_REVIEW_MODES:
@@ -65,6 +76,7 @@ def run_pr_review(config: PrReviewConfig) -> dict[str, Any]:
     metadata = load_review_metadata(review_dir)
     review_input, input_errors = build_review_input(config, review_dir, metadata)
     artifacts, artifact_errors = collect_review_artifacts(config, review_input, output_dir)
+    review_metadata = copy_optional_file(review_input.get("metadata_path"), output_dir / "review_metadata.json")
     errors = input_errors + artifact_errors
 
     before_metrics = read_optional_json(artifacts.get("before_metrics_path"))
@@ -129,6 +141,7 @@ def run_pr_review(config: PrReviewConfig) -> dict[str, Any]:
             "patch_diff": artifacts.get("patch_diff_path"),
             "before_metrics": artifacts.get("before_metrics_path"),
             "after_metrics": artifacts.get("after_metrics_path"),
+            "review_metadata_json": str(review_metadata) if review_metadata else None,
         },
         "severe_missing_artifacts": severe_errors,
         "screenshot_diff_stats": diff_stats,
@@ -162,6 +175,66 @@ def run_pr_review(config: PrReviewConfig) -> dict[str, Any]:
     return report
 
 
+def run_pr_review_pilot(config: PrReviewPilotConfig) -> dict[str, Any]:
+    config_path = config.config_path.expanduser().resolve()
+    pilot = load_pr_review_pilot_config(config_path)
+    errors = validate_pr_review_pilot_config(pilot, config_path)
+    output_dir = config.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    copy_optional_file(config_path, output_dir / "pilot_metadata.json")
+    if errors:
+        report = aggregate_pr_review_pilot_reports(
+            [],
+            pilot_config=pilot,
+            config_path=config_path,
+            output_dir=output_dir,
+            validation_errors=errors,
+        )
+        write_json(output_dir / "pilot_report.json", report)
+        (output_dir / "pilot_report.md").write_text(pr_review_pilot_markdown(report), encoding="utf-8")
+        return report
+
+    case_reports: list[dict[str, Any]] = []
+    config_dir = config_path.parent
+    review_root = config_dir
+    for case in pilot.get("cases") or []:
+        review_id = validate_review_id(str(case.get("review_id") or ""))
+        case_out = output_dir / review_id
+        skipped_reason = pilot_case_skipped_reason(case, config_dir)
+        if skipped_reason:
+            report = write_skipped_pilot_case_report(case, skipped_reason, case_out)
+        else:
+            report = run_pr_review(
+                PrReviewConfig(
+                    review_id=review_id,
+                    output_dir=output_dir,
+                    mode=str(case.get("mode") or "screenshots-only"),
+                    reviewer_id=config.reviewer_id,
+                    open_report=False,
+                    review_root=review_root,
+                    viewport_width=int((case.get("viewport") or {}).get("width") or 1440),
+                    viewport_height=int((case.get("viewport") or {}).get("height") or 900),
+                )
+            )
+        case_reports.append(attach_pilot_case_context(report, case, config_dir))
+
+    report = aggregate_pr_review_pilot_reports(
+        case_reports,
+        pilot_config=pilot,
+        config_path=config_path,
+        output_dir=output_dir,
+        validation_errors=[],
+    )
+    write_json(output_dir / "pilot_report.json", report)
+    (output_dir / "pilot_report.md").write_text(pr_review_pilot_markdown(report), encoding="utf-8")
+    if config.open_report:
+        try:
+            webbrowser.open((output_dir / "pilot_report.md").resolve().as_uri())
+        except Exception:
+            pass
+    return report
+
+
 def validate_review_id(review_id: str) -> str:
     cleaned = str(review_id or "").strip()
     if not cleaned:
@@ -169,6 +242,468 @@ def validate_review_id(review_id: str) -> str:
     if cleaned in {".", ".."} or "/" in cleaned or "\\" in cleaned:
         raise ValueError("review_id must be a simple directory name")
     return cleaned
+
+
+def load_pr_review_pilot_config(config_path: Path) -> dict[str, Any]:
+    if not config_path.is_file():
+        raise ValueError(f"pilot config is missing: {config_path}")
+    payload = read_json(config_path)
+    if not isinstance(payload, dict):
+        raise ValueError(f"pilot config must be a JSON object: {config_path}")
+    return payload
+
+
+def validate_pr_review_pilot_config(pilot: dict[str, Any], config_path: Path | None = None) -> list[str]:
+    errors: list[str] = []
+    if pilot.get("schema_version") != PR_REVIEW_PILOT_SCHEMA_VERSION:
+        errors.append(f"unsupported pilot schema_version: {pilot.get('schema_version')}")
+    cases = pilot.get("cases")
+    if not isinstance(cases, list):
+        return errors + ["pilot cases must be a list"]
+    if not 3 <= len(cases) <= 5:
+        errors.append("pilot must define 3-5 cases")
+    seen: set[str] = set()
+    config_dir = config_path.parent if config_path is not None else Path(".")
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            errors.append(f"case {index} must be a JSON object")
+            continue
+        review_id = str(case.get("review_id") or "").strip()
+        try:
+            validate_review_id(review_id)
+        except ValueError as exc:
+            errors.append(f"case {index}: {exc}")
+        if review_id in seen:
+            errors.append(f"case {index}: duplicate review_id {review_id!r}")
+        seen.add(review_id)
+        if not case.get("route") and not case.get("component_name"):
+            errors.append(f"case {review_id or index}: route or component_name is required")
+        mode = case.get("mode")
+        if mode not in SUPPORTED_PR_REVIEW_MODES:
+            errors.append(f"case {review_id or index}: unsupported mode {mode!r}")
+        viewport = case.get("viewport") or {}
+        if not isinstance(viewport, dict) or not viewport.get("width") or not viewport.get("height"):
+            errors.append(f"case {review_id or index}: viewport width and height are required")
+        artifacts = case.get("expected_artifact_paths") or {}
+        if not isinstance(artifacts, dict):
+            errors.append(f"case {review_id or index}: expected_artifact_paths must be an object")
+        elif not artifacts.get("pr_review_report_json") or not artifacts.get("pr_review_report_md"):
+            errors.append(f"case {review_id or index}: expected report artifact paths are required")
+        if case.get("skip"):
+            continue
+        if mode == "screenshots-only":
+            if not case.get("before_screenshot_path"):
+                errors.append(f"case {review_id or index}: before_screenshot_path is required")
+            if not case.get("after_screenshot_path"):
+                errors.append(f"case {review_id or index}: after_screenshot_path is required")
+        elif mode == "render":
+            if not case.get("before_url") and not case.get("before_path"):
+                errors.append(f"case {review_id or index}: before_url or before_path is required")
+            if not case.get("after_url") and not case.get("after_path"):
+                errors.append(f"case {review_id or index}: after_url or after_path is required")
+        if case.get("case_metadata_path"):
+            metadata = resolve_pilot_path(config_dir, case.get("case_metadata_path"))
+            if not metadata.is_file():
+                errors.append(f"case {review_id or index}: case metadata is missing: {metadata}")
+        for path_key in ("before_path", "after_path"):
+            if case.get(path_key) and not resolve_pilot_path(config_dir, case.get(path_key)).is_file():
+                errors.append(f"case {review_id or index}: {path_key} is missing: {case.get(path_key)}")
+    return errors
+
+
+def validate_pr_review_ci_artifacts(artifact_dir: Path, scale_gate_report: Path) -> dict[str, Any]:
+    """Validate the CI artifact contract without running GitHub Actions."""
+    root = artifact_dir.expanduser().resolve()
+    gate_path = scale_gate_report.expanduser().resolve()
+    errors: list[str] = []
+    warnings: list[str] = []
+    review_results: list[dict[str, Any]] = []
+
+    if not root.is_dir():
+        errors.append(f"artifact directory is missing: {root}")
+
+    gate: dict[str, Any] = {}
+    if not gate_path.is_file():
+        errors.append(f"scale gate report is missing: {gate_path}")
+    else:
+        try:
+            loaded = read_json(gate_path)
+            gate = loaded if isinstance(loaded, dict) else {}
+        except Exception as exc:
+            errors.append(f"scale gate report is unreadable: {gate_path}: {exc}")
+        if gate:
+            if gate.get("target") != "pr-review":
+                errors.append(f"scale gate target must be pr-review, got {gate.get('target')!r}")
+            if gate.get("target_ready") is not True:
+                errors.append("scale gate target_ready must be true")
+
+    pilot_report_path = root / "pilot_report.json"
+    if pilot_report_path.is_file():
+        try:
+            pilot = read_json(pilot_report_path)
+        except Exception as exc:
+            pilot = {}
+            errors.append(f"pilot report is unreadable: {pilot_report_path}: {exc}")
+        pilot_md = root / "pilot_report.md"
+        pilot_metadata = root / "pilot_metadata.json"
+        if not pilot_md.is_file():
+            errors.append(f"pilot Markdown report is missing: {pilot_md}")
+        if not pilot_metadata.is_file():
+            errors.append(f"pilot metadata artifact is missing: {pilot_metadata}")
+        if pilot and pilot.get("valid") is not True:
+            errors.append("pilot report must be valid for CI artifact upload")
+        if pilot and pilot.get("skipped_count", 0) != 0:
+            errors.append("pilot report must not contain skipped cases for CI artifact upload")
+        items = pilot.get("artifact_paths") if isinstance(pilot, dict) else None
+        if not isinstance(items, list) or not items:
+            errors.append("pilot report must list per-case artifact paths")
+        else:
+            for item in items:
+                if not isinstance(item, dict):
+                    errors.append("pilot artifact path entry must be an object")
+                    continue
+                if item.get("skipped"):
+                    errors.append(f"pilot case {item.get('review_id')} is skipped")
+                output_dir = Path(str(item.get("output_dir") or ""))
+                case_dir = output_dir if output_dir.is_absolute() else root / output_dir
+                case_result = validate_pr_review_case_artifacts(case_dir)
+                review_results.append(case_result)
+                errors.extend(case_result["errors"])
+                warnings.extend(case_result["warnings"])
+    else:
+        case_result = validate_pr_review_case_artifacts(root)
+        review_results.append(case_result)
+        errors.extend(case_result["errors"])
+        warnings.extend(case_result["warnings"])
+
+    return {
+        "schema_version": PR_REVIEW_CI_ARTIFACT_CONTRACT_SCHEMA_VERSION,
+        "valid": not errors,
+        "artifact_dir": str(root),
+        "scale_gate_report": str(gate_path),
+        "errors": errors,
+        "warnings": warnings,
+        "review_artifacts": review_results,
+        "required_artifacts": [
+            "pr_review_report.json",
+            "pr_review_report.md",
+            "scale_gate_pr_review.json",
+            "before.png",
+            "after.png",
+            "review_metadata.json or pilot_metadata.json",
+        ],
+        "optional_artifacts_checked_when_declared": [
+            "screenshot_diff.png",
+            "critic_review.json",
+            "patch_summary.json",
+            "patch.diff",
+        ],
+    }
+
+
+def validate_pr_review_case_artifacts(case_dir: Path) -> dict[str, Any]:
+    case_dir = case_dir.expanduser().resolve()
+    errors: list[str] = []
+    warnings: list[str] = []
+    report_path = case_dir / "pr_review_report.json"
+    report_md = case_dir / "pr_review_report.md"
+    report: dict[str, Any] = {}
+    if not report_path.is_file():
+        errors.append(f"PR review JSON report is missing: {report_path}")
+    else:
+        try:
+            loaded = read_json(report_path)
+            report = loaded if isinstance(loaded, dict) else {}
+        except Exception as exc:
+            errors.append(f"PR review JSON report is unreadable: {report_path}: {exc}")
+    if not report_md.is_file():
+        errors.append(f"PR review Markdown report is missing: {report_md}")
+
+    if report:
+        if report.get("valid") is not True:
+            errors.append(f"PR review report must be valid: {report_path}")
+        if report.get("output_dir") and Path(str(report["output_dir"])).expanduser().resolve() != case_dir:
+            errors.append(f"PR review output_dir is not stable for artifact directory: {report.get('output_dir')}")
+        artifacts = report.get("artifact_paths") or {}
+        for label in ("before_screenshot", "after_screenshot"):
+            path = resolve_ci_artifact_path(case_dir, artifacts.get(label), default_name=f"{label.split('_')[0]}.png")
+            if not path.is_file():
+                errors.append(f"{label} is missing: {path}")
+        metadata_path = resolve_ci_artifact_path(case_dir, artifacts.get("review_metadata_json"), default_name="review_metadata.json")
+        if not metadata_path.is_file():
+            errors.append(f"review metadata artifact is missing: {metadata_path}")
+        for label in ("critic_review_json", "patch_summary_json"):
+            value = artifacts.get(label)
+            path = resolve_ci_artifact_path(case_dir, value, default_name=label.replace("_json", ".json"))
+            if not path.is_file():
+                errors.append(f"{label} is missing: {path}")
+            elif path.suffix == ".json":
+                try:
+                    read_json(path)
+                except Exception as exc:
+                    errors.append(f"{label} is unreadable: {path}: {exc}")
+        diff_value = artifacts.get("screenshot_diff")
+        if diff_value:
+            diff_path = resolve_ci_artifact_path(case_dir, diff_value)
+            if not diff_path.is_file():
+                errors.append(f"screenshot_diff is declared but missing: {diff_path}")
+        else:
+            warnings.append(f"screenshot_diff is not available for {case_dir.name}")
+
+    return {
+        "artifact_dir": str(case_dir),
+        "valid": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "report_json": str(report_path),
+        "report_markdown": str(report_md),
+    }
+
+
+def resolve_ci_artifact_path(case_dir: Path, value: Any, default_name: str | None = None) -> Path:
+    if value:
+        path = Path(str(value)).expanduser()
+        if not path.is_absolute():
+            path = case_dir / path
+        return path.resolve()
+    if default_name:
+        return (case_dir / default_name).resolve()
+    return case_dir.resolve()
+
+
+def pilot_case_skipped_reason(case: dict[str, Any], config_dir: Path) -> str | None:
+    if case.get("skip"):
+        return str(case.get("skipped_reason") or "case marked skipped")
+    mode = case.get("mode")
+    if mode == "screenshots-only":
+        for key in ("before_screenshot_path", "after_screenshot_path", "before_metrics_path", "after_metrics_path"):
+            value = case.get(key)
+            if value and not resolve_pilot_path(config_dir, value).is_file():
+                return f"missing configured {key}: {value}"
+    if case.get("case_metadata_path") and not resolve_pilot_path(config_dir, case.get("case_metadata_path")).is_file():
+        return f"missing case metadata: {case.get('case_metadata_path')}"
+    return None
+
+
+def write_skipped_pilot_case_report(case: dict[str, Any], skipped_reason: str, output_dir: Path) -> dict[str, Any]:
+    review_id = str(case.get("review_id") or "unknown")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report = {
+        "schema_version": PR_REVIEW_REPORT_SCHEMA_VERSION,
+        "valid": False,
+        "review_id": review_id,
+        "mode": case.get("mode"),
+        "output_dir": str(output_dir),
+        "route": case.get("route"),
+        "component_name": case.get("component_name"),
+        "skipped": True,
+        "skipped_reason": skipped_reason,
+        "artifact_paths": {
+            "before_screenshot": None,
+            "after_screenshot": None,
+            "screenshot_diff": None,
+            "critic_review_json": None,
+            "patch_summary_json": None,
+            "patch_diff": None,
+            "before_metrics": None,
+            "after_metrics": None,
+        },
+        "severe_missing_artifacts": [skipped_reason],
+        "critic_delta": None,
+        "regression_flags": default_regressions() | {"visual_regression": False},
+        "regression_thresholds_pass": False,
+        "recommended_decision": "blocked_missing_artifacts",
+        "constraints": {
+            "external_apis_used": False,
+            "network_required": False,
+            "model_training_used": False,
+            "cuda_used": False,
+            "canonical_datasets_modified": False,
+            "dom_aware_jepa_implemented": False,
+        },
+    }
+    write_json(output_dir / "pr_review_report.json", report)
+    (output_dir / "pr_review_report.md").write_text(pr_review_markdown(report), encoding="utf-8")
+    return report
+
+
+def attach_pilot_case_context(report: dict[str, Any], case: dict[str, Any], config_dir: Path) -> dict[str, Any]:
+    enriched = dict(report)
+    enriched["route"] = case.get("route")
+    enriched["component_name"] = case.get("component_name")
+    enriched["pilot_mode"] = case.get("mode")
+    enriched["pilot_schema_version"] = case.get("schema_version")
+    enriched["before_url"] = case.get("before_url")
+    enriched["after_url"] = case.get("after_url")
+    enriched["before_path"] = str(resolve_pilot_path(config_dir, case.get("before_path"))) if case.get("before_path") else None
+    enriched["after_path"] = str(resolve_pilot_path(config_dir, case.get("after_path"))) if case.get("after_path") else None
+    enriched["case_metadata_path"] = str(resolve_pilot_path(config_dir, case.get("case_metadata_path"))) if case.get("case_metadata_path") else None
+    return enriched
+
+
+def aggregate_pr_review_pilot_reports(
+    case_reports: list[dict[str, Any]],
+    *,
+    pilot_config: dict[str, Any],
+    config_path: Path,
+    output_dir: Path,
+    validation_errors: list[str],
+) -> dict[str, Any]:
+    decisions = {decision: 0 for decision in sorted(PR_REVIEW_DECISIONS)}
+    critic_deltas: list[float] = []
+    visual_regressions = 0
+    accessibility_regressions = 0
+    responsive_regressions = 0
+    skipped_count = 0
+    rendered_count = 0
+    artifacts: list[dict[str, Any]] = []
+    for report in case_reports:
+        decision = report.get("recommended_decision")
+        if decision in decisions:
+            decisions[decision] += 1
+        if report.get("skipped"):
+            skipped_count += 1
+        if report.get("valid") and not report.get("skipped"):
+            rendered_count += 1
+        delta = report.get("critic_delta")
+        if isinstance(delta, int | float):
+            critic_deltas.append(float(delta))
+        regressions = report.get("regression_flags") or {}
+        visual_regressions += int(bool(regressions.get("visual_regression")))
+        accessibility_regressions += int(bool(regressions.get("accessibility_regression")))
+        responsive_regressions += int(bool(regressions.get("responsive_regression")))
+        artifacts.append(
+            {
+                "review_id": report.get("review_id"),
+                "route": report.get("route"),
+                "component_name": report.get("component_name"),
+                "before_url": report.get("before_url"),
+                "after_url": report.get("after_url"),
+                "before_path": report.get("before_path"),
+                "after_path": report.get("after_path"),
+                "decision": decision,
+                "skipped": bool(report.get("skipped")),
+                "skipped_reason": report.get("skipped_reason"),
+                "output_dir": report.get("output_dir"),
+                "artifact_paths": {
+                    "pr_review_report_json": str(Path(str(report.get("output_dir") or "")) / "pr_review_report.json") if report.get("output_dir") else None,
+                    "pr_review_report_md": str(Path(str(report.get("output_dir") or "")) / "pr_review_report.md") if report.get("output_dir") else None,
+                    **(report.get("artifact_paths") or {}),
+                },
+            }
+        )
+
+    useful_for_artifacts = bool(
+        not validation_errors
+        and len(case_reports) >= 3
+        and rendered_count >= 3
+        and decisions["blocked_missing_artifacts"] == 0
+    )
+    discovery = pilot_config.get("web_discovery") or {}
+    return {
+        "schema_version": PR_REVIEW_PILOT_REPORT_SCHEMA_VERSION,
+        "valid": bool(not validation_errors and case_reports),
+        "pilot_id": pilot_config.get("pilot_id") or config_path.parent.name,
+        "config_path": str(config_path),
+        "output_dir": str(output_dir),
+        "validation_errors": validation_errors,
+        "web_discovery": discovery,
+        "case_count": len(case_reports),
+        "rendered_count": rendered_count,
+        "skipped_count": skipped_count,
+        "approve_visual_count": decisions["approve_visual"],
+        "request_changes_count": decisions["request_changes"],
+        "needs_manual_review_count": decisions["needs_manual_review"],
+        "blocked_missing_artifacts_count": decisions["blocked_missing_artifacts"],
+        "mean_critic_delta": round(sum(critic_deltas) / len(critic_deltas), 6) if critic_deltas else None,
+        "visual_regression_count": visual_regressions,
+        "accessibility_regression_count": accessibility_regressions,
+        "responsive_regression_count": responsive_regressions,
+        "artifact_paths": artifacts,
+        "useful_enough_for_github_actions_artifact_integration": useful_for_artifacts,
+        "recommended_next_stage": (
+            "Add a disabled GitHub Actions artifact-upload job for the PR-review target; keep auto-commenting disabled."
+            if useful_for_artifacts
+            else "Add real app route screenshots or fix missing pilot artifacts before GitHub Actions artifact integration."
+        ),
+        "constraints": {
+            "external_apis_used": False,
+            "network_required": False,
+            "model_training_used": False,
+            "cuda_used": False,
+            "github_actions_enabled": False,
+            "dom_aware_jepa_implemented": False,
+        },
+    }
+
+
+def pr_review_pilot_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# CodePawl Web PR Review Pilot",
+        "",
+        f"- Pilot ID: {report.get('pilot_id')}",
+        f"- Valid: {report.get('valid')}",
+        f"- Cases: {report.get('case_count')}",
+        f"- Rendered/screenshots-only cases: {report.get('rendered_count')}",
+        f"- Skipped cases: {report.get('skipped_count')}",
+        f"- Approve visual: {report.get('approve_visual_count')}",
+        f"- Request changes: {report.get('request_changes_count')}",
+        f"- Needs manual review: {report.get('needs_manual_review_count')}",
+        f"- Blocked missing artifacts: {report.get('blocked_missing_artifacts_count')}",
+        f"- Mean critic delta: {report.get('mean_critic_delta')}",
+        f"- Useful for GitHub Actions artifact integration: {report.get('useful_enough_for_github_actions_artifact_integration')}",
+        f"- Recommended next stage: {report.get('recommended_next_stage')}",
+        "",
+        "## Web Discovery",
+        "",
+    ]
+    discovery = report.get("web_discovery") or {}
+    for key in (
+        "web_app_directory",
+        "local_dev_command",
+        "local_build_command",
+        "local_port",
+        "route_list",
+        "render_flow",
+        "sandbox_browser_render_status",
+    ):
+        lines.append(f"- {key}: {discovery.get(key)}")
+    lines.extend(["", "## Cases", ""])
+    for item in report.get("artifact_paths") or []:
+        lines.extend(
+            [
+                f"### {item.get('review_id')}",
+                "",
+                f"- Route/component: {item.get('route') or item.get('component_name')}",
+                f"- Before route file: {item.get('before_path')}",
+                f"- After route file: {item.get('after_path')}",
+                f"- Before URL: {item.get('before_url')}",
+                f"- After URL: {item.get('after_url')}",
+                f"- Decision: {item.get('decision')}",
+                f"- Skipped: {item.get('skipped')}",
+                f"- Skipped reason: {item.get('skipped_reason')}",
+                f"- Report JSON: {(item.get('artifact_paths') or {}).get('pr_review_report_json')}",
+                f"- Report Markdown: {(item.get('artifact_paths') or {}).get('pr_review_report_md')}",
+                f"- Before screenshot: {(item.get('artifact_paths') or {}).get('before_screenshot')}",
+                f"- After screenshot: {(item.get('artifact_paths') or {}).get('after_screenshot')}",
+                f"- Screenshot diff: {(item.get('artifact_paths') or {}).get('screenshot_diff')}",
+                "",
+            ]
+        )
+    errors = report.get("validation_errors") or []
+    if errors:
+        lines.extend(["## Validation Errors", ""])
+        lines.extend(f"- {error}" for error in errors)
+        lines.append("")
+    lines.append("All pilot evidence is local artifact-based. DOM-aware JEPA remains blocked.")
+    return "\n".join(lines) + "\n"
+
+
+def resolve_pilot_path(config_dir: Path, value: Any) -> Path:
+    path = Path(str(value or "")).expanduser()
+    if not path.is_absolute():
+        path = config_dir / path
+    return path.resolve()
 
 
 def resolve_output_dir(output_dir: Path, review_id: str) -> Path:

@@ -1,0 +1,133 @@
+{
+  "schema_version": "ui_pr_review_v0_pilot_v1",
+  "pilot_id": "codepawl_web_pilot",
+  "description": "Local-first PR screenshot review pilot over explicit pilot-only CodePawl web route files under apps/site/pilot_routes. Screenshots-only mode uses checked-in captures from the same local UI artifacts so the pilot stays offline when Chromium is unavailable.",
+  "web_discovery": {
+    "web_app_directory": "apps/site/pilot_routes (pilot-only static route files; apps/site and apps/design remain production placeholders)",
+    "local_dev_command": "python -m http.server 8766 --directory apps/site/pilot_routes",
+    "local_build_command": "not required for static pilot route files",
+    "local_port": 8766,
+    "route_list": [
+      "/openpawl/docs/api-reference",
+      "/cloud/dashboard/ai-agent",
+      "/cloud/dashboard/analytics",
+      "/cloud/app-empty-state"
+    ],
+    "render_flow": "screenshots-only from checked-in captures in this sandbox; local render mode can render apps/site/pilot_routes/<route>/before.html and after.html with codepawl-render or ui-pr-review when Chromium is available.",
+    "sandbox_browser_render_status": "blocked in this sandbox: Chromium launch fails with sandbox_host_linux.cc operation not permitted"
+  },
+  "cases": [
+    {
+      "schema_version": "ui_pr_review_v0_pilot_v1",
+      "review_id": "docs_api_reference_contrast",
+      "route": "/openpawl/docs/api-reference",
+      "component_name": "docs_api_reference",
+      "mode": "screenshots-only",
+      "before_url": "http://127.0.0.1:8766/openpawl/docs-api-reference/before.html",
+      "after_url": "http://127.0.0.1:8766/openpawl/docs-api-reference/after.html",
+      "before_path": "../../../apps/site/pilot_routes/openpawl/docs-api-reference/before.html",
+      "after_path": "../../../apps/site/pilot_routes/openpawl/docs-api-reference/after.html",
+      "before_screenshot_path": "../../../data/processed/ui_jepa_v0_smoke/samples/docs_api_reference/jittered/contrast_bad_seed00/screenshot.png",
+      "after_screenshot_path": "../../../reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0092__docs_api_reference__contrast_bad_seed00/manual_patch_import/render/screenshot.png",
+      "before_metrics_path": "../../../data/processed/ui_jepa_v0_smoke/samples/docs_api_reference/jittered/contrast_bad_seed00/metrics.json",
+      "after_metrics_path": "../../../reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0092__docs_api_reference__contrast_bad_seed00/manual_patch_import/render/metrics.json",
+      "patch_diff_path": "../../../data/manual_patches/ui_loop_v0/loop_hard_100__0092__docs_api_reference__contrast_bad_seed00/patch.diff",
+      "case_metadata_path": "docs_api_reference_contrast/metadata.json",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "expected_artifact_paths": {
+        "pr_review_report_json": "reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.json",
+        "pr_review_report_md": "reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.md",
+        "before_screenshot": "reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/before.png",
+        "after_screenshot": "reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/after.png",
+        "screenshot_diff": "reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/screenshot_diff.png"
+      }
+    },
+    {
+      "schema_version": "ui_pr_review_v0_pilot_v1",
+      "review_id": "dashboard_ai_agent_alignment",
+      "route": "/cloud/dashboard/ai-agent",
+      "component_name": "dashboard_ai_agent",
+      "mode": "screenshots-only",
+      "before_url": "http://127.0.0.1:8766/cloud/dashboard-ai-agent/before.html",
+      "after_url": "http://127.0.0.1:8766/cloud/dashboard-ai-agent/after.html",
+      "before_path": "../../../apps/site/pilot_routes/cloud/dashboard-ai-agent/before.html",
+      "after_path": "../../../apps/site/pilot_routes/cloud/dashboard-ai-agent/after.html",
+      "before_screenshot_path": "../../../data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/alignment_bad_seed00/screenshot.png",
+      "after_screenshot_path": "../../../reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0016__dashboard_ai_agent__alignment_bad_seed00/manual_patch_import/render/screenshot.png",
+      "before_metrics_path": "../../../data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/alignment_bad_seed00/metrics.json",
+      "after_metrics_path": "../../../reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0016__dashboard_ai_agent__alignment_bad_seed00/manual_patch_import/render/metrics.json",
+      "patch_diff_path": "../../../data/manual_patches/ui_loop_v0/loop_hard_100__0016__dashboard_ai_agent__alignment_bad_seed00/patch.diff",
+      "case_metadata_path": "dashboard_ai_agent_alignment/metadata.json",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "expected_artifact_paths": {
+        "pr_review_report_json": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/pr_review_report.json",
+        "pr_review_report_md": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/pr_review_report.md",
+        "before_screenshot": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/before.png",
+        "after_screenshot": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/after.png",
+        "screenshot_diff": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/screenshot_diff.png"
+      }
+    },
+    {
+      "schema_version": "ui_pr_review_v0_pilot_v1",
+      "review_id": "dashboard_analytics_hierarchy",
+      "route": "/cloud/dashboard/analytics",
+      "component_name": "dashboard_analytics",
+      "mode": "screenshots-only",
+      "before_url": "http://127.0.0.1:8766/cloud/dashboard-analytics/before.html",
+      "after_url": "http://127.0.0.1:8766/cloud/dashboard-analytics/after.html",
+      "before_path": "../../../apps/site/pilot_routes/cloud/dashboard-analytics/before.html",
+      "after_path": "../../../apps/site/pilot_routes/cloud/dashboard-analytics/after.html",
+      "before_screenshot_path": "../../../data/processed/ui_jepa_v0_smoke/samples/dashboard_analytics/jittered/hierarchy_bad_seed00/screenshot.png",
+      "after_screenshot_path": "../../../reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0048__dashboard_analytics__hierarchy_bad_seed00/manual_patch_import/render/screenshot.png",
+      "before_metrics_path": "../../../data/processed/ui_jepa_v0_smoke/samples/dashboard_analytics/jittered/hierarchy_bad_seed00/metrics.json",
+      "after_metrics_path": "../../../reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0048__dashboard_analytics__hierarchy_bad_seed00/manual_patch_import/render/metrics.json",
+      "patch_diff_path": "../../../data/manual_patches/ui_loop_v0/loop_hard_100__0048__dashboard_analytics__hierarchy_bad_seed00/patch.diff",
+      "case_metadata_path": "dashboard_analytics_hierarchy/metadata.json",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "expected_artifact_paths": {
+        "pr_review_report_json": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/pr_review_report.json",
+        "pr_review_report_md": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/pr_review_report.md",
+        "before_screenshot": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/before.png",
+        "after_screenshot": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/after.png",
+        "screenshot_diff": "reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/screenshot_diff.png"
+      }
+    },
+    {
+      "schema_version": "ui_pr_review_v0_pilot_v1",
+      "review_id": "app_empty_state_spacing",
+      "route": "/cloud/app-empty-state",
+      "component_name": "app_empty_state",
+      "mode": "screenshots-only",
+      "before_url": "http://127.0.0.1:8766/cloud/app-empty-state/before.html",
+      "after_url": "http://127.0.0.1:8766/cloud/app-empty-state/after.html",
+      "before_path": "../../../apps/site/pilot_routes/cloud/app-empty-state/before.html",
+      "after_path": "../../../apps/site/pilot_routes/cloud/app-empty-state/after.html",
+      "before_screenshot_path": "../../../data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/spacing_bad_seed01/screenshot.png",
+      "after_screenshot_path": "../../../reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0009__app_empty_state__spacing_bad_seed01/manual_patch_import/render/screenshot.png",
+      "before_metrics_path": "../../../data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/spacing_bad_seed01/metrics.json",
+      "after_metrics_path": "../../../reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0009__app_empty_state__spacing_bad_seed01/manual_patch_import/render/metrics.json",
+      "patch_diff_path": "../../../data/manual_patches/ui_loop_v0/loop_hard_100__0009__app_empty_state__spacing_bad_seed01/patch.diff",
+      "case_metadata_path": "app_empty_state_spacing/metadata.json",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "expected_artifact_paths": {
+        "pr_review_report_json": "reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/pr_review_report.json",
+        "pr_review_report_md": "reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/pr_review_report.md",
+        "before_screenshot": "reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/before.png",
+        "after_screenshot": "reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/after.png",
+        "screenshot_diff": "reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/screenshot_diff.png"
+      }
+    }
+  ]
+}

@@ -110,6 +110,7 @@ The pilot writes one normal PR review artifact set per case plus:
 ```text
 reports/ui_pr_review_v0/codepawl_web_pilot/pilot_report.json
 reports/ui_pr_review_v0/codepawl_web_pilot/pilot_report.md
+reports/ui_pr_review_v0/codepawl_web_pilot/pilot_metadata.json
 ```
 
 The current aggregate report has four rendered/screenshots-only cases, zero skipped cases, four `approve_visual` decisions, mean critic delta `0.035`, and no visual/accessibility/responsive regressions. This is useful enough for a future GitHub Actions artifact-upload job, but not for auto-commenting. When a production `apps/site` or `apps/design` frontend exists, replace these pilot-only static routes with production local render-mode cases.
@@ -126,6 +127,7 @@ The CLI writes:
 - `critic_review.json`
 - `patch_summary.json`
 - `patch.diff` when supplied
+- `review_metadata.json` copied from the review input metadata when available
 - `manual_label_template.json` when no manual label exists
 
 CI should treat the following as the artifact contract:
@@ -136,7 +138,18 @@ CI should treat the following as the artifact contract:
 - optional image: `screenshot_diff.png`, unavailable when screenshots are missing or sizes differ
 - required critic evidence: `critic_review.json`
 - required patch evidence: `patch_summary.json`, plus `patch.diff` when supplied
+- required metadata evidence: `review_metadata.json` for a case, or `pilot_metadata.json` plus `pilot_report.json` for a pilot
+- required gate evidence in CI: `scale_gate_pr_review.json` with `target: "pr-review"` and `target_ready: true`
 - optional human evidence: `manual_label.json` or generated `manual_label_template.json`
+
+Validate the CI contract without GitHub Actions:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci \
+  --validate-only \
+  --out reports/ui_pr_review_v0/codepawl_web_pilot \
+  --gate-out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json
+```
 
 ## Decisions
 
@@ -196,39 +209,49 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-jepa-scale-gate \
 
 ## Disabled CI Draft
 
-A future GitHub Actions job should remain artifact-only until more local PR reports are reviewed:
+The checked-in disabled workflow template is:
 
-```yaml
-# .github/workflows/pr-screenshot-review.yml.disabled
-name: PR Screenshot Review
-on: pull_request
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run local screenshot review
-        run: |
-          UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
-            --review-id fixture_manual_patch \
-            --mode screenshots-only \
-            --out reports/ui_pr_review_v0 \
-            --reviewer-id ci
-          UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-jepa-scale-gate \
-            --target pr-review \
-            --dataset data/processed/ui_jepa_v0_smoke \
-            --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
-            --m1-report reports/ui_jepa_v0_smoke/m1_report.json \
-            --m2-report reports/ui_jepa_v0_smoke/m2_report.json \
-            --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json \
-            --m2-strong-report reports/ui_jepa_v0_smoke/m2_strong_report.json \
-            --preference-critic-report reports/ui_jepa_v0_smoke/preference_critic_report.json \
-            --closed-loop-report reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json \
-            --manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json \
-            --pr-review-report reports/ui_pr_review_v0/fixture_manual_patch/pr_review_report.json
+```text
+.github/workflows/pr-visual-review.yml.disabled
 ```
 
-Do not enable auto-commenting yet. CI should upload the artifact contract above and let a human inspect it. The checked-in web pilot supports a disabled artifact-upload draft as the next stage, using `reports/ui_pr_review_v0/codepawl_web_pilot/pilot_report.json` plus each per-case report.
+It is manual-only by YAML trigger and disabled by filename. It checks out the repo, sets up Python and uv, runs the CodePawl web pilot, runs `ui-jepa-scale-gate --target pr-review`, validates the artifact contract with `ui-pr-review-ci --validate-only`, and uploads `reports/ui_pr_review_v0/codepawl_web_pilot/` plus `reports/ui_jepa_v0_smoke/scale_gate_pr_review.json`.
+
+Local command sequence that mirrors the workflow:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
+  --pilot-config data/pr_review_v0/codepawl_web_pilot/metadata.json \
+  --out reports/ui_pr_review_v0/codepawl_web_pilot \
+  --reviewer-id ci
+
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-jepa-scale-gate \
+  --target pr-review \
+  --dataset data/processed/ui_jepa_v0_smoke \
+  --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
+  --m1-report reports/ui_jepa_v0_smoke/m1_report.json \
+  --m2-report reports/ui_jepa_v0_smoke/m2_report.json \
+  --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json \
+  --m2-strong-report reports/ui_jepa_v0_smoke/m2_strong_report.json \
+  --preference-critic-report reports/ui_jepa_v0_smoke/preference_critic_report.json \
+  --closed-loop-report reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json \
+  --manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json \
+  --pr-review-report reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.json \
+  --out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json
+
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci \
+  --validate-only \
+  --out reports/ui_pr_review_v0/codepawl_web_pilot \
+  --gate-out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json
+```
+
+The shorter wrapper form is:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci
+```
+
+Do not enable auto-commenting yet. CI should upload the artifact contract above and let a human inspect it. The checked-in web pilot supports artifact upload using `reports/ui_pr_review_v0/codepawl_web_pilot/pilot_report.json` plus each per-case report. See `docs/GITHUB_ACTIONS_VISUAL_REVIEW.md` for the enablement checklist.
 
 ## Before GitHub Bot Integration
 

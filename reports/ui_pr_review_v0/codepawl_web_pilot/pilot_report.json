@@ -15,6 +15,7 @@
         "patch_summary_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/patch_summary.json",
         "pr_review_report_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.json",
         "pr_review_report_md": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.md",
+        "review_metadata_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/review_metadata.json",
         "screenshot_diff": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/screenshot_diff.png"
       },
       "before_path": "/home/nxank4/Code/personal/codepawl/apps/site/pilot_routes/openpawl/docs-api-reference/before.html",
@@ -40,6 +41,7 @@
         "patch_summary_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/patch_summary.json",
         "pr_review_report_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/pr_review_report.json",
         "pr_review_report_md": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/pr_review_report.md",
+        "review_metadata_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/review_metadata.json",
         "screenshot_diff": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_ai_agent_alignment/screenshot_diff.png"
       },
       "before_path": "/home/nxank4/Code/personal/codepawl/apps/site/pilot_routes/cloud/dashboard-ai-agent/before.html",
@@ -65,6 +67,7 @@
         "patch_summary_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/patch_summary.json",
         "pr_review_report_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/pr_review_report.json",
         "pr_review_report_md": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/pr_review_report.md",
+        "review_metadata_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/review_metadata.json",
         "screenshot_diff": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/dashboard_analytics_hierarchy/screenshot_diff.png"
       },
       "before_path": "/home/nxank4/Code/personal/codepawl/apps/site/pilot_routes/cloud/dashboard-analytics/before.html",
@@ -90,6 +93,7 @@
         "patch_summary_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/patch_summary.json",
         "pr_review_report_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/pr_review_report.json",
         "pr_review_report_md": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/pr_review_report.md",
+        "review_metadata_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/app_empty_state_spacing/review_metadata.json",
         "screenshot_diff": null
       },
       "before_path": "/home/nxank4/Code/personal/codepawl/apps/site/pilot_routes/cloud/app-empty-state/before.html",

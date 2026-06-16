@@ -13,6 +13,7 @@
     "critic_review_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/critic_review.json",
     "patch_diff": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/patch.diff",
     "patch_summary_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/patch_summary.json",
+    "review_metadata_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/review_metadata.json",
     "screenshot_diff": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/screenshot_diff.png"
   },
   "constraints": {
@@ -120,8 +121,8 @@
   },
   "regression_thresholds_pass": true,
   "review_id": "docs_api_reference_contrast",
-  "reviewer_id": "local-pilot",
-  "runtime_seconds": 0.1081,
+  "reviewer_id": "ci",
+  "runtime_seconds": 0.1112,
   "schema_version": "ui_pr_review_v0_report_v1",
   "screenshot_diff_stats": {
     "available": true,
