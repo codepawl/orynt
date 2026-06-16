@@ -63,6 +63,26 @@ uv run pawlbench-design-split artifacts/datasets/local_v1 --out artifacts/datase
 uv run pawlbench-design-report artifacts/datasets/local_v1 --out artifacts/datasets/local_v1_report
 ```
 
+Build the self-authored positive UI corpus for future Pawl-JEPA representation pretraining:
+
+```bash
+uv run pawlbench-design-positive-build examples/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0 --seed 42
+uv run pawlbench-design-positive-validate artifacts/datasets/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0_validation
+uv run pawlbench-design-positive-report artifacts/datasets/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0_report
+```
+
+`beautiful_ui_v0` contains 40 standalone fictional HTML/CSS interfaces. It uses no external URLs, scripts, CDNs, fonts, images, screenshots, logos, or brand assets. This corpus is positive-only data for the Pawl-JEPA self-supervised pretraining scaffold.
+
+Prepare, pretrain, and evaluate the Pawl-JEPA positive representation scaffold:
+
+```bash
+uv run pawl-jepa-positive-prepare artifacts/datasets/beautiful_ui_v0 --out artifacts/pawl_jepa/beautiful_ui_v0_manifest
+uv run pawl-jepa-positive-train artifacts/pawl_jepa/beautiful_ui_v0_manifest --out artifacts/pawl_jepa/beautiful_ui_v0_pretrain --epochs 10 --batch-size 8 --device auto
+uv run pawl-jepa-positive-eval artifacts/pawl_jepa/beautiful_ui_v0_pretrain --manifest artifacts/pawl_jepa/beautiful_ui_v0_manifest --out artifacts/pawl_jepa/beautiful_ui_v0_eval
+```
+
+This scaffold uses two UI-safe augmented views of each positive screenshot to teach the small encoder the polished UI manifold. It is not Sub-JEPA/SIGReg and does not download external models.
+
 Long-running local CLIs show lightweight progress in interactive terminals and stay quiet in CI/non-TTY output. Use `--no-progress` to keep normal final output but hide progress, or `--quiet` to suppress progress and nonessential success logs:
 
 ```bash
@@ -260,6 +280,17 @@ uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v2 \
   --out artifacts/pawl_jepa/hard_pref_v2_manifest
 uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_run --epochs 10 --batch-size 8 --device auto
 uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v2_run --manifest artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_eval
+```
+
+To initialize hard-pair training from the positive scaffold, pass the positive checkpoint:
+
+```bash
+uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v2_manifest \
+  --out artifacts/pawl_jepa/hard_pref_v2_run_from_positive \
+  --epochs 10 \
+  --batch-size 8 \
+  --device auto \
+  --pretrained-checkpoint artifacts/pawl_jepa/beautiful_ui_v0_pretrain/checkpoints/last.pt
 ```
 
 For bootstrapping with weak auto labels, pass `artifacts/datasets/hard_pref_v2/review/labels.auto.jsonl` to `pawl-jepa-prepare-hard`; the manifest and reports keep `auto_labeled` separate from human-reviewed counts.

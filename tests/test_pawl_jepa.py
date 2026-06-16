@@ -9,6 +9,7 @@ from codepawl_harness.pawl_jepa_prepare_cli import main as prepare_main
 from codepawl_harness.pawl_jepa_prepare_hard_cli import main as prepare_hard_main
 from pawl_jepa import prepare_hard_manifest, prepare_manifest, preferred_item_from_label
 from pawl_jepa.manifest import PrepareConfig, PrepareHardConfig, load_manifest_records
+from pawl_jepa.positive import PositivePrepareConfig, prepare_positive_manifest
 
 
 torch_available = importlib.util.find_spec("torch") is not None
@@ -40,6 +41,14 @@ def _split_record(tmp_path: Path, split: str, sample_id: str, variant_name: str,
 def _write_jsonl(path: Path, records: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(json.dumps(record, sort_keys=True) + "\n" for record in records), encoding="utf-8")
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def _label(split: str, sample_id: str, variant_name: str, defect_type: str) -> dict:
@@ -124,6 +133,51 @@ def _splits_dir(tmp_path: Path, records_by_split: dict[str, list[dict]] | None =
     for split, records in records_by_split.items():
         _write_jsonl(splits_dir / f"{split}.jsonl", records)
     return splits_dir
+
+
+def _positive_dataset_dir(tmp_path: Path, count: int = 6) -> Path:
+    dataset_dir = tmp_path / "positive_dataset"
+    samples_dir = dataset_dir / "samples"
+    samples: list[dict] = []
+    for index in range(count):
+        sample_id = f"positive_{index:02d}"
+        sample_dir = samples_dir / sample_id
+        screenshot = sample_dir / "screenshot.png"
+        _write_png(screenshot, ((20 + index * 20) % 255, (80 + index * 15) % 255, 160))
+        for name in ("index.html", "dom.json", "accessibility.json", "metrics.json"):
+            path = sample_dir / name
+            if name == "index.html":
+                path.write_text("<!doctype html><html><body><main>Positive</main></body></html>", encoding="utf-8")
+            else:
+                path.write_text("{}", encoding="utf-8")
+        samples.append(
+            {
+                "sample_id": sample_id,
+                "source_path": str(tmp_path / f"{sample_id}.html"),
+                "output_dir": str(sample_dir),
+                "status": "ok",
+                "html_path": str(sample_dir / "index.html"),
+                "screenshot_path": str(screenshot),
+                "dom_path": str(sample_dir / "dom.json"),
+                "accessibility_path": str(sample_dir / "accessibility.json"),
+                "metrics_path": str(sample_dir / "metrics.json"),
+            }
+        )
+    dataset = {
+        "schema_version": "pawlbench_positive_dataset_v1",
+        "dataset_id": "positive_dataset",
+        "source_dir": str(tmp_path),
+        "output_dir": str(dataset_dir),
+        "seed": 42,
+        "generated_at": "1970-01-01T00:00:42Z",
+        "sample_count": count,
+        "failed_count": 0,
+        "samples": samples,
+        "metrics_summary": {},
+        "warnings": [],
+    }
+    (dataset_dir / "dataset.json").write_text(json.dumps(dataset, indent=2) + "\n", encoding="utf-8")
+    return dataset_dir
 
 
 def test_preferred_item_from_left_right_label() -> None:
@@ -395,6 +449,33 @@ def test_prepare_hard_cli_writes_manifest(tmp_path: Path) -> None:
     assert result == 0
     assert (out / "manifest.json").is_file()
     assert load_manifest_records(out, "train")[0]["pair_kind"] == "variant_vs_variant"
+
+
+def test_prepare_positive_manifest_writes_splits(tmp_path: Path) -> None:
+    dataset_dir = _positive_dataset_dir(tmp_path, count=10)
+
+    result = prepare_positive_manifest(
+        PositivePrepareConfig(dataset_dir=dataset_dir, output_dir=tmp_path / "positive_manifest")
+    )
+
+    assert result.summary["schema_version"] == "pawl_jepa_positive_manifest_v1"
+    assert result.summary["record_counts"] == {"test": 1, "train": 8, "val": 1}
+    assert result.summary["total_records"] == 10
+    assert result.all_path.is_file()
+    train = _read_jsonl(result.output_dir / "train.jsonl")
+    assert train[0]["schema_version"] == "pawl_jepa_positive_record_v1"
+    assert Path(train[0]["screenshot_path"]).is_file()
+
+
+def test_prepare_positive_manifest_keeps_single_record_trainable(tmp_path: Path) -> None:
+    dataset_dir = _positive_dataset_dir(tmp_path, count=1)
+
+    result = prepare_positive_manifest(
+        PositivePrepareConfig(dataset_dir=dataset_dir, output_dir=tmp_path / "positive_manifest")
+    )
+
+    assert result.summary["record_counts"] == {"test": 0, "train": 1, "val": 0}
+    assert _read_jsonl(result.output_dir / "train.jsonl")[0]["split"] == "train"
 
 
 @pytestmark_torch
@@ -712,6 +793,22 @@ def test_dataset_image_loading_with_tiny_images(tmp_path: Path) -> None:
 
 
 @pytestmark_torch
+def test_positive_dataset_two_view_augmentations_shape(tmp_path: Path) -> None:
+    from pawl_jepa.positive import PositivePawlJepaDataset
+
+    manifest = prepare_positive_manifest(
+        PositivePrepareConfig(dataset_dir=_positive_dataset_dir(tmp_path, count=4), output_dir=tmp_path / "positive_manifest")
+    ).output_dir
+
+    dataset = PositivePawlJepaDataset(manifest, split="train", image_size=32, seed=42)
+    item = dataset[0]
+
+    assert item["view_a"].shape == (3, 32, 32)
+    assert item["view_b"].shape == (3, 32, 32)
+    assert item["record"]["sample_id"].startswith("positive_")
+
+
+@pytestmark_torch
 def test_hard_dataset_maps_preferred_and_skips_tie(tmp_path: Path) -> None:
     from pawl_jepa.data import PawlJepaDataset
 
@@ -748,6 +845,50 @@ def test_hard_dataset_maps_preferred_and_skips_tie(tmp_path: Path) -> None:
     assert items[0]["defect_target"] >= 0
     assert items[1]["pairwise_mask"] == 0.0
     assert items[1]["defect_target"] == -1
+
+
+@pytestmark_torch
+def test_positive_train_and_eval_smoke(tmp_path: Path) -> None:
+    from pawl_jepa.positive import (
+        PositiveEvalConfig,
+        PositiveTrainConfig,
+        evaluate_positive_model,
+        train_positive_model,
+    )
+
+    manifest = prepare_positive_manifest(
+        PositivePrepareConfig(dataset_dir=_positive_dataset_dir(tmp_path, count=6), output_dir=tmp_path / "positive_manifest")
+    ).output_dir
+    run = train_positive_model(
+        PositiveTrainConfig(
+            manifest_dir=manifest,
+            output_dir=tmp_path / "positive_run",
+            epochs=1,
+            batch_size=2,
+            image_size=32,
+            embedding_dim=8,
+            hidden_dim=16,
+            device="cpu",
+        )
+    )
+    eval_result = evaluate_positive_model(
+        PositiveEvalConfig(
+            run_dir=run.output_dir,
+            manifest_dir=manifest,
+            output_dir=tmp_path / "positive_eval",
+            batch_size=2,
+            device="cpu",
+        )
+    )
+
+    assert run.checkpoint_path.is_file()
+    assert run.metrics_path.is_file()
+    assert run.summary["last_epoch_loss"] is not None
+    assert eval_result.summary_path.is_file()
+    assert eval_result.summary["retrieval_top1"] is not None
+    assert eval_result.summary["retrieval_top5"] is not None
+    assert eval_result.summary["average_embedding_variance"] is not None
+    assert "warnings" in eval_result.summary
 
 
 @pytestmark_torch
@@ -790,6 +931,46 @@ def test_cpu_train_and_eval_smoke(tmp_path: Path) -> None:
         ]
         is not None
     )
+
+
+@pytestmark_torch
+def test_micro_train_loads_positive_pretrained_checkpoint(tmp_path: Path) -> None:
+    from pawl_jepa.positive import PositiveTrainConfig, train_positive_model
+    from pawl_jepa.train import TrainConfig, train_micro_model
+
+    positive_manifest = prepare_positive_manifest(
+        PositivePrepareConfig(dataset_dir=_positive_dataset_dir(tmp_path, count=6), output_dir=tmp_path / "positive_manifest")
+    ).output_dir
+    positive_run = train_positive_model(
+        PositiveTrainConfig(
+            manifest_dir=positive_manifest,
+            output_dir=tmp_path / "positive_run",
+            epochs=1,
+            batch_size=2,
+            image_size=32,
+            embedding_dim=8,
+            hidden_dim=16,
+            device="cpu",
+        )
+    )
+
+    run = train_micro_model(
+        TrainConfig(
+            manifest_dir=_tiny_manifest_with_eval_labels(tmp_path),
+            output_dir=tmp_path / "fine_tune_run",
+            epochs=1,
+            batch_size=2,
+            image_size=32,
+            embedding_dim=8,
+            hidden_dim=16,
+            device="cpu",
+            pretrained_checkpoint=positive_run.checkpoint_path,
+        )
+    )
+
+    assert run.summary["pretrained_checkpoint"] == str(positive_run.checkpoint_path.resolve())
+    assert run.summary["pretrained_load"]["loaded_key_count"] > 0
+    assert run.summary["pretrained_load"]["skipped_key_count"] == 0
 
 
 @pytestmark_torch

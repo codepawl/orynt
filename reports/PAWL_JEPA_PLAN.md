@@ -112,6 +112,19 @@ uv run pawlbench-design-generated-pairs examples/local_v1 --out artifacts/datase
 
 `generated_pref_v0` is not model-generated data; it is a file-based scaffold marked `manual_or_future_generator`.
 
+`beautiful_ui_v0` is the positive-only corpus for the next representation step. Build, validate, pretrain, and evaluate it before preference fine-tuning:
+
+```bash
+uv run pawlbench-design-positive-build examples/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0 --seed 42
+uv run pawlbench-design-positive-validate artifacts/datasets/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0_validation
+uv run pawlbench-design-positive-report artifacts/datasets/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0_report
+uv run pawl-jepa-positive-prepare artifacts/datasets/beautiful_ui_v0 --out artifacts/pawl_jepa/beautiful_ui_v0_manifest
+uv run pawl-jepa-positive-train artifacts/pawl_jepa/beautiful_ui_v0_manifest --out artifacts/pawl_jepa/beautiful_ui_v0_pretrain --epochs 10 --batch-size 8 --device auto
+uv run pawl-jepa-positive-eval artifacts/pawl_jepa/beautiful_ui_v0_pretrain --manifest artifacts/pawl_jepa/beautiful_ui_v0_manifest --out artifacts/pawl_jepa/beautiful_ui_v0_eval
+```
+
+The corpus is self-authored static HTML/CSS only. Positive pretraining teaches the encoder a manifold of polished local interfaces; hard-pair fine-tuning then teaches preference and taste. The scaffold intentionally stays simple and does not implement Sub-JEPA or SIGReg.
+
 CodePawl Taste v0 calibrates suggestions toward the current frontend taste profile without overwriting human labels:
 
 ```bash
@@ -150,6 +163,17 @@ uv run pawl-jepa-prepare-hard artifacts/datasets/hard_pref_v2 \
   --out artifacts/pawl_jepa/hard_pref_v2_manifest
 uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_run --epochs 10 --batch-size 8 --device auto
 uv run pawl-jepa-eval artifacts/pawl_jepa/hard_pref_v2_run --manifest artifacts/pawl_jepa/hard_pref_v2_manifest --out artifacts/pawl_jepa/hard_pref_v2_eval
+```
+
+Optionally initialize the hard-pair run from the positive checkpoint:
+
+```bash
+uv run pawl-jepa-train artifacts/pawl_jepa/hard_pref_v2_manifest \
+  --out artifacts/pawl_jepa/hard_pref_v2_run_from_positive \
+  --epochs 10 \
+  --batch-size 8 \
+  --device auto \
+  --pretrained-checkpoint artifacts/pawl_jepa/beautiful_ui_v0_pretrain/checkpoints/last.pt
 ```
 
 The model is intentionally small: a shared CNN image encoder, a predictor MLP from nonpreferred embedding to preferred embedding, a scalar preference head, and an optional defect classifier for spacing, contrast, alignment, and hierarchy. Losses combine latent prediction MSE, pairwise preference ranking when labels are not tie/unclear, and optional defect classification.

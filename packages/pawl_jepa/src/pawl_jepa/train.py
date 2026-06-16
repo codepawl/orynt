@@ -32,6 +32,7 @@ class TrainConfig:
     embedding_dim: int = 64
     hidden_dim: int = 128
     defect_head: bool = True
+    pretrained_checkpoint: Path | None = None
     progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
@@ -62,11 +63,12 @@ def train_micro_model(config: TrainConfig) -> TrainResult:
     config_payload = {
         key: value
         for key, value in asdict(config).items()
-        if key != "progress_callback"
+        if key not in {"progress_callback", "pretrained_checkpoint"}
     } | {
         "manifest_dir": str(config.manifest_dir.expanduser().resolve()),
         "output_dir": str(output_dir),
         "resolved_device": str(device),
+        "pretrained_checkpoint": str(config.pretrained_checkpoint.expanduser().resolve()) if config.pretrained_checkpoint else None,
     }
     config_path = output_dir / "config.json"
     write_json(config_path, config_payload)
@@ -88,6 +90,7 @@ def train_micro_model(config: TrainConfig) -> TrainResult:
         defect_head=config.defect_head,
     )
     model = build_model(model_config).to(device)
+    preload_summary = load_pretrained_components(torch, model, config.pretrained_checkpoint)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr)
     weights = LossWeights(config.latent_weight, config.preference_weight, config.defect_weight)
     metric_rows: list[dict[str, Any]] = []
@@ -165,11 +168,43 @@ def train_micro_model(config: TrainConfig) -> TrainResult:
         "first_epoch_total_loss": metric_rows[0]["total_loss"] if metric_rows else None,
         "last_epoch_total_loss": metric_rows[-1]["total_loss"] if metric_rows else None,
         "metrics": metric_rows,
+        "pretrained_checkpoint": str(config.pretrained_checkpoint.expanduser().resolve()) if config.pretrained_checkpoint else None,
+        "pretrained_load": preload_summary,
     }
     summary_path = output_dir / "train_summary.json"
     write_json(summary_path, summary)
     emit_progress(config.progress_callback, {"event": "train_done", "summary": summary})
     return TrainResult(output_dir, config_path, checkpoint_path, metrics_path, summary_path, summary)
+
+
+def load_pretrained_components(torch, model, checkpoint_path: Path | None) -> dict[str, Any]:
+    if checkpoint_path is None:
+        return {"loaded_key_count": 0, "skipped_key_count": 0, "loaded_keys": [], "skipped_keys": []}
+    resolved = checkpoint_path.expanduser().resolve()
+    if not resolved.is_file():
+        raise ValueError(f"pretrained checkpoint is missing: {resolved}")
+    checkpoint = torch.load(resolved, map_location="cpu")
+    pretrained_state = checkpoint.get("model_state_dict")
+    if not isinstance(pretrained_state, dict):
+        raise ValueError(f"pretrained checkpoint missing model_state_dict: {resolved}")
+    model_state = model.state_dict()
+    loadable: dict[str, Any] = {}
+    skipped: list[str] = []
+    for key, value in pretrained_state.items():
+        if not (key.startswith("encoder.") or key.startswith("predictor.")):
+            continue
+        if key in model_state and tuple(model_state[key].shape) == tuple(value.shape):
+            loadable[key] = value
+        else:
+            skipped.append(key)
+    model_state.update(loadable)
+    model.load_state_dict(model_state)
+    return {
+        "loaded_key_count": len(loadable),
+        "skipped_key_count": len(skipped),
+        "loaded_keys": sorted(loadable),
+        "skipped_keys": sorted(skipped),
+    }
 
 
 def emit_progress(callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:

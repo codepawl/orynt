@@ -522,6 +522,28 @@ uv run pawlbench-design-label-set-reviewer artifacts/labels/local_v1_train/label
 
 The rewrite command preserves `suggested_by`, `suggested_*`, and `suggestion_confidence`, updates `reviewed_by`, `labeler_id`, and `reviewed_at`, and does not overwrite the input unless `--in-place` is passed.
 
+## Positive UI Corpus v0
+
+`beautiful_ui_v0` is a self-authored positive-only corpus for future Pawl-JEPA representation pretraining. It contains standalone fictional HTML/CSS interfaces and does not scrape, copy, or reference external websites, scripts, images, fonts, CDNs, logos, screenshots, brand assets, or paid UI kits.
+
+Commands:
+
+```bash
+uv run pawlbench-design-positive-build examples/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0 --seed 42
+uv run pawlbench-design-positive-validate artifacts/datasets/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0_validation
+uv run pawlbench-design-positive-report artifacts/datasets/beautiful_ui_v0 --out artifacts/datasets/beautiful_ui_v0_report
+```
+
+The positive dataset writes one rendered artifact group per sample:
+
+- `index.html`
+- `screenshot.png`
+- `dom.json`
+- `accessibility.json`
+- `metrics.json`
+
+`dataset.json` uses `schema_version: "pawlbench_positive_dataset_v1"` and includes sample counts, failures, metric summary, and warnings. This is not a preference dataset; Pawl-JEPA consumes it through the positive pretraining scaffold before hard-pair fine-tuning.
+
 ## Lightweight Encoder Baseline Contract
 
 Before adding DINOv2, SigLIP, CLIP, Pawl-JEPA, or any heavy ML dependency, PawlBench Design provides cheap deterministic baselines for comparing jittered screenshots to the original.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +16,95 @@ DEFECT_TYPES = ("spacing", "contrast", "alignment", "hierarchy")
 DEFECT_TO_INDEX = {name: index for index, name in enumerate(DEFECT_TYPES)}
 
 
-def load_image_tensor(path: Path, image_size: int):
+@dataclass(frozen=True)
+class PaddedNormalization:
+    original_width: int
+    original_height: int
+    canvas_width: int
+    canvas_height: int
+    resized_width: int
+    resized_height: int
+    scale: float
+    pad_left: int
+    pad_top: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "ui_jepa_padded_normalization_v1",
+            "original_width": self.original_width,
+            "original_height": self.original_height,
+            "canvas_width": self.canvas_width,
+            "canvas_height": self.canvas_height,
+            "resized_width": self.resized_width,
+            "resized_height": self.resized_height,
+            "scale": self.scale,
+            "pad_left": self.pad_left,
+            "pad_top": self.pad_top,
+        }
+
+
+def normalize_image_padded(
+    image: Image.Image,
+    *,
+    canvas_size: int,
+    pad_color: tuple[int, int, int] = (255, 255, 255),
+) -> tuple[Image.Image, PaddedNormalization]:
+    if canvas_size <= 0:
+        raise ValueError("canvas_size must be greater than 0")
+    original_width, original_height = image.size
+    if original_width <= 0 or original_height <= 0:
+        raise ValueError("image dimensions must be positive")
+    scale = min(canvas_size / original_width, canvas_size / original_height)
+    resized_width = max(1, round(original_width * scale))
+    resized_height = max(1, round(original_height * scale))
+    pad_left = (canvas_size - resized_width) // 2
+    pad_top = (canvas_size - resized_height) // 2
+    resized = image.convert("RGB").resize((resized_width, resized_height), Image.Resampling.BICUBIC)
+    canvas = Image.new("RGB", (canvas_size, canvas_size), pad_color)
+    canvas.paste(resized, (pad_left, pad_top))
+    return canvas, PaddedNormalization(
+        original_width=original_width,
+        original_height=original_height,
+        canvas_width=canvas_size,
+        canvas_height=canvas_size,
+        resized_width=resized_width,
+        resized_height=resized_height,
+        scale=scale,
+        pad_left=pad_left,
+        pad_top=pad_top,
+    )
+
+
+def transform_bbox_xyxy(
+    bbox_xyxy: list[float] | tuple[float, float, float, float],
+    normalization: PaddedNormalization | dict[str, Any],
+) -> list[float]:
+    if len(bbox_xyxy) != 4:
+        raise ValueError("bbox_xyxy must contain four coordinates")
+    if isinstance(normalization, PaddedNormalization):
+        scale = normalization.scale
+        pad_left = normalization.pad_left
+        pad_top = normalization.pad_top
+    else:
+        scale = float(normalization["scale"])
+        pad_left = int(normalization["pad_left"])
+        pad_top = int(normalization["pad_top"])
+    x1, y1, x2, y2 = [float(value) for value in bbox_xyxy]
+    return [
+        round(x1 * scale + pad_left, 4),
+        round(y1 * scale + pad_top, 4),
+        round(x2 * scale + pad_left, 4),
+        round(y2 * scale + pad_top, 4),
+    ]
+
+
+def load_image_tensor(path: Path, image_size: int, *, preserve_aspect: bool = False):
     torch = import_torch()
     with Image.open(path) as image:
-        image = image.convert("RGB").resize((image_size, image_size), Image.Resampling.BICUBIC)
+        if preserve_aspect:
+            image, _ = normalize_image_padded(image, canvas_size=image_size)
+        else:
+            image = image.convert("RGB").resize((image_size, image_size), Image.Resampling.BICUBIC)
     data = torch.tensor(list(image.tobytes()), dtype=torch.uint8)
     tensor = data.reshape(image_size, image_size, 3).permute(2, 0, 1).float().div(255.0)
     return (tensor - 0.5) / 0.5

@@ -30,6 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--embedding-dim", type=int, default=64)
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--no-defect-head", action="store_true")
+    parser.add_argument(
+        "--pretrained-checkpoint",
+        help="Optional positive pretraining checkpoint used to initialize encoder and predictor weights.",
+    )
     add_progress_arguments(parser)
     return parser
 
@@ -55,6 +59,7 @@ def main(argv: list[str] | None = None) -> int:
                 embedding_dim=args.embedding_dim,
                 hidden_dim=args.hidden_dim,
                 defect_head=not args.no_defect_head,
+                pretrained_checkpoint=Path(args.pretrained_checkpoint) if args.pretrained_checkpoint else None,
                 progress_callback=train_progress_callback(progress),
             )
         )
