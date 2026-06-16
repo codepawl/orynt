@@ -141,6 +141,8 @@ Goal from plan: prove real frontend value.
   Evidence: `reports/ui_loop_v0_mixed_deterministic/contracts/`.
 - [~] Manual patch import and manual review label ingestion are implemented, but no manual patches or labels have been collected yet.
   Evidence: `reports/ui_loop_v0_mixed_manual_patch_import/closed_loop_report.json`, `reports/ui_loop_v0_hard_manual_patch_import/closed_loop_report.json`.
+- [x] Phase 4C manual Codex patch calibration artifacts are exported for a deterministic mixed/hard batch, and the local Vietnamese browser review UI is implemented for before/after labeling.
+  Evidence: `reports/ui_loop_v0_manual_batch/task_selection.json`, `data/manual_patches/ui_loop_v0/<task_id>/patched.html`, `reports/ui_loop_v0_manual_batch/manual_review_labels/`, `apps/harness/src/codepawl_harness/ui_loop_review_web.py`, `ui-loop-review-web`.
 - [ ] Before/after human preference evaluation is not complete; manual review labels are still required before real PR review.
 - [x] Accessibility/responsive regression checks inside the closed-loop gate are implemented for local deterministic reports and separated for non-oracle evidence.
   Evidence: `reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json`, `reports/ui_loop_v0_hard_deterministic/closed_loop_report.json`, `reports/ui_jepa_v0_smoke/scale_gate.json`.
@@ -157,4 +159,25 @@ Current Phase 4B evidence: deterministic non-oracle patch mode passes `loop_mixe
 5. Do not require future CUDA training inside the Codex sandbox. Future CUDA runs should be manual-user-run and then registered through report files.
 6. Use the M2.5 decision: continue JEPA only with useful representation/preference signal; otherwise harden dataset labels or add a preference-aligned critic/objective before DOM-aware work.
 7. Use Preference Critic v0 as the next frontend-loop scaffold: metrics currently dominates, M2-strong adds no useful lift, DOM-aware JEPA remains blocked, and closed-loop patch evaluation is the next practical validation path.
-8. Phase 4B mixed/hard closed-loop validation is implemented and passed locally for deterministic non-oracle patches; next inspect/manual-label wins and failures before real PR review claims.
+8. Phase 4B mixed/hard closed-loop validation is implemented and passed locally for deterministic non-oracle patches.
+9. Phase 4C selected 20 mixed/hard manual calibration tasks and exported Codex patch artifacts plus blank review templates. The current local manual-patch import reports show rendered manual patch evidence for the selected batch, and the next required evidence is completed human labels through `ui-loop-review-web`.
+
+## Phase 4C Manual Review UI Notes
+
+Start the local-only web UI with:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-review-web \
+  --selection reports/ui_loop_v0_manual_batch/task_selection.json \
+  --labels reports/ui_loop_v0_manual_batch/manual_review_labels \
+  --mixed-report reports/ui_loop_v0_manual_batch/mixed_manual_patch_import/closed_loop_report.json \
+  --hard-report reports/ui_loop_v0_manual_batch/hard_manual_patch_import/closed_loop_report.json \
+  --manual-patches data/manual_patches/ui_loop_v0 \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --reviewer-id "$USER"
+```
+
+The browser UI uses Vietnamese review controls. `Lỗi thị giác mới` means the patch introduced a visible visual regression. `Vấn đề accessibility` means the patch may reduce readability or usability. Shortcuts are `A` after, `B` before, `T` tie, `R` visual regression, `C` accessibility concern, `S` save, `N` next, and `P` previous.
+
+After the 20 Phase 4C labels are filled, click `Recombine report` or run `ui-loop-manual-batch combine`, then run `ui-jepa-scale-gate` with `--manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json`.

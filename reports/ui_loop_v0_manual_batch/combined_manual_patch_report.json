@@ -1,0 +1,31 @@
+{
+  "accessibility_regression_rate": 0.0,
+  "blocked_reason": null,
+  "evaluated_task_count": 20,
+  "manual_patch_ready": true,
+  "manual_patch_success_rate": 1.0,
+  "manual_review": {
+    "critic_vs_human_agreement": null,
+    "label_count": 20,
+    "labels_available": true,
+    "skipped_reason": null
+  },
+  "manual_review_ready": true,
+  "pr_review_ready": true,
+  "report_paths": [
+    "reports/ui_loop_v0_manual_batch/mixed_manual_patch_import/closed_loop_report.json",
+    "reports/ui_loop_v0_manual_batch/hard_manual_patch_import/closed_loop_report.json"
+  ],
+  "responsive_regression_rate": 0.0,
+  "schema_version": "ui_loop_v0_manual_batch_report_v1",
+  "selection_task_count": 20,
+  "skipped_task_count": 130,
+  "task_count": 150,
+  "thresholds": {
+    "max_regression_rate": 0.1,
+    "min_human_agreement": 0.6,
+    "min_success_rate": 0.5,
+    "min_task_count": 10
+  },
+  "valid": true
+}

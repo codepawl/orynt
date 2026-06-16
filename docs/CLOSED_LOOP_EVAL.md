@@ -1,6 +1,6 @@
 # Closed-Loop Frontend Evaluation v0
 
-Status: Phase 4B local/synthetic mixed/hard harness. It does not call external LLM APIs, train JEPA models, run CUDA jobs, or require network access.
+Status: Phase 4C local/manual calibration scaffold. It does not call external LLM APIs, train JEPA models, run CUDA jobs, or require network access.
 
 ## Purpose
 
@@ -183,6 +183,32 @@ Supported files:
 
 Run `manual_patch_import` to render and score available patches. Missing task directories or missing patched HTML are skipped and listed in `examples.skipped`.
 
+Phase 4C manual batch artifacts live under:
+
+```text
+reports/ui_loop_v0_manual_batch/task_selection.json
+reports/ui_loop_v0_manual_batch/mixed_manual_patch_import/closed_loop_report.json
+reports/ui_loop_v0_manual_batch/hard_manual_patch_import/closed_loop_report.json
+reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json
+reports/ui_loop_v0_manual_batch/manual_review_labels/
+reports/ui_loop_v0_manual_batch/manual_review_index.md
+```
+
+Build or refresh the selected batch with:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loop_manual_batch_cli build \
+  --mixed-dataset data/processed/ui_loop_v0/loop_mixed_50 \
+  --hard-dataset data/processed/ui_loop_v0/loop_hard_100 \
+  --out reports/ui_loop_v0_manual_batch \
+  --contracts reports/ui_loop_v0/contracts \
+  --manual-patches data/manual_patches/ui_loop_v0 \
+  --per-set-count 10 \
+  --seed 42
+```
+
+In this sandbox the rendered import command stalled in Chromium before task reports were written. Structural `--skip-render` reports were exported, but they are not visual improvement evidence and therefore keep `manual_patch_ready: false`.
+
 ## Manual Review Queue
 
 Every task writes a review template under:
@@ -214,7 +240,48 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loo
 
 When labels exist, reports include critic-vs-human agreement, deterministic-metric-vs-human agreement, and patch win rate by human preference. With no labels, the report records a skipped reason.
 
+Blank Phase 4C templates with `preferred: null` are ignored by ingestion. Set `preferred` to `before`, `after`, or `tie` before treating labels as completed.
+
 Manual agreement or disagreement with the critic is the required next evidence before using this critic for real PR review.
+
+For the Phase 4C manual batch, use the local web reviewer instead of editing JSON:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-review-web \
+  --selection reports/ui_loop_v0_manual_batch/task_selection.json \
+  --labels reports/ui_loop_v0_manual_batch/manual_review_labels \
+  --mixed-report reports/ui_loop_v0_manual_batch/mixed_manual_patch_import/closed_loop_report.json \
+  --hard-report reports/ui_loop_v0_manual_batch/hard_manual_patch_import/closed_loop_report.json \
+  --manual-patches data/manual_patches/ui_loop_v0 \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --reviewer-id "$USER"
+```
+
+The browser UI is local-only and Vietnamese. It compares before/after screenshots, shows task metadata, patch notes, diffs, and critic contracts, then writes the existing manual review JSON schema only after the reviewer presses `Lưu`.
+
+Vietnamese labels:
+
+- `Sau tốt hơn`: writes `preferred: "after"`
+- `Trước tốt hơn`: writes `preferred: "before"`
+- `Ngang nhau`: writes `preferred: "tie"`
+- `Lỗi thị giác mới`: the patched version created a visible visual regression such as clipped text, shifted elements, broken layout, worse spacing/color, missing important content, overflow, or an overall worse result.
+- `Vấn đề accessibility`: the patched version may reduce readability or usability, such as low contrast, hard-to-read text, worse labels/focus/semantics, or unclear CTA/input controls.
+
+Keyboard shortcuts are `A` after, `B` before, `T` tie, `R` visual regression, `C` accessibility concern, `S` or `Ctrl/Cmd+S` save, `N` next, and `P` previous.
+
+For the default Phase 4C batch, complete the 20 selected labels, then use the web `Recombine report` button or run:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-manual-batch combine \
+  --selection reports/ui_loop_v0_manual_batch/task_selection.json \
+  --mixed-report reports/ui_loop_v0_manual_batch/mixed_manual_patch_import/closed_loop_report.json \
+  --hard-report reports/ui_loop_v0_manual_batch/hard_manual_patch_import/closed_loop_report.json \
+  --labels reports/ui_loop_v0_manual_batch/manual_review_labels \
+  --out reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json
+```
+
+After labels are filled and recombined, run the scale gate with `--manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json` as shown below.
 
 ## Gate
 
@@ -234,6 +301,24 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jep
 ```
 
 The current gate records `closed_loop_ready: true`, `closed_loop_mixed_passed: true`, `closed_loop_hard_passed: true`, and `closed_loop_non_oracle_ready: true`. `manual_review_ready` and `pr_review_ready` remain false until manual labels are ingested. `dom_aware_ready` remains false because M2.5 still finds no useful representation signal and no DOM/localization bottleneck has been shown.
+
+For Phase 4C, pass the combined manual batch report:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jepa_scale_gate_cli \
+  --dataset data/processed/ui_jepa_v0_smoke \
+  --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
+  --m1-report reports/ui_jepa_v0_smoke/m1_report.json \
+  --m2-report reports/ui_jepa_v0_smoke/m2_report.json \
+  --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json \
+  --m2-strong-report reports/ui_jepa_v0_smoke/m2_strong_report.json \
+  --preference-critic-report reports/ui_jepa_v0_smoke/preference_critic_report.json \
+  --closed-loop-report reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json \
+  --manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json \
+  --out reports/ui_jepa_v0_smoke/scale_gate.json
+```
+
+`pr_review_ready` now additionally requires manual patch import evidence with enough rendered tasks, success rate above threshold, accessibility/responsive regression rates below threshold, and completed manual review labels. A high manual patch success rate without labels recommends filling labels; low manual patch success recommends improving contracts or the critic instruction adapter; critic-review disagreement recommends collecting more labels and recalibrating.
 
 ## Before Real PR Review
 

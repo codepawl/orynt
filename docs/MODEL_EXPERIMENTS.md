@@ -262,6 +262,22 @@ uv run ui-preference-critic-review data/processed/ui_preference_v0 \
 
 Closed-loop frontend patch evaluation may proceed with this synthetic/local critic when the gate reports `closed_loop_ready: true`.
 
+## Phase 4C: Manual Codex Patch Calibration
+
+Phase 4C runs a local/manual calibration batch rather than model work. The selected batch is written to `reports/ui_loop_v0_manual_batch/task_selection.json` and contains 10 tasks from `loop_mixed_50` plus 10 tasks from `loop_hard_100`, balanced across spacing, contrast, alignment, and hierarchy when available.
+
+Patch artifacts are copied-task HTML edits under `data/manual_patches/ui_loop_v0/<task_id>/`. The current Codex patches remove the known local `data-codepawl-jitter` style block from `patched.html`, write `notes.json` with `provenance: manual_codex_patch`, and write `patch.diff`. This is not oracle copy-from-clean behavior and does not touch `data/processed/ui_loop_v0`.
+
+Manual patch import reports are expected at:
+
+- `reports/ui_loop_v0_manual_batch/mixed_manual_patch_import/closed_loop_report.json`
+- `reports/ui_loop_v0_manual_batch/hard_manual_patch_import/closed_loop_report.json`
+- `reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json`
+
+In the current sandbox, Chromium rendering stalled during manual import, so only `--skip-render` structural reports exist. These validate import wiring but are not rendered improvement evidence; `manual_patch_ready` and `pr_review_ready` remain false.
+
+PR screenshot regression review requires the preference critic report, mixed/hard closed-loop reports, rendered manual patch import evidence above threshold, low accessibility/responsive regression rates, and completed manual review labels. Empty label templates do not count. DOM-aware JEPA remains frozen because M2.5 and the manually registered M2-strong run still do not justify architecture expansion.
+
 ## Phase 4B: Mixed/Hard Closed-Loop Frontend Evaluation v0
 
 Purpose: test whether the Preference Critic helps a practical local frontend iteration loop on mixed and hard local tasks before doing more JEPA architecture work or real PR review.

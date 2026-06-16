@@ -1,20 +1,24 @@
 {
   "allowed": false,
   "blocked_stages": [
+    "closed_loop_frontend_eval",
     "DOM_aware_jepa"
   ],
   "closed_loop_easy_passed": true,
-  "closed_loop_gate_errors": [],
+  "closed_loop_gate_errors": [
+    "closed-loop gate must be based on non-oracle evidence only"
+  ],
   "closed_loop_hard_passed": true,
   "closed_loop_mixed_passed": true,
   "closed_loop_non_oracle_ready": true,
-  "closed_loop_passed": true,
+  "closed_loop_passed": false,
   "closed_loop_ready": true,
-  "closed_loop_report": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json",
+  "closed_loop_report": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0/closed_loop_report.json",
   "dom_aware_ready": false,
   "errors": [
     "M2.5 did not find useful representation signal; do not start DOM-aware JEPA from non-collapse alone",
-    "M2.5 recommendation does not support DOM-aware JEPA: change_objective_or_strengthen_training_before_dom_aware"
+    "M2.5 recommendation does not support DOM-aware JEPA: change_objective_or_strengthen_training_before_dom_aware",
+    "closed-loop gate must be based on non-oracle evidence only"
   ],
   "m1_report": "/home/nxank4/Code/personal/codepawl/reports/ui_jepa_v0_smoke/m1_report.json",
   "m25_report": "/home/nxank4/Code/personal/codepawl/reports/ui_jepa_v0_smoke/m25_diagnostics_report.json",
@@ -37,12 +41,31 @@
     "valid": true
   },
   "m2_strong_report": "/home/nxank4/Code/personal/codepawl/reports/ui_jepa_v0_smoke/m2_strong_report.json",
-  "manual_review_ready": false,
+  "manual_batch_report": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json",
+  "manual_patch_gate": {
+    "accessibility_regression_rate": 0.0,
+    "blocked_reason": null,
+    "evaluated_task_count": 20,
+    "manual_patch_ready": true,
+    "manual_patch_success_rate": 1.0,
+    "manual_review_ready": true,
+    "pr_review_ready": true,
+    "report_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json",
+    "responsive_regression_rate": 0.0,
+    "thresholds": {
+      "max_regression_rate": 0.1,
+      "min_success_rate": 0.5,
+      "min_task_count": 10
+    }
+  },
+  "manual_patch_ready": true,
+  "manual_review_ready": true,
   "next_command": "Do not start DOM-aware JEPA; harden dataset labels or add a preference-aligned objective, then rerun ui-jepa-m25-ablation.",
   "phase_0_5_allowed": true,
-  "pr_review_ready": false,
+  "pr_review_blocked_reason": null,
+  "pr_review_ready": true,
   "preference_critic_ready": true,
   "preference_critic_report": "/home/nxank4/Code/personal/codepawl/reports/ui_jepa_v0_smoke/preference_critic_report.json",
-  "recommendation": "Closed-loop report passed synthetic/local non-oracle evaluation; keep DOM-aware JEPA blocked unless localization is the measured bottleneck. Require manual review labels before real PR review. Next stage: run_manual_codex_patch_workflow_on_selected_mixed_and_hard_tasks.",
+  "recommendation": "Closed-loop report passed synthetic/local non-oracle evaluation; keep DOM-aware JEPA blocked unless localization is the measured bottleneck. Require manual review labels before real PR review. Next stage: expand_loop_mixed_50.",
   "schema_version": "ui_jepa_scaling_gate_v1"
 }

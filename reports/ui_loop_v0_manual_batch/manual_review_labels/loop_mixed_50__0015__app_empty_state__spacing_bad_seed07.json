@@ -1,0 +1,11 @@
+{
+  "accessibility_concern": false,
+  "created_at": "2026-06-16T23:04:31+07:00",
+  "issue_types_remaining": [],
+  "notes": "",
+  "preferred": "after",
+  "provenance": "manual_review",
+  "reviewer_id": "an",
+  "task_id": "loop_mixed_50__0015__app_empty_state__spacing_bad_seed07",
+  "visual_regression": false
+}

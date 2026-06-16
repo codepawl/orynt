@@ -618,6 +618,7 @@ def check_ui_jepa_scaling_gate(
     m2_strong_report: Path | None = None,
     preference_critic_report: Path | None = None,
     closed_loop_report: Path | None = None,
+    manual_batch_report: Path | None = None,
 ) -> dict[str, Any]:
     dataset_dir = dataset_dir.expanduser().resolve()
     b0_report = b0_report.expanduser().resolve()
@@ -627,6 +628,7 @@ def check_ui_jepa_scaling_gate(
     m2_strong_report = _resolve_m2_strong_gate_report(m2_strong_report, m2_report, m25_report)
     preference_critic_report = preference_critic_report.expanduser().resolve() if preference_critic_report is not None else None
     closed_loop_report = closed_loop_report.expanduser().resolve() if closed_loop_report is not None else None
+    manual_batch_report = manual_batch_report.expanduser().resolve() if manual_batch_report is not None else None
     errors: list[str] = []
     m2_errors: list[str] = []
     dom_errors: list[str] = []
@@ -735,6 +737,13 @@ def check_ui_jepa_scaling_gate(
     closed_loop_non_oracle_ready = False
     manual_review_ready = False
     pr_review_ready = False
+    manual_patch_gate = {
+        "manual_patch_ready": False,
+        "manual_review_ready": False,
+        "pr_review_ready": False,
+        "blocked_reason": "manual patch batch report missing",
+        "report_path": str(manual_batch_report) if manual_batch_report is not None else None,
+    }
     if closed_loop_report is None:
         pass
     elif not closed_loop_report.is_file():
@@ -783,7 +792,15 @@ def check_ui_jepa_scaling_gate(
         closed_loop_hard_passed = closed_loop_hard_passed or any(_closed_loop_report_passes_set(report, "loop_hard_100") for report in companion_reports)
         closed_loop_non_oracle_ready = closed_loop_non_oracle_ready or any(_closed_loop_report_non_oracle_ready(report) for report in companion_reports)
         manual_review_ready = manual_review_ready or any(_closed_loop_report_manual_review_ready(report) for report in companion_reports)
-        pr_review_ready = closed_loop_non_oracle_ready and (closed_loop_mixed_passed or closed_loop_hard_passed) and manual_review_ready
+        manual_batch = _load_manual_batch_report(manual_batch_report, closed_loop_report)
+        manual_patch_gate = _manual_patch_pr_gate(companion_reports, manual_batch)
+        manual_review_ready = manual_review_ready or bool(manual_patch_gate.get("manual_review_ready"))
+        pr_review_ready = bool(
+            closed_loop_non_oracle_ready
+            and (closed_loop_mixed_passed or closed_loop_hard_passed)
+            and manual_patch_gate.get("manual_patch_ready")
+            and manual_patch_gate.get("manual_review_ready")
+        )
     closed_loop_ready = preference_critic_report is not None and not errors and not m2_errors and not critic_errors
     closed_loop_passed = closed_loop_report is not None and closed_loop_ready and not loop_errors
     dom_aware_ready = (
@@ -811,7 +828,10 @@ def check_ui_jepa_scaling_gate(
         "closed_loop_hard_passed": closed_loop_hard_passed,
         "closed_loop_non_oracle_ready": closed_loop_non_oracle_ready,
         "manual_review_ready": manual_review_ready,
+        "manual_patch_ready": bool(manual_patch_gate.get("manual_patch_ready")),
+        "manual_patch_gate": manual_patch_gate,
         "pr_review_ready": pr_review_ready,
+        "pr_review_blocked_reason": None if pr_review_ready else manual_patch_gate.get("blocked_reason"),
         "m1_report": str(m1_report) if m1_report is not None else None,
         "m2_report": str(m2_report) if m2_report is not None else None,
         "m2_strong_report": str(m2_strong_report) if m2_strong_report is not None else None,
@@ -819,6 +839,7 @@ def check_ui_jepa_scaling_gate(
         "m25_report": str(m25_report) if m25_report is not None else None,
         "preference_critic_report": str(preference_critic_report) if preference_critic_report is not None else None,
         "closed_loop_report": str(closed_loop_report) if closed_loop_report is not None else None,
+        "manual_batch_report": str(manual_batch_report) if manual_batch_report is not None else manual_patch_gate.get("report_path"),
         "preference_critic_ready": preference_critic_report is not None and not critic_errors,
         "closed_loop_gate_errors": loop_errors,
         "next_command": (
@@ -937,7 +958,108 @@ def _closed_loop_companion_reports(primary_path: Path | None, primary_report: di
             reports.append(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError):
             continue
+    for path in (
+        reports_root / "ui_loop_v0_manual_batch" / "mixed_manual_patch_import" / "closed_loop_report.json",
+        reports_root / "ui_loop_v0_manual_batch" / "hard_manual_patch_import" / "closed_loop_report.json",
+    ):
+        if not path.is_file() or path == primary_path:
+            continue
+        try:
+            reports.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            continue
     return reports
+
+
+def _load_manual_batch_report(explicit_path: Path | None, closed_loop_report: Path | None) -> dict[str, Any]:
+    candidates = []
+    if explicit_path is not None:
+        candidates.append(explicit_path)
+    if closed_loop_report is not None:
+        candidates.append(closed_loop_report.expanduser().resolve().parent.parent / "ui_loop_v0_manual_batch" / "combined_manual_patch_report.json")
+    for path in candidates:
+        if path.is_file():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["_report_path"] = str(path)
+                return payload
+            except (OSError, json.JSONDecodeError):
+                continue
+    return {}
+
+
+def _manual_patch_pr_gate(reports: list[dict[str, Any]], manual_batch: dict[str, Any]) -> dict[str, Any]:
+    thresholds = manual_batch.get("thresholds") or {}
+    min_task_count = int(thresholds.get("min_task_count") or 10)
+    min_success_rate = float(thresholds.get("min_success_rate") or 0.5)
+    max_regression_rate = float(thresholds.get("max_regression_rate") or 0.1)
+    if manual_batch:
+        evaluated = int(manual_batch.get("evaluated_task_count") or 0)
+        success_rate = manual_batch.get("manual_patch_success_rate")
+        accessibility_rate = float(manual_batch.get("accessibility_regression_rate") or 0.0)
+        responsive_rate = float(manual_batch.get("responsive_regression_rate") or 0.0)
+        manual_patch_ready = bool(
+            evaluated >= min_task_count
+            and isinstance(success_rate, int | float)
+            and float(success_rate) >= min_success_rate
+            and accessibility_rate <= max_regression_rate
+            and responsive_rate <= max_regression_rate
+        )
+        manual_review_ready = bool(manual_batch.get("manual_review_ready"))
+        blocked = manual_batch.get("blocked_reason")
+        if manual_patch_ready and not manual_review_ready:
+            blocked = "manual review labels are missing or below agreement threshold"
+        elif not manual_patch_ready:
+            blocked = "manual patch import count, success rate, or regression thresholds are not satisfied"
+        return {
+            "manual_patch_ready": manual_patch_ready,
+            "manual_review_ready": manual_review_ready,
+            "pr_review_ready": manual_patch_ready and manual_review_ready,
+            "blocked_reason": None if manual_patch_ready and manual_review_ready else blocked,
+            "report_path": manual_batch.get("_report_path"),
+            "evaluated_task_count": evaluated,
+            "manual_patch_success_rate": success_rate,
+            "accessibility_regression_rate": accessibility_rate,
+            "responsive_regression_rate": responsive_rate,
+            "thresholds": {"min_task_count": min_task_count, "min_success_rate": min_success_rate, "max_regression_rate": max_regression_rate},
+        }
+    manual_reports = [report for report in reports if report.get("patch_mode") == "manual_patch_import"]
+    evaluated = sum(int(report.get("evaluated_task_count") or 0) for report in manual_reports)
+    weighted_success = sum(float(report.get("manual_patch_success_rate") or 0.0) * int(report.get("evaluated_task_count") or 0) for report in manual_reports)
+    success_rate = round(weighted_success / evaluated, 6) if evaluated else None
+    accessibility_rate = round(
+        sum(float(report.get("accessibility_regression_rate_non_oracle", report.get("accessibility_regression_rate") or 0.0) or 0.0) * int(report.get("evaluated_task_count") or 0) for report in manual_reports) / evaluated,
+        6,
+    ) if evaluated else 0.0
+    responsive_rate = round(
+        sum(float(report.get("responsive_regression_rate_non_oracle", report.get("responsive_regression_rate") or 0.0) or 0.0) * int(report.get("evaluated_task_count") or 0) for report in manual_reports) / evaluated,
+        6,
+    ) if evaluated else 0.0
+    manual_patch_ready = bool(
+        evaluated >= min_task_count
+        and isinstance(success_rate, int | float)
+        and float(success_rate) >= min_success_rate
+        and accessibility_rate <= max_regression_rate
+        and responsive_rate <= max_regression_rate
+    )
+    manual_review_ready = any(_closed_loop_report_manual_review_ready(report) for report in manual_reports)
+    blocked = None
+    if not manual_patch_ready:
+        blocked = "manual patch import report missing or below count/success/regression thresholds"
+    elif not manual_review_ready:
+        blocked = "manual review labels are missing or below agreement threshold"
+    return {
+        "manual_patch_ready": manual_patch_ready,
+        "manual_review_ready": manual_review_ready,
+        "pr_review_ready": manual_patch_ready and manual_review_ready,
+        "blocked_reason": blocked,
+        "report_path": None,
+        "evaluated_task_count": evaluated,
+        "manual_patch_success_rate": success_rate,
+        "accessibility_regression_rate": accessibility_rate,
+        "responsive_regression_rate": responsive_rate,
+        "thresholds": {"min_task_count": min_task_count, "min_success_rate": min_success_rate, "max_regression_rate": max_regression_rate},
+    }
 
 
 def _closed_loop_report_passes_set(report: dict[str, Any], set_name: str) -> bool:

@@ -7,11 +7,13 @@ import json
 import math
 import random
 import shutil
+import subprocess
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TextIO
 
 from PIL import Image, ImageChops
 
@@ -32,6 +34,9 @@ LOOP_INSTRUCTION_SCHEMA_VERSION = "ui_loop_v0_instruction_v1"
 LOOP_REPORT_SCHEMA_VERSION = "ui_loop_v0_report_v1"
 LOOP_REVIEW_FORM_SCHEMA_VERSION = "ui_loop_v0_manual_review_form_v1"
 LOOP_MANUAL_LABEL_SCHEMA_VERSION = "ui_loop_v0_manual_review_label_v1"
+LOOP_MANUAL_BATCH_SCHEMA_VERSION = "ui_loop_v0_manual_batch_v1"
+LOOP_MANUAL_PATCH_NOTES_SCHEMA_VERSION = "ui_loop_v0_manual_patch_notes_v1"
+LOOP_MANUAL_BATCH_REPORT_SCHEMA_VERSION = "ui_loop_v0_manual_batch_report_v1"
 SUPPORTED_SETS = {
     "loop_easy_20": {"count": 20, "difficulties": ("easy",)},
     "loop_mixed_50": {"count": 50, "difficulties": ("easy", "medium", "hard")},
@@ -68,6 +73,33 @@ class LoopRunConfig:
     manual_patches_dir: Path | None = None
     viewport_width: int = 1440
     viewport_height: int = 900
+
+
+@dataclass(frozen=True)
+class ManualBatchConfig:
+    mixed_dataset_dir: Path
+    hard_dataset_dir: Path
+    output_dir: Path
+    contracts_dir: Path = Path("reports/ui_loop_v0/contracts")
+    manual_patches_dir: Path = Path("data/manual_patches/ui_loop_v0")
+    per_set_count: int = 10
+    seed: int = 42
+    created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class ManualLabelReviewConfig:
+    selection_path: Path = Path("reports/ui_loop_v0_manual_batch/task_selection.json")
+    label_dir: Path = Path("reports/ui_loop_v0_manual_batch/manual_review_labels")
+    mixed_report_dir: Path = Path("reports/ui_loop_v0_manual_batch/mixed_manual_patch_import")
+    hard_report_dir: Path = Path("reports/ui_loop_v0_manual_batch/hard_manual_patch_import")
+    manual_patches_dir: Path = Path("data/manual_patches/ui_loop_v0")
+    reviewer_id: str = ""
+    limit: int | None = None
+    only_empty: bool = False
+    overwrite: bool = False
+    dry_run: bool = False
+    open_images: bool = False
 
 
 def build_loop_dataset(config: LoopBuildConfig) -> dict[str, Any]:
@@ -134,6 +166,575 @@ def build_loop_dataset(config: LoopBuildConfig) -> dict[str, Any]:
     }
     write_json(output_dir / "summary.json", summary)
     return summary
+
+
+def build_manual_calibration_batch(config: ManualBatchConfig) -> dict[str, Any]:
+    """Select tasks and export Codex-authored copied-artifact patches for Phase 4C."""
+    output_dir = config.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    created_at = config.created_at or datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    selected = select_manual_calibration_tasks(
+        mixed_dataset_dir=config.mixed_dataset_dir,
+        hard_dataset_dir=config.hard_dataset_dir,
+        contracts_dir=config.contracts_dir,
+        per_set_count=config.per_set_count,
+        seed=config.seed,
+    )
+    selection = {
+        "schema_version": LOOP_MANUAL_BATCH_SCHEMA_VERSION,
+        "seed": config.seed,
+        "per_set_count": config.per_set_count,
+        "created_at": created_at,
+        "task_count": len(selected),
+        "tasks": selected,
+        "selection_summary": manual_batch_selection_summary(selected),
+        "constraints": {
+            "external_llm_apis_used": False,
+            "model_training_used": False,
+            "canonical_datasets_modified": False,
+            "oracle_used": False,
+        },
+    }
+    write_json(output_dir / "task_selection.json", selection)
+    patch_summary = export_manual_patch_outputs(selection, config.manual_patches_dir, created_at=created_at)
+    review_summary = export_manual_review_templates(selection, output_dir / "manual_review_labels", output_dir / "manual_review_index.md")
+    combined = combine_manual_batch_reports(
+        [],
+        selection=selection,
+        output_path=output_dir / "combined_manual_patch_report.json",
+        label_dir=output_dir / "manual_review_labels",
+    )
+    return {
+        "schema_version": LOOP_MANUAL_BATCH_SCHEMA_VERSION,
+        "output_dir": str(output_dir),
+        "task_selection_path": str(output_dir / "task_selection.json"),
+        "manual_patch_summary": patch_summary,
+        "manual_review_summary": review_summary,
+        "combined_report_path": str(output_dir / "combined_manual_patch_report.json"),
+        "combined_report": combined,
+    }
+
+
+def select_manual_calibration_tasks(
+    *,
+    mixed_dataset_dir: Path,
+    hard_dataset_dir: Path,
+    contracts_dir: Path,
+    per_set_count: int = 10,
+    seed: int = 42,
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    for dataset_dir, source_set in ((mixed_dataset_dir, "loop_mixed_50"), (hard_dataset_dir, "loop_hard_100")):
+        tasks = read_jsonl(dataset_dir.expanduser().resolve() / "tasks.jsonl")
+        selected.extend(
+            manual_calibration_tasks_for_set(
+                tasks,
+                source_set=source_set,
+                contracts_dir=contracts_dir.expanduser().resolve(),
+                count=per_set_count,
+                seed=seed,
+            )
+        )
+    return selected
+
+
+def manual_calibration_tasks_for_set(
+    tasks: list[dict[str, Any]],
+    *,
+    source_set: str,
+    contracts_dir: Path,
+    count: int,
+    seed: int,
+) -> list[dict[str, Any]]:
+    eligible = [
+        task
+        for task in tasks
+        if task.get("provenance_safe_for_non_oracle")
+        and "manual_patch_import" in (task.get("patch_mode_allowed") or [])
+        and "oracle_patch" not in set(task.get("patch_mode_allowed") or []) - set(SUPPORTED_PATCH_MODES)
+    ]
+    annotated = [manual_selection_record(task, source_set=source_set, contracts_dir=contracts_dir) for task in eligible]
+    rng = random.Random(f"{source_set}:{seed}")
+    quotas = issue_quotas(count)
+    by_issue: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in annotated:
+        by_issue[normalize_issue_type(record.get("corruption_type"))].append(record)
+    selected: list[dict[str, Any]] = []
+    for issue in ISSUE_TYPES:
+        bucket = by_issue.get(issue, [])
+        if not bucket:
+            continue
+        rng.shuffle(bucket)
+        bucket.sort(key=lambda row: manual_selection_sort_key(row, selected))
+        for record in bucket[: quotas.get(issue, 0)]:
+            selected.append(record)
+    if len(selected) < count:
+        chosen = {row["task_id"] for row in selected}
+        remainder = [row for row in annotated if row["task_id"] not in chosen]
+        rng.shuffle(remainder)
+        remainder.sort(key=lambda row: manual_selection_sort_key(row, selected))
+        selected.extend(remainder[: count - len(selected)])
+    return sorted(selected[:count], key=lambda row: (row["source_loop_set"], row["task_id"]))
+
+
+def manual_selection_record(task: dict[str, Any], *, source_set: str, contracts_dir: Path) -> dict[str, Any]:
+    task_id = str(task["task_id"])
+    contract_path = contracts_dir / f"{task_id}.md"
+    critic_path = contracts_dir / f"{task_id}.critic.json"
+    critic = read_json(critic_path) if critic_path.is_file() else {}
+    confidences = [to_float(issue.get("confidence")) for issue in critic.get("issues") or []]
+    confidence = max(confidences) if confidences else None
+    bucket = "missing"
+    if confidence is not None:
+        bucket = "high" if confidence >= 0.75 else "medium" if confidence >= 0.4 else "low"
+    reason_bits = [
+        f"{task.get('corruption_type')} coverage",
+        f"{task.get('difficulty')} difficulty",
+        f"{severity_bucket(task.get('severity'))} severity",
+        str(task.get("holdout_status") or "unknown_holdout_status"),
+    ]
+    if bucket in {"high", "low"}:
+        reason_bits.append(f"{bucket} critic confidence")
+    elif bucket == "medium":
+        reason_bits.append("medium critic confidence; no high/low confidence metadata available for this task")
+    else:
+        reason_bits.append("critic confidence metadata missing")
+    return {
+        "task_id": task_id,
+        "source_loop_set": source_set,
+        "difficulty": task.get("difficulty"),
+        "corruption_type": task.get("corruption_type"),
+        "severity": task.get("severity"),
+        "known_issue_types": list(task.get("known_issue_types") or []),
+        "before_html_path": task.get("before_html_path"),
+        "before_screenshot_path": task.get("before_screenshot_path"),
+        "contract_path": str(contract_path),
+        "critic_json_path": str(critic_path) if critic_path.is_file() else None,
+        "selection_reason": "; ".join(reason_bits),
+        "critic_confidence": confidence,
+        "critic_confidence_bucket": bucket,
+        "holdout_status": task.get("holdout_status"),
+        "train_template_overlap": bool(task.get("train_template_overlap")),
+        "critic_train_overlap": bool(task.get("critic_train_overlap")),
+    }
+
+
+def issue_quotas(count: int) -> dict[str, int]:
+    base, extra = divmod(count, len(ISSUE_TYPES))
+    return {issue: base + (1 if index < extra else 0) for index, issue in enumerate(ISSUE_TYPES)}
+
+
+def manual_selection_sort_key(record: dict[str, Any], selected: list[dict[str, Any]]) -> tuple[Any, ...]:
+    selected_status = Counter(row.get("holdout_status") for row in selected)
+    status = record.get("holdout_status")
+    confidence_rank = {"high": 0, "low": 1, "medium": 2, "missing": 3}.get(str(record.get("critic_confidence_bucket")), 4)
+    return (
+        selected_status.get(status, 0),
+        confidence_rank,
+        -to_float(record.get("severity")),
+        str(record.get("task_id")),
+    )
+
+
+def manual_batch_selection_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "task_count": len(records),
+        "source_loop_set_counts": dict(Counter(row.get("source_loop_set") for row in records)),
+        "corruption_type_counts": dict(Counter(row.get("corruption_type") for row in records)),
+        "difficulty_counts": dict(Counter(row.get("difficulty") for row in records)),
+        "severity_bucket_counts": dict(Counter(severity_bucket(row.get("severity")) for row in records)),
+        "critic_confidence_bucket_counts": dict(Counter(row.get("critic_confidence_bucket") for row in records)),
+        "holdout_status_counts": dict(Counter(row.get("holdout_status") for row in records)),
+    }
+
+
+def export_manual_patch_outputs(selection: dict[str, Any], manual_patches_dir: Path, *, created_at: str) -> dict[str, Any]:
+    manual_patches_dir = manual_patches_dir.expanduser().resolve()
+    exported = 0
+    todos = 0
+    for task in selection.get("tasks") or []:
+        task_id = str(task["task_id"])
+        task_dir = manual_patches_dir / task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        before_html = Path(str(task["before_html_path"])).expanduser()
+        patched_html = task_dir / "patched.html"
+        patch_diff = task_dir / "patch.diff"
+        notes_path = task_dir / "notes.json"
+        limitations: list[str] = []
+        if not before_html.is_file():
+            (task_dir / "PATCH_TODO.md").write_text(f"# {task_id}\n\nBefore HTML is missing: {before_html}\n", encoding="utf-8")
+            limitations.append("before_html_path missing; patch TODO exported instead of patched.html")
+            todos += 1
+        else:
+            original = before_html.read_text(encoding="utf-8")
+            patched, removed = remove_known_jitter_style(original)
+            if not removed:
+                patched = original
+                limitations.append("known CodePawl jitter marker was not found; copied HTML unchanged for manual follow-up")
+                (task_dir / "PATCH_TODO.md").write_text(manual_patch_todo_markdown(task), encoding="utf-8")
+                todos += 1
+            else:
+                exported += 1
+            patched_html.write_text(patched, encoding="utf-8")
+            diff = difflib.unified_diff(
+                original.splitlines(keepends=True),
+                patched.splitlines(keepends=True),
+                fromfile=str(before_html),
+                tofile=str(patched_html),
+            )
+            patch_diff.write_text("".join(diff), encoding="utf-8")
+        notes = {
+            "schema_version": LOOP_MANUAL_PATCH_NOTES_SCHEMA_VERSION,
+            "task_id": task_id,
+            "patch_author": "codex",
+            "provenance": "manual_codex_patch",
+            "created_at": created_at,
+            "source_contract_path": task.get("contract_path"),
+            "patched_html_path": str(patched_html),
+            "patch_summary": "Removed the task-local CodePawl jitter style block from a copied HTML artifact.",
+            "edited_files": [str(patched_html)],
+            "expected_issue_fixes": list(task.get("known_issue_types") or [task.get("corruption_type")]),
+            "known_limitations": limitations,
+            "oracle_used": False,
+        }
+        write_json(notes_path, notes)
+    return {
+        "manual_patches_dir": str(manual_patches_dir),
+        "selected_task_count": len(selection.get("tasks") or []),
+        "patched_html_count": exported,
+        "todo_count": todos,
+        "notes_schema_version": LOOP_MANUAL_PATCH_NOTES_SCHEMA_VERSION,
+    }
+
+
+def manual_patch_todo_markdown(task: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            f"# Manual Patch TODO: {task['task_id']}",
+            "",
+            f"- Before HTML: {task.get('before_html_path')}",
+            f"- Before screenshot: {task.get('before_screenshot_path')}",
+            f"- Contract: {task.get('contract_path')}",
+            f"- Expected issue fixes: {', '.join(task.get('known_issue_types') or [str(task.get('corruption_type'))])}",
+            "",
+            "Apply the contract to `patched.html` using only task-local copied HTML. Do not copy the clean/oracle source.",
+        ]
+    ) + "\n"
+
+
+def export_manual_review_templates(selection: dict[str, Any], label_dir: Path, index_path: Path) -> dict[str, Any]:
+    label_dir = label_dir.expanduser().resolve()
+    index_path = index_path.expanduser().resolve()
+    label_dir.mkdir(parents=True, exist_ok=True)
+    lines = ["# UI Loop v0 Manual Batch Review Index", "", "Fill `preferred` with `before`, `after`, or `tie` after inspecting local screenshots and diffs.", ""]
+    for task in selection.get("tasks") or []:
+        task_id = str(task["task_id"])
+        patch_dir = Path("data/manual_patches/ui_loop_v0") / task_id
+        label_path = label_dir / f"{task_id}.json"
+        payload = {
+            "task_id": task_id,
+            "preferred": None,
+            "issue_types_remaining": [],
+            "visual_regression": None,
+            "accessibility_concern": None,
+            "notes": "",
+            "reviewer_id": "",
+            "provenance": "manual_review",
+            "created_at": None,
+        }
+        write_json(label_path, payload)
+        lines.extend(
+            [
+                f"## {task_id}",
+                f"- before screenshot: {task.get('before_screenshot_path')}",
+                "- after screenshot: generated by manual_patch_import report after rendering",
+                f"- critic JSON: {task.get('critic_json_path')}",
+                f"- instruction contract: {task.get('contract_path')}",
+                f"- patch diff: {patch_dir / 'patch.diff'}",
+                f"- review label file: {label_path}",
+                "",
+            ]
+        )
+    index_path.write_text("\n".join(lines), encoding="utf-8")
+    return {"label_dir": str(label_dir), "index_path": str(index_path), "template_count": len(selection.get("tasks") or [])}
+
+
+def load_selected_manual_review_tasks(selection_path: Path) -> list[dict[str, Any]]:
+    selection = read_json(selection_path.expanduser().resolve())
+    tasks = selection.get("tasks") if isinstance(selection, dict) else None
+    if not isinstance(tasks, list):
+        raise ValueError(f"manual review selection has no tasks list: {selection_path}")
+    return [task for task in tasks if isinstance(task, dict)]
+
+
+def load_manual_patch_import_task_reports(*report_dirs: Path) -> dict[str, dict[str, Any]]:
+    reports: dict[str, dict[str, Any]] = {}
+    for report_dir in report_dirs:
+        task_dir = report_dir.expanduser().resolve() / "tasks"
+        if not task_dir.is_dir():
+            continue
+        for path in sorted(task_dir.glob("*.json")):
+            report = read_json(path)
+            task_id = str(report.get("task_id") or "")
+            if task_id:
+                reports[task_id] = report
+    return reports
+
+
+def manual_review_task_evidence(task: dict[str, Any], report: dict[str, Any] | None, *, label_dir: Path, manual_patches_dir: Path) -> dict[str, Any]:
+    task_id = str(task["task_id"])
+    before_screenshot = task.get("before_screenshot_path")
+    after_screenshot = None
+    patch_diff = None
+    if report:
+        before_screenshot = ((report.get("before") or {}).get("screenshot_path")) or report.get("before_screenshot_path") or before_screenshot
+        after_screenshot = ((report.get("after") or {}).get("screenshot_path")) or report.get("after_screenshot_path")
+        patch_diff = report.get("patch_diff_path") or ((report.get("patch_details") or {}).get("manual_patch_record") or {}).get("patch_diff_path")
+    patch_diff = patch_diff or str(manual_patches_dir.expanduser() / task_id / "patch.diff")
+    return {
+        "task_id": task_id,
+        "label_path": str(label_dir.expanduser() / f"{task_id}.json"),
+        "before_screenshot_path": before_screenshot,
+        "after_screenshot_path": after_screenshot,
+        "patch_diff_path": patch_diff,
+    }
+
+
+def blank_manual_review_label(task_id: str) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "preferred": None,
+        "issue_types_remaining": [],
+        "visual_regression": None,
+        "accessibility_concern": None,
+        "notes": "",
+        "reviewer_id": "",
+        "provenance": "manual_review",
+        "created_at": None,
+    }
+
+
+def is_completed_manual_review_label(label: dict[str, Any]) -> bool:
+    return str(label.get("preferred") or "").lower() in {"before", "after", "tie"}
+
+
+def is_empty_manual_review_label(label: dict[str, Any]) -> bool:
+    return (
+        not is_completed_manual_review_label(label)
+        and not list(label.get("issue_types_remaining") or [])
+        and label.get("visual_regression") is None
+        and label.get("accessibility_concern") is None
+        and not str(label.get("notes") or "").strip()
+        and not str(label.get("reviewer_id") or "").strip()
+        and not str(label.get("created_at") or "").strip()
+    )
+
+
+def parse_manual_review_bool(raw: str, *, existing: Any = None) -> bool | None:
+    value = raw.strip().lower()
+    if not value:
+        return existing if existing in {True, False, None} else None
+    if value in {"y", "yes", "true", "t", "1"}:
+        return True
+    if value in {"n", "no", "false", "f", "0"}:
+        return False
+    raise ValueError("expected true/false, yes/no, or blank")
+
+
+def manual_review_label_from_input(
+    task_id: str,
+    existing: dict[str, Any],
+    *,
+    reviewer_id: str,
+    input_func: Callable[[str], str] = input,
+) -> dict[str, Any] | None:
+    preference_map = {"a": "after", "b": "before", "t": "tie"}
+    while True:
+        raw = input_func("Preference [a=after, b=before, t=tie, s=skip]: ").strip().lower()
+        if raw == "s":
+            return None
+        if raw in preference_map:
+            preferred = preference_map[raw]
+            break
+        print("Enter a, b, t, or s.")
+
+    while True:
+        try:
+            visual_regression = parse_manual_review_bool(input_func("Visual regression? [true/false, blank=unknown]: "), existing=existing.get("visual_regression"))
+            break
+        except ValueError as exc:
+            print(str(exc))
+    while True:
+        try:
+            accessibility_concern = parse_manual_review_bool(input_func("Accessibility concern? [true/false, blank=unknown]: "), existing=existing.get("accessibility_concern"))
+            break
+        except ValueError as exc:
+            print(str(exc))
+    notes = input_func("Notes [optional]: ")
+    return {
+        "task_id": task_id,
+        "preferred": preferred,
+        "issue_types_remaining": list(existing.get("issue_types_remaining") or []),
+        "visual_regression": visual_regression,
+        "accessibility_concern": accessibility_concern,
+        "notes": notes,
+        "reviewer_id": reviewer_id or str(existing.get("reviewer_id") or ""),
+        "provenance": "manual_review",
+        "created_at": datetime.now().astimezone().replace(microsecond=0).isoformat(),
+    }
+
+
+def combine_manual_label_command(config: ManualLabelReviewConfig) -> str:
+    return (
+        "UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-manual-batch combine "
+        f"--selection {config.selection_path} "
+        f"--mixed-report {config.mixed_report_dir / 'closed_loop_report.json'} "
+        f"--hard-report {config.hard_report_dir / 'closed_loop_report.json'} "
+        f"--labels {config.label_dir} "
+        "--out reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json"
+    )
+
+
+def review_manual_labels(
+    config: ManualLabelReviewConfig,
+    *,
+    input_func: Callable[[str], str] = input,
+    output: TextIO | None = None,
+) -> dict[str, Any]:
+    out = output
+
+    def emit(message: str = "") -> None:
+        print(message, file=out)
+
+    tasks = load_selected_manual_review_tasks(config.selection_path)
+    reports = load_manual_patch_import_task_reports(config.mixed_report_dir, config.hard_report_dir)
+    label_dir = config.label_dir.expanduser().resolve()
+    if not config.dry_run:
+        label_dir.mkdir(parents=True, exist_ok=True)
+
+    stats = {"selected_task_count": len(tasks), "visited": 0, "written": 0, "would_write": 0, "skipped": 0, "dry_run": config.dry_run}
+    remaining = tasks[: config.limit] if config.limit is not None else tasks
+    for index, task in enumerate(remaining, start=1):
+        task_id = str(task["task_id"])
+        label_path = label_dir / f"{task_id}.json"
+        existing = read_json(label_path) if label_path.is_file() else blank_manual_review_label(task_id)
+        if config.only_empty and not is_empty_manual_review_label(existing):
+            stats["skipped"] += 1
+            continue
+        if is_completed_manual_review_label(existing) and not config.overwrite:
+            stats["skipped"] += 1
+            continue
+
+        evidence = manual_review_task_evidence(task, reports.get(task_id), label_dir=label_dir, manual_patches_dir=config.manual_patches_dir)
+        emit(f"\n[{index}/{len(remaining)}] {task_id}")
+        emit(f"loop set: {task.get('source_loop_set')}")
+        emit(f"difficulty: {task.get('difficulty')}")
+        emit(f"corruption_type: {task.get('corruption_type')}")
+        emit(f"severity: {task.get('severity')}")
+        emit(f"known_issue_types: {', '.join(str(item) for item in task.get('known_issue_types') or [])}")
+        emit(f"before screenshot: {evidence.get('before_screenshot_path')}")
+        emit(f"after screenshot: {evidence.get('after_screenshot_path') or 'missing'}")
+        emit(f"patch diff: {evidence.get('patch_diff_path') if Path(str(evidence.get('patch_diff_path'))).expanduser().is_file() else 'missing'}")
+        emit(f"label file: {label_path}")
+        if config.open_images:
+            for path_value in (evidence.get("before_screenshot_path"), evidence.get("after_screenshot_path")):
+                if path_value and Path(str(path_value)).expanduser().is_file():
+                    subprocess.run(["xdg-open", str(path_value)], check=False)
+        label = manual_review_label_from_input(task_id, existing, reviewer_id=config.reviewer_id, input_func=input_func)
+        stats["visited"] += 1
+        if label is None:
+            stats["skipped"] += 1
+            continue
+        if config.dry_run:
+            emit(f"dry-run: would write {label_path}")
+            stats["would_write"] += 1
+        else:
+            write_json(label_path, label)
+            stats["written"] += 1
+
+    emit("\nNext combine command:")
+    emit(combine_manual_label_command(config))
+    return stats
+
+
+def combine_manual_batch_reports(
+    report_paths: list[Path],
+    *,
+    selection: dict[str, Any] | None = None,
+    output_path: Path | None = None,
+    label_dir: Path | None = None,
+    min_task_count: int = 10,
+    min_success_rate: float = 0.5,
+    max_regression_rate: float = 0.1,
+    min_human_agreement: float = 0.6,
+) -> dict[str, Any]:
+    reports = [read_json(path.expanduser().resolve()) for path in report_paths if path.expanduser().is_file()]
+    evaluated_count = sum(int(report.get("evaluated_task_count") or 0) for report in reports)
+    task_count = sum(int(report.get("task_count") or 0) for report in reports)
+    skipped_count = sum(int(report.get("skipped_task_count") or 0) for report in reports)
+    success_numerators = []
+    for report in reports:
+        evaluated = int(report.get("evaluated_task_count") or 0)
+        rate_value = report.get("manual_patch_success_rate")
+        if isinstance(rate_value, int | float):
+            success_numerators.append(float(rate_value) * evaluated)
+    success_rate = rate(sum(success_numerators), evaluated_count)
+    accessibility_rate = rate(
+        sum(float(report.get("accessibility_regression_rate_non_oracle", report.get("accessibility_regression_rate") or 0.0) or 0.0) * int(report.get("evaluated_task_count") or 0) for report in reports),
+        evaluated_count,
+    )
+    responsive_rate = rate(
+        sum(float(report.get("responsive_regression_rate_non_oracle", report.get("responsive_regression_rate") or 0.0) or 0.0) * int(report.get("evaluated_task_count") or 0) for report in reports),
+        evaluated_count,
+    )
+    labels = load_manual_review_labels(label_dir)
+    label_complete = [label for label in labels if str(label.get("preferred") or "") in {"before", "after", "tie"}]
+    label_count = len(label_complete)
+    agreement_values = [
+        value
+        for report in reports
+        for value in [((report.get("manual_review") or {}).get("critic_vs_human_agreement"))]
+        if isinstance(value, int | float)
+    ]
+    agreement = mean([float(value) for value in agreement_values])
+    patch_ready = bool(evaluated_count >= min_task_count and success_rate >= min_success_rate and accessibility_rate <= max_regression_rate and responsive_rate <= max_regression_rate)
+    manual_review_ready = bool(label_count >= evaluated_count >= min_task_count and (not agreement_values or agreement >= min_human_agreement))
+    blocked_reason = None
+    if not patch_ready:
+        blocked_reason = "manual patch import count, success rate, or regression thresholds are not satisfied"
+    elif not manual_review_ready:
+        blocked_reason = "manual review labels are missing or below agreement threshold"
+    combined = {
+        "schema_version": LOOP_MANUAL_BATCH_REPORT_SCHEMA_VERSION,
+        "valid": True,
+        "report_paths": [str(path) for path in report_paths],
+        "selection_task_count": len((selection or {}).get("tasks") or []),
+        "task_count": task_count,
+        "evaluated_task_count": evaluated_count,
+        "skipped_task_count": skipped_count,
+        "manual_patch_success_rate": success_rate if evaluated_count else None,
+        "accessibility_regression_rate": accessibility_rate,
+        "responsive_regression_rate": responsive_rate,
+        "manual_patch_ready": patch_ready,
+        "manual_review_ready": manual_review_ready,
+        "pr_review_ready": patch_ready and manual_review_ready,
+        "blocked_reason": blocked_reason,
+        "thresholds": {
+            "min_task_count": min_task_count,
+            "min_success_rate": min_success_rate,
+            "max_regression_rate": max_regression_rate,
+            "min_human_agreement": min_human_agreement,
+        },
+        "manual_review": {
+            "label_count": label_count,
+            "labels_available": bool(label_count),
+            "critic_vs_human_agreement": round(agreement, 6) if agreement_values else None,
+            "skipped_reason": None if label_count else "manual review label templates are empty or unfilled",
+        },
+    }
+    if output_path is not None:
+        write_json(output_path.expanduser().resolve(), combined)
+    return combined
 
 
 def select_loop_candidates(candidates: list[dict[str, Any]], *, target_count: int, difficulties: tuple[str, ...], seed: int) -> list[dict[str, Any]]:
@@ -1212,12 +1813,14 @@ def load_manual_review_labels(path: Path | None) -> list[dict[str, Any]]:
 
 def normalize_manual_review_label(row: dict[str, Any]) -> dict[str, Any]:
     preferred = str(row.get("preferred") or "").lower()
-    if preferred not in {"before", "after", "tie"}:
-        preferred = "tie"
+    completed = preferred in {"before", "after", "tie"}
+    if not completed:
+        preferred = ""
     return {
         "schema_version": row.get("schema_version") or LOOP_MANUAL_LABEL_SCHEMA_VERSION,
         "task_id": str(row.get("task_id") or ""),
         "preferred": preferred,
+        "completed": completed,
         "issue_types_remaining": list(row.get("issue_types_remaining") or []),
         "visual_regression": bool(row.get("visual_regression", False)),
         "accessibility_concern": bool(row.get("accessibility_concern", False)),
@@ -1229,17 +1832,19 @@ def normalize_manual_review_label(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def manual_review_agreement(reports: list[dict[str, Any]], labels: list[dict[str, Any]]) -> dict[str, Any]:
-    if not labels:
+    completed_labels = [label for label in labels if label.get("completed")]
+    if not completed_labels:
         return {
             "labels_available": False,
-            "label_count": 0,
-            "skipped_reason": "no manual review labels provided",
+            "label_count": len(labels),
+            "matched_label_count": 0,
+            "skipped_reason": "no completed manual review labels provided",
             "critic_vs_human_agreement": None,
             "deterministic_metric_vs_human_agreement": None,
             "patch_win_rate_by_human_preference": None,
         }
     report_by_task = {str(report.get("task_id")): report for report in reports}
-    matched = [(label, report_by_task.get(str(label.get("task_id")))) for label in labels]
+    matched = [(label, report_by_task.get(str(label.get("task_id")))) for label in completed_labels]
     matched = [(label, report) for label, report in matched if report is not None]
     critic_matches = 0
     metric_matches = 0
@@ -1255,7 +1860,7 @@ def manual_review_agreement(reports: list[dict[str, Any]], labels: list[dict[str
             metric_matches += 1
     return {
         "labels_available": True,
-        "label_count": len(labels),
+        "label_count": len(completed_labels),
         "matched_label_count": len(matched),
         "critic_vs_human_agreement": rate(critic_matches, len(matched)),
         "deterministic_metric_vs_human_agreement": rate(metric_matches, len(matched)),

@@ -85,6 +85,8 @@ class M2TrainConfig:
     transformer_layers: int = 2
     transformer_heads: int = 4
     target_regions: int = 2
+    min_region_area_ratio: float = 0.001
+    max_region_area_ratio: float = 0.80
     min_context_ratio: float = 0.45
     seed: int = 42
     smoke: bool = False
@@ -351,6 +353,8 @@ def train_m2(config: M2TrainConfig) -> M1Result:
         image_size=config.image_size,
         patch_size=config.patch_size,
         target_regions=config.target_regions,
+        min_region_area_ratio=config.min_region_area_ratio,
+        max_region_area_ratio=config.max_region_area_ratio,
         min_context_ratio=config.min_context_ratio,
         seed=config.seed,
     )
