@@ -619,6 +619,7 @@ def check_ui_jepa_scaling_gate(
     preference_critic_report: Path | None = None,
     closed_loop_report: Path | None = None,
     manual_batch_report: Path | None = None,
+    pr_review_report: Path | None = None,
 ) -> dict[str, Any]:
     dataset_dir = dataset_dir.expanduser().resolve()
     b0_report = b0_report.expanduser().resolve()
@@ -629,6 +630,7 @@ def check_ui_jepa_scaling_gate(
     preference_critic_report = preference_critic_report.expanduser().resolve() if preference_critic_report is not None else None
     closed_loop_report = closed_loop_report.expanduser().resolve() if closed_loop_report is not None else None
     manual_batch_report = manual_batch_report.expanduser().resolve() if manual_batch_report is not None else None
+    pr_review_report = pr_review_report.expanduser().resolve() if pr_review_report is not None else None
     errors: list[str] = []
     m2_errors: list[str] = []
     dom_errors: list[str] = []
@@ -736,7 +738,13 @@ def check_ui_jepa_scaling_gate(
     closed_loop_hard_passed = False
     closed_loop_non_oracle_ready = False
     manual_review_ready = False
+    pr_review_foundation_ready = False
     pr_review_ready = False
+    pr_review_gate = {
+        "pr_review_report_ready": False,
+        "blocked_reason": "PR screenshot review report missing",
+        "report_path": str(pr_review_report) if pr_review_report is not None else None,
+    }
     manual_patch_gate = {
         "manual_patch_ready": False,
         "manual_review_ready": False,
@@ -795,14 +803,24 @@ def check_ui_jepa_scaling_gate(
         manual_batch = _load_manual_batch_report(manual_batch_report, closed_loop_report)
         manual_patch_gate = _manual_patch_pr_gate(companion_reports, manual_batch)
         manual_review_ready = manual_review_ready or bool(manual_patch_gate.get("manual_review_ready"))
-        pr_review_ready = bool(
+        pr_review_foundation_ready = bool(
             closed_loop_non_oracle_ready
             and (closed_loop_mixed_passed or closed_loop_hard_passed)
             and manual_patch_gate.get("manual_patch_ready")
             and manual_patch_gate.get("manual_review_ready")
         )
+        pr_review_gate = _pr_review_report_gate(pr_review_report)
+        pr_review_ready = bool(pr_review_foundation_ready and pr_review_gate.get("pr_review_report_ready"))
     closed_loop_ready = preference_critic_report is not None and not errors and not m2_errors and not critic_errors
     closed_loop_passed = closed_loop_report is not None and closed_loop_ready and not loop_errors
+    pr_review_foundation_ready = bool(
+        pr_review_foundation_ready
+        and closed_loop_passed
+        and preference_critic_report is not None
+        and not critic_errors
+        and not loop_errors
+    )
+    pr_review_ready = bool(pr_review_foundation_ready and pr_review_gate.get("pr_review_report_ready"))
     dom_aware_ready = (
         not errors
         and not m2_errors
@@ -830,8 +848,10 @@ def check_ui_jepa_scaling_gate(
         "manual_review_ready": manual_review_ready,
         "manual_patch_ready": bool(manual_patch_gate.get("manual_patch_ready")),
         "manual_patch_gate": manual_patch_gate,
+        "pr_review_foundation_ready": pr_review_foundation_ready,
+        "pr_review_gate": pr_review_gate,
         "pr_review_ready": pr_review_ready,
-        "pr_review_blocked_reason": None if pr_review_ready else manual_patch_gate.get("blocked_reason"),
+        "pr_review_blocked_reason": None if pr_review_ready else (manual_patch_gate.get("blocked_reason") or pr_review_gate.get("blocked_reason")),
         "m1_report": str(m1_report) if m1_report is not None else None,
         "m2_report": str(m2_report) if m2_report is not None else None,
         "m2_strong_report": str(m2_strong_report) if m2_strong_report is not None else None,
@@ -840,6 +860,7 @@ def check_ui_jepa_scaling_gate(
         "preference_critic_report": str(preference_critic_report) if preference_critic_report is not None else None,
         "closed_loop_report": str(closed_loop_report) if closed_loop_report is not None else None,
         "manual_batch_report": str(manual_batch_report) if manual_batch_report is not None else manual_patch_gate.get("report_path"),
+        "pr_review_report": str(pr_review_report) if pr_review_report is not None else None,
         "preference_critic_ready": preference_critic_report is not None and not critic_errors,
         "closed_loop_gate_errors": loop_errors,
         "next_command": (
@@ -1059,6 +1080,58 @@ def _manual_patch_pr_gate(reports: list[dict[str, Any]], manual_batch: dict[str,
         "accessibility_regression_rate": accessibility_rate,
         "responsive_regression_rate": responsive_rate,
         "thresholds": {"min_task_count": min_task_count, "min_success_rate": min_success_rate, "max_regression_rate": max_regression_rate},
+    }
+
+
+def _pr_review_report_gate(pr_review_report: Path | None) -> dict[str, Any]:
+    if pr_review_report is None:
+        return {
+            "pr_review_report_ready": False,
+            "blocked_reason": "PR screenshot review report missing",
+            "report_path": None,
+        }
+    if not pr_review_report.is_file():
+        return {
+            "pr_review_report_ready": False,
+            "blocked_reason": f"PR screenshot review report is missing: {pr_review_report}",
+            "report_path": str(pr_review_report),
+        }
+    try:
+        report = json.loads(pr_review_report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "pr_review_report_ready": False,
+            "blocked_reason": f"PR screenshot review report is unreadable: {exc}",
+            "report_path": str(pr_review_report),
+        }
+    severe_missing = report.get("severe_missing_artifacts") or []
+    decision = str(report.get("recommended_decision") or "")
+    thresholds_pass = bool(report.get("regression_thresholds_pass"))
+    ready = bool(
+        report.get("valid")
+        and not severe_missing
+        and thresholds_pass
+        and decision in {"approve_visual", "needs_manual_review"}
+    )
+    blocked = None
+    if not ready:
+        if not report.get("valid"):
+            blocked = "PR screenshot review report is not valid"
+        elif severe_missing:
+            blocked = "PR screenshot review report has severe missing artifacts"
+        elif not thresholds_pass:
+            blocked = "PR screenshot review regression thresholds failed"
+        elif decision == "request_changes":
+            blocked = "PR screenshot review requests changes"
+        else:
+            blocked = f"PR screenshot review decision is not gate-ready: {decision}"
+    return {
+        "pr_review_report_ready": ready,
+        "blocked_reason": blocked,
+        "report_path": str(pr_review_report),
+        "recommended_decision": decision,
+        "regression_thresholds_pass": thresholds_pass,
+        "severe_missing_artifact_count": len(severe_missing),
     }
 
 

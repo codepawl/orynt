@@ -198,7 +198,22 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jep
   --preference-critic-report reports/ui_jepa_v0_smoke/preference_critic_report.json \
   --closed-loop-report reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json \
   --manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json \
+  --pr-review-report reports/ui_pr_review_v0/fixture_manual_patch/pr_review_report.json \
   --out reports/ui_jepa_v0_smoke/scale_gate.json
 ```
 
-`pr_review_ready` stays false until the rendered manual patch import report passes thresholds and completed manual review labels are ingested. DOM-aware JEPA remains frozen: M2.5 and M2-strong do not show useful representation signal for this corpus, and Phase 4C is testing patch contracts and reviewer calibration, not new architecture or training.
+`pr_review_foundation_ready` becomes true only after the rendered manual patch import report passes thresholds and completed manual review labels are ingested. `pr_review_ready` additionally requires a valid local PR screenshot review report with no severe missing artifacts and passing regression thresholds.
+
+Run the offline PR review fixture:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
+  --review-id fixture_manual_patch \
+  --mode screenshots-only \
+  --out reports/ui_pr_review_v0 \
+  --reviewer-id "$USER"
+```
+
+For a real local change, create `data/pr_review_v0/<review_id>/metadata.json` with before/after HTML or screenshots, optional `patch.diff`, and optional `manual_label.json`. Use `--mode render` for HTML/project paths and `--mode screenshots-only` when screenshots/metrics already exist or Chromium cannot run in a sandbox.
+
+DOM-aware JEPA remains frozen: M2.5 and M2-strong do not show useful representation signal for this corpus, and Phase 4C/PR review is testing patch contracts, reviewer calibration, artifact reports, and regression gates, not new architecture or training.

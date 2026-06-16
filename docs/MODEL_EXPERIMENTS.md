@@ -274,9 +274,9 @@ Manual patch import reports are expected at:
 - `reports/ui_loop_v0_manual_batch/hard_manual_patch_import/closed_loop_report.json`
 - `reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json`
 
-In the current sandbox, Chromium rendering stalled during manual import, so only `--skip-render` structural reports exist. These validate import wiring but are not rendered improvement evidence; `manual_patch_ready` and `pr_review_ready` remain false.
+The current manual batch report records rendered manual patch evidence for 20 selected tasks, completed labels, `manual_patch_ready: true`, `manual_review_ready: true`, and `pr_review_foundation_ready: true` in the scale gate. This is still local calibration evidence, not a GitHub bot.
 
-PR screenshot regression review requires the preference critic report, mixed/hard closed-loop reports, rendered manual patch import evidence above threshold, low accessibility/responsive regression rates, and completed manual review labels. Empty label templates do not count. DOM-aware JEPA remains frozen because M2.5 and the manually registered M2-strong run still do not justify architecture expansion.
+PR screenshot regression review now requires the preference critic report, mixed/hard closed-loop reports, rendered manual patch import evidence above threshold, low accessibility/responsive regression rates, completed manual review labels, and a valid PR screenshot review report with no severe missing artifacts. Empty label templates do not count. DOM-aware JEPA remains frozen because M2.5 and the manually registered M2-strong run still do not justify architecture expansion.
 
 ## Phase 4B: Mixed/Hard Closed-Loop Frontend Evaluation v0
 
@@ -520,7 +520,9 @@ Acceptance:
 
 Current implementation:
 
-- Not implemented.
+- Mixed/hard closed-loop local evaluation is implemented with no-op, deterministic patch, manual patch import, oracle upper-bound separation, deterministic metrics, accessibility/responsive regression checks, and manual review labels.
+- Local PR screenshot review v0 is implemented as an artifact workflow, not a model-training workflow. Run `ui-pr-review --review-id fixture_manual_patch --mode screenshots-only --out reports/ui_pr_review_v0` to produce before/after screenshot reports, critic deltas, screenshot diff, patch summary, manual-review status, and a recommended visual decision.
+- DOM-aware JEPA remains blocked. Current M2/M2.5 evidence does not show useful representation signal or a DOM-aware recommendation, so PR review integration uses the local preference critic and deterministic metrics instead of new architecture work.
 
 ## Current Local Commands
 

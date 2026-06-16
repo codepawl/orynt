@@ -207,7 +207,7 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loo
   --seed 42
 ```
 
-In this sandbox the rendered import command stalled in Chromium before task reports were written. Structural `--skip-render` reports were exported, but they are not visual improvement evidence and therefore keep `manual_patch_ready: false`.
+The current checked-in manual batch has rendered manual patch import evidence and completed labels, so it can support `pr_review_foundation_ready: true` in the scale gate. Structural `--skip-render` reports remain wiring checks only and must not be counted as visual improvement evidence.
 
 ## Manual Review Queue
 
@@ -283,6 +283,34 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-manual-batch combine \
 
 After labels are filled and recombined, run the scale gate with `--manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json` as shown below.
 
+## PR Screenshot Review v0
+
+The first PR-style screenshot regression workflow is local-first and artifact-based. It consumes a review directory under `data/pr_review_v0/<review_id>/` or explicit CLI paths, then writes before/after screenshots, deterministic metric deltas, preference critic review JSON, screenshot diff, patch summary, and Markdown/JSON reports under `reports/ui_pr_review_v0/<review_id>/`.
+
+Run the included offline fixture:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
+  --review-id fixture_manual_patch \
+  --mode screenshots-only \
+  --out reports/ui_pr_review_v0 \
+  --reviewer-id "$USER"
+```
+
+Render mode is available for local HTML/project paths:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
+  --review-id my_change \
+  --before data/pr_review_v0/my_change/before.html \
+  --after data/pr_review_v0/my_change/after.html \
+  --patch-diff data/pr_review_v0/my_change/patch.diff \
+  --out reports/ui_pr_review_v0/my_change \
+  --mode render
+```
+
+Use `screenshots-only` mode when Chromium is unavailable in a sandbox. Missing manual labels leave manual review pending, not failed. Decision values are `approve_visual`, `request_changes`, `needs_manual_review`, and `blocked_missing_artifacts`; see `docs/PR_SCREENSHOT_REVIEW.md` for details.
+
 ## Gate
 
 Run:
@@ -297,10 +325,12 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jep
   --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json \
   --preference-critic-report reports/ui_jepa_v0_smoke/preference_critic_report.json \
   --closed-loop-report reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json \
+  --manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json \
+  --pr-review-report reports/ui_pr_review_v0/fixture_manual_patch/pr_review_report.json \
   --out reports/ui_jepa_v0_smoke/scale_gate.json
 ```
 
-The current gate records `closed_loop_ready: true`, `closed_loop_mixed_passed: true`, `closed_loop_hard_passed: true`, and `closed_loop_non_oracle_ready: true`. `manual_review_ready` and `pr_review_ready` remain false until manual labels are ingested. `dom_aware_ready` remains false because M2.5 still finds no useful representation signal and no DOM/localization bottleneck has been shown.
+The current gate records `closed_loop_non_oracle_ready: true`, `manual_patch_ready: true`, `manual_review_ready: true`, and `pr_review_foundation_ready: true` when the manual batch report passes. `pr_review_ready` requires an additional valid PR screenshot review report with no severe missing artifacts and passing regression thresholds. `dom_aware_ready` remains false because M2.5 still finds no useful representation signal and no DOM/localization bottleneck has been shown.
 
 For Phase 4C, pass the combined manual batch report:
 
@@ -315,10 +345,11 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_jep
   --preference-critic-report reports/ui_jepa_v0_smoke/preference_critic_report.json \
   --closed-loop-report reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json \
   --manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json \
+  --pr-review-report reports/ui_pr_review_v0/fixture_manual_patch/pr_review_report.json \
   --out reports/ui_jepa_v0_smoke/scale_gate.json
 ```
 
-`pr_review_ready` now additionally requires manual patch import evidence with enough rendered tasks, success rate above threshold, accessibility/responsive regression rates below threshold, and completed manual review labels. A high manual patch success rate without labels recommends filling labels; low manual patch success recommends improving contracts or the critic instruction adapter; critic-review disagreement recommends collecting more labels and recalibrating.
+`pr_review_foundation_ready` requires manual patch import evidence with enough rendered tasks, success rate above threshold, accessibility/responsive regression rates below threshold, and completed manual review labels. `pr_review_ready` additionally requires a PR screenshot review report whose decision is `approve_visual` or `needs_manual_review`, with clean artifact and regression gates. A high manual patch success rate without labels recommends filling labels; low manual patch success recommends improving contracts or the critic instruction adapter; critic-review disagreement recommends collecting more labels and recalibrating.
 
 ## Before Real PR Review
 
