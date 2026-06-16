@@ -798,6 +798,14 @@ Done when:
 - It does not introduce frequent accessibility/responsive regressions.
 - The critique JSON is stable enough to drive code changes.
 
+Current local Phase 4A status:
+
+- `ui_loop_v0` is implemented for `loop_easy_20`, `loop_mixed_50`, and `loop_hard_100` from local smoke artifacts.
+- Critique JSON is converted into saved Codex-compatible patch contracts; no external LLM API is called.
+- Deterministic patch mode operates only on copied local fixtures and removes known synthetic jitter CSS when provenance is present.
+- `reports/ui_loop_v0/closed_loop_report.json` passes the synthetic/local easy-set gate with no-op mean critic delta `0.0`, mean critic delta `0.14`, and no accessibility/responsive regressions.
+- This is not human taste evidence. The manual review queue must be used before real PR-review claims.
+
 ---
 
 ## 11. Evaluation design
@@ -1112,7 +1120,7 @@ Current Phase 3A update for the local smoke corpus:
 - Manual CUDA M2-strong closes the undertraining hypothesis for this corpus: the run is valid/non-collapsed but remains near chance.
 - Preference Critic v0 is the active path. It uses synthetic/local UI preference labels, deterministic metrics/design-token/region features, optional frozen embeddings, issue heads, hard-subset evaluation, and region-grounded critique JSON.
 - Current ablations show metrics dominate and JEPA features do not add value, so DOM-aware JEPA remains blocked.
-- The next useful evidence is closed-loop frontend patch evaluation with the synthetic/local critic, plus dataset-label hardening if hard subsets regress.
+- Phase 4A closed-loop easy-set evaluation has passed locally. The next useful evidence is `loop_mixed_50` deterministic/manual review plus human/manual labels if reviewer preference disagrees with the critic.
 
 ---
 

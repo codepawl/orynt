@@ -80,4 +80,5 @@ The current manual M2-strong evidence already exists and closes the undertrainin
 
 - Do not return to JEPA architecture work unless M1/M2/M2-strong features add measurable value in `preference_critic_report.json`.
 - Do not implement DOM-aware JEPA while metrics-only dominates and M2.5 lacks useful M2-family representation signal.
-- Proceed to closed-loop patch evaluation only when `ui-jepa-scale-gate` reports `closed_loop_ready: true` and critique JSON examples exist.
+- Closed-loop patch evaluation is now the local Phase 4A path. Build loop sets with `python -m codepawl_harness.ui_loop_build_cli`, run instruction-only or deterministic mode with `python -m codepawl_harness.ui_loop_run_cli`, and pass `--closed-loop-report reports/ui_loop_v0/closed_loop_report.json` to the scale gate.
+- The current gate records `closed_loop_passed: true` for deterministic `loop_easy_20`, while DOM-aware JEPA remains blocked by M2.5 evidence. Next manual evidence should come from `loop_mixed_50` review and human/manual review queue labels, not CUDA training.

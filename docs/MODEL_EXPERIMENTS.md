@@ -260,6 +260,58 @@ uv run ui-preference-critic-review data/processed/ui_preference_v0 \
   --limit 3
 ```
 
+Closed-loop frontend patch evaluation may proceed with this synthetic/local critic when the gate reports `closed_loop_ready: true`.
+
+## Phase 4A: Closed-Loop Frontend Evaluation v0
+
+Purpose: test whether the Preference Critic helps a practical local frontend iteration loop before doing more JEPA architecture work.
+
+Current command flow, using no external LLM APIs and no network-dependent tasks:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loop_build_cli \
+  data/processed/ui_jepa_v0_smoke --out data/processed/ui_loop_v0 --set loop_easy_20
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loop_build_cli \
+  data/processed/ui_jepa_v0_smoke --out data/processed/ui_loop_v0 --set loop_mixed_50
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loop_build_cli \
+  data/processed/ui_jepa_v0_smoke --out data/processed/ui_loop_v0 --set loop_hard_100
+
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loop_run_cli \
+  data/processed/ui_loop_v0/loop_easy_20 \
+  --out reports/ui_loop_v0_instruction_only \
+  --patch-mode instruction_only \
+  --limit 3
+
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loop_run_cli \
+  data/processed/ui_loop_v0/loop_easy_20 \
+  --out reports/ui_loop_v0 \
+  --patch-mode deterministic_patch
+```
+
+Current deterministic evidence:
+
+- `reports/ui_loop_v0/closed_loop_report.json`
+- `passed_closed_loop_gate: true`
+- `task_count: 20`
+- `success_rate: 1.0`
+- `mean_critic_delta: 0.14`
+- no-op mean critic delta: `0.0`
+- accessibility regression rate: `0.0`
+- responsive regression rate: `0.0`
+- recommendation: `expand_loop_mixed_50`
+
+Interpretation rules:
+
+- This is synthetic/local preference improvement only, not human taste evidence.
+- Instruction-only mode creates contracts and review artifacts but cannot pass the closed-loop gate.
+- Deterministic patch mode can pass only when easy tasks improve and no-op does not falsely improve.
+- Oracle patch mode is upper-bound evidence only.
+- If critic score improves while accessibility or responsive checks regress, fix scoring/gate before using the critic.
+- If manual review disagrees with the critic, collect human labels and recalibrate.
+- DOM-aware JEPA remains blocked unless closed-loop failures show critic localization or DOM grounding is the bottleneck.
+
+## Phase 3A Current Evidence
+
 The critic trains deterministic CPU logistic-ranking heads over feature groups: metrics, design tokens, semantic regions, DINOv2 when embeddings are available, M1, M2, M2-strong, and combinations. Missing expensive embeddings are skipped with manual commands instead of generated inside Codex.
 
 Current evidence:
@@ -276,7 +328,7 @@ Decision:
 - JEPA features do not add measurable value for this corpus.
 - Metrics still dominate, so DOM-aware JEPA remains blocked.
 - Freeze JEPA architecture work for this corpus unless future feature ablations show clear M1/M2/M2-strong lift.
-- Closed-loop frontend patch evaluation may proceed with this synthetic/local critic when the gate reports `closed_loop_ready: true`.
+- Phase 4A closed-loop easy-set evaluation has passed synthetic/local deterministic patch validation; expand to `loop_mixed_50` before real PR review claims.
 
 ## M3: DOM-Aware Late Fusion JEPA
 

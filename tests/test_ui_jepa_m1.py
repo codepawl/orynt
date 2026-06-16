@@ -191,8 +191,161 @@ def test_scale_gate_blocks_missing_or_collapsed_m1_and_requires_valid_m2_for_dom
             "--out",
             str(dom_gate),
         ]
-    ) == 0
+    ) == 1
     result = json.loads(dom_gate.read_text(encoding="utf-8"))
     assert result["m2_ready"] is True
-    assert result["dom_aware_ready"] is True
-    assert result["blocked_stages"] == []
+    assert result["dom_aware_ready"] is False
+    assert result["blocked_stages"] == ["DOM_aware_jepa"]
+    assert "M2.5 diagnostics report is missing" in dom_gate.read_text(encoding="utf-8")
+
+    weak_m25 = tmp_path / "m25_weak.json"
+    _write_json(
+        weak_m25,
+        {
+            "useful_representation_signal": False,
+            "dom_aware_recommended": False,
+            "recommended_decision": "change_objective_or_strengthen_training_before_dom_aware",
+        },
+    )
+    weak_gate = tmp_path / "weak_m25_gate.json"
+    assert gate_main(
+        [
+            "--dataset",
+            str(smoke_dir),
+            "--b0-report",
+            str(b0_report),
+            "--m1-report",
+            str(valid_report),
+            "--m2-report",
+            str(valid_m2),
+            "--m25-report",
+            str(weak_m25),
+            "--out",
+            str(weak_gate),
+        ]
+    ) == 1
+    assert "M2.5 did not find useful representation signal" in weak_gate.read_text(encoding="utf-8")
+
+    strong_m25 = tmp_path / "m25_strong.json"
+    _write_json(
+        strong_m25,
+        {
+            "useful_representation_signal": True,
+            "dom_aware_recommended": True,
+            "recommended_decision": "continue_stronger_m2_before_dom_aware",
+        },
+    )
+    ready_gate = tmp_path / "ready_m25_gate.json"
+    assert gate_main(
+        [
+            "--dataset",
+            str(smoke_dir),
+            "--b0-report",
+            str(b0_report),
+            "--m1-report",
+            str(valid_report),
+            "--m2-report",
+            str(valid_m2),
+            "--m25-report",
+            str(strong_m25),
+            "--out",
+            str(ready_gate),
+        ]
+    ) == 1
+    result = json.loads(ready_gate.read_text(encoding="utf-8"))
+    assert result["m2_ready"] is True
+    assert result["dom_aware_ready"] is False
+    assert result["blocked_stages"] == ["DOM_aware_jepa"]
+
+
+def test_scale_gate_reads_manual_m2_strong_evidence_and_still_blocks_dom_aware(tmp_path: Path) -> None:
+    smoke_dir = _smoke_dataset()
+    b0_report = tmp_path / "b0_report.json"
+    m1_report = tmp_path / "m1_report.json"
+    m2_report = tmp_path / "m2_report.json"
+    m2_strong_report = tmp_path / "m2_strong_report.json"
+    m25_report = tmp_path / "m25_report.json"
+    gate_out = tmp_path / "gate.json"
+
+    _write_json(
+        b0_report,
+        {
+            "real_weights": True,
+            "valid_for_model_selection": True,
+            "metrics_baseline": {"available": True},
+            "splits": {"val": {"lift_over_best_constant": 0.1}},
+            "validity_checks": {"failed_conditions": []},
+        },
+    )
+    _write_json(
+        m1_report,
+        {
+            "valid_m1_baseline": True,
+            "collapse_diagnostics": {"valid": True},
+            "probe": {"available": True},
+            "b0_comparison": {"available": True},
+        },
+    )
+    _write_json(
+        m2_report,
+        {
+            "valid_m2_baseline": True,
+            "collapse_diagnostics": {"valid": True},
+            "probe": {"available": True, "splits": {"test": {"pairwise_accuracy": 0.5}}},
+            "comparison": {"valid": True},
+        },
+    )
+    _write_json(
+        m2_strong_report,
+        {
+            "valid_m2_baseline": True,
+            "collapse_diagnostics": {"valid": True},
+            "probe": {"available": True, "splits": {"test": {"pairwise_accuracy": 0.49765258215962443}}},
+            "comparison": {"valid": True, "metrics_only_still_dominates": True},
+            "model_config": {"image_size": 128, "embedding_dim": 128},
+            "commands": {"train": "ui-jepa-m2-train --epochs 20 --device cuda"},
+        },
+    )
+    _write_json(
+        m25_report,
+        {
+            "useful_representation_signal": False,
+            "dom_aware_recommended": False,
+            "recommended_decision": "harden_dataset_or_add_preference_aligned_objective",
+        },
+    )
+
+    assert (
+        gate_main(
+            [
+                "--dataset",
+                str(smoke_dir),
+                "--b0-report",
+                str(b0_report),
+                "--m1-report",
+                str(m1_report),
+                "--m2-report",
+                str(m2_report),
+                "--m25-report",
+                str(m25_report),
+                "--out",
+                str(gate_out),
+            ]
+        )
+        == 1
+    )
+    result = json.loads(gate_out.read_text(encoding="utf-8"))
+
+    assert result["dom_aware_ready"] is False
+    assert result["blocked_stages"] == ["DOM_aware_jepa"]
+    assert result["m2_strong_report"] == str(m2_strong_report.resolve())
+    assert result["m2_strong_evidence"]["valid"] is True
+    assert result["m2_strong_evidence"]["config"] == {
+        "image_size": 128,
+        "embedding_dim": 128,
+        "epochs": 20,
+        "device": "cuda",
+    }
+    assert result["m2_strong_evidence"]["near_chance"] is True
+    assert "Manual strong M2 evidence is valid and non-collapsed but remains near chance" in result["recommendation"]
+    assert "preference-aligned critic/dataset hardening" in result["recommendation"]

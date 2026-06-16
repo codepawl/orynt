@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--m2-strong-report", default=None)
     parser.add_argument("--m25-report", default=None)
     parser.add_argument("--preference-critic-report", default=None)
+    parser.add_argument("--closed-loop-report", default=None)
     parser.add_argument("--out", help="Optional path to write the gate result JSON.")
     return parser
 
@@ -37,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.m25_report) if args.m25_report else None,
         Path(args.m2_strong_report) if args.m2_strong_report else None,
         Path(args.preference_critic_report) if args.preference_critic_report else None,
+        Path(args.closed_loop_report) if args.closed_loop_report else None,
     )
     if args.out:
         out = Path(args.out)

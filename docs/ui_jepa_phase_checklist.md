@@ -129,12 +129,18 @@ Goal from plan: make the model useful for frontend review.
 
 Goal from plan: prove real frontend value.
 
-- [ ] Critique JSON contract output is not implemented.
-- [ ] Source screenshot/code -> critic JSON -> model patch -> rerender loop is not implemented.
-- [ ] `loop_easy_20`, `loop_mixed_50`, and `loop_hard_100` evaluation sets are not implemented.
+- [x] Critique JSON to Codex-compatible patch contract output is implemented and saved as artifacts, not sent to external services.
+  Evidence: `packages/pawlbench_design/src/pawlbench_design/ui_loop.py`, `reports/ui_loop_v0/instructions/`.
+- [x] Source screenshot/code -> critic JSON -> deterministic local patch/manual contract -> rerender -> before/after report loop is implemented for local synthetic fixtures.
+  Evidence: `ui-loop-build`, `ui-loop-run`, `reports/ui_loop_v0/closed_loop_report.json`.
+- [x] `loop_easy_20`, `loop_mixed_50`, and `loop_hard_100` evaluation sets are implemented from local smoke artifacts.
+  Evidence: `data/processed/ui_loop_v0/loop_easy_20`, `data/processed/ui_loop_v0/loop_mixed_50`, `data/processed/ui_loop_v0/loop_hard_100`.
 - [ ] Before/after human preference evaluation is not implemented.
-- [ ] Accessibility/responsive regression checks inside the closed-loop gate are not implemented.
+- [x] Accessibility/responsive regression checks inside the closed-loop gate are implemented for local deterministic reports.
+  Evidence: `reports/ui_loop_v0/closed_loop_report.json`, `reports/ui_jepa_v0_smoke/scale_gate.json`.
 - [ ] PR screenshot diff aesthetic regression review is not implemented.
+
+Current Phase 4A evidence: deterministic patch mode on `loop_easy_20` passes the synthetic/local closed-loop gate with no-op mean critic delta `0.0`, mean critic delta `0.14`, accessibility regression rate `0.0`, and responsive regression rate `0.0`. This is not human taste evidence. Manual review queue artifacts are exported under `reports/ui_loop_v0/manual_review_queue/`.
 
 ## Immediate Next Build Order
 
@@ -145,3 +151,4 @@ Goal from plan: prove real frontend value.
 5. Do not require future CUDA training inside the Codex sandbox. Future CUDA runs should be manual-user-run and then registered through report files.
 6. Use the M2.5 decision: continue JEPA only with useful representation/preference signal; otherwise harden dataset labels or add a preference-aligned critic/objective before DOM-aware work.
 7. Use Preference Critic v0 as the next frontend-loop scaffold: metrics currently dominates, M2-strong adds no useful lift, DOM-aware JEPA remains blocked, and closed-loop patch evaluation is the next practical validation path.
+8. Phase 4A closed-loop easy-set validation is implemented and passed locally; next expand to `loop_mixed_50` and inspect/manual-label wins and failures before real PR review claims.

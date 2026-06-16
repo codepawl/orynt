@@ -1,0 +1,106 @@
+{
+  "after_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/contrast_bad_seed04/screenshot.png",
+  "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/contrast_bad_seed04/screenshot.png",
+  "critic_json": {
+    "after": {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 2.39,
+              "contrast_checked_text_node_count": 16.0,
+              "contrast_issue_count": 15.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 2.0,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 0.0,
+              "heading_count": 3.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 32.0,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 15685.67,
+              "min_contrast_ratio": 1.58,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 900.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 28.0
+            }
+          },
+          "instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+          "region_id": "dashboard_ai_agent__contrast_bad_seed04__synthetic_contrast",
+          "region_type": "cta",
+          "severity": "medium",
+          "type": "contrast"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "dashboard_ai_agent__contrast_bad_seed04"
+    },
+    "before": {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 2.39,
+              "contrast_checked_text_node_count": 16.0,
+              "contrast_issue_count": 15.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 2.0,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 0.0,
+              "heading_count": 3.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 32.0,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 15685.67,
+              "min_contrast_ratio": 1.58,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 900.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 28.0
+            }
+          },
+          "instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+          "region_id": "dashboard_ai_agent__contrast_bad_seed04__synthetic_contrast",
+          "region_type": "cta",
+          "severity": "medium",
+          "type": "contrast"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "dashboard_ai_agent__contrast_bad_seed04"
+    }
+  },
+  "instruction_markdown_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0/instructions/loop_easy_20__0004__dashboard_ai_agent__contrast_bad_seed04.md",
+  "issue_types_remaining": [],
+  "notes": "",
+  "patch_diff_path": null,
+  "patch_mode": "no_op",
+  "preferred": null,
+  "provenance": {
+    "allowed_values": {
+      "preferred": [
+        "before",
+        "after",
+        "tie"
+      ]
+    },
+    "label_source": "manual_future",
+    "source_task_provenance": "synthetic_local"
+  },
+  "reviewer_id": "",
+  "schema_version": "ui_loop_v0_manual_review_form_v1",
+  "task_id": "loop_easy_20__0004__dashboard_ai_agent__contrast_bad_seed04"
+}

@@ -617,6 +617,7 @@ def check_ui_jepa_scaling_gate(
     m25_report: Path | None = None,
     m2_strong_report: Path | None = None,
     preference_critic_report: Path | None = None,
+    closed_loop_report: Path | None = None,
 ) -> dict[str, Any]:
     dataset_dir = dataset_dir.expanduser().resolve()
     b0_report = b0_report.expanduser().resolve()
@@ -625,10 +626,12 @@ def check_ui_jepa_scaling_gate(
     m25_report = m25_report.expanduser().resolve() if m25_report is not None else None
     m2_strong_report = _resolve_m2_strong_gate_report(m2_strong_report, m2_report, m25_report)
     preference_critic_report = preference_critic_report.expanduser().resolve() if preference_critic_report is not None else None
+    closed_loop_report = closed_loop_report.expanduser().resolve() if closed_loop_report is not None else None
     errors: list[str] = []
     m2_errors: list[str] = []
     dom_errors: list[str] = []
     critic_errors: list[str] = []
+    loop_errors: list[str] = []
     validation = build_ui_jepa_smoke_validation(dataset_dir)
     if not validation["valid"]:
         errors.append("canonical smoke dataset validation failed")
@@ -725,30 +728,70 @@ def check_ui_jepa_scaling_gate(
             critic_errors.append("preference critic hard-subset lift is below the closed-loop margin")
         if not _issue_heads_have_signal_or_skip_reasons(critic.get("issue_heads") or {}):
             critic_errors.append("preference critic issue heads need non-trivial signal or explicit skipped reasons")
+    loop = {}
+    if closed_loop_report is None:
+        pass
+    elif not closed_loop_report.is_file():
+        loop_errors.append(f"closed-loop report is missing: {closed_loop_report}")
+    else:
+        loop = json.loads(closed_loop_report.read_text(encoding="utf-8"))
+        if not loop.get("valid"):
+            loop_errors.append("closed-loop report is not valid")
+        if not loop.get("passed_closed_loop_gate"):
+            loop_errors.append("closed-loop report did not pass the local Phase 4A gate")
+        noop = loop.get("noop_baseline") or {}
+        if noop.get("false_improvement_detected"):
+            loop_errors.append("closed-loop no-op baseline falsely improved")
+        patch_mode = str(loop.get("patch_mode") or "")
+        if patch_mode == "oracle_patch":
+            loop_errors.append("oracle_patch is upper-bound evidence only and cannot pass the non-oracle closed-loop gate")
+        easy = ((loop.get("difficulty_breakdown") or {}).get("easy") or {})
+        easy_success = easy.get("success_rate")
+        if patch_mode in {"deterministic_patch", "manual_patch"}:
+            if not isinstance(easy_success, int | float) or float(easy_success) < 0.5:
+                loop_errors.append("closed-loop easy-task success rate is below 0.50")
+        elif patch_mode not in {"instruction_only"}:
+            loop_errors.append(f"closed-loop patch mode is unsupported for gate pass: {patch_mode}")
+        if float(loop.get("accessibility_regression_rate") or 0.0) > 0.1:
+            loop_errors.append("closed-loop accessibility regression rate is above 0.10")
+        if float(loop.get("responsive_regression_rate") or 0.0) > 0.1:
+            loop_errors.append("closed-loop responsive regression rate is above 0.10")
     closed_loop_ready = preference_critic_report is not None and not errors and not m2_errors and not critic_errors
+    closed_loop_passed = closed_loop_report is not None and closed_loop_ready and not loop_errors
     dom_aware_ready = (
         not errors
         and not m2_errors
         and not dom_errors
+        and closed_loop_passed
         and bool(critic.get("valid"))
-        and (bool(critic.get("jepa_features_add_value")) or "dom" in str((critic.get("decisions") or {}).get("recommended_next_stage", "")).lower())
+        and (
+            "localization" in str((loop.get("recommended_next_stage") or "")).lower()
+            or "dom" in str((critic.get("decisions") or {}).get("recommended_next_stage", "")).lower()
+        )
     )
     return {
         "schema_version": "ui_jepa_scaling_gate_v1",
         "allowed": dom_aware_ready,
-        "errors": errors + m2_errors + dom_errors + critic_errors,
+        "errors": errors + m2_errors + dom_errors + critic_errors + loop_errors,
         "phase_0_5_allowed": not errors,
         "m2_ready": not errors and not m2_errors,
         "dom_aware_ready": dom_aware_ready,
         "closed_loop_ready": closed_loop_ready,
+        "closed_loop_passed": closed_loop_passed,
         "m1_report": str(m1_report) if m1_report is not None else None,
         "m2_report": str(m2_report) if m2_report is not None else None,
         "m2_strong_report": str(m2_strong_report) if m2_strong_report is not None else None,
         "m2_strong_evidence": m2_strong_evidence,
         "m25_report": str(m25_report) if m25_report is not None else None,
         "preference_critic_report": str(preference_critic_report) if preference_critic_report is not None else None,
+        "closed_loop_report": str(closed_loop_report) if closed_loop_report is not None else None,
         "preference_critic_ready": preference_critic_report is not None and not critic_errors,
+        "closed_loop_gate_errors": loop_errors,
         "next_command": (
+            "uv run ui-loop-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_loop_v0 --set loop_easy_20 && "
+            "uv run ui-loop-run data/processed/ui_loop_v0/loop_easy_20 --out reports/ui_loop_v0 --patch-mode deterministic_patch --limit 20"
+            if closed_loop_ready and closed_loop_report is None
+            else (
             "uv run ui-preference-dataset-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_preference_v0 && "
             "uv run ui-preference-critic-eval data/processed/ui_preference_v0 --report-out reports/ui_jepa_v0_smoke/preference_critic_report.json"
             if not errors and not m2_errors and not dom_errors and critic_errors
@@ -777,6 +820,7 @@ def check_ui_jepa_scaling_gate(
             )
             )
             )
+            )
         ),
         "blocked_stages": (
             ["M1_random_mask_jepa", "M2_semantic_mask_jepa", "preference_critic", "closed_loop_frontend_eval", "DOM_aware_jepa"]
@@ -784,10 +828,13 @@ def check_ui_jepa_scaling_gate(
             else (
                 ["M2_semantic_mask_jepa", "preference_critic", "closed_loop_frontend_eval", "DOM_aware_jepa"]
                 if m2_errors
-                else ((["closed_loop_frontend_eval"] if critic_errors else []) + (["DOM_aware_jepa"] if not dom_aware_ready else []))
+                else (
+                    (["closed_loop_frontend_eval"] if critic_errors or (preference_critic_report is not None and not closed_loop_passed) else [])
+                    + (["DOM_aware_jepa"] if not dom_aware_ready else [])
+                )
             )
         ),
-        "recommendation": _scale_gate_recommendation(m2, m25, m2_strong_evidence, critic),
+        "recommendation": _scale_gate_recommendation(m2, m25, m2_strong_evidence, critic, loop),
     }
 
 
@@ -870,6 +917,7 @@ def _scale_gate_recommendation(
     m25_report: dict[str, Any] | None = None,
     m2_strong_evidence: dict[str, Any] | None = None,
     preference_critic_report: dict[str, Any] | None = None,
+    closed_loop_report: dict[str, Any] | None = None,
 ) -> str:
     if not m2_report:
         return "Train and validate M2 before starting DOM-aware JEPA."
@@ -879,6 +927,11 @@ def _scale_gate_recommendation(
         return "Run M2.5 diagnostics and a stronger controlled M2 attempt before DOM-aware JEPA."
     if preference_critic_report and preference_critic_report.get("valid"):
         decision = (preference_critic_report.get("decisions") or {}).get("recommended_next_stage") or preference_critic_report.get("recommended_next_stage")
+        if closed_loop_report and closed_loop_report.get("valid"):
+            loop_decision = closed_loop_report.get("recommended_next_stage")
+            if not closed_loop_report.get("passed_closed_loop_gate"):
+                return f"Closed-loop report exists but did not pass; keep DOM-aware JEPA blocked and follow next stage: {loop_decision}."
+            return f"Closed-loop report passed synthetic/local Phase 4A; keep DOM-aware JEPA blocked unless localization is the measured bottleneck. Next stage: {loop_decision}."
         if not preference_critic_report.get("jepa_features_add_value"):
             return f"Preference critic is valid but JEPA features do not add value; keep DOM-aware JEPA blocked and follow next stage: {decision}."
         return f"Preference critic is valid and reports JEPA feature value; DOM-aware still requires concrete DOM-need evidence before implementation. Next stage: {decision}."

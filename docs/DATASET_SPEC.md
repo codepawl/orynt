@@ -18,6 +18,14 @@ Status: v0 smoke specification with Phase 0.5 benchmark sanity fixes. The reposi
 - Minimum scale: 50K-100K screens and 100K+ preference pairs.
 - Not started.
 
+### `ui_loop_v0`
+
+- Purpose: validate the practical frontend loop from local critique to patch instruction, deterministic patch/manual artifact, rerender, and before/after scoring.
+- Current sets: `loop_easy_20`, `loop_mixed_50`, and `loop_hard_100`.
+- Current source: local `ui_jepa_v0_smoke` original-vs-corrupted pairs.
+- Output root: `data/processed/ui_loop_v0`.
+- Label provenance: synthetic/local.
+
 ## Canonical Layout
 
 ```text
@@ -34,6 +42,21 @@ data/processed/ui_jepa_v0_smoke/
   masks/
   tokens/
   validation.json
+```
+
+Closed-loop layout:
+
+```text
+data/processed/ui_loop_v0/
+  loop_easy_20/
+    tasks.jsonl
+    summary.json
+  loop_mixed_50/
+    tasks.jsonl
+    summary.json
+  loop_hard_100/
+    tasks.jsonl
+    summary.json
 ```
 
 Parquet equivalents should use the same field names when introduced:
@@ -191,6 +214,36 @@ severity: float
 ```
 
 `left_screen_id` and `right_screen_id` are oriented after split assignment with a fixed seed so always-left and always-right baselines remain near chance per split. Validation fails non-tiny splits when `best_constant_accuracy` exceeds `0.65`.
+
+## Closed-Loop Task Schema
+
+One row per local closed-loop task at `data/processed/ui_loop_v0/<set>/tasks.jsonl`.
+
+Required fields:
+
+```text
+schema_version: ui_loop_v0_task_v1
+task_id: string
+base_screen_id: string
+before_screen_id: string
+source_path: string
+clean_source_path: string
+before_html_path: string
+before_screenshot_path: string
+before_dom_path: string
+before_accessibility_path: string
+before_metrics_path: string
+known_issue_types: list[string]
+corruption_type: spacing | contrast | alignment | hierarchy
+severity: float
+difficulty: easy | medium | hard
+split: train | val | test
+expected_patch_scope: object
+split_group: string
+pair_id: string
+```
+
+The v0 deterministic patcher is intentionally conservative: it only edits copied loop work artifacts and removes known local CodePawl jitter style blocks. `oracle_patch` may copy the clean source version but must be marked as oracle upper-bound evidence and excluded from non-oracle claims.
 
 ## Corruption Operators
 
