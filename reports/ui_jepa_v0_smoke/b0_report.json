@@ -14,7 +14,7 @@
     "train": 0.5002915451895044,
     "val": 0.5
   },
-  "command": "/home/nxank4/Code/personal/codepawl/.venv/bin/ui-jepa-smoke-b0 data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2 --epochs 20",
+  "command": ".venv/bin/ui-jepa-smoke-b0 data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2 --epochs 20",
   "dataset_counts": {
     "manifest": 990,
     "pairs": 2162,
@@ -27,7 +27,7 @@
   },
   "failed_or_skipped_reasons": [],
   "git": {
-    "commit": "41ccde8edb414dd431fc0d44ede72216e303b106",
+    "commit": "f2d47953921d5967c08f9356cdd3037d14130b5e",
     "dirty": true
   },
   "metrics_baseline": {
@@ -172,7 +172,7 @@
     "val": 234
   },
   "real_weights": true,
-  "runtime_seconds": 108.6047,
+  "runtime_seconds": 135.2131,
   "schema_version": "ui_jepa_b0_report_v1",
   "split_counts": {
     "test": 99,

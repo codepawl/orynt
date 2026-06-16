@@ -1,7 +1,7 @@
 # UI-JEPA Model Experiments
 
 Source plan: `docs/ui_jepa_dataset_model_plan.md`.  
-Status: v0 experiment contract with Phase 0.5 smoke benchmark sanity checks plus the first M1 random-block screenshot JEPA baseline. The current repository implements local microtraining, positive pretraining scaffolds, a metrics-only baseline, an offline-safe B0 report path, and M1 train/probe/report CLIs. M2/M3 remain blocked until the real frozen B0 report and a valid non-collapsed M1 report pass the scale gate.
+Status: v0 experiment contract with Phase 0.5 smoke benchmark sanity checks plus M1 random-block and M2 semantic-region screenshot JEPA baselines. The current repository implements local microtraining, positive pretraining scaffolds, a metrics-only baseline, an offline-safe B0 report path, and M1/M2 train/probe/report CLIs. DOM-aware M3 remains blocked until B0, M1, and M2 reports are valid and comparable.
 
 ## Decision Gate
 
@@ -14,7 +14,7 @@ Do not scale UI-JEPA past local smoke work unless all of the following are true:
 - B0 validation lift over the best constant baseline is positive.
 - No severe leakage warnings are present.
 
-M1 random-mask screenshot JEPA is now the first trainable baseline after this gate. M2 semantic-region screenshot JEPA remains blocked until M1 produces a report with non-collapsed embeddings, frozen-probe results, and an M1-vs-B0 comparison. Later scale decisions must also compare M1/M2/M3 on UI-specific downstream tasks, closed-loop critic-guided edits, and region-grounded critique output.
+M1 random-mask screenshot JEPA is the first trainable baseline after this gate. M2 semantic-region screenshot JEPA is implemented and must be run before DOM-aware work. The Phase 2 gate blocks DOM-aware JEPA unless B0 is valid, M1 is valid and non-collapsed, M2 exists, M2 is non-collapsed, and M2 comparison against M1/B0/metrics exists. Later scale decisions must also compare M1/M2/M3 on UI-specific downstream tasks, closed-loop critic-guided edits, and region-grounded critique output.
 
 ## Common Inputs
 
@@ -179,7 +179,21 @@ Acceptance:
 
 Current implementation:
 
-- Not implemented. Requires `regions.jsonl` first.
+- `uv run ui-jepa-m2-train data/processed/ui_jepa_v0_smoke --out checkpoints/ui_jepa_m2 --report-out reports/ui_jepa_v0_smoke/m2_report.json --b0-report reports/ui_jepa_v0_smoke/b0_report.json --m1-report reports/ui_jepa_v0_smoke/m1_report.json` trains M2 and writes `m2_report.json`, `m2_report.md`, and `m2_comparison.json`.
+- Use `--device cuda` or the default `--device auto` for local RTX-class training. Keep `--device cpu` only for deterministic smoke/CI validation and environments without GPU access.
+- M2 reuses the M1 screenshot-only patch encoder, Transformer context predictor, EMA target encoder, frozen embedding export, pairwise probe, and collapse diagnostics.
+- Semantic masking reads `regions.jsonl`, maps original screenshot bboxes through the same aspect-preserving padded normalization used by M1, converts them to patch IDs at the requested `image_size`/`patch_size`, and samples `target_regions` per screen.
+- Supported semantic region types are `navbar`, `hero`, `cta`, `card`, `card_grid`, `form`, `sidebar`, `footer`, `modal`, `table`, and `unknown`.
+- If a screen has no usable semantic region after bbox/area/context validation, M2 explicitly falls back to the M1 random-block sampler and reports the fallback reason.
+- Region diagnostics include target region type counts, fallback random-mask rate, average target area ratio, region coverage by split, per-region-type JEPA loss where available, and small example metadata by region type.
+- The current smoke run is valid and non-collapsed, but the frozen pairwise probe remains near chance: train `0.4997`, val `0.5000`, test `0.4977`. It ties M1, does not close the B0 gap, and remains below the metrics-only baseline. This validates the implementation path, not model quality.
+
+Interpretation rules:
+
+- M2 collapsed: fix model/training before using the result.
+- M2 near chance but non-collapsed: semantic masking alone is insufficient at this model/data scale; improve masking, target selection, probe features, or model capacity before relying on DOM-aware results.
+- M2 > M1 but < B0: proceed to stronger M2 or DOM-aware probes while keeping B0 as the reference.
+- M2 > B0: audit the benchmark for shortcuts before trusting the result.
 
 ## M3: DOM-Aware Late Fusion JEPA
 

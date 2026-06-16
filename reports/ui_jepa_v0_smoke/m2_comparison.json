@@ -1,0 +1,32 @@
+{
+  "m2_closes_gap_to_b0": false,
+  "m2_improves_over_m1": false,
+  "m2_test_gap_to_b0": -0.26760563380281693,
+  "m2_test_lift_over_m1": 0.0,
+  "metrics_only_still_dominates": true,
+  "models": {
+    "b0_frozen_dinov2": {
+      "test_accuracy": 0.7652582159624414,
+      "val_accuracy": 0.7905982905982906,
+      "valid": true
+    },
+    "m1_random_block_jepa": {
+      "test_accuracy": 0.49765258215962443,
+      "val_accuracy": 0.5,
+      "valid": true
+    },
+    "m2_semantic_region_jepa": {
+      "test_accuracy": 0.49765258215962443,
+      "val_accuracy": 0.5,
+      "valid": true
+    },
+    "metrics_only": {
+      "test_accuracy": 0.8591549295774648,
+      "val_accuracy": 0.6752136752136753,
+      "valid": true
+    }
+  },
+  "same_pairs": true,
+  "schema_version": "ui_jepa_m2_comparison_v1",
+  "valid": true
+}

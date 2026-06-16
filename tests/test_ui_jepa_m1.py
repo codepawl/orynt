@@ -94,7 +94,7 @@ def test_m1_report_validity_logic() -> None:
     assert m1_report_allows_m2(collapsed) is False
 
 
-def test_scale_gate_blocks_missing_or_collapsed_m1_and_allows_valid_m1(tmp_path: Path) -> None:
+def test_scale_gate_blocks_missing_or_collapsed_m1_and_requires_valid_m2_for_dom_aware(tmp_path: Path) -> None:
     smoke_dir = _smoke_dataset()
     b0_report = tmp_path / "b0_report.json"
     _write_json(
@@ -135,7 +135,64 @@ def test_scale_gate_blocks_missing_or_collapsed_m1_and_allows_valid_m1(tmp_path:
         },
     )
     valid_gate = tmp_path / "valid_gate.json"
-    assert gate_main(["--dataset", str(smoke_dir), "--b0-report", str(b0_report), "--m1-report", str(valid_report), "--out", str(valid_gate)]) == 0
+    assert gate_main(["--dataset", str(smoke_dir), "--b0-report", str(b0_report), "--m1-report", str(valid_report), "--out", str(valid_gate)]) == 1
     result = json.loads(valid_gate.read_text(encoding="utf-8"))
     assert result["m2_ready"] is True
+    assert result["dom_aware_ready"] is False
+    assert result["blocked_stages"] == ["DOM_aware_jepa"]
+
+    collapsed_m2 = tmp_path / "m2_collapsed.json"
+    _write_json(
+        collapsed_m2,
+        {
+            "valid_m2_baseline": False,
+            "collapse_diagnostics": {"valid": False},
+            "probe": {"available": True},
+            "comparison": {"valid": True},
+        },
+    )
+    collapsed_m2_gate = tmp_path / "collapsed_m2_gate.json"
+    assert gate_main(
+        [
+            "--dataset",
+            str(smoke_dir),
+            "--b0-report",
+            str(b0_report),
+            "--m1-report",
+            str(valid_report),
+            "--m2-report",
+            str(collapsed_m2),
+            "--out",
+            str(collapsed_m2_gate),
+        ]
+    ) == 1
+
+    valid_m2 = tmp_path / "m2_valid.json"
+    _write_json(
+        valid_m2,
+        {
+            "valid_m2_baseline": True,
+            "collapse_diagnostics": {"valid": True},
+            "probe": {"available": True},
+            "comparison": {"valid": True},
+        },
+    )
+    dom_gate = tmp_path / "dom_gate.json"
+    assert gate_main(
+        [
+            "--dataset",
+            str(smoke_dir),
+            "--b0-report",
+            str(b0_report),
+            "--m1-report",
+            str(valid_report),
+            "--m2-report",
+            str(valid_m2),
+            "--out",
+            str(dom_gate),
+        ]
+    ) == 0
+    result = json.loads(dom_gate.read_text(encoding="utf-8"))
+    assert result["m2_ready"] is True
+    assert result["dom_aware_ready"] is True
     assert result["blocked_stages"] == []

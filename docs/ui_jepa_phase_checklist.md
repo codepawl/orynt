@@ -12,7 +12,7 @@ Legend:
 
 ## Current Shape
 
-The repository is in a local-first bootstrap state. It has a render harness, deterministic UI metrics, synthetic jitter datasets, human/auto label plumbing, hard preference pairs, a tiny Pawl-JEPA microtraining scaffold, a positive-only UI corpus path, and a Phase 0.5 smoke benchmark sanity gate. It does not yet implement the canonical research-scale UI-JEPA dataset, M1/M2 JEPA training, DOM-aware JEPA, critique JSON heads, or closed-loop frontend patch evaluation.
+The repository is in a local-first bootstrap state. It has a render harness, deterministic UI metrics, synthetic jitter datasets, human/auto label plumbing, hard preference pairs, a tiny Pawl-JEPA microtraining scaffold, a positive-only UI corpus path, a Phase 0.5 smoke benchmark sanity gate, and M1/M2 screenshot-only JEPA baselines. It does not yet implement the canonical research-scale UI-JEPA dataset, DOM-aware JEPA, critique JSON heads, or closed-loop frontend patch evaluation.
 
 ## Phase -1: Modification And Stabilization
 
@@ -26,7 +26,7 @@ This phase exists because the current codebase is useful but not in the final sh
 - [x] Fail positive pretraining clearly when the train split is empty.
 - [x] Add `DATASET_SPEC.md` with exact canonical schemas, extraction scripts, split logic, corruption operators, and validation tests.
 - [x] Add `MODEL_EXPERIMENTS.md` with exact B0/M1/M2/M3 configs, metrics, commands, and acceptance thresholds.
-- [x] Add an explicit gate that prevents scaling UI-JEPA until B0/M1/M2 comparisons and closed-loop checks exist.
+- [x] Add an explicit gate that prevents DOM-aware UI-JEPA until B0/M1/M2 reports and comparisons exist.
 
 ## Phase 0: Dataset And Evaluation Harness
 
@@ -81,10 +81,11 @@ Goal from plan: compare random masking versus semantic region masking.
 - [~] Retrieval-style positive eval exists, but it is not the planned M1/M2 downstream probe suite.
 - [x] M1 random-block screenshot JEPA is implemented as the first trainable screenshot-only baseline.
   Evidence: `packages/pawl_jepa/src/pawl_jepa/m1.py`, `ui-jepa-m1-train`, `ui-jepa-m1-probe`.
-- [ ] M2 semantic-region screenshot JEPA is not implemented.
+- [x] M2 semantic-region screenshot JEPA is implemented.
+  Evidence: `packages/pawl_jepa/src/pawl_jepa/m2.py`, `ui-jepa-m2-train`, `reports/ui_jepa_v0_smoke/m2_report.json`.
 - [x] Random-block mask sampling with target/context blocks is implemented for M1.
-- [ ] Semantic region mask sampling is not implemented.
-- [~] M1 vs B0 comparison reports are implemented; M2 comparison remains blocked until semantic masking exists.
+- [x] Semantic region mask sampling is implemented for M2 with deterministic bbox-to-patch mapping and random-mask fallback.
+- [x] M1/M2/B0/metrics comparison reports are implemented for the smoke corpus.
 - [ ] Nearest-neighbor retrieval cluster analysis for UI meaning is not implemented.
 
 ## Phase 2: DOM-Aware JEPA
@@ -93,7 +94,7 @@ Goal from plan: test whether DOM/view hierarchy improves critic performance.
 
 - [x] Raw DOM and accessibility artifacts are captured during render.
 - [~] Pawl-JEPA manifests retain DOM/accessibility paths for positive records.
-- [ ] DOM token encoding is not implemented.
+- [ ] DOM token encoding is not implemented. The scale gate now requires valid non-collapsed M2 plus M2-vs-M1-vs-B0-vs-metrics comparison before DOM-aware work.
 - [ ] Late-fusion DOM-aware JEPA is not implemented.
 - [ ] Cross-attention DOM fusion is not implemented.
 - [ ] Region issue localization evaluation is not implemented.
@@ -129,5 +130,6 @@ Goal from plan: prove real frontend value.
 
 1. Produce and validate `data/processed/ui_jepa_v0_smoke` from the existing local corruption dataset.
 2. Train M1 random-block screenshot JEPA and verify `m1_report.json` is valid, non-collapsed, and comparable to B0.
-3. Keep M2 semantic masking blocked until M1 is comparable, non-collapsed, and semantic region validation remains green.
-4. Do not scale external datasets or train larger UI-JEPA variants until the decision rule in the source plan is satisfied.
+3. Train M2 semantic-region screenshot JEPA and verify `m2_report.json` is valid, non-collapsed, and comparable to M1/B0/metrics.
+4. Current smoke M2 is non-collapsed but near chance, so improve masking/model scale before treating DOM-aware results as meaningful.
+5. Do not scale external datasets or train larger UI-JEPA variants until the decision rule in the source plan is satisfied.

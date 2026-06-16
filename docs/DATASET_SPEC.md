@@ -251,6 +251,16 @@ The M1 baseline uses the canonical smoke corpus directly:
 - Region and design-token manifests may be retained as metadata paths for reports/debugging, but M1 does not use semantic regions or design tokens for masking.
 - The same loader is used by JEPA training, frozen embedding export, and the pairwise ranking probe.
 
+## M2 Semantic-Region JEPA Loader
+
+M2 uses the same screen records and screenshot normalization as M1, plus `regions.jsonl`.
+
+- Region bboxes are stored in original screenshot coordinates and mapped through `normalize_image_padded` metadata at the active training `image_size`.
+- Mapped bboxes are converted to deterministic patch IDs using the requested `patch_size`.
+- Supported target region types for the smoke M2 sampler are `navbar`, `hero`, `cta`, `card`, `card_grid`, `form`, `sidebar`, `footer`, `modal`, `table`, and `unknown`.
+- If a screen has no valid semantic region for the active patch grid, the sampler explicitly emits an M1-compatible random-block fallback mask with a fallback reason.
+- M2 reports target region type counts, fallback rate, average target area ratio, and split-level region coverage. No schema change is required for the current `regions.jsonl`.
+
 ## Validation Tests
 
 Required dataset validation:
