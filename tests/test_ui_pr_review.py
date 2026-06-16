@@ -7,8 +7,13 @@ from codepawl_harness.ui_jepa_scale_gate_cli import main as scale_gate_main
 from pawlbench_design.ui_jepa_smoke import check_ui_jepa_scaling_gate
 from pawlbench_design.ui_pr_review import (
     PR_REVIEW_INPUT_SCHEMA_VERSION,
+    PR_REVIEW_PILOT_SCHEMA_VERSION,
     PrReviewConfig,
+    PrReviewPilotConfig,
+    aggregate_pr_review_pilot_reports,
     run_pr_review,
+    run_pr_review_pilot,
+    validate_pr_review_pilot_config,
     validate_pr_review_input,
 )
 
@@ -66,6 +71,86 @@ def _review_fixture(tmp_path: Path, review_id: str = "fixture_pr") -> Path:
     return root
 
 
+def _pilot_fixture(tmp_path: Path, *, include_skip: bool = False) -> Path:
+    pilot_root = tmp_path / "data" / "pr_review_v0" / "codepawl_web_pilot"
+    cases = []
+    for index in range(3):
+        review_id = f"pilot_case_{index}"
+        root = pilot_root / review_id
+        _png(root / "before.png", (220 + index, 220, 220))
+        _png(root / "after.png", (235 + index, 235, 235))
+        _metrics(root / "before_metrics.json", contrast=1, min_contrast=3.0, fill=0.35)
+        _metrics(root / "after_metrics.json", contrast=0, min_contrast=7.0, fill=0.8)
+        (root / "patch.diff").write_text("--- a/index.html\n+++ b/index.html\n- bad\n+ good\n", encoding="utf-8")
+        _write_json(
+            root / "metadata.json",
+            {
+                "schema_version": PR_REVIEW_INPUT_SCHEMA_VERSION,
+                "review_id": review_id,
+                "before": {
+                    "screenshot_path": "before.png",
+                    "metrics_path": "before_metrics.json",
+                },
+                "after": {
+                    "screenshot_path": "after.png",
+                    "metrics_path": "after_metrics.json",
+                },
+                "patch_diff_path": "patch.diff",
+            },
+        )
+        case = {
+            "schema_version": PR_REVIEW_PILOT_SCHEMA_VERSION,
+            "review_id": review_id,
+            "route": f"/pilot/{index}",
+            "component_name": f"pilot_component_{index}",
+            "mode": "screenshots-only",
+            "before_screenshot_path": f"{review_id}/before.png",
+            "after_screenshot_path": f"{review_id}/after.png",
+            "before_metrics_path": f"{review_id}/before_metrics.json",
+            "after_metrics_path": f"{review_id}/after_metrics.json",
+            "patch_diff_path": f"{review_id}/patch.diff",
+            "case_metadata_path": f"{review_id}/metadata.json",
+            "viewport": {"width": 1440, "height": 900},
+            "expected_artifact_paths": {
+                "pr_review_report_json": f"reports/ui_pr_review_v0/codepawl_web_pilot/{review_id}/pr_review_report.json",
+                "pr_review_report_md": f"reports/ui_pr_review_v0/codepawl_web_pilot/{review_id}/pr_review_report.md",
+            },
+        }
+        cases.append(case)
+    if include_skip:
+        cases[-1] = {
+            "schema_version": PR_REVIEW_PILOT_SCHEMA_VERSION,
+            "review_id": "pilot_missing_route",
+            "route": "/pilot/missing",
+            "component_name": "missing_component",
+            "mode": "screenshots-only",
+            "skip": True,
+            "skipped_reason": "no stable local screenshot artifact exists for this route",
+            "viewport": {"width": 1440, "height": 900},
+            "expected_artifact_paths": {
+                "pr_review_report_json": "reports/ui_pr_review_v0/codepawl_web_pilot/pilot_missing_route/pr_review_report.json",
+                "pr_review_report_md": "reports/ui_pr_review_v0/codepawl_web_pilot/pilot_missing_route/pr_review_report.md",
+            },
+        }
+    _write_json(
+        pilot_root / "metadata.json",
+        {
+            "schema_version": PR_REVIEW_PILOT_SCHEMA_VERSION,
+            "pilot_id": "codepawl_web_pilot",
+            "web_discovery": {
+                "web_app_directory": "fixture",
+                "local_dev_command": None,
+                "local_build_command": None,
+                "local_port": None,
+                "route_list": [case["route"] for case in cases],
+                "render_flow": "screenshots-only fixture",
+            },
+            "cases": cases,
+        },
+    )
+    return pilot_root / "metadata.json"
+
+
 def test_pr_review_schema_validation_accepts_screenshots_only_fixture(tmp_path: Path) -> None:
     root = _review_fixture(tmp_path)
     payload = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
@@ -78,6 +163,103 @@ def test_pr_review_schema_validation_accepts_screenshots_only_fixture(tmp_path: 
     }
 
     assert validate_pr_review_input(review_input) == []
+
+
+def test_pr_review_pilot_config_schema_validation_accepts_three_screenshots_only_cases(tmp_path: Path) -> None:
+    config_path = _pilot_fixture(tmp_path)
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+
+    assert validate_pr_review_pilot_config(payload, config_path) == []
+
+
+def test_checked_in_codepawl_web_pilot_config_links_route_files() -> None:
+    config_path = Path("data/pr_review_v0/codepawl_web_pilot/metadata.json")
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+
+    assert validate_pr_review_pilot_config(payload, config_path) == []
+    assert payload["web_discovery"]["web_app_directory"].startswith("apps/site/pilot_routes")
+    for case in payload["cases"]:
+        before_path = (config_path.parent / case["before_path"]).resolve()
+        after_path = (config_path.parent / case["after_path"]).resolve()
+        assert before_path.is_file()
+        assert after_path.is_file()
+        assert "apps/site/pilot_routes" in str(before_path)
+        assert "apps/site/pilot_routes" in str(after_path)
+
+
+def test_pr_review_pilot_screenshots_only_fixture_generates_aggregate(tmp_path: Path) -> None:
+    config_path = _pilot_fixture(tmp_path)
+
+    report = run_pr_review_pilot(
+        PrReviewPilotConfig(
+            config_path=config_path,
+            output_dir=tmp_path / "reports" / "ui_pr_review_v0" / "codepawl_web_pilot",
+            reviewer_id="tester",
+        )
+    )
+
+    out = tmp_path / "reports" / "ui_pr_review_v0" / "codepawl_web_pilot"
+    assert report["valid"] is True
+    assert report["case_count"] == 3
+    assert report["rendered_count"] == 3
+    assert report["skipped_count"] == 0
+    assert report["approve_visual_count"] == 3
+    assert report["blocked_missing_artifacts_count"] == 0
+    assert report["useful_enough_for_github_actions_artifact_integration"] is True
+    assert (out / "pilot_report.json").is_file()
+    assert (out / "pilot_report.md").is_file()
+    assert (out / "pilot_case_0" / "pr_review_report.json").is_file()
+    assert (out / "pilot_case_0" / "before.png").is_file()
+    assert (out / "pilot_case_0" / "after.png").is_file()
+
+
+def test_pr_review_pilot_skipped_route_behavior_records_reason(tmp_path: Path) -> None:
+    config_path = _pilot_fixture(tmp_path, include_skip=True)
+
+    report = run_pr_review_pilot(
+        PrReviewPilotConfig(
+            config_path=config_path,
+            output_dir=tmp_path / "reports" / "ui_pr_review_v0" / "codepawl_web_pilot",
+        )
+    )
+
+    out = tmp_path / "reports" / "ui_pr_review_v0" / "codepawl_web_pilot"
+    skipped = json.loads((out / "pilot_missing_route" / "pr_review_report.json").read_text(encoding="utf-8"))
+    assert report["case_count"] == 3
+    assert report["rendered_count"] == 2
+    assert report["skipped_count"] == 1
+    assert report["blocked_missing_artifacts_count"] == 1
+    assert report["useful_enough_for_github_actions_artifact_integration"] is False
+    assert skipped["skipped"] is True
+    assert skipped["recommended_decision"] == "blocked_missing_artifacts"
+    assert skipped["skipped_reason"] == "no stable local screenshot artifact exists for this route"
+
+
+def test_pr_review_pilot_aggregate_counts_regressions_and_decisions(tmp_path: Path) -> None:
+    reports = [
+        {"review_id": "a", "valid": True, "output_dir": str(tmp_path / "a"), "recommended_decision": "approve_visual", "critic_delta": 0.1, "regression_flags": {"visual_regression": False, "accessibility_regression": False, "responsive_regression": False}},
+        {"review_id": "b", "valid": True, "output_dir": str(tmp_path / "b"), "recommended_decision": "request_changes", "critic_delta": -0.2, "regression_flags": {"visual_regression": True, "accessibility_regression": True, "responsive_regression": False}},
+        {"review_id": "c", "valid": False, "output_dir": str(tmp_path / "c"), "recommended_decision": "blocked_missing_artifacts", "skipped": True, "skipped_reason": "missing", "regression_flags": {"visual_regression": False, "accessibility_regression": False, "responsive_regression": True}},
+    ]
+
+    aggregate = aggregate_pr_review_pilot_reports(
+        reports,
+        pilot_config={"pilot_id": "pilot", "web_discovery": {}},
+        config_path=tmp_path / "metadata.json",
+        output_dir=tmp_path / "reports",
+        validation_errors=[],
+    )
+
+    assert aggregate["case_count"] == 3
+    assert aggregate["rendered_count"] == 2
+    assert aggregate["skipped_count"] == 1
+    assert aggregate["approve_visual_count"] == 1
+    assert aggregate["request_changes_count"] == 1
+    assert aggregate["blocked_missing_artifacts_count"] == 1
+    assert aggregate["mean_critic_delta"] == -0.05
+    assert aggregate["visual_regression_count"] == 1
+    assert aggregate["accessibility_regression_count"] == 1
+    assert aggregate["responsive_regression_count"] == 1
 
 
 def test_pr_review_schema_validation_accepts_render_html_paths(tmp_path: Path) -> None:
@@ -301,6 +483,36 @@ def test_gate_target_fields_pr_review_ready_dom_aware_blocked(tmp_path: Path) ->
     assert result["blocked_reasons_by_target"]["dom-aware"]
     assert result["recommended_next_stage_by_target"]["pr-review"]
     assert result["exit_code_reason"] == "pr-review target passed"
+
+
+def test_gate_pr_review_target_accepts_pilot_case_report(tmp_path: Path) -> None:
+    paths = _gate_fixture_reports(tmp_path)
+    config_path = _pilot_fixture(tmp_path)
+    run_pr_review_pilot(
+        PrReviewPilotConfig(
+            config_path=config_path,
+            output_dir=tmp_path / "reports" / "ui_pr_review_v0" / "codepawl_web_pilot",
+        )
+    )
+    pilot_case_report = tmp_path / "reports" / "ui_pr_review_v0" / "codepawl_web_pilot" / "pilot_case_0" / "pr_review_report.json"
+
+    result = check_ui_jepa_scaling_gate(
+        Path("data/processed/ui_jepa_v0_smoke"),
+        paths["b0"],
+        paths["m1"],
+        paths["m2"],
+        paths["m25"],
+        None,
+        paths["critic"],
+        paths["loop"],
+        paths["manual_batch"],
+        pilot_case_report,
+        target="pr-review",
+    )
+
+    assert result["target_ready"] is True
+    assert result["pr_review_ready"] is True
+    assert result["dom_aware_ready"] is False
 
 
 def test_scale_gate_cli_pr_review_target_exits_zero(tmp_path: Path, capsys) -> None:

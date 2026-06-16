@@ -146,8 +146,9 @@ Current oracle upper-bound evidence:
 
 Current manual-patch-import evidence:
 
-- no manual patches are present yet
-- missing patches are recorded as skipped: 50 mixed skipped, 100 hard skipped
+- selected manual patches are present under `data/manual_patches/ui_loop_v0/`
+- rendered selected manual-patch-import evidence is present under `reports/ui_loop_v0_manual_batch/{mixed_manual_patch_import,hard_manual_patch_import}/`
+- missing unselected patches are recorded as skipped and must not be counted as failures for the selected manual batch
 
 The no-op baseline is mandatory because the same local critic helps generate and score the loop. Deterministic metric deltas, accessibility regressions, responsive/overflow regressions, and manual review exports must be read separately from critic deltas.
 
@@ -311,6 +312,17 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
 
 Use `screenshots-only` mode when Chromium is unavailable in a sandbox. Missing manual labels leave manual review pending, not failed. Decision values are `approve_visual`, `request_changes`, `needs_manual_review`, and `blocked_missing_artifacts`; see `docs/PR_SCREENSHOT_REVIEW.md` for details.
 
+Run the CodePawl web pilot aggregate:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
+  --pilot-config data/pr_review_v0/codepawl_web_pilot/metadata.json \
+  --out reports/ui_pr_review_v0/codepawl_web_pilot \
+  --reviewer-id "$USER"
+```
+
+The current pilot is screenshots-only in this sandbox because Chromium cannot launch here, but it points at explicit pilot-only static route files under `apps/site/pilot_routes`. It writes per-case reports plus `pilot_report.json`/`.md`. Interpret it as local CodePawl web route evidence for future GitHub Actions artifact upload, not as proof that a production frontend framework exists.
+
 ## Gate
 
 Run:
@@ -360,7 +372,8 @@ For PR screenshot review CI, use `--target pr-review`. It exits `0` when `pr_rev
 Evidence still needed:
 
 - inspect mixed/hard deterministic wins and failures in the manual review queue
-- run manual Codex/user patches on selected mixed/hard contracts
-- collect human labels if reviewers disagree with critic rankings
+- keep running manual Codex/user patches on selected mixed/hard contracts as the local UI surface grows
+- collect human labels for ambiguous PR pilot cases or if reviewers disagree with critic rankings
+- replace pilot-only static route cases with production app route render cases once `apps/site` or `apps/design` has a frontend
 - recalibrate the critic if manual review disagrees
 - only revisit DOM-aware JEPA if closed-loop failures show critic localization or DOM grounding is the bottleneck

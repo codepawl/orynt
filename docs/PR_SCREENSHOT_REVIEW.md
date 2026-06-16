@@ -60,6 +60,60 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
 
 If Chromium cannot run in a sandbox, use `screenshots-only` mode with pre-rendered screenshots and metrics. This keeps CI/offline tests independent of browser availability.
 
+## CodePawl Web Pilot
+
+The real web app discovery step currently finds:
+
+- `apps/site/pilot_routes`: explicit pilot-only static CodePawl route files for this PR review pilot.
+- `apps/site/README.md`: public site placeholder outside the pilot route files.
+- `apps/design/README.md`: product app placeholder outside the pilot route files.
+- no `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, Vite, Next, or Astro app exists in this checkout.
+
+Because no production frontend route tree exists yet, the pilot uses controlled static route files under `apps/site/pilot_routes` plus checked-in screenshots and metrics captured from the same local UI artifacts. The config is:
+
+```text
+data/pr_review_v0/codepawl_web_pilot/metadata.json
+```
+
+It defines four screenshots-only cases backed by stable route/component HTML, rendered screenshots, and metrics:
+
+- `/openpawl/docs/api-reference` (`docs_api_reference`)
+- `/cloud/dashboard/ai-agent` (`dashboard_ai_agent`)
+- `/cloud/dashboard/analytics` (`dashboard_analytics`)
+- `/cloud/app-empty-state` (`app_empty_state`)
+
+Serve the pilot-only routes locally when browser rendering is available:
+
+```bash
+python -m http.server 8766 --directory apps/site/pilot_routes
+```
+
+Render a route file directly:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run codepawl-render \
+  apps/site/pilot_routes/openpawl/docs-api-reference/before.html \
+  --out /tmp/codepawl-web-pilot-before
+```
+
+Run the aggregate pilot:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
+  --pilot-config data/pr_review_v0/codepawl_web_pilot/metadata.json \
+  --out reports/ui_pr_review_v0/codepawl_web_pilot \
+  --reviewer-id "$USER"
+```
+
+The pilot writes one normal PR review artifact set per case plus:
+
+```text
+reports/ui_pr_review_v0/codepawl_web_pilot/pilot_report.json
+reports/ui_pr_review_v0/codepawl_web_pilot/pilot_report.md
+```
+
+The current aggregate report has four rendered/screenshots-only cases, zero skipped cases, four `approve_visual` decisions, mean critic delta `0.035`, and no visual/accessibility/responsive regressions. This is useful enough for a future GitHub Actions artifact-upload job, but not for auto-commenting. When a production `apps/site` or `apps/design` frontend exists, replace these pilot-only static routes with production local render-mode cases.
+
 ## Outputs
 
 The CLI writes:
@@ -174,13 +228,13 @@ jobs:
             --pr-review-report reports/ui_pr_review_v0/fixture_manual_patch/pr_review_report.json
 ```
 
-Do not enable auto-commenting yet. CI should upload the artifact contract above and let a human inspect it.
+Do not enable auto-commenting yet. CI should upload the artifact contract above and let a human inspect it. The checked-in web pilot supports a disabled artifact-upload draft as the next stage, using `reports/ui_pr_review_v0/codepawl_web_pilot/pilot_report.json` plus each per-case report.
 
 ## Before GitHub Bot Integration
 
 Evidence still needed before a GitHub PR bot:
 
-- multiple local PR review reports covering real frontend changes
+- multiple local PR review reports covering production app routes, not only pilot-only static routes
 - completed manual labels for ambiguous cases
 - low false-positive rate for `request_changes`
 - documented artifact retention paths for screenshots, diffs, JSON, and Markdown summaries

@@ -78,11 +78,11 @@
     "pr_review_report_ready": true,
     "recommended_decision": "approve_visual",
     "regression_thresholds_pass": true,
-    "report_path": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/fixture_manual_patch/pr_review_report.json",
+    "report_path": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.json",
     "severe_missing_artifact_count": 0
   },
   "pr_review_ready": true,
-  "pr_review_report": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/fixture_manual_patch/pr_review_report.json",
+  "pr_review_report": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.json",
   "preference_critic_ready": true,
   "preference_critic_report": "/home/nxank4/Code/personal/codepawl/reports/ui_jepa_v0_smoke/preference_critic_report.json",
   "recommendation": "Closed-loop report passed synthetic/local non-oracle evaluation; keep DOM-aware JEPA blocked unless localization is the measured bottleneck. Require manual review labels before real PR review. Next stage: run_manual_codex_patch_workflow_on_selected_mixed_and_hard_tasks.",
