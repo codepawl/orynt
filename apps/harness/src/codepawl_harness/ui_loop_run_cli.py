@@ -14,7 +14,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("dataset_dir", nargs="?", default="data/processed/ui_loop_v0/loop_easy_20")
     parser.add_argument("--out", default="reports/ui_loop_v0")
     parser.add_argument("--preference-report", default="reports/ui_jepa_v0_smoke/preference_critic_report.json")
-    parser.add_argument("--patch-mode", default="instruction_only", choices=["instruction_only", "deterministic_patch", "oracle_patch", "manual_patch"])
+    parser.add_argument("--patch-mode", default="instruction_only", choices=["no_op", "instruction_only", "deterministic_patch", "oracle_patch", "manual_patch", "manual_patch_import"])
+    parser.add_argument("--manual-patches", default=None, help="Directory containing manual patch records keyed by task_id.")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-render", action="store_true", help="Skip browser rendering for offline fixture-only checks.")
@@ -37,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
                 seed=args.seed,
                 render=not args.skip_render,
                 include_noop_baseline=not args.no_noop_baseline,
+                manual_patches_dir=Path(args.manual_patches) if args.manual_patches else None,
                 viewport_width=args.viewport_width,
                 viewport_height=args.viewport_height,
             )

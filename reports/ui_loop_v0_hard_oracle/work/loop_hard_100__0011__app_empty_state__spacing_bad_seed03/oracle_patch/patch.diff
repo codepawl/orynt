@@ -1,0 +1,33 @@
+--- /home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/spacing_bad_seed03/index.html
++++ /home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_oracle/work/loop_hard_100__0011__app_empty_state__spacing_bad_seed03/oracle_patch/after.html
+@@ -3,29 +3,6 @@
+   <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Empty State</title>
+     <style>
+       :root{font-family:ui-sans-serif,system-ui,sans-serif;color:#1f2937;background:#f8fafc}*{box-sizing:border-box}body{margin:0}main{min-height:100vh;padding:30px}.shell{width:min(1080px,100%);margin:auto;display:grid;grid-template-columns:240px 1fr;gap:18px}.side,.empty{background:white;border:1px solid #dce3ea;border-radius:8px;padding:18px}.side a{display:block;color:#4b5563;text-decoration:none;padding:10px;border-radius:6px}.side a:first-of-type{background:#eff6ff;color:#1d4ed8;font-weight:800}.empty{min-height:560px;display:grid;place-items:center;text-align:center}.box{max-width:520px}.icon{width:72px;height:72px;margin:0 auto 18px;border-radius:18px;background:#dbeafe;border:1px solid #bfdbfe}h1{font-size:3rem;line-height:1;margin:0 0 12px}.lede{color:#5b6678;line-height:1.7}.button{display:inline-flex;min-height:44px;align-items:center;padding:0 16px;border-radius:6px;background:#1d4ed8;color:white;text-decoration:none;font-weight:800;margin-top:14px}@media(max-width:820px){.shell{grid-template-columns:1fr}.empty{min-height:420px}h1{font-size:2.4rem}}
+-    </style>
+-    <!-- CodePawl jitter: spacing_bad from app_empty_state.html, seed 45 -->
+-    <style data-codepawl-jitter="true">
+-
+-      :root body main {
+-        padding: 5px !important;
+-      }
+-
+-      :root body * {
+-        margin-top: 2px !important;
+-        margin-bottom: 2px !important;
+-        line-height: 0.9 !important;
+-      }
+-
+-      :root body .hero,
+-      :root body .actions {
+-        gap: 2px !important;
+-      }
+-
+-      :root body .panel {
+-        padding: 5px !important;
+-      }
+-    </style>
+-</head>
++    </style></head>
+   <body><main><section class="shell" aria-labelledby="title"><nav class="side" aria-label="App navigation"><strong>Workspace</strong><a href="#checks">Checks</a><a href="#reports">Reports</a><a href="#settings">Settings</a></nav><div class="empty" id="checks"><div class="box"><div class="icon" aria-hidden="true"></div><h1 id="title">No checks yet.</h1><p class="lede">Create your first interface review to collect screenshots, DOM snapshots, accessibility data, and UI metrics.</p><a class="button" href="#new">Create check</a></div></div></section></main></body>
+ </html>

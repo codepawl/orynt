@@ -729,6 +729,12 @@ def check_ui_jepa_scaling_gate(
         if not _issue_heads_have_signal_or_skip_reasons(critic.get("issue_heads") or {}):
             critic_errors.append("preference critic issue heads need non-trivial signal or explicit skipped reasons")
     loop = {}
+    closed_loop_easy_passed = False
+    closed_loop_mixed_passed = False
+    closed_loop_hard_passed = False
+    closed_loop_non_oracle_ready = False
+    manual_review_ready = False
+    pr_review_ready = False
     if closed_loop_report is None:
         pass
     elif not closed_loop_report.is_file():
@@ -738,24 +744,46 @@ def check_ui_jepa_scaling_gate(
         if not loop.get("valid"):
             loop_errors.append("closed-loop report is not valid")
         if not loop.get("passed_closed_loop_gate"):
-            loop_errors.append("closed-loop report did not pass the local Phase 4A gate")
+            loop_errors.append("closed-loop report did not pass the local non-oracle closed-loop gate")
         noop = loop.get("noop_baseline") or {}
         if noop.get("false_improvement_detected"):
             loop_errors.append("closed-loop no-op baseline falsely improved")
         patch_mode = str(loop.get("patch_mode") or "")
         if patch_mode == "oracle_patch":
             loop_errors.append("oracle_patch is upper-bound evidence only and cannot pass the non-oracle closed-loop gate")
+        if not loop.get("passed_closed_loop_gate_uses_non_oracle_only", False):
+            loop_errors.append("closed-loop gate must be based on non-oracle evidence only")
         easy = ((loop.get("difficulty_breakdown") or {}).get("easy") or {})
         easy_success = easy.get("success_rate")
-        if patch_mode in {"deterministic_patch", "manual_patch"}:
-            if not isinstance(easy_success, int | float) or float(easy_success) < 0.5:
-                loop_errors.append("closed-loop easy-task success rate is below 0.50")
+        non_oracle_rate = loop.get("deterministic_non_oracle_success_rate")
+        if patch_mode == "manual_patch_import":
+            non_oracle_rate = loop.get("manual_patch_success_rate")
+        if non_oracle_rate is None and patch_mode in {"deterministic_patch", "manual_patch"}:
+            non_oracle_rate = loop.get("success_rate")
+        if patch_mode in {"deterministic_patch", "manual_patch", "manual_patch_import"}:
+            if not isinstance(non_oracle_rate, int | float):
+                loop_errors.append("closed-loop non-oracle success rate is missing")
         elif patch_mode not in {"instruction_only"}:
             loop_errors.append(f"closed-loop patch mode is unsupported for gate pass: {patch_mode}")
-        if float(loop.get("accessibility_regression_rate") or 0.0) > 0.1:
+        if float(loop.get("accessibility_regression_rate_non_oracle", loop.get("accessibility_regression_rate") or 0.0) or 0.0) > 0.1:
             loop_errors.append("closed-loop accessibility regression rate is above 0.10")
-        if float(loop.get("responsive_regression_rate") or 0.0) > 0.1:
+        if float(loop.get("responsive_regression_rate_non_oracle", loop.get("responsive_regression_rate") or 0.0) or 0.0) > 0.1:
             loop_errors.append("closed-loop responsive regression rate is above 0.10")
+        set_name = str(loop.get("set_name") or Path(str(loop.get("dataset_dir") or "")).name)
+        gate_passed = bool(loop.get("passed_closed_loop_gate")) and not (loop.get("noop_baseline") or {}).get("false_improvement_detected")
+        closed_loop_easy_passed = gate_passed and (set_name == "loop_easy_20" or bool(easy_success and float(easy_success) >= 0.5))
+        closed_loop_mixed_passed = gate_passed and set_name == "loop_mixed_50"
+        closed_loop_hard_passed = gate_passed and set_name == "loop_hard_100"
+        closed_loop_non_oracle_ready = gate_passed and patch_mode in {"deterministic_patch", "manual_patch", "manual_patch_import"} and patch_mode != "oracle_patch"
+        manual_review = loop.get("manual_review") or {}
+        manual_review_ready = bool(manual_review.get("labels_available") and manual_review.get("matched_label_count", 0) > 0)
+        companion_reports = _closed_loop_companion_reports(closed_loop_report, loop)
+        closed_loop_easy_passed = closed_loop_easy_passed or any(_closed_loop_report_passes_set(report, "loop_easy_20") for report in companion_reports)
+        closed_loop_mixed_passed = closed_loop_mixed_passed or any(_closed_loop_report_passes_set(report, "loop_mixed_50") for report in companion_reports)
+        closed_loop_hard_passed = closed_loop_hard_passed or any(_closed_loop_report_passes_set(report, "loop_hard_100") for report in companion_reports)
+        closed_loop_non_oracle_ready = closed_loop_non_oracle_ready or any(_closed_loop_report_non_oracle_ready(report) for report in companion_reports)
+        manual_review_ready = manual_review_ready or any(_closed_loop_report_manual_review_ready(report) for report in companion_reports)
+        pr_review_ready = closed_loop_non_oracle_ready and (closed_loop_mixed_passed or closed_loop_hard_passed) and manual_review_ready
     closed_loop_ready = preference_critic_report is not None and not errors and not m2_errors and not critic_errors
     closed_loop_passed = closed_loop_report is not None and closed_loop_ready and not loop_errors
     dom_aware_ready = (
@@ -778,6 +806,12 @@ def check_ui_jepa_scaling_gate(
         "dom_aware_ready": dom_aware_ready,
         "closed_loop_ready": closed_loop_ready,
         "closed_loop_passed": closed_loop_passed,
+        "closed_loop_easy_passed": closed_loop_easy_passed,
+        "closed_loop_mixed_passed": closed_loop_mixed_passed,
+        "closed_loop_hard_passed": closed_loop_hard_passed,
+        "closed_loop_non_oracle_ready": closed_loop_non_oracle_ready,
+        "manual_review_ready": manual_review_ready,
+        "pr_review_ready": pr_review_ready,
         "m1_report": str(m1_report) if m1_report is not None else None,
         "m2_report": str(m2_report) if m2_report is not None else None,
         "m2_strong_report": str(m2_strong_report) if m2_strong_report is not None else None,
@@ -788,8 +822,8 @@ def check_ui_jepa_scaling_gate(
         "preference_critic_ready": preference_critic_report is not None and not critic_errors,
         "closed_loop_gate_errors": loop_errors,
         "next_command": (
-            "uv run ui-loop-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_loop_v0 --set loop_easy_20 && "
-            "uv run ui-loop-run data/processed/ui_loop_v0/loop_easy_20 --out reports/ui_loop_v0 --patch-mode deterministic_patch --limit 20"
+            "uv run ui-loop-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_loop_v0 --set loop_mixed_50 && "
+            "uv run ui-loop-run data/processed/ui_loop_v0/loop_mixed_50 --out reports/ui_loop_v0_mixed_deterministic --patch-mode deterministic_patch"
             if closed_loop_ready and closed_loop_report is None
             else (
             "uv run ui-preference-dataset-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_preference_v0 && "
@@ -884,6 +918,56 @@ def _m2_strong_gate_evidence(path: Path, report: dict[str, Any]) -> dict[str, An
     }
 
 
+def _closed_loop_companion_reports(primary_path: Path | None, primary_report: dict[str, Any]) -> list[dict[str, Any]]:
+    reports = [primary_report] if primary_report else []
+    if primary_path is None:
+        return reports
+    reports_root = primary_path.expanduser().resolve().parent.parent
+    for name in (
+        "ui_loop_v0_easy_deterministic",
+        "ui_loop_v0_mixed_deterministic",
+        "ui_loop_v0_hard_deterministic",
+        "ui_loop_v0_mixed_manual_patch_import",
+        "ui_loop_v0_hard_manual_patch_import",
+    ):
+        path = reports_root / name / "closed_loop_report.json"
+        if not path.is_file() or path == primary_path:
+            continue
+        try:
+            reports.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return reports
+
+
+def _closed_loop_report_passes_set(report: dict[str, Any], set_name: str) -> bool:
+    report_set = str(report.get("set_name") or Path(str(report.get("dataset_dir") or "")).name)
+    return bool(
+        report_set == set_name
+        and report.get("valid")
+        and report.get("passed_closed_loop_gate")
+        and report.get("passed_closed_loop_gate_uses_non_oracle_only")
+        and _closed_loop_report_non_oracle_ready(report)
+    )
+
+
+def _closed_loop_report_non_oracle_ready(report: dict[str, Any]) -> bool:
+    patch_mode = str(report.get("patch_mode") or "")
+    return bool(
+        patch_mode in {"deterministic_patch", "manual_patch", "manual_patch_import"}
+        and patch_mode != "oracle_patch"
+        and report.get("passed_closed_loop_gate")
+        and not (report.get("noop_baseline") or {}).get("false_improvement_detected")
+        and float(report.get("accessibility_regression_rate_non_oracle", report.get("accessibility_regression_rate") or 0.0) or 0.0) <= 0.1
+        and float(report.get("responsive_regression_rate_non_oracle", report.get("responsive_regression_rate") or 0.0) or 0.0) <= 0.1
+    )
+
+
+def _closed_loop_report_manual_review_ready(report: dict[str, Any]) -> bool:
+    manual_review = report.get("manual_review") or {}
+    return bool(manual_review.get("labels_available") and manual_review.get("matched_label_count", 0) > 0)
+
+
 def _extract_cli_int(command: str, flag: str) -> int | None:
     parts = command.split()
     try:
@@ -931,7 +1015,7 @@ def _scale_gate_recommendation(
             loop_decision = closed_loop_report.get("recommended_next_stage")
             if not closed_loop_report.get("passed_closed_loop_gate"):
                 return f"Closed-loop report exists but did not pass; keep DOM-aware JEPA blocked and follow next stage: {loop_decision}."
-            return f"Closed-loop report passed synthetic/local Phase 4A; keep DOM-aware JEPA blocked unless localization is the measured bottleneck. Next stage: {loop_decision}."
+            return f"Closed-loop report passed synthetic/local non-oracle evaluation; keep DOM-aware JEPA blocked unless localization is the measured bottleneck. Require manual review labels before real PR review. Next stage: {loop_decision}."
         if not preference_critic_report.get("jepa_features_add_value"):
             return f"Preference critic is valid but JEPA features do not add value; keep DOM-aware JEPA blocked and follow next stage: {decision}."
         return f"Preference critic is valid and reports JEPA feature value; DOM-aware still requires concrete DOM-need evidence before implementation. Next stage: {decision}."

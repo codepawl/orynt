@@ -1,0 +1,388 @@
+{
+  "bounding_box": {
+    "height": 900,
+    "width": 1440,
+    "x": 0,
+    "y": 0
+  },
+  "children": [
+    {
+      "bounding_box": {
+        "height": 0,
+        "width": 0,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "bounding_box": {
+            "height": 0,
+            "width": 0,
+            "x": 0,
+            "y": 0
+          },
+          "children": [],
+          "class": "",
+          "id": "",
+          "tag_name": "meta",
+          "text_snippet": ""
+        },
+        {
+          "bounding_box": {
+            "height": 0,
+            "width": 0,
+            "x": 0,
+            "y": 0
+          },
+          "children": [],
+          "class": "",
+          "id": "",
+          "tag_name": "meta",
+          "text_snippet": ""
+        },
+        {
+          "bounding_box": {
+            "height": 0,
+            "width": 0,
+            "x": 0,
+            "y": 0
+          },
+          "children": [],
+          "class": "",
+          "id": "",
+          "tag_name": "title",
+          "text_snippet": "North API Reference"
+        },
+        {
+          "bounding_box": {
+            "height": 0,
+            "width": 0,
+            "x": 0,
+            "y": 0
+          },
+          "children": [],
+          "class": "",
+          "id": "",
+          "tag_name": "style",
+          "text_snippet": ":root{font-family:ui-sans-serif,system-ui,sans-serif;color:#e5edf6;background:#111827}*{box-sizing:border-box}body{margin:0}main{min-height:100vh;padding:30px}."
+        }
+      ],
+      "class": "",
+      "id": "",
+      "tag_name": "head",
+      "text_snippet": "North API Reference :root{font-family:ui-sans-serif,system-ui,sans-serif;color:#e5edf6;background:#111827}*{box-sizing:border-box}body{margin:0}main{min-height:"
+    },
+    {
+      "bounding_box": {
+        "height": 900,
+        "width": 1440,
+        "x": 0,
+        "y": 0
+      },
+      "children": [
+        {
+          "bounding_box": {
+            "height": 900,
+            "width": 1440,
+            "x": 0,
+            "y": 0
+          },
+          "children": [
+            {
+              "bounding_box": {
+                "height": 584.8,
+                "width": 1160,
+                "x": 140,
+                "y": 30
+              },
+              "children": [
+                {
+                  "bounding_box": {
+                    "height": 584.8,
+                    "width": 260,
+                    "x": 140,
+                    "y": 30
+                  },
+                  "children": [
+                    {
+                      "bounding_box": {
+                        "height": 22,
+                        "width": 27.23,
+                        "x": 157,
+                        "y": 47
+                      },
+                      "children": [],
+                      "class": "",
+                      "id": "",
+                      "tag_name": "strong",
+                      "text_snippet": "API"
+                    },
+                    {
+                      "bounding_box": {
+                        "height": 40,
+                        "width": 226,
+                        "x": 157,
+                        "y": 69
+                      },
+                      "children": [],
+                      "class": "",
+                      "id": "",
+                      "tag_name": "a",
+                      "text_snippet": "Render"
+                    },
+                    {
+                      "bounding_box": {
+                        "height": 40,
+                        "width": 226,
+                        "x": 157,
+                        "y": 109
+                      },
+                      "children": [],
+                      "class": "",
+                      "id": "",
+                      "tag_name": "a",
+                      "text_snippet": "Metrics"
+                    },
+                    {
+                      "bounding_box": {
+                        "height": 40,
+                        "width": 226,
+                        "x": 157,
+                        "y": 149
+                      },
+                      "children": [],
+                      "class": "",
+                      "id": "",
+                      "tag_name": "a",
+                      "text_snippet": "Reports"
+                    }
+                  ],
+                  "class": "side",
+                  "id": "",
+                  "tag_name": "nav",
+                  "text_snippet": "API Render Metrics Reports"
+                },
+                {
+                  "bounding_box": {
+                    "height": 584.8,
+                    "width": 876,
+                    "x": 424,
+                    "y": 30
+                  },
+                  "children": [
+                    {
+                      "bounding_box": {
+                        "height": 208.39,
+                        "width": 876,
+                        "x": 424,
+                        "y": 30
+                      },
+                      "children": [
+                        {
+                          "bounding_box": {
+                            "height": 70,
+                            "width": 838,
+                            "x": 443,
+                            "y": 49
+                          },
+                          "children": [],
+                          "class": "",
+                          "id": "title",
+                          "tag_name": "h1",
+                          "text_snippet": "API Reference"
+                        },
+                        {
+                          "bounding_box": {
+                            "height": 26.39,
+                            "width": 838,
+                            "x": 443,
+                            "y": 135
+                          },
+                          "children": [],
+                          "class": "muted",
+                          "id": "",
+                          "tag_name": "p",
+                          "text_snippet": "Use the North API to create checks, fetch artifacts, and export structured reports."
+                        },
+                        {
+                          "bounding_box": {
+                            "height": 42,
+                            "width": 135.23,
+                            "x": 443,
+                            "y": 177.39
+                          },
+                          "children": [],
+                          "class": "button",
+                          "id": "",
+                          "tag_name": "a",
+                          "text_snippet": "Create check"
+                        }
+                      ],
+                      "class": "block",
+                      "id": "",
+                      "tag_name": "div",
+                      "text_snippet": "API Reference Use the North API to create checks, fetch artifacts, and export structured reports. Create check"
+                    },
+                    {
+                      "bounding_box": {
+                        "height": 191.2,
+                        "width": 876,
+                        "x": 424,
+                        "y": 254.39
+                      },
+                      "children": [
+                        {
+                          "bounding_box": {
+                            "height": 33,
+                            "width": 838,
+                            "x": 443,
+                            "y": 293.3
+                          },
+                          "children": [],
+                          "class": "",
+                          "id": "",
+                          "tag_name": "h2",
+                          "text_snippet": "POST /checks"
+                        },
+                        {
+                          "bounding_box": {
+                            "height": 26.39,
+                            "width": 838,
+                            "x": 443,
+                            "y": 346.2
+                          },
+                          "children": [],
+                          "class": "muted",
+                          "id": "",
+                          "tag_name": "p",
+                          "text_snippet": "Submit a static preview URL or uploaded HTML bundle."
+                        },
+                        {
+                          "bounding_box": {
+                            "height": 22,
+                            "width": 838,
+                            "x": 443,
+                            "y": 388.59
+                          },
+                          "children": [
+                            {
+                              "bounding_box": {
+                                "height": 24,
+                                "width": 58.81,
+                                "x": 443,
+                                "y": 388.59
+                              },
+                              "children": [],
+                              "class": "",
+                              "id": "",
+                              "tag_name": "code",
+                              "text_snippet": "status"
+                            },
+                            {
+                              "bounding_box": {
+                                "height": 24,
+                                "width": 97.81,
+                                "x": 505.98,
+                                "y": 388.59
+                              },
+                              "children": [],
+                              "class": "",
+                              "id": "",
+                              "tag_name": "code",
+                              "text_snippet": "artifact_id"
+                            },
+                            {
+                              "bounding_box": {
+                                "height": 24,
+                                "width": 90.02,
+                                "x": 607.97,
+                                "y": 388.59
+                              },
+                              "children": [],
+                              "class": "",
+                              "id": "",
+                              "tag_name": "code",
+                              "text_snippet": "created_at"
+                            }
+                          ],
+                          "class": "",
+                          "id": "",
+                          "tag_name": "p",
+                          "text_snippet": "status artifact_id created_at"
+                        }
+                      ],
+                      "class": "block",
+                      "id": "render",
+                      "tag_name": "article",
+                      "text_snippet": "POST /checks Submit a static preview URL or uploaded HTML bundle. status artifact_id created_at"
+                    },
+                    {
+                      "bounding_box": {
+                        "height": 153.2,
+                        "width": 876,
+                        "x": 424,
+                        "y": 461.59
+                      },
+                      "children": [
+                        {
+                          "bounding_box": {
+                            "height": 33,
+                            "width": 838,
+                            "x": 443,
+                            "y": 500.5
+                          },
+                          "children": [],
+                          "class": "",
+                          "id": "",
+                          "tag_name": "h2",
+                          "text_snippet": "GET /checks/{id}/metrics"
+                        },
+                        {
+                          "bounding_box": {
+                            "height": 26.39,
+                            "width": 838,
+                            "x": 443,
+                            "y": 553.41
+                          },
+                          "children": [],
+                          "class": "muted",
+                          "id": "",
+                          "tag_name": "p",
+                          "text_snippet": "Returns contrast, hierarchy, and layout signals."
+                        }
+                      ],
+                      "class": "block",
+                      "id": "metrics",
+                      "tag_name": "article",
+                      "text_snippet": "GET /checks/{id}/metrics Returns contrast, hierarchy, and layout signals."
+                    }
+                  ],
+                  "class": "content",
+                  "id": "",
+                  "tag_name": "div",
+                  "text_snippet": "API Reference Use the North API to create checks, fetch artifacts, and export structured reports. Create check POST /checks Submit a static preview URL or uploa"
+                }
+              ],
+              "class": "layout",
+              "id": "",
+              "tag_name": "section",
+              "text_snippet": "API Render Metrics Reports API Reference Use the North API to create checks, fetch artifacts, and export structured reports. Create check POST /checks Submit a "
+            }
+          ],
+          "class": "",
+          "id": "",
+          "tag_name": "main",
+          "text_snippet": "API Render Metrics Reports API Reference Use the North API to create checks, fetch artifacts, and export structured reports. Create check POST /checks Submit a "
+        }
+      ],
+      "class": "",
+      "id": "",
+      "tag_name": "body",
+      "text_snippet": "API Render Metrics Reports API Reference Use the North API to create checks, fetch artifacts, and export structured reports. Create check POST /checks Submit a "
+    }
+  ],
+  "class": "",
+  "id": "",
+  "tag_name": "html",
+  "text_snippet": "API Render Metrics Reports API Reference Use the North API to create checks, fetch artifacts, and export structured reports. Create check POST /checks Submit a "
+}

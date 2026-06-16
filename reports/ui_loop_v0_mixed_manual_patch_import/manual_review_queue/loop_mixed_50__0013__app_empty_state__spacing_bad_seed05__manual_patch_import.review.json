@@ -1,0 +1,109 @@
+{
+  "accessibility_concern": false,
+  "after_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/spacing_bad_seed05/screenshot.png",
+  "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/spacing_bad_seed05/screenshot.png",
+  "created_at": "",
+  "critic_json": {
+    "after": {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 9.02,
+              "contrast_checked_text_node_count": 7.0,
+              "contrast_issue_count": 0.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 3.0,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 0.0,
+              "heading_count": 1.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 48.0,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 15632.5,
+              "min_contrast_ratio": 5.81,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 900.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 13.0
+            }
+          },
+          "instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+          "region_id": "app_empty_state__spacing_bad_seed05__synthetic_spacing",
+          "region_type": "card_grid",
+          "severity": "medium",
+          "type": "spacing"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "app_empty_state__spacing_bad_seed05"
+    },
+    "before": {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 9.02,
+              "contrast_checked_text_node_count": 7.0,
+              "contrast_issue_count": 0.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 3.0,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 0.0,
+              "heading_count": 1.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 48.0,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 15632.5,
+              "min_contrast_ratio": 5.81,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 900.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 13.0
+            }
+          },
+          "instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+          "region_id": "app_empty_state__spacing_bad_seed05__synthetic_spacing",
+          "region_type": "card_grid",
+          "severity": "medium",
+          "type": "spacing"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "app_empty_state__spacing_bad_seed05"
+    }
+  },
+  "instruction_markdown_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_manual_patch_import/instructions/loop_mixed_50__0013__app_empty_state__spacing_bad_seed05.md",
+  "issue_types_remaining": [],
+  "notes": "",
+  "patch_diff_path": null,
+  "patch_mode": "manual_patch_import",
+  "preferred": null,
+  "provenance": {
+    "allowed_values": {
+      "preferred": [
+        "before",
+        "after",
+        "tie"
+      ]
+    },
+    "label_source": "manual_future",
+    "source_task_provenance": "synthetic_local"
+  },
+  "reviewer_id": "",
+  "schema_version": "ui_loop_v0_manual_review_form_v1",
+  "task_id": "loop_mixed_50__0013__app_empty_state__spacing_bad_seed05",
+  "visual_regression": false
+}

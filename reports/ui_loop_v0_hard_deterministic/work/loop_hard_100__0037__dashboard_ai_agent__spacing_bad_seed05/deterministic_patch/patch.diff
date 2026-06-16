@@ -1,0 +1,32 @@
+--- /home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed05/index.html
++++ /home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_deterministic/work/loop_hard_100__0037__dashboard_ai_agent__spacing_bad_seed05/deterministic_patch/after.html
+@@ -4,28 +4,6 @@
+     <style>
+       :root{font-family:ui-sans-serif,system-ui,sans-serif;color:#172033;background:#eff4ff}*{box-sizing:border-box}body{margin:0}main{min-height:100vh;padding:28px}.shell{width:min(1180px,100%);margin:auto;display:grid;gap:16px}.top{display:flex;justify-content:space-between}.button{background:#163b73;color:white;text-decoration:none;border-radius:6px;padding:11px 14px;font-weight:800}.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}.panel{background:white;border:1px solid #d6dfef;border-radius:8px;padding:18px}.metric{font-size:2rem;font-weight:900}.wide{grid-column:span 2}.run{display:flex;justify-content:space-between;padding:12px;background:#f6f8fc;border-radius:6px;margin-top:10px}.muted{color:#5b6678}@media(max-width:850px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.top{display:block}}
+     </style>
+-    <!-- CodePawl jitter: spacing_bad from dashboard_ai_agent.html, seed 47 -->
+-    <style data-codepawl-jitter="true">
+-
+-      :root body main {
+-        padding: 5px !important;
+-      }
+-
+-      :root body * {
+-        margin-top: 0px !important;
+-        margin-bottom: 0px !important;
+-        line-height: 0.94 !important;
+-      }
+-
+-      :root body .hero,
+-      :root body .actions {
+-        gap: 2px !important;
+-      }
+-
+-      :root body .panel {
+-        padding: 5px !important;
+-      }
+-    </style>
+-</head>
++    </head>
+   <body><main><section class="shell" aria-labelledby="title"><div class="top"><div><h1 id="title">Agent run monitor</h1><p class="muted">Task outcomes, retries, and human review queues.</p></div><a class="button" href="#runs">Review runs</a></div><div class="grid"><article class="panel"><span class="muted">Completed</span><div class="metric">612</div></article><article class="panel"><span class="muted">Needs review</span><div class="metric">17</div></article><article class="panel"><span class="muted">Retry rate</span><div class="metric">3.4%</div></article><article class="panel wide" id="runs"><h2>Recent runs</h2><div class="run"><span>Summarize tickets</span><strong>Passed</strong></div><div class="run"><span>Draft release note</span><strong>Review</strong></div></article><article class="panel"><h2>Guardrail</h2><p class="muted">Sensitive actions require approval.</p></article></div></section></main></body>
+ </html>

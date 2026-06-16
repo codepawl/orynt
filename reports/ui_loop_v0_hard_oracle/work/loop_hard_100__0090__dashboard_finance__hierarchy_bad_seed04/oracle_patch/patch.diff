@@ -1,0 +1,34 @@
+--- /home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_finance/jittered/hierarchy_bad_seed04/index.html
++++ /home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_oracle/work/loop_hard_100__0090__dashboard_finance__hierarchy_bad_seed04/oracle_patch/after.html
+@@ -3,30 +3,6 @@
+   <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Harbor Finance Dashboard</title>
+     <style>
+       :root{font-family:ui-sans-serif,system-ui,sans-serif;color:#16221c;background:#f2f6f0}*{box-sizing:border-box}body{margin:0}main{min-height:100vh;padding:30px}.shell{width:min(1160px,100%);margin:auto;display:grid;gap:16px}.top{display:flex;justify-content:space-between}.button{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border-radius:6px;background:#28583f;color:white;text-decoration:none;font-weight:800}.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}.panel{background:white;border:1px solid #d7e2d4;border-radius:8px;padding:18px}.big{font-size:2.1rem;font-weight:900}.span2{grid-column:span 2}.row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #e8eee5}.row:last-child{border-bottom:0}.muted{color:#5d6b61}@media(max-width:860px){.grid{grid-template-columns:1fr}.span2{grid-column:auto}.top{display:block}}
+-    </style>
+-    <!-- CodePawl jitter: hierarchy_bad from dashboard_finance.html, seed 46 -->
+-    <style data-codepawl-jitter="true">
+-
+-      :root body h1 {
+-        font-size: 1.3rem !important;
+-        line-height: 1.35 !important;
+-        font-weight: 500 !important;
+-      }
+-
+-      :root body .eyebrow,
+-      :root body .lede,
+-      :root body .button,
+-      :root body .metric strong {
+-        font-size: 1rem !important;
+-        font-weight: 400 !important;
+-      }
+-
+-      :root body .button.primary {
+-        background: #eef1f5 !important;
+-        color: #4b5563 !important;
+-        border: 1px solid #d5dbe3 !important;
+-      }
+-    </style>
+-</head>
++    </style></head>
+   <body><main><section class="shell" aria-labelledby="title"><div class="top"><div><h1 id="title">Runway dashboard</h1><p class="muted">Cash position, spend, and invoice timing.</p></div><a class="button" href="#forecast">Refresh forecast</a></div><div class="grid"><article class="panel"><span class="muted">Cash balance</span><div class="big">$1.28M</div></article><article class="panel"><span class="muted">Monthly burn</span><div class="big">$92k</div></article><article class="panel"><span class="muted">Runway</span><div class="big">13.9 mo</div></article><article class="panel span2" id="forecast"><h2>Upcoming obligations</h2><div class="row"><span>Payroll</span><strong>$48k</strong></div><div class="row"><span>Cloud</span><strong>$17k</strong></div><div class="row"><span>Contractors</span><strong>$12k</strong></div></article><article class="panel"><h2>Signal</h2><p class="muted">Receivables are seven days slower than plan.</p></article></div></section></main></body>
+ </html>

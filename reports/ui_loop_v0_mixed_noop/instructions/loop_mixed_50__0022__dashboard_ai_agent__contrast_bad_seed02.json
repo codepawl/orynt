@@ -1,0 +1,133 @@
+{
+  "allowed_edit_scope": {
+    "allowed_files": [
+      "after.html"
+    ],
+    "allowed_issue_types": [
+      "contrast"
+    ],
+    "source_is_copied_fixture": true
+  },
+  "allowed_files": [
+    "after.html"
+  ],
+  "artifact_paths": {
+    "canonical_contract": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0/contracts/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02.md",
+    "canonical_critic_review_json": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0/contracts/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02.critic.json",
+    "contract": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_noop/contracts/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02.md",
+    "critic_review_json": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_noop/contracts/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02.critic.json",
+    "json": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_noop/instructions/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02.json",
+    "markdown": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_noop/instructions/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02.md"
+  },
+  "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/contrast_bad_seed02/screenshot.png",
+  "concrete_patch_instructions": [
+    "Restore accessible foreground/background contrast using existing palette tokens and keep CTA text legible."
+  ],
+  "critique_json": {
+    "issues": [
+      {
+        "confidence": 0.64,
+        "evidence": {
+          "feature_group": "metrics",
+          "metrics": {
+            "average_contrast_ratio": 2.65,
+            "contrast_checked_text_node_count": 16.0,
+            "contrast_issue_count": 15.0,
+            "cta_like_element_count": 1.0,
+            "font_size_ratio": 2.0,
+            "has_horizontal_overflow": 0.0,
+            "has_vertical_overflow": 0.0,
+            "heading_count": 3.0,
+            "hierarchy_warning_count": 0.0,
+            "horizontal_overflow_px": 0.0,
+            "max_font_size": 32.0,
+            "max_right_overflow_px": 0.0,
+            "median_element_area": 15685.67,
+            "min_contrast_ratio": 1.58,
+            "min_font_size": 16.0,
+            "vertical_scroll_height": 900.0,
+            "viewport_fill_ratio": 1.0,
+            "visible_element_count": 28.0
+          }
+        },
+        "instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+        "region_id": "dashboard_ai_agent__contrast_bad_seed02__synthetic_contrast",
+        "region_type": "cta",
+        "severity": "medium",
+        "type": "contrast"
+      }
+    ],
+    "overall_score": 0.86,
+    "preference_confidence": 0.63,
+    "recommended_instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+    "schema_version": "ui_preference_critic_json_v1",
+    "screen_id": "dashboard_ai_agent__contrast_bad_seed02"
+  },
+  "do_not_change": [
+    "Do not call external LLM APIs.",
+    "Do not use external services.",
+    "Do not edit source fixtures; patch only copied loop work artifacts.",
+    "Keep viewport, content, and semantic structure unchanged unless the issue requires a local CSS fix.",
+    "Report synthetic/local preference improvement only; do not claim human taste improvement."
+  ],
+  "expected_artifact_paths": {
+    "after_html_path": "reports/ui_loop_v0/work/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02/manual_patch_import/after.html",
+    "manual_notes_path": "data/manual_patches/ui_loop_v0/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02/notes.json",
+    "manual_review_label_path": "data/manual_patches/ui_loop_v0/manual_review_labels.jsonl",
+    "patch_diff_path": "data/manual_patches/ui_loop_v0/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02/patch.diff"
+  },
+  "expected_visual_improvement_criteria": [
+    "Critic issue count should not increase.",
+    "Contrast issue count and overflow metrics should not regress.",
+    "Deterministic quality score should stay flat or improve.",
+    "Before/after screenshots and metrics must be saved in the loop report."
+  ],
+  "ordered_issues": [
+    {
+      "confidence": 0.64,
+      "instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+      "region_id": "dashboard_ai_agent__contrast_bad_seed02__synthetic_contrast",
+      "severity": "medium",
+      "type": "contrast"
+    }
+  ],
+  "schema_version": "ui_loop_v0_instruction_v1",
+  "source_file_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/contrast_bad_seed02/index.html",
+  "summary": "Fix contrast in a local synthetic UI corruption.",
+  "task_id": "loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02",
+  "validation_commands": [
+    "UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-run data/processed/ui_loop_v0/loop_easy_20 --patch-mode instruction_only",
+    "UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-run data/processed/ui_loop_v0/loop_easy_20 --patch-mode deterministic_patch --limit 4"
+  ],
+  "work_contract": {
+    "Constraints": [
+      "Do not call external LLM APIs.",
+      "Do not use external services.",
+      "Do not edit source fixtures; patch only copied loop work artifacts.",
+      "Keep viewport, content, and semantic structure unchanged unless the issue requires a local CSS fix.",
+      "Report synthetic/local preference improvement only; do not claim human taste improvement."
+    ],
+    "Context": {
+      "allowed_edit_scope": {
+        "allowed_files": [
+          "after.html"
+        ],
+        "allowed_issue_types": [
+          "contrast"
+        ],
+        "source_is_copied_fixture": true
+      },
+      "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/contrast_bad_seed02/screenshot.png",
+      "critic_review_json_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_noop/contracts/loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02.critic.json",
+      "issue_summary": "contrast issue, difficulty=easy, severity=0.7792",
+      "source_file_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/contrast_bad_seed02/index.html"
+    },
+    "Done when": [
+      "A patched after.html exists or the artifact is instruction-only/manual mode.",
+      "After render artifacts and before/after scoring are present.",
+      "No accessibility or overflow regression is introduced.",
+      "No external services were used."
+    ],
+    "Goal": "Improve local synthetic contrast defect for loop_mixed_50__0022__dashboard_ai_agent__contrast_bad_seed02."
+  }
+}

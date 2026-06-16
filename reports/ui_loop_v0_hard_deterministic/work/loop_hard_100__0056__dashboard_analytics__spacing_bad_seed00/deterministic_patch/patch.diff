@@ -1,0 +1,32 @@
+--- /home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_analytics/jittered/spacing_bad_seed00/index.html
++++ /home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_deterministic/work/loop_hard_100__0056__dashboard_analytics__spacing_bad_seed00/deterministic_patch/after.html
+@@ -4,28 +4,6 @@
+     <style>
+       :root{font-family:ui-sans-serif,system-ui,sans-serif;color:#172033;background:#eef2f6}*{box-sizing:border-box}body{margin:0}main{min-height:100vh;padding:28px}.shell{width:min(1180px,100%);margin:auto;display:grid;gap:16px}.top{display:flex;justify-content:space-between;align-items:center}.button{background:#1f5fbf;color:white;text-decoration:none;border-radius:6px;min-height:40px;padding:10px 14px;font-weight:800}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #d7e0eb;border-radius:8px;padding:16px}.metric{font-size:2rem;font-weight:900}.muted{color:#5d6878}.wide{grid-column:span 2}.bar{height:14px;background:#dbeafe;border-radius:999px;margin:12px 0}.bar:nth-child(2){width:78%}.bar:nth-child(3){width:58%;background:#dcfce7}.bar:nth-child(4){width:42%;background:#fef3c7}@media(max-width:860px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}}
+     </style>
+-    <!-- CodePawl jitter: spacing_bad from dashboard_analytics.html, seed 42 -->
+-    <style data-codepawl-jitter="true">
+-
+-      :root body main {
+-        padding: 3px !important;
+-      }
+-
+-      :root body * {
+-        margin-top: 0px !important;
+-        margin-bottom: 0px !important;
+-        line-height: 0.9 !important;
+-      }
+-
+-      :root body .hero,
+-      :root body .actions {
+-        gap: 3px !important;
+-      }
+-
+-      :root body .panel {
+-        padding: 3px !important;
+-      }
+-    </style>
+-</head>
++    </head>
+   <body><main><section class="shell" aria-labelledby="title"><div class="top"><div><h1 id="title">Acquisition overview</h1><p class="muted">Daily campaign and funnel health.</p></div><a class="button" href="#export">Export</a></div><div class="grid"><article class="card"><span class="muted">Visitors</span><div class="metric">84k</div></article><article class="card"><span class="muted">Trials</span><div class="metric">2,418</div></article><article class="card"><span class="muted">Conversion</span><div class="metric">7.2%</div></article><article class="card"><span class="muted">Spend</span><div class="metric">$18k</div></article><article class="card wide"><h2>Channel mix</h2><div class="bar"></div><div class="bar"></div><div class="bar"></div></article><article class="card wide"><h2>Alerts</h2><p class="muted">Search cost rose 12%. Referral traffic is stable. Trial activation improved in two regions.</p></article></div></section></main></body>
+ </html>

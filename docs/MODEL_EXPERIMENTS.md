@@ -262,9 +262,9 @@ uv run ui-preference-critic-review data/processed/ui_preference_v0 \
 
 Closed-loop frontend patch evaluation may proceed with this synthetic/local critic when the gate reports `closed_loop_ready: true`.
 
-## Phase 4A: Closed-Loop Frontend Evaluation v0
+## Phase 4B: Mixed/Hard Closed-Loop Frontend Evaluation v0
 
-Purpose: test whether the Preference Critic helps a practical local frontend iteration loop before doing more JEPA architecture work.
+Purpose: test whether the Preference Critic helps a practical local frontend iteration loop on mixed and hard local tasks before doing more JEPA architecture work or real PR review.
 
 Current command flow, using no external LLM APIs and no network-dependent tasks:
 
@@ -283,29 +283,37 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loo
   --limit 3
 
 UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loop_run_cli \
-  data/processed/ui_loop_v0/loop_easy_20 \
-  --out reports/ui_loop_v0 \
+  data/processed/ui_loop_v0/loop_mixed_50 \
+  --out reports/ui_loop_v0_mixed_deterministic \
+  --patch-mode deterministic_patch
+
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run python -m codepawl_harness.ui_loop_run_cli \
+  data/processed/ui_loop_v0/loop_hard_100 \
+  --out reports/ui_loop_v0_hard_deterministic \
   --patch-mode deterministic_patch
 ```
 
-Current deterministic evidence:
+Current mixed/hard deterministic non-oracle evidence:
 
-- `reports/ui_loop_v0/closed_loop_report.json`
+- `reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json`
+- `reports/ui_loop_v0_hard_deterministic/closed_loop_report.json`
 - `passed_closed_loop_gate: true`
-- `task_count: 20`
-- `success_rate: 1.0`
-- `mean_critic_delta: 0.14`
+- mixed task count: `50`
+- hard task count: `100`
+- non-oracle success rate: `1.0`
+- `mean_critic_delta_non_oracle: 0.14`
 - no-op mean critic delta: `0.0`
-- accessibility regression rate: `0.0`
-- responsive regression rate: `0.0`
-- recommendation: `expand_loop_mixed_50`
+- non-oracle accessibility regression rate: `0.0`
+- non-oracle responsive regression rate: `0.0`
 
 Interpretation rules:
 
 - This is synthetic/local preference improvement only, not human taste evidence.
 - Instruction-only mode creates contracts and review artifacts but cannot pass the closed-loop gate.
-- Deterministic patch mode can pass only when easy tasks improve and no-op does not falsely improve.
-- Oracle patch mode is upper-bound evidence only.
+- Deterministic patch mode can pass mixed/hard gates only with non-oracle evidence and a clean no-op baseline.
+- Oracle patch mode is upper-bound evidence only and is excluded from non-oracle success claims.
+- Manual patch import reads `data/manual_patches/ui_loop_v0/<task_id>/`; missing patches are skipped, not failed.
+- Codex patch contracts are saved under report `contracts/` directories and are not sent to external services.
 - If critic score improves while accessibility or responsive checks regress, fix scoring/gate before using the critic.
 - If manual review disagrees with the critic, collect human labels and recalibrate.
 - DOM-aware JEPA remains blocked unless closed-loop failures show critic localization or DOM grounding is the bottleneck.
@@ -328,7 +336,7 @@ Decision:
 - JEPA features do not add measurable value for this corpus.
 - Metrics still dominate, so DOM-aware JEPA remains blocked.
 - Freeze JEPA architecture work for this corpus unless future feature ablations show clear M1/M2/M2-strong lift.
-- Phase 4A closed-loop easy-set evaluation has passed synthetic/local deterministic patch validation; expand to `loop_mixed_50` before real PR review claims.
+- Phase 4B closed-loop mixed/hard deterministic evaluation has passed synthetic/local non-oracle validation. Real PR review remains blocked until manual labels confirm the metric/critic wins.
 
 ## M3: DOM-Aware Late Fusion JEPA
 

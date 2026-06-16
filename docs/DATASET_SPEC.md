@@ -234,16 +234,27 @@ before_dom_path: string
 before_accessibility_path: string
 before_metrics_path: string
 known_issue_types: list[string]
+expected_issue_types: list[string]
 corruption_type: spacing | contrast | alignment | hierarchy
 severity: float
 difficulty: easy | medium | hard
 split: train | val | test
 expected_patch_scope: object
+patch_mode_allowed: list[no_op | instruction_only | deterministic_patch | oracle_patch | manual_patch | manual_patch_import]
+is_oracle_eligible: bool
+has_clean_original_reference: bool
+provenance_safe_for_non_oracle: bool
+train_template_overlap: bool
+critic_train_overlap: bool
+holdout_status: train_template_overlap | holdout_template
+pair_family: string
 split_group: string
 pair_id: string
 ```
 
-The v0 deterministic patcher is intentionally conservative: it only edits copied loop work artifacts and removes known local CodePawl jitter style blocks. `oracle_patch` may copy the clean source version but must be marked as oracle upper-bound evidence and excluded from non-oracle claims.
+The v0 deterministic patcher is intentionally conservative: it only edits copied loop work artifacts and removes known local CodePawl jitter style blocks. `oracle_patch` may copy the clean source version but must be marked as oracle upper-bound evidence and excluded from non-oracle claims. `manual_patch_import` reads manually produced artifacts from `data/manual_patches/ui_loop_v0/<task_id>/`; missing manual artifacts are skipped.
+
+Aggregate reports separate `no_op_success_rate`, `deterministic_non_oracle_success_rate`, `oracle_upper_bound_success_rate`, `manual_patch_success_rate`, non-oracle/oracle critic deltas, and non-oracle accessibility/responsive regression rates. Mixed/hard pass flags use non-oracle evidence only.
 
 ## Corruption Operators
 

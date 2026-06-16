@@ -13,14 +13,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ui-loop-report", description="Rebuild ui_loop_v0 aggregate report from saved task JSON files.")
     parser.add_argument("--out", default="reports/ui_loop_v0")
     parser.add_argument("--dataset-dir", default="data/processed/ui_loop_v0/loop_easy_20")
-    parser.add_argument("--patch-mode", default="deterministic_patch", choices=["instruction_only", "deterministic_patch", "oracle_patch", "manual_patch"])
+    parser.add_argument("--patch-mode", default="deterministic_patch", choices=["no_op", "instruction_only", "deterministic_patch", "oracle_patch", "manual_patch", "manual_patch_import"])
+    parser.add_argument("--manual-review-labels", default=None, help="JSON, JSONL, or directory of manual review labels.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        report = build_loop_report_from_task_dir(Path(args.out), dataset_dir=Path(args.dataset_dir), patch_mode=args.patch_mode)
+        report = build_loop_report_from_task_dir(
+            Path(args.out),
+            dataset_dir=Path(args.dataset_dir),
+            patch_mode=args.patch_mode,
+            manual_review_labels=Path(args.manual_review_labels) if args.manual_review_labels else None,
+        )
     except Exception as exc:
         print(f"ui-loop-report: {exc}", file=sys.stderr)
         return 2

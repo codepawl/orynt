@@ -1,0 +1,187 @@
+{
+  "accessibility_regression": false,
+  "after": {
+    "accessibility_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/accessibility.json",
+    "critic_json": {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 12.3,
+              "contrast_checked_text_node_count": 16.0,
+              "contrast_issue_count": 0.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 2.0,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 1.0,
+              "heading_count": 3.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 32.0,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 11128.91,
+              "min_contrast_ratio": 5.27,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 908.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 28.0
+            }
+          },
+          "instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+          "region_id": "dashboard_ai_agent__spacing_bad_seed02__synthetic_spacing",
+          "region_type": "card_grid",
+          "severity": "medium",
+          "type": "spacing"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "dashboard_ai_agent__spacing_bad_seed02"
+    },
+    "critic_score": 0.86,
+    "dom_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/dom.json",
+    "html_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_deterministic/work/loop_hard_100__0034__dashboard_ai_agent__spacing_bad_seed02/no_op/after.html",
+    "metrics_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/metrics.json",
+    "screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/screenshot.png"
+  },
+  "after_deterministic_quality_score": 1.0,
+  "base_screen_id": "dashboard_ai_agent__original",
+  "before": {
+    "accessibility_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/accessibility.json",
+    "critic_json": {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 12.3,
+              "contrast_checked_text_node_count": 16.0,
+              "contrast_issue_count": 0.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 2.0,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 1.0,
+              "heading_count": 3.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 32.0,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 11128.91,
+              "min_contrast_ratio": 5.27,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 908.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 28.0
+            }
+          },
+          "instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+          "region_id": "dashboard_ai_agent__spacing_bad_seed02__synthetic_spacing",
+          "region_type": "card_grid",
+          "severity": "medium",
+          "type": "spacing"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "dashboard_ai_agent__spacing_bad_seed02"
+    },
+    "critic_score": 0.86,
+    "dom_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/dom.json",
+    "html_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/index.html",
+    "metrics_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/metrics.json",
+    "screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/dashboard_ai_agent/jittered/spacing_bad_seed02/screenshot.png"
+  },
+  "before_deterministic_quality_score": 1.0,
+  "before_screen_id": "dashboard_ai_agent__spacing_bad_seed02",
+  "corruption_type": "spacing",
+  "critic_delta": 0.0,
+  "critic_train_overlap": true,
+  "deterministic_metric_deltas": {
+    "contrast_issue_count": 0.0,
+    "font_size_ratio": 0.0,
+    "hierarchy_warning_count": 0.0,
+    "horizontal_overflow_px": 0.0,
+    "max_right_overflow_px": 0.0,
+    "min_contrast_ratio": 0.0,
+    "quality_score_delta": 0.0,
+    "viewport_fill_ratio": 0.0
+  },
+  "difficulty": "hard",
+  "expected_issue_types": [
+    "spacing"
+  ],
+  "has_clean_original_reference": true,
+  "holdout_status": "train_template_overlap",
+  "improvement_passes_local_threshold": false,
+  "instruction_json_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_deterministic/instructions/loop_hard_100__0034__dashboard_ai_agent__spacing_bad_seed02.json",
+  "instruction_markdown_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_deterministic/instructions/loop_hard_100__0034__dashboard_ai_agent__spacing_bad_seed02.md",
+  "is_oracle_eligible": true,
+  "issue_head_changes": {
+    "after_issue_count": 1,
+    "before_issue_count": 1,
+    "by_type": {
+      "alignment": 0,
+      "contrast": 0,
+      "hierarchy": 0,
+      "spacing": 0
+    },
+    "issue_count_delta": 0
+  },
+  "known_issue_types": [
+    "spacing"
+  ],
+  "manual_review_form_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_deterministic/manual_review_queue/loop_hard_100__0034__dashboard_ai_agent__spacing_bad_seed02__no_op.review.json",
+  "metrics_only_confidence_bucket": "medium",
+  "oracle_excluded_from_non_oracle_claims": false,
+  "overflow_regression": false,
+  "pair_family": "original_vs_corrupted",
+  "patch_details": {
+    "after_html_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_deterministic/work/loop_hard_100__0034__dashboard_ai_agent__spacing_bad_seed02/no_op/after.html",
+    "failure_reason": null,
+    "patch_applied": false,
+    "patch_mode": "no_op",
+    "success": true
+  },
+  "patch_diff_path": null,
+  "patch_failure_reason": null,
+  "patch_mode": "no_op",
+  "patch_mode_allowed": [
+    "deterministic_patch",
+    "instruction_only",
+    "manual_patch",
+    "manual_patch_import",
+    "no_op",
+    "oracle_patch"
+  ],
+  "patch_success": true,
+  "provenance_safe_for_non_oracle": true,
+  "regression_flags": {
+    "accessibility_regression": false,
+    "overflow_regression": false,
+    "responsive_regression": false
+  },
+  "responsive_regression": false,
+  "schema_version": "ui_loop_v0_report_v1",
+  "screenshot_diff_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_hard_deterministic/work/loop_hard_100__0034__dashboard_ai_agent__spacing_bad_seed02/no_op/screenshot_diff.png",
+  "screenshot_diff_stats": {
+    "available": true,
+    "bbox": null,
+    "changed_pixel_ratio": 0.0
+  },
+  "severity": 0.1649,
+  "severity_bucket": "low",
+  "skip_reason": null,
+  "skipped": false,
+  "split": "train",
+  "split_group": "dashboard_ai_agent",
+  "synthetic_local": true,
+  "task_id": "loop_hard_100__0034__dashboard_ai_agent__spacing_bad_seed02",
+  "train_template_overlap": true
+}

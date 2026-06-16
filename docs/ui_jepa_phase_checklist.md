@@ -12,7 +12,7 @@ Legend:
 
 ## Current Shape
 
-The repository is in a local-first bootstrap state. It has a render harness, deterministic UI metrics, synthetic jitter datasets, human/auto label plumbing, hard preference pairs, a tiny Pawl-JEPA microtraining scaffold, a positive-only UI corpus path, a Phase 0.5 smoke benchmark sanity gate, M1/M2 screenshot-only JEPA baselines, M2.5 diagnostics, and a synthetic/local UI preference critic v0. It does not yet implement the canonical research-scale UI-JEPA dataset, DOM-aware JEPA, or closed-loop frontend patch evaluation.
+The repository is in a local-first bootstrap state. It has a render harness, deterministic UI metrics, synthetic jitter datasets, human/auto label plumbing, hard preference pairs, a tiny Pawl-JEPA microtraining scaffold, a positive-only UI corpus path, a Phase 0.5 smoke benchmark sanity gate, M1/M2 screenshot-only JEPA baselines, M2.5 diagnostics, a synthetic/local UI preference critic v0, and mixed/hard closed-loop frontend patch evaluation. It does not yet implement the canonical research-scale UI-JEPA dataset, DOM-aware JEPA, or human-validated PR review.
 
 ## Phase -1: Modification And Stabilization
 
@@ -132,15 +132,21 @@ Goal from plan: prove real frontend value.
 - [x] Critique JSON to Codex-compatible patch contract output is implemented and saved as artifacts, not sent to external services.
   Evidence: `packages/pawlbench_design/src/pawlbench_design/ui_loop.py`, `reports/ui_loop_v0/instructions/`.
 - [x] Source screenshot/code -> critic JSON -> deterministic local patch/manual contract -> rerender -> before/after report loop is implemented for local synthetic fixtures.
-  Evidence: `ui-loop-build`, `ui-loop-run`, `reports/ui_loop_v0/closed_loop_report.json`.
+  Evidence: `ui-loop-build`, `ui-loop-run`, `reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json`.
 - [x] `loop_easy_20`, `loop_mixed_50`, and `loop_hard_100` evaluation sets are implemented from local smoke artifacts.
   Evidence: `data/processed/ui_loop_v0/loop_easy_20`, `data/processed/ui_loop_v0/loop_mixed_50`, `data/processed/ui_loop_v0/loop_hard_100`.
-- [ ] Before/after human preference evaluation is not implemented.
-- [x] Accessibility/responsive regression checks inside the closed-loop gate are implemented for local deterministic reports.
-  Evidence: `reports/ui_loop_v0/closed_loop_report.json`, `reports/ui_jepa_v0_smoke/scale_gate.json`.
+- [x] Mixed/hard non-oracle closed-loop evaluation is implemented with no-op, deterministic, oracle upper-bound, and manual-patch-import modes.
+  Evidence: `reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json`, `reports/ui_loop_v0_hard_deterministic/closed_loop_report.json`, `reports/ui_loop_v0_mixed_oracle/closed_loop_report.json`, `reports/ui_loop_v0_hard_oracle/closed_loop_report.json`.
+- [x] Codex-compatible patch contracts are exported as artifacts and include Goal, Context, Constraints, and Done when sections.
+  Evidence: `reports/ui_loop_v0_mixed_deterministic/contracts/`.
+- [~] Manual patch import and manual review label ingestion are implemented, but no manual patches or labels have been collected yet.
+  Evidence: `reports/ui_loop_v0_mixed_manual_patch_import/closed_loop_report.json`, `reports/ui_loop_v0_hard_manual_patch_import/closed_loop_report.json`.
+- [ ] Before/after human preference evaluation is not complete; manual review labels are still required before real PR review.
+- [x] Accessibility/responsive regression checks inside the closed-loop gate are implemented for local deterministic reports and separated for non-oracle evidence.
+  Evidence: `reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json`, `reports/ui_loop_v0_hard_deterministic/closed_loop_report.json`, `reports/ui_jepa_v0_smoke/scale_gate.json`.
 - [ ] PR screenshot diff aesthetic regression review is not implemented.
 
-Current Phase 4A evidence: deterministic patch mode on `loop_easy_20` passes the synthetic/local closed-loop gate with no-op mean critic delta `0.0`, mean critic delta `0.14`, accessibility regression rate `0.0`, and responsive regression rate `0.0`. This is not human taste evidence. Manual review queue artifacts are exported under `reports/ui_loop_v0/manual_review_queue/`.
+Current Phase 4B evidence: deterministic non-oracle patch mode passes `loop_mixed_50` and `loop_hard_100` with no-op mean critic delta `0.0`, `mean_critic_delta_non_oracle: 0.14`, accessibility regression rate `0.0`, and responsive regression rate `0.0`. This is not human taste evidence. Manual review queue artifacts and Codex contracts are exported under each report directory.
 
 ## Immediate Next Build Order
 
@@ -151,4 +157,4 @@ Current Phase 4A evidence: deterministic patch mode on `loop_easy_20` passes the
 5. Do not require future CUDA training inside the Codex sandbox. Future CUDA runs should be manual-user-run and then registered through report files.
 6. Use the M2.5 decision: continue JEPA only with useful representation/preference signal; otherwise harden dataset labels or add a preference-aligned critic/objective before DOM-aware work.
 7. Use Preference Critic v0 as the next frontend-loop scaffold: metrics currently dominates, M2-strong adds no useful lift, DOM-aware JEPA remains blocked, and closed-loop patch evaluation is the next practical validation path.
-8. Phase 4A closed-loop easy-set validation is implemented and passed locally; next expand to `loop_mixed_50` and inspect/manual-label wins and failures before real PR review claims.
+8. Phase 4B mixed/hard closed-loop validation is implemented and passed locally for deterministic non-oracle patches; next inspect/manual-label wins and failures before real PR review claims.

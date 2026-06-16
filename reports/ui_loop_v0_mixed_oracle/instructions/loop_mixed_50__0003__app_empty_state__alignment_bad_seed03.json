@@ -1,0 +1,131 @@
+{
+  "allowed_edit_scope": {
+    "allowed_files": [
+      "after.html"
+    ],
+    "allowed_issue_types": [
+      "alignment"
+    ],
+    "source_is_copied_fixture": true
+  },
+  "allowed_files": [
+    "after.html"
+  ],
+  "artifact_paths": {
+    "contract": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_oracle/contracts/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03.md",
+    "critic_review_json": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_oracle/contracts/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03.critic.json",
+    "json": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_oracle/instructions/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03.json",
+    "markdown": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_oracle/instructions/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03.md"
+  },
+  "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed03/screenshot.png",
+  "concrete_patch_instructions": [
+    "Remove synthetic transforms or text alignment overrides that push content off the layout grid or viewport."
+  ],
+  "critique_json": {
+    "issues": [
+      {
+        "confidence": 0.64,
+        "evidence": {
+          "feature_group": "metrics",
+          "metrics": {
+            "average_contrast_ratio": 9.02,
+            "contrast_checked_text_node_count": 7.0,
+            "contrast_issue_count": 0.0,
+            "cta_like_element_count": 1.0,
+            "font_size_ratio": 3.0,
+            "has_horizontal_overflow": 0.0,
+            "has_vertical_overflow": 0.0,
+            "heading_count": 1.0,
+            "hierarchy_warning_count": 0.0,
+            "horizontal_overflow_px": 0.0,
+            "max_font_size": 48.0,
+            "max_right_overflow_px": 0.0,
+            "median_element_area": 24960.0,
+            "min_contrast_ratio": 5.81,
+            "min_font_size": 16.0,
+            "vertical_scroll_height": 900.0,
+            "viewport_fill_ratio": 1.0,
+            "visible_element_count": 13.0
+          }
+        },
+        "instruction": "Realign overflowing content to the viewport and layout grid.",
+        "region_id": "app_empty_state__alignment_bad_seed03__synthetic_alignment",
+        "region_type": "unknown",
+        "severity": "medium",
+        "type": "alignment"
+      }
+    ],
+    "overall_score": 0.86,
+    "preference_confidence": 0.63,
+    "recommended_instruction": "Realign overflowing content to the viewport and layout grid.",
+    "schema_version": "ui_preference_critic_json_v1",
+    "screen_id": "app_empty_state__alignment_bad_seed03"
+  },
+  "do_not_change": [
+    "Do not call external LLM APIs.",
+    "Do not use external services.",
+    "Do not edit source fixtures; patch only copied loop work artifacts.",
+    "Keep viewport, content, and semantic structure unchanged unless the issue requires a local CSS fix.",
+    "Report synthetic/local preference improvement only; do not claim human taste improvement."
+  ],
+  "expected_artifact_paths": {
+    "after_html_path": "reports/ui_loop_v0/work/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03/manual_patch_import/after.html",
+    "manual_notes_path": "data/manual_patches/ui_loop_v0/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03/notes.json",
+    "manual_review_label_path": "data/manual_patches/ui_loop_v0/manual_review_labels.jsonl",
+    "patch_diff_path": "data/manual_patches/ui_loop_v0/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03/patch.diff"
+  },
+  "expected_visual_improvement_criteria": [
+    "Critic issue count should not increase.",
+    "Contrast issue count and overflow metrics should not regress.",
+    "Deterministic quality score should stay flat or improve.",
+    "Before/after screenshots and metrics must be saved in the loop report."
+  ],
+  "ordered_issues": [
+    {
+      "confidence": 0.64,
+      "instruction": "Realign overflowing content to the viewport and layout grid.",
+      "region_id": "app_empty_state__alignment_bad_seed03__synthetic_alignment",
+      "severity": "medium",
+      "type": "alignment"
+    }
+  ],
+  "schema_version": "ui_loop_v0_instruction_v1",
+  "source_file_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed03/index.html",
+  "summary": "Fix alignment in a local synthetic UI corruption.",
+  "task_id": "loop_mixed_50__0003__app_empty_state__alignment_bad_seed03",
+  "validation_commands": [
+    "UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-run data/processed/ui_loop_v0/loop_easy_20 --patch-mode instruction_only",
+    "UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-loop-run data/processed/ui_loop_v0/loop_easy_20 --patch-mode deterministic_patch --limit 4"
+  ],
+  "work_contract": {
+    "Constraints": [
+      "Do not call external LLM APIs.",
+      "Do not use external services.",
+      "Do not edit source fixtures; patch only copied loop work artifacts.",
+      "Keep viewport, content, and semantic structure unchanged unless the issue requires a local CSS fix.",
+      "Report synthetic/local preference improvement only; do not claim human taste improvement."
+    ],
+    "Context": {
+      "allowed_edit_scope": {
+        "allowed_files": [
+          "after.html"
+        ],
+        "allowed_issue_types": [
+          "alignment"
+        ],
+        "source_is_copied_fixture": true
+      },
+      "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed03/screenshot.png",
+      "critic_review_json_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_oracle/contracts/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03.critic.json",
+      "issue_summary": "alignment issue, difficulty=hard, severity=0.05",
+      "source_file_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed03/index.html"
+    },
+    "Done when": [
+      "A patched after.html exists or the artifact is instruction-only/manual mode.",
+      "After render artifacts and before/after scoring are present.",
+      "No accessibility or overflow regression is introduced.",
+      "No external services were used."
+    ],
+    "Goal": "Improve local synthetic alignment defect for loop_mixed_50__0003__app_empty_state__alignment_bad_seed03."
+  }
+}

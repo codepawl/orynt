@@ -1,0 +1,303 @@
+{
+  "accessibility_regression_rate": 0.0,
+  "accessibility_regression_rate_non_oracle": 0.0,
+  "anti_self_grading_safeguards": {
+    "accessibility_regressions_reported": true,
+    "claims_limited_to_synthetic_local": true,
+    "deterministic_metrics_reported": true,
+    "manual_review_label_ingestion_supported": true,
+    "manual_review_queue_exported": true,
+    "noop_baseline_included": true,
+    "oracle_excluded_from_non_oracle_success_claims": true,
+    "oracle_upper_bound_separated": false,
+    "responsive_regressions_reported": true
+  },
+  "corruption_type_breakdown": {
+    "alignment": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 12
+    },
+    "contrast": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 13
+    },
+    "hierarchy": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 12
+    },
+    "spacing": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 13
+    }
+  },
+  "critic_overlap_breakdown": {
+    "False": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 16
+    },
+    "True": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 34
+    }
+  },
+  "dataset_dir": "/home/nxank4/Code/personal/codepawl/data/processed/ui_loop_v0/loop_mixed_50",
+  "deterministic_non_oracle_success_rate": 1.0,
+  "difficulty_breakdown": {
+    "easy": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 13
+    },
+    "hard": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 37
+    }
+  },
+  "evaluated_task_count": 50,
+  "examples": {
+    "failures": [],
+    "skipped": [],
+    "wins": [
+      {
+        "after_screenshot_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_deterministic/work/loop_mixed_50__0000__app_empty_state__alignment_bad_seed00/deterministic_patch/render/screenshot.png",
+        "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed00/screenshot.png",
+        "corruption_type": "alignment",
+        "critic_delta": 0.14,
+        "difficulty": "hard",
+        "patch_failure_reason": null,
+        "patch_mode": "deterministic_patch",
+        "patch_success": true,
+        "skip_reason": null,
+        "skipped": false,
+        "task_id": "loop_mixed_50__0000__app_empty_state__alignment_bad_seed00"
+      },
+      {
+        "after_screenshot_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_deterministic/work/loop_mixed_50__0001__app_empty_state__alignment_bad_seed01/deterministic_patch/render/screenshot.png",
+        "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed01/screenshot.png",
+        "corruption_type": "alignment",
+        "critic_delta": 0.14,
+        "difficulty": "hard",
+        "patch_failure_reason": null,
+        "patch_mode": "deterministic_patch",
+        "patch_success": true,
+        "skip_reason": null,
+        "skipped": false,
+        "task_id": "loop_mixed_50__0001__app_empty_state__alignment_bad_seed01"
+      },
+      {
+        "after_screenshot_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_deterministic/work/loop_mixed_50__0002__app_empty_state__alignment_bad_seed02/deterministic_patch/render/screenshot.png",
+        "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed02/screenshot.png",
+        "corruption_type": "alignment",
+        "critic_delta": 0.14,
+        "difficulty": "hard",
+        "patch_failure_reason": null,
+        "patch_mode": "deterministic_patch",
+        "patch_success": true,
+        "skip_reason": null,
+        "skipped": false,
+        "task_id": "loop_mixed_50__0002__app_empty_state__alignment_bad_seed02"
+      },
+      {
+        "after_screenshot_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_deterministic/work/loop_mixed_50__0003__app_empty_state__alignment_bad_seed03/deterministic_patch/render/screenshot.png",
+        "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed03/screenshot.png",
+        "corruption_type": "alignment",
+        "critic_delta": 0.14,
+        "difficulty": "hard",
+        "patch_failure_reason": null,
+        "patch_mode": "deterministic_patch",
+        "patch_success": true,
+        "skip_reason": null,
+        "skipped": false,
+        "task_id": "loop_mixed_50__0003__app_empty_state__alignment_bad_seed03"
+      },
+      {
+        "after_screenshot_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_deterministic/work/loop_mixed_50__0004__app_empty_state__alignment_bad_seed04/deterministic_patch/render/screenshot.png",
+        "before_screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/alignment_bad_seed04/screenshot.png",
+        "corruption_type": "alignment",
+        "critic_delta": 0.14,
+        "difficulty": "hard",
+        "patch_failure_reason": null,
+        "patch_mode": "deterministic_patch",
+        "patch_success": true,
+        "skip_reason": null,
+        "skipped": false,
+        "task_id": "loop_mixed_50__0004__app_empty_state__alignment_bad_seed04"
+      }
+    ]
+  },
+  "holdout_status_breakdown": {
+    "holdout_template": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 16
+    },
+    "train_template_overlap": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 34
+    }
+  },
+  "instruction_only_artifact_count": 0,
+  "issue_reduction_by_type": {
+    "alignment": 12,
+    "contrast": 13,
+    "hierarchy": 12,
+    "spacing": 13
+  },
+  "issue_type_breakdown": {
+    "alignment": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 12
+    },
+    "contrast": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 13
+    },
+    "hierarchy": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 12
+    },
+    "spacing": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 13
+    }
+  },
+  "manual_patch_success_rate": null,
+  "manual_review": {
+    "critic_vs_human_agreement": null,
+    "deterministic_metric_vs_human_agreement": null,
+    "label_count": 0,
+    "labels_available": false,
+    "patch_win_rate_by_human_preference": null,
+    "skipped_reason": "no manual review labels provided"
+  },
+  "mean_critic_delta": 0.14,
+  "mean_critic_delta_non_oracle": 0.14,
+  "mean_critic_delta_oracle": 0.0,
+  "median_critic_delta": 0.14,
+  "metrics_confidence_breakdown": {
+    "medium": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 50
+    }
+  },
+  "no_op_success_rate": 0.0,
+  "non_oracle_task_count": 50,
+  "noop_baseline": {
+    "false_improvement_detected": false,
+    "mean_critic_delta": 0.0,
+    "median_critic_delta": 0.0,
+    "success_rate": 0.0,
+    "task_count": 50
+  },
+  "oracle_task_count": 0,
+  "oracle_upper_bound_success_rate": 0.0,
+  "output_dir": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_mixed_deterministic",
+  "pair_family_breakdown": {
+    "original_vs_corrupted": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 50
+    }
+  },
+  "passed_closed_loop_gate": true,
+  "passed_closed_loop_gate_uses_non_oracle_only": true,
+  "patch_mode": "deterministic_patch",
+  "patch_mode_breakdown": {
+    "deterministic_patch": 50,
+    "no_op": 50
+  },
+  "patch_mode_diagnostics": {
+    "deterministic_patch": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 50
+    },
+    "no_op": {
+      "mean_critic_delta": 0.0,
+      "success_rate": 0.0,
+      "task_count": 50
+    }
+  },
+  "preference_report": "reports/ui_jepa_v0_smoke/preference_critic_report.json",
+  "recommended_next_stage": "run_manual_codex_patch_workflow_on_selected_mixed_and_hard_tasks",
+  "responsive_regression_rate": 0.0,
+  "responsive_regression_rate_non_oracle": 0.0,
+  "runtime_seconds": 40.3877,
+  "schema_validation_errors": [],
+  "schema_version": "ui_loop_v0_report_v1",
+  "set_name": "loop_mixed_50",
+  "severity_breakdown": {
+    "high": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 13
+    },
+    "low": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 37
+    }
+  },
+  "skipped_task_count": 0,
+  "special_subsets": {
+    "close_severity": {
+      "mean_critic_delta": 0.0,
+      "success_rate": 0.0,
+      "task_count": 0
+    },
+    "cross_issue": {
+      "mean_critic_delta": 0.0,
+      "success_rate": 0.0,
+      "task_count": 0
+    },
+    "high_critic_confidence": {
+      "mean_critic_delta": 0.0,
+      "success_rate": 0.0,
+      "task_count": 0
+    },
+    "holdout_template": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 16
+    },
+    "low_critic_confidence": {
+      "mean_critic_delta": 0.0,
+      "success_rate": 0.0,
+      "task_count": 0
+    },
+    "metrics_ambiguous": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 50
+    }
+  },
+  "success_rate": 1.0,
+  "synthetic_local": true,
+  "task_count": 50,
+  "train_overlap_breakdown": {
+    "False": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 16
+    },
+    "True": {
+      "mean_critic_delta": 0.14,
+      "success_rate": 1.0,
+      "task_count": 34
+    }
+  },
+  "valid": true
+}
