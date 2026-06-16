@@ -1102,9 +1102,17 @@ This JSON is then converted into a Codex/Claude/ChatGPT work contract.
 7. Train B0 frozen DINOv2/SigLIP + ranking head.
 8. Train M1 random-mask screenshot JEPA.
 9. Train M2 semantic-region screenshot JEPA.
-10. Compare M1/M2/B0 on pairwise ranking, issue detection, region retrieval.
-11. Add DOM late fusion only if M2 is promising.
-12. Run a 20-page closed-loop test before scaling.
+10. Run M2.5 diagnostics and controlled stronger M2 ablations to compare M1/M2/stronger M2/B0/metrics on pairwise ranking, corruption/severity probes, original-vs-corrupted detection, and region-neighbor metadata.
+11. Add DOM late fusion only if M2.5 shows useful representation signal and does not merely prove non-collapse.
+12. If M2.5 remains near chance or metrics-only dominates, harden dataset labels or add a preference-aligned objective before DOM-aware work.
+13. Run a 20-page closed-loop test before scaling.
+
+Current Phase 3A update for the local smoke corpus:
+
+- Manual CUDA M2-strong closes the undertraining hypothesis for this corpus: the run is valid/non-collapsed but remains near chance.
+- Preference Critic v0 is the active path. It uses synthetic/local UI preference labels, deterministic metrics/design-token/region features, optional frozen embeddings, issue heads, hard-subset evaluation, and region-grounded critique JSON.
+- Current ablations show metrics dominate and JEPA features do not add value, so DOM-aware JEPA remains blocked.
+- The next useful evidence is closed-loop frontend patch evaluation with the synthetic/local critic, plus dataset-label hardening if hard subsets regress.
 
 ---
 
@@ -1113,7 +1121,7 @@ This JSON is then converted into a Codex/Claude/ChatGPT work contract.
 Proceed to a larger UI-JEPA only if:
 
 ```text
-M2 or M3 > B0 by meaningful margin on UI-specific downstream tasks
+M2.5 or M3 > B0 by meaningful margin on UI-specific downstream tasks
 AND
 critic-guided closed-loop frontend edits beat no-critic baseline
 AND
@@ -1135,4 +1143,3 @@ DATASET_SPEC.md
 MODEL_EXPERIMENTS.md
   exact configs for B0/M1/M2/M3, training commands, metrics, and acceptance thresholds.
 ```
-

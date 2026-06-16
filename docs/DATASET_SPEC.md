@@ -261,6 +261,52 @@ M2 uses the same screen records and screenshot normalization as M1, plus `region
 - If a screen has no valid semantic region for the active patch grid, the sampler explicitly emits an M1-compatible random-block fallback mask with a fallback reason.
 - M2 reports target region type counts, fallback rate, average target area ratio, and split-level region coverage. No schema change is required for the current `regions.jsonl`.
 
+## M2.5 Diagnostic Inputs
+
+M2.5 does not require new dataset files. It reuses:
+
+- M1/M2 persisted frozen embeddings from each run's `probe/embeddings.jsonl`.
+- `manifest.jsonl` for split, original/corrupted, template, and metrics paths.
+- `pairs.jsonl` for corruption type, severity, pair family, and original-vs-corrupted pair-side labels.
+- `regions.jsonl` for per-screen region-type metadata used in nearest-neighbor retrieval summaries.
+- `design_tokens.jsonl` and `metrics.json` for the deterministic metrics-only diagnostic baseline.
+
+The canonical report path is:
+
+```bash
+uv run ui-jepa-m25-ablation data/processed/ui_jepa_v0_smoke \
+  --out checkpoints/ui_jepa_m25 \
+  --report-out reports/ui_jepa_v0_smoke/m25_diagnostics_report.json \
+  --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
+  --m1-report reports/ui_jepa_v0_smoke/m1_report.json \
+  --m2-report reports/ui_jepa_v0_smoke/m2_report.json
+```
+
+## `ui_preference_v0`
+
+Purpose: build the first offline-testable synthetic/local UI preference critic after M2/M2-strong showed no preference value.
+
+Default output:
+
+```text
+data/processed/ui_preference_v0/
+  screens.jsonl
+  pairs.jsonl
+  summary.json
+```
+
+`screens.jsonl` contains one row per smoke screen with `screen_id`, split, source/template group, deterministic metrics features, design-token features, semantic-region summary features, optional embedding references for DINOv2/M1/M2/M2-strong, and `schema_version: ui_preference_v0_screen_v1`.
+
+`pairs.jsonl` contains one row per pair with `pair_id`, left/right/preferred screen IDs, pair family, corruption type, severity, difficulty, `left_is_preferred`, split, synthetic label provenance, and `schema_version: ui_preference_v0_pair_v1`.
+
+Build locally:
+
+```bash
+uv run ui-preference-dataset-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_preference_v0
+```
+
+Expensive embeddings are never generated automatically by this dataset build. Missing feature groups are marked unavailable with manual commands in `summary.json`.
+
 ## Validation Tests
 
 Required dataset validation:

@@ -1,7 +1,7 @@
 # UI-JEPA Model Experiments
 
 Source plan: `docs/ui_jepa_dataset_model_plan.md`.  
-Status: v0 experiment contract with Phase 0.5 smoke benchmark sanity checks plus M1 random-block and M2 semantic-region screenshot JEPA baselines. The current repository implements local microtraining, positive pretraining scaffolds, a metrics-only baseline, an offline-safe B0 report path, and M1/M2 train/probe/report CLIs. DOM-aware M3 remains blocked until B0, M1, and M2 reports are valid and comparable.
+Status: v0 experiment contract with Phase 0.5 smoke benchmark sanity checks plus M1 random-block, M2 semantic-region screenshot JEPA baselines, and M2.5 representation diagnostics. The current repository implements local microtraining, positive pretraining scaffolds, a metrics-only baseline, an offline-safe B0 report path, M1/M2 train/probe/report CLIs, and an M2.5 ablation/diagnostic CLI. DOM-aware M3 remains blocked until B0, M1, M2, and M2.5 reports show useful representation evidence.
 
 ## Decision Gate
 
@@ -14,7 +14,7 @@ Do not scale UI-JEPA past local smoke work unless all of the following are true:
 - B0 validation lift over the best constant baseline is positive.
 - No severe leakage warnings are present.
 
-M1 random-mask screenshot JEPA is the first trainable baseline after this gate. M2 semantic-region screenshot JEPA is implemented and must be run before DOM-aware work. The Phase 2 gate blocks DOM-aware JEPA unless B0 is valid, M1 is valid and non-collapsed, M2 exists, M2 is non-collapsed, and M2 comparison against M1/B0/metrics exists. Later scale decisions must also compare M1/M2/M3 on UI-specific downstream tasks, closed-loop critic-guided edits, and region-grounded critique output.
+M1 random-mask screenshot JEPA is the first trainable baseline after this gate. M2 semantic-region screenshot JEPA is implemented and must be run before DOM-aware work. M2.5 diagnoses whether M1/M2 failed from undertraining/model scale, weak masking, objective mismatch, or a metrics-driven synthetic benchmark. The Phase 2 gate blocks DOM-aware JEPA unless B0 is valid, M1 is valid and non-collapsed, M2 exists, M2 is non-collapsed, M2 comparison against M1/B0/metrics exists, and M2.5 finds useful representation signal with a DOM-aware recommendation. `reports/ui_jepa_v0_smoke/m2_strong_report.json`, when present and valid, is treated as externally/manual-produced strong M2 evidence. Later scale decisions must also compare M1/M2/M3 on UI-specific downstream tasks, closed-loop critic-guided edits, and region-grounded critique output.
 
 ## Common Inputs
 
@@ -194,6 +194,89 @@ Interpretation rules:
 - M2 near chance but non-collapsed: semantic masking alone is insufficient at this model/data scale; improve masking, target selection, probe features, or model capacity before relying on DOM-aware results.
 - M2 > M1 but < B0: proceed to stronger M2 or DOM-aware probes while keeping B0 as the reference.
 - M2 > B0: audit the benchmark for shortcuts before trusting the result.
+
+## M2.5: Representation Diagnosis And Stronger M2 Validation
+
+Purpose: turn non-collapsed near-chance M1/M2 results into actionable evidence before any DOM-aware work.
+
+Diagnostics:
+
+- Frozen embedding probes for original-vs-corrupted detection, corruption type classification, severity bucket classification, and severity regression.
+- Pair-side original-vs-corrupted detection with split-wise and pair-family/corruption/difficulty/severity grouped summaries.
+- Nearest-neighbor metadata for same template, same corruption type, originalness, and region-type overlap/retrieval.
+- Metrics-only diagnostic probes from local `metrics.json` plus smoke design-token fields.
+- DINOv2 comparison through the existing B0 preference report; DINOv2 diagnostic probes require a persisted B0 embedding export and are otherwise marked unavailable rather than inferred.
+
+Stronger M2 configs:
+
+```text
+tiny CPU smoke: image_size=64, embedding_dim=32, epochs=1, --smoke
+local CUDA default: image_size=128, embedding_dim=128, epochs=20, target_regions=2
+area/count sweep: image_size=128, embedding_dim=128, target_regions=3, max_region_area_ratio=0.55
+feasible larger probe: image_size=224, embedding_dim=256, predictor_hidden_dim=512, transformer_layers=3
+```
+
+The ablation runner auto-reduces batch size on CUDA/VRAM failures and records the exact failed batch/config/error in the report.
+
+Current implementation:
+
+- `uv run ui-jepa-m25-ablation data/processed/ui_jepa_v0_smoke --out checkpoints/ui_jepa_m25 --report-out reports/ui_jepa_v0_smoke/m25_diagnostics_report.json --b0-report reports/ui_jepa_v0_smoke/b0_report.json --m1-report reports/ui_jepa_v0_smoke/m1_report.json --m2-report reports/ui_jepa_v0_smoke/m2_report.json --device cuda --stronger-epochs 20`
+- Existing manual strong reports can be registered without retraining: `uv run ui-jepa-m25-ablation data/processed/ui_jepa_v0_smoke --out checkpoints/ui_jepa_m25 --report-out reports/ui_jepa_v0_smoke/m25_diagnostics_report.json --b0-report reports/ui_jepa_v0_smoke/b0_report.json --m1-report reports/ui_jepa_v0_smoke/m1_report.json --m2-report reports/ui_jepa_v0_smoke/m2_report.json --m2-strong-report reports/ui_jepa_v0_smoke/m2_strong_report.json --skip-stronger-m2`
+- Use `--skip-stronger-m2` for offline report-only diagnostics and `--smoke --stronger-epochs 1 --device cpu` for CI.
+- The report compares M1, M2, stronger M2 runs, B0 DINOv2 preference accuracy, and metrics-only preference/diagnostic baselines.
+- Current authoritative strong M2 evidence was run manually by the user on CUDA with `image_size=128`, `embedding_dim=128`, and 20 epochs. It is valid/non-collapsed, but the preference probe remains near chance with test accuracy about `0.4977`, no improvement over M1, and metrics-only still dominates.
+- This closes the undertraining hypothesis for the current smoke corpus. Future CUDA training should be manual-user-run and registered through reports; it is not required inside the Codex sandbox.
+
+Interpretation rules:
+
+- JEPA loss improves but diagnostic/preference probes remain chance: objective is likely not aligned.
+- Diagnostic probes work but preference probe fails: preference labels are likely metrics/style-specific or too synthetic.
+- All diagnostic probes fail: model scale, masking, or training is insufficient.
+- Stronger M2 improves over M1/M2: continue stronger M2 and only then consider DOM-aware probes.
+- Metrics-only dominates all learned representations: harden dataset/labels or change the objective before taste research claims.
+- Manual strong M2 is valid/non-collapsed but still near chance: do not proceed to DOM-aware JEPA from non-collapse alone; harden the dataset and add a preference-aligned critic/objective first.
+
+Gate:
+
+- DOM-aware JEPA is not recommended merely because M2 is valid and non-collapsed.
+- `ui-jepa-scale-gate` requires `--m25-report`; DOM-aware readiness requires useful M2.5 representation signal and a DOM-aware recommendation in that report.
+
+## Phase 3A: Synthetic Preference Critic v0
+
+Purpose: build a useful local UI preference critic before returning to architecture work.
+
+Current command flow:
+
+```bash
+uv run ui-preference-dataset-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_preference_v0
+uv run ui-preference-critic-eval data/processed/ui_preference_v0 \
+  --out reports/ui_jepa_v0_smoke/preference_critic \
+  --report-out reports/ui_jepa_v0_smoke/preference_critic_report.json \
+  --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
+  --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json
+uv run ui-preference-critic-review data/processed/ui_preference_v0 \
+  --report reports/ui_jepa_v0_smoke/preference_critic_report.json \
+  --out reports/ui_jepa_v0_smoke/preference_critic_review.json \
+  --limit 3
+```
+
+The critic trains deterministic CPU logistic-ranking heads over feature groups: metrics, design tokens, semantic regions, DINOv2 when embeddings are available, M1, M2, M2-strong, and combinations. Missing expensive embeddings are skipped with manual commands instead of generated inside Codex.
+
+Current evidence:
+
+- Best feature group: `metrics`.
+- Full test accuracy: about `0.9014` on the synthetic/local smoke preference pairs.
+- Hard test accuracy: about `0.8786`.
+- M2-strong-only test accuracy is about `0.5399`, below metrics and not enough to justify JEPA architecture work.
+- DINOv2 screen embeddings are currently missing as reusable `screen_id` JSONL, so DINOv2 feature groups are skipped until the manual export is run.
+- Region-grounded critique JSON is rule/template-based and uses synthetic/local issue provenance. Do not call this human taste.
+
+Decision:
+
+- JEPA features do not add measurable value for this corpus.
+- Metrics still dominate, so DOM-aware JEPA remains blocked.
+- Freeze JEPA architecture work for this corpus unless future feature ablations show clear M1/M2/M2-strong lift.
+- Closed-loop frontend patch evaluation may proceed with this synthetic/local critic when the gate reports `closed_loop_ready: true`.
 
 ## M3: DOM-Aware Late Fusion JEPA
 

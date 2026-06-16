@@ -17,6 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dataset", default="data/processed/ui_jepa_v0_smoke")
     parser.add_argument("--b0-report", default="reports/ui_jepa_v0_smoke/b0_report.json")
+    parser.add_argument("--m1-report", default=None)
+    parser.add_argument("--m2-report", default=None)
+    parser.add_argument("--m2-strong-report", default=None)
+    parser.add_argument("--m25-report", default=None)
+    parser.add_argument("--preference-critic-report", default=None)
     parser.add_argument("--out", help="Optional path to write the gate result JSON.")
     return parser
 
@@ -24,7 +29,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    result = check_ui_jepa_scaling_gate(Path(args.dataset), Path(args.b0_report))
+    result = check_ui_jepa_scaling_gate(
+        Path(args.dataset),
+        Path(args.b0_report),
+        Path(args.m1_report) if args.m1_report else None,
+        Path(args.m2_report) if args.m2_report else None,
+        Path(args.m25_report) if args.m25_report else None,
+        Path(args.m2_strong_report) if args.m2_strong_report else None,
+        Path(args.preference_critic_report) if args.preference_critic_report else None,
+    )
     if args.out:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -36,3 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("UI-JEPA scaling gate passed.")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

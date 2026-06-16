@@ -93,6 +93,7 @@ class UiJepaSmokeB0Config:
     hidden_dim: int = 16
     learning_rate: float = 0.05
     allow_dummy: bool = True
+    export_embeddings: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -527,6 +528,13 @@ def run_ui_jepa_b0_baseline(
 
     image_paths = sorted({Path(str(record["screenshot_path"])) for record in manifest}, key=str)
     embeddings = encoder.encode(image_paths)
+    if config.export_embeddings is not None:
+        rows = []
+        for record in sorted(manifest, key=lambda item: str(item["screen_id"])):
+            vector = embeddings.get(str(record["screenshot_path"]))
+            if vector is not None:
+                rows.append({"screen_id": record["screen_id"], "model": encoder.backend, "embedding": vector})
+        _write_jsonl(config.export_embeddings.expanduser().resolve(), rows)
     manifest_by_id = {record["screen_id"]: record for record in manifest}
     examples = _b0_examples(pairs, embeddings, manifest_by_id)
     head = _TinyMlpRanker(input_dim=len(examples[0]["features"]) if examples else 1, hidden_dim=config.hidden_dim, seed=config.seed)
@@ -601,12 +609,26 @@ def run_ui_jepa_b0_baseline(
     return UiJepaSmokeB0Result(output_dir, report_json_path, report_md_path, report)
 
 
-def check_ui_jepa_scaling_gate(dataset_dir: Path, b0_report: Path, m1_report: Path | None = None) -> dict[str, Any]:
+def check_ui_jepa_scaling_gate(
+    dataset_dir: Path,
+    b0_report: Path,
+    m1_report: Path | None = None,
+    m2_report: Path | None = None,
+    m25_report: Path | None = None,
+    m2_strong_report: Path | None = None,
+    preference_critic_report: Path | None = None,
+) -> dict[str, Any]:
     dataset_dir = dataset_dir.expanduser().resolve()
     b0_report = b0_report.expanduser().resolve()
     m1_report = m1_report.expanduser().resolve() if m1_report is not None else None
+    m2_report = m2_report.expanduser().resolve() if m2_report is not None else None
+    m25_report = m25_report.expanduser().resolve() if m25_report is not None else None
+    m2_strong_report = _resolve_m2_strong_gate_report(m2_strong_report, m2_report, m25_report)
+    preference_critic_report = preference_critic_report.expanduser().resolve() if preference_critic_report is not None else None
     errors: list[str] = []
     m2_errors: list[str] = []
+    dom_errors: list[str] = []
+    critic_errors: list[str] = []
     validation = build_ui_jepa_smoke_validation(dataset_dir)
     if not validation["valid"]:
         errors.append("canonical smoke dataset validation failed")
@@ -649,27 +671,236 @@ def check_ui_jepa_scaling_gate(dataset_dir: Path, b0_report: Path, m1_report: Pa
             m2_errors.append("M1 frozen probe report is missing")
         if not (m1.get("b0_comparison") or {}).get("available"):
             m2_errors.append("M1-vs-B0 comparison is missing")
+    m2 = {}
+    m2_strong = {}
+    m2_strong_evidence = {"available": False}
+    if m2_report is None:
+        dom_errors.append("M2 report is missing; pass --m2-report reports/ui_jepa_v0_smoke/m2_report.json")
+    elif not m2_report.is_file():
+        dom_errors.append(f"M2 report is missing: {m2_report}")
+    else:
+        m2 = json.loads(m2_report.read_text(encoding="utf-8"))
+        if not m2.get("valid_m2_baseline"):
+            dom_errors.append("M2 report is not a valid semantic-region baseline")
+        if not (m2.get("collapse_diagnostics") or {}).get("valid"):
+            dom_errors.append("M2 embeddings are collapsed or collapse diagnostics are missing")
+        if not (m2.get("probe") or {}).get("available"):
+            dom_errors.append("M2 frozen probe report is missing")
+        comparison = m2.get("comparison") or {}
+        if not comparison.get("valid"):
+            dom_errors.append("M2 comparison against M1/B0/metrics is missing or invalid")
+    if m2_strong_report is not None:
+        m2_strong = json.loads(m2_strong_report.read_text(encoding="utf-8"))
+        m2_strong_evidence = _m2_strong_gate_evidence(m2_strong_report, m2_strong)
+        if not m2_strong_evidence["valid"]:
+            dom_errors.append(f"M2 strong report is present but not valid evidence: {m2_strong_report}")
+    m25 = {}
+    if m25_report is None:
+        dom_errors.append("M2.5 diagnostics report is missing; pass --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json")
+    elif not m25_report.is_file():
+        dom_errors.append(f"M2.5 diagnostics report is missing: {m25_report}")
+    else:
+        m25 = json.loads(m25_report.read_text(encoding="utf-8"))
+        if not m25.get("useful_representation_signal"):
+            dom_errors.append("M2.5 did not find useful representation signal; do not start DOM-aware JEPA from non-collapse alone")
+        if not m25.get("dom_aware_recommended"):
+            dom_errors.append(f"M2.5 recommendation does not support DOM-aware JEPA: {m25.get('recommended_decision')}")
+    critic = {}
+    if preference_critic_report is None:
+        pass
+    elif not preference_critic_report.is_file():
+        critic_errors.append(f"preference critic report is missing: {preference_critic_report}")
+    else:
+        critic = json.loads(preference_critic_report.read_text(encoding="utf-8"))
+        if not critic.get("valid"):
+            critic_errors.append("preference critic report is not valid")
+        if not critic.get("critique_json_examples"):
+            critic_errors.append("preference critic report has no critique JSON examples")
+        hard = ((critic.get("hard_subset_metrics") or {}).get("hard_test") or {})
+        baseline = ((critic.get("full_test_metrics") or {}).get("best_constant_accuracy"))
+        hard_acc = hard.get("pairwise_accuracy")
+        if not hard.get("available"):
+            critic_errors.append("preference critic hard-subset evaluation is missing")
+        elif not (isinstance(hard_acc, int | float) and isinstance(baseline, int | float) and hard_acc >= baseline + 0.02):
+            critic_errors.append("preference critic hard-subset lift is below the closed-loop margin")
+        if not _issue_heads_have_signal_or_skip_reasons(critic.get("issue_heads") or {}):
+            critic_errors.append("preference critic issue heads need non-trivial signal or explicit skipped reasons")
+    closed_loop_ready = preference_critic_report is not None and not errors and not m2_errors and not critic_errors
+    dom_aware_ready = (
+        not errors
+        and not m2_errors
+        and not dom_errors
+        and bool(critic.get("valid"))
+        and (bool(critic.get("jepa_features_add_value")) or "dom" in str((critic.get("decisions") or {}).get("recommended_next_stage", "")).lower())
+    )
     return {
         "schema_version": "ui_jepa_scaling_gate_v1",
-        "allowed": not errors and not m2_errors,
-        "errors": errors + m2_errors,
+        "allowed": dom_aware_ready,
+        "errors": errors + m2_errors + dom_errors + critic_errors,
         "phase_0_5_allowed": not errors,
         "m2_ready": not errors and not m2_errors,
+        "dom_aware_ready": dom_aware_ready,
+        "closed_loop_ready": closed_loop_ready,
         "m1_report": str(m1_report) if m1_report is not None else None,
+        "m2_report": str(m2_report) if m2_report is not None else None,
+        "m2_strong_report": str(m2_strong_report) if m2_strong_report is not None else None,
+        "m2_strong_evidence": m2_strong_evidence,
+        "m25_report": str(m25_report) if m25_report is not None else None,
+        "preference_critic_report": str(preference_critic_report) if preference_critic_report is not None else None,
+        "preference_critic_ready": preference_critic_report is not None and not critic_errors,
         "next_command": (
+            "uv run ui-preference-dataset-build data/processed/ui_jepa_v0_smoke --out data/processed/ui_preference_v0 && "
+            "uv run ui-preference-critic-eval data/processed/ui_preference_v0 --report-out reports/ui_jepa_v0_smoke/preference_critic_report.json"
+            if not errors and not m2_errors and not dom_errors and critic_errors
+            else (
+            "uv run ui-jepa-m25-ablation "
+            f"{dataset_dir} --out checkpoints/ui_jepa_m25 --report-out reports/ui_jepa_v0_smoke/m25_diagnostics_report.json "
+            "--b0-report reports/ui_jepa_v0_smoke/b0_report.json --m1-report reports/ui_jepa_v0_smoke/m1_report.json "
+            "--m2-report reports/ui_jepa_v0_smoke/m2_report.json --device cuda"
+            if not errors and not m2_errors and (m25_report is None or not m25_report.is_file())
+            else (
+            "Do not start DOM-aware JEPA; harden dataset labels or add a preference-aligned objective, then rerun ui-jepa-m25-ablation."
+            if not errors and not m2_errors and dom_errors
+            else (
+            "uv run ui-jepa-m2-train "
+            f"{dataset_dir} --out checkpoints/ui_jepa_m2 --report-out reports/ui_jepa_v0_smoke/m2_report.json "
+            "--b0-report reports/ui_jepa_v0_smoke/b0_report.json --m1-report reports/ui_jepa_v0_smoke/m1_report.json"
+            if not errors and not m2_errors
+            else (
             "uv run ui-jepa-m1-train "
             f"{dataset_dir} --out checkpoints/ui_jepa_m1 --report-out reports/ui_jepa_v0_smoke/m1_report.json "
             "--b0-report reports/ui_jepa_v0_smoke/b0_report.json"
             if not errors
             else "uv run ui-jepa-smoke-b0 "
             f"{dataset_dir} --out reports/ui_jepa_v0_smoke --backend dinov2"
+            )
+            )
+            )
+            )
         ),
         "blocked_stages": (
-            ["M1_random_mask_jepa", "M2_semantic_mask_jepa"]
+            ["M1_random_mask_jepa", "M2_semantic_mask_jepa", "preference_critic", "closed_loop_frontend_eval", "DOM_aware_jepa"]
             if errors
-            else (["M2_semantic_mask_jepa"] if m2_errors else [])
+            else (
+                ["M2_semantic_mask_jepa", "preference_critic", "closed_loop_frontend_eval", "DOM_aware_jepa"]
+                if m2_errors
+                else ((["closed_loop_frontend_eval"] if critic_errors else []) + (["DOM_aware_jepa"] if not dom_aware_ready else []))
+            )
         ),
+        "recommendation": _scale_gate_recommendation(m2, m25, m2_strong_evidence, critic),
     }
+
+
+def _resolve_m2_strong_gate_report(
+    explicit_report: Path | None,
+    m2_report: Path | None,
+    m25_report: Path | None,
+) -> Path | None:
+    candidates = []
+    if explicit_report is not None:
+        candidates.append(explicit_report.expanduser())
+    if m2_report is not None:
+        candidates.append(m2_report.parent / "m2_strong_report.json")
+    if m25_report is not None:
+        candidates.append(m25_report.parent / "m2_strong_report.json")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def _m2_strong_gate_evidence(path: Path, report: dict[str, Any]) -> dict[str, Any]:
+    model_config = report.get("model_config") or {}
+    command = str((report.get("commands") or {}).get("train") or "")
+    test_accuracy = ((((report.get("probe") or {}).get("splits") or {}).get("test") or {}).get("pairwise_accuracy"))
+    valid = bool(
+        report.get("valid_m2_baseline")
+        and (report.get("collapse_diagnostics") or {}).get("valid")
+        and (report.get("probe") or {}).get("available")
+        and (report.get("comparison") or {}).get("valid")
+    )
+    return {
+        "available": True,
+        "report_path": str(path),
+        "valid": valid,
+        "manual_external": True,
+        "collapse_valid": (report.get("collapse_diagnostics") or {}).get("valid"),
+        "test_accuracy": test_accuracy,
+        "near_chance": isinstance(test_accuracy, int | float) and abs(float(test_accuracy) - 0.5) <= 0.03,
+        "metrics_only_still_dominates": (report.get("comparison") or {}).get("metrics_only_still_dominates"),
+        "config": {
+            "image_size": model_config.get("image_size"),
+            "embedding_dim": model_config.get("embedding_dim"),
+            "epochs": _extract_cli_int(command, "--epochs"),
+            "device": "cuda" if "--device cuda" in command else None,
+        },
+    }
+
+
+def _extract_cli_int(command: str, flag: str) -> int | None:
+    parts = command.split()
+    try:
+        index = parts.index(flag)
+    except ValueError:
+        return None
+    if index + 1 >= len(parts):
+        return None
+    try:
+        return int(parts[index + 1])
+    except ValueError:
+        return None
+
+
+def _issue_heads_have_signal_or_skip_reasons(issue_heads: dict[str, Any]) -> bool:
+    if not issue_heads:
+        return False
+    for issue, result in issue_heads.items():
+        if result.get("available"):
+            test = ((result.get("splits") or {}).get("test") or {})
+            if isinstance(test.get("f1"), int | float) and float(test["f1"]) > 0.0:
+                continue
+            return False
+        if not result.get("skipped_reason"):
+            return False
+    return True
+
+
+def _scale_gate_recommendation(
+    m2_report: dict[str, Any],
+    m25_report: dict[str, Any] | None = None,
+    m2_strong_evidence: dict[str, Any] | None = None,
+    preference_critic_report: dict[str, Any] | None = None,
+) -> str:
+    if not m2_report:
+        return "Train and validate M2 before starting DOM-aware JEPA."
+    if not m2_report.get("valid_m2_baseline"):
+        return "Fix M2 collapse, masking, or frozen-probe validity before DOM-aware JEPA."
+    if not m25_report:
+        return "Run M2.5 diagnostics and a stronger controlled M2 attempt before DOM-aware JEPA."
+    if preference_critic_report and preference_critic_report.get("valid"):
+        decision = (preference_critic_report.get("decisions") or {}).get("recommended_next_stage") or preference_critic_report.get("recommended_next_stage")
+        if not preference_critic_report.get("jepa_features_add_value"):
+            return f"Preference critic is valid but JEPA features do not add value; keep DOM-aware JEPA blocked and follow next stage: {decision}."
+        return f"Preference critic is valid and reports JEPA feature value; DOM-aware still requires concrete DOM-need evidence before implementation. Next stage: {decision}."
+    if (
+        m2_strong_evidence
+        and m2_strong_evidence.get("valid")
+        and m2_strong_evidence.get("near_chance")
+        and not m25_report.get("dom_aware_recommended")
+    ):
+        return (
+            "Manual strong M2 evidence is valid and non-collapsed but remains near chance "
+            f"(test accuracy {m2_strong_evidence.get('test_accuracy')}); metrics-only still dominates, "
+            "so DOM-aware JEPA stays blocked. Next step: preference-aligned critic/dataset hardening."
+        )
+    if not m25_report.get("useful_representation_signal"):
+        return "M2.5 remains near chance on representation diagnostics; harden dataset labels or change the objective before DOM-aware JEPA."
+    if not m25_report.get("dom_aware_recommended"):
+        return f"M2.5 found some signal but recommends {m25_report.get('recommended_decision')}; do not start DOM-aware JEPA yet."
+    test_accuracy = (((m2_report.get("probe") or {}).get("splits") or {}).get("test") or {}).get("pairwise_accuracy")
+    if isinstance(test_accuracy, int | float) and abs(float(test_accuracy) - 0.5) <= 0.03:
+        return "M2 is near chance but M2.5 found useful signal; continue only with the M2.5-supported next stage."
+    return "M2 is valid for comparison; DOM-aware JEPA may proceed only with the same split and baseline controls."
 
 
 class DummyVisionEncoder:

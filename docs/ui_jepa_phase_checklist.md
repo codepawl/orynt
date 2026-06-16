@@ -12,7 +12,7 @@ Legend:
 
 ## Current Shape
 
-The repository is in a local-first bootstrap state. It has a render harness, deterministic UI metrics, synthetic jitter datasets, human/auto label plumbing, hard preference pairs, a tiny Pawl-JEPA microtraining scaffold, a positive-only UI corpus path, a Phase 0.5 smoke benchmark sanity gate, and M1/M2 screenshot-only JEPA baselines. It does not yet implement the canonical research-scale UI-JEPA dataset, DOM-aware JEPA, critique JSON heads, or closed-loop frontend patch evaluation.
+The repository is in a local-first bootstrap state. It has a render harness, deterministic UI metrics, synthetic jitter datasets, human/auto label plumbing, hard preference pairs, a tiny Pawl-JEPA microtraining scaffold, a positive-only UI corpus path, a Phase 0.5 smoke benchmark sanity gate, M1/M2 screenshot-only JEPA baselines, M2.5 diagnostics, and a synthetic/local UI preference critic v0. It does not yet implement the canonical research-scale UI-JEPA dataset, DOM-aware JEPA, or closed-loop frontend patch evaluation.
 
 ## Phase -1: Modification And Stabilization
 
@@ -26,7 +26,7 @@ This phase exists because the current codebase is useful but not in the final sh
 - [x] Fail positive pretraining clearly when the train split is empty.
 - [x] Add `DATASET_SPEC.md` with exact canonical schemas, extraction scripts, split logic, corruption operators, and validation tests.
 - [x] Add `MODEL_EXPERIMENTS.md` with exact B0/M1/M2/M3 configs, metrics, commands, and acceptance thresholds.
-- [x] Add an explicit gate that prevents DOM-aware UI-JEPA until B0/M1/M2 reports and comparisons exist.
+- [x] Add an explicit gate that prevents DOM-aware UI-JEPA until B0/M1/M2 reports, M2.5 diagnostics, and evidence-based comparisons exist.
 
 ## Phase 0: Dataset And Evaluation Harness
 
@@ -65,8 +65,8 @@ Goal from plan: no large model training beyond baselines; prove the dataset/eval
 - [x] B0 reports use Wilson score confidence intervals and include a deterministic metrics-only baseline.
   Evidence: `reports/ui_jepa_v0_smoke/b0_report.json`.
 - [ ] 5K-10K mixed-source samples are not present.
-- [x] A real frozen-weight DINOv2 B0 report is present in this workspace and passes the scale gate.
-  Evidence: `reports/ui_jepa_v0_smoke/b0_report.json` has `real_weights: true` and `valid_for_model_selection: true`; `reports/ui_jepa_v0_smoke/scale_gate.json` has `allowed: true`.
+- [x] A real frozen-weight DINOv2 B0 report is present in this workspace and passes the Phase 0.5 checks.
+  Evidence: `reports/ui_jepa_v0_smoke/b0_report.json` has `real_weights: true` and `valid_for_model_selection: true`.
 
 ## Phase 1: Screenshot-Only JEPA
 
@@ -86,7 +86,12 @@ Goal from plan: compare random masking versus semantic region masking.
 - [x] Random-block mask sampling with target/context blocks is implemented for M1.
 - [x] Semantic region mask sampling is implemented for M2 with deterministic bbox-to-patch mapping and random-mask fallback.
 - [x] M1/M2/B0/metrics comparison reports are implemented for the smoke corpus.
-- [ ] Nearest-neighbor retrieval cluster analysis for UI meaning is not implemented.
+- [x] M2.5 representation diagnostics are implemented for corruption type, severity, original-vs-corrupted detection, pair-family grouped probe summaries, and nearest-neighbor region/template/corruption metadata.
+  Evidence: `packages/pawl_jepa/src/pawl_jepa/m25.py`, `ui-jepa-m25-ablation`.
+- [x] Stronger controlled M2 configs are implemented as local RTX-class ablations with batch-size auto-reduction, CPU smoke mode, and support for a manually produced strong M2 report.
+  Evidence: `ui-jepa-m25-ablation --stronger-epochs 20 --device cuda`, `--m2-strong-report reports/ui_jepa_v0_smoke/m2_strong_report.json`, and `--smoke`/`--skip-stronger-m2` options.
+- [x] M2 strong CUDA was run manually by the user and registered as the current strongest M2 evidence.
+  Evidence: `reports/ui_jepa_v0_smoke/m2_strong_report.json` uses `image_size=128`, `embedding_dim=128`, 20 epochs, and CUDA. It is valid/non-collapsed, but test accuracy is about `0.4977`, no better than M1, and metrics-only still dominates.
 
 ## Phase 2: DOM-Aware JEPA
 
@@ -94,7 +99,7 @@ Goal from plan: test whether DOM/view hierarchy improves critic performance.
 
 - [x] Raw DOM and accessibility artifacts are captured during render.
 - [~] Pawl-JEPA manifests retain DOM/accessibility paths for positive records.
-- [ ] DOM token encoding is not implemented. The scale gate now requires valid non-collapsed M2 plus M2-vs-M1-vs-B0-vs-metrics comparison before DOM-aware work.
+- [ ] DOM token encoding is not implemented. The scale gate now requires valid M1/M2 plus M2.5 useful representation signal and a DOM-aware recommendation before DOM-aware work.
 - [ ] Late-fusion DOM-aware JEPA is not implemented.
 - [ ] Cross-attention DOM fusion is not implemented.
 - [ ] Region issue localization evaluation is not implemented.
@@ -110,8 +115,13 @@ Goal from plan: make the model useful for frontend review.
   Evidence: `packages/pawl_jepa/src/pawl_jepa/evaluate.py`.
 - [~] Human-reviewed and auto-labeled provenance are represented separately.
 - [ ] Issue multilabel head for the full planned issue taxonomy is not implemented.
+- [x] Synthetic/local issue heads exist for spacing, contrast, alignment, and hierarchy with provenance recorded as synthetic.
+  Evidence: `reports/ui_jepa_v0_smoke/preference_critic_report.json`.
 - [ ] Quality regression head is not implemented.
-- [ ] Region-grounded critique adapter or JSON instruction generator is not implemented.
+- [x] Region-grounded critique JSON adapter exists as a deterministic rule/template scaffold.
+  Evidence: `ui-preference-critic-review`, `reports/ui_jepa_v0_smoke/preference_critic_review.json`.
+- [x] Feature ablations measure whether JEPA features add value instead of assuming they do.
+  Evidence: `ui-preference-critic-eval`; current report says metrics wins and JEPA features do not add value.
 - [ ] UICrit-style critique calibration corpus is not integrated.
 - [ ] Human preference evaluation beyond local labels is not implemented.
 
@@ -131,5 +141,7 @@ Goal from plan: prove real frontend value.
 1. Produce and validate `data/processed/ui_jepa_v0_smoke` from the existing local corruption dataset.
 2. Train M1 random-block screenshot JEPA and verify `m1_report.json` is valid, non-collapsed, and comparable to B0.
 3. Train M2 semantic-region screenshot JEPA and verify `m2_report.json` is valid, non-collapsed, and comparable to M1/B0/metrics.
-4. Current smoke M2 is non-collapsed but near chance, so improve masking/model scale before treating DOM-aware results as meaningful.
-5. Do not scale external datasets or train larger UI-JEPA variants until the decision rule in the source plan is satisfied.
+4. Treat the manual strong CUDA M2 run as closing the undertraining hypothesis for the current smoke corpus: stronger screenshot-only M2 is valid/non-collapsed but remains near chance and does not improve over M1.
+5. Do not require future CUDA training inside the Codex sandbox. Future CUDA runs should be manual-user-run and then registered through report files.
+6. Use the M2.5 decision: continue JEPA only with useful representation/preference signal; otherwise harden dataset labels or add a preference-aligned critic/objective before DOM-aware work.
+7. Use Preference Critic v0 as the next frontend-loop scaffold: metrics currently dominates, M2-strong adds no useful lift, DOM-aware JEPA remains blocked, and closed-loop patch evaluation is the next practical validation path.

@@ -1,0 +1,4320 @@
+{
+  "best_feature_group": "metrics",
+  "commands": {
+    "run": "/home/nxank4/Code/personal/codepawl/.venv/bin/ui-preference-critic-eval data/processed/ui_preference_v0 --out reports/ui_jepa_v0_smoke/preference_critic --report-out reports/ui_jepa_v0_smoke/preference_critic_report.json --b0-report reports/ui_jepa_v0_smoke/b0_report.json --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json --epochs 20"
+  },
+  "comparisons": {
+    "b0": {
+      "available": true,
+      "metrics_only_test_accuracy": 0.8591549295774648,
+      "real_weights": true,
+      "test_accuracy": 0.7652582159624414,
+      "val_accuracy": 0.7905982905982906,
+      "valid_for_model_selection": true
+    },
+    "m25": {
+      "available": true,
+      "recommended_decision": "change_objective_or_strengthen_training_before_dom_aware"
+    }
+  },
+  "config": {
+    "b0_report": "reports/ui_jepa_v0_smoke/b0_report.json",
+    "dataset_dir": "data/processed/ui_preference_v0",
+    "epochs": 20,
+    "learning_rate": 0.05,
+    "m25_report": "reports/ui_jepa_v0_smoke/m25_diagnostics_report.json",
+    "output_dir": "reports/ui_jepa_v0_smoke/preference_critic",
+    "report_out": "reports/ui_jepa_v0_smoke/preference_critic_report.json",
+    "seed": 42
+  },
+  "critique_json_examples": [
+    {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 2.95,
+              "contrast_checked_text_node_count": 19.0,
+              "contrast_issue_count": 15.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 3.7,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 0.0,
+              "heading_count": 1.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 59.2,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 16014.38,
+              "min_contrast_ratio": 1.39,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 900.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 28.0
+            }
+          },
+          "instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+          "region_id": "pricing_team_plan__contrast_bad_seed07__synthetic_contrast",
+          "region_type": "cta",
+          "severity": "medium",
+          "type": "contrast"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "pricing_team_plan__contrast_bad_seed07"
+    },
+    {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 2.79,
+              "contrast_checked_text_node_count": 19.0,
+              "contrast_issue_count": 15.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 3.7,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 0.0,
+              "heading_count": 1.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 59.2,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 16014.38,
+              "min_contrast_ratio": 1.59,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 900.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 28.0
+            }
+          },
+          "instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+          "region_id": "pricing_team_plan__contrast_bad_seed04__synthetic_contrast",
+          "region_type": "cta",
+          "severity": "medium",
+          "type": "contrast"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "pricing_team_plan__contrast_bad_seed04"
+    },
+    {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 3.15,
+              "contrast_checked_text_node_count": 19.0,
+              "contrast_issue_count": 15.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 3.7,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 0.0,
+              "heading_count": 1.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 59.2,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 16014.38,
+              "min_contrast_ratio": 1.49,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 900.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 28.0
+            }
+          },
+          "instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+          "region_id": "pricing_team_plan__contrast_bad_seed03__synthetic_contrast",
+          "region_type": "cta",
+          "severity": "medium",
+          "type": "contrast"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Restore accessible foreground/background contrast and CTA legibility.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "pricing_team_plan__contrast_bad_seed03"
+    }
+  ],
+  "dataset_counts": {
+    "pairs": 2162,
+    "screens": 990,
+    "splits": {
+      "test": 213,
+      "train": 1715,
+      "val": 234
+    }
+  },
+  "dataset_dir": "/home/nxank4/Code/personal/codepawl/data/processed/ui_preference_v0",
+  "decisions": {
+    "b0_test_accuracy": 0.7652582159624414,
+    "best_test_accuracy": 0.9014084507042254,
+    "dinov2_adds_value_over_metrics": false,
+    "jepa_best_test_accuracy": 0.539906103286385,
+    "jepa_features_add_value": false,
+    "metrics_still_dominate": true,
+    "metrics_test_accuracy": 0.9014084507042254,
+    "recommended_next_stage": "freeze_jepa_architecture_work_for_this_corpus"
+  },
+  "dinov2_adds_value_over_metrics": false,
+  "feature_groups": {
+    "all_available": {
+      "available": true,
+      "feature_dim": 964,
+      "groups": [
+        "metrics",
+        "design_tokens",
+        "regions",
+        "m1",
+        "m2",
+        "m2_strong"
+      ],
+      "splits": {
+        "test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 0.6923076923076923,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.9166666666666666,
+            "spacing": 0.7536231884057971
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7123287671232876,
+            "medium": 0.8629032258064516
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.7555555555555555,
+            "original_vs_corrupted": 0.8229166666666666,
+            "variant_vs_variant_mixed_corruption": 0.8611111111111112
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7785234899328859,
+            "visible": 0.7916666666666666
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.12427748741853047,
+          "confidence_interval_95": [
+            0.7646239979214325,
+            0.8671740020785818
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.31924882629107976,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.8215962441314554,
+          "roc_auc": 0.935505201904426
+        },
+        "train": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.8854166666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 0.9878048780487805,
+            "alignment_vs_spacing": 0.9767441860465116,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 0.9819819819819819,
+            "contrast_vs_spacing": 0.9818181818181818,
+            "hierarchy": 0.9846938775510204,
+            "hierarchy_vs_spacing": 0.925,
+            "spacing": 0.9874776386404294
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.9414715719063546,
+            "medium": 0.9895287958115183
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.9944444444444445,
+            "original_vs_corrupted": 0.96875,
+            "variant_vs_variant_mixed_corruption": 0.9774305555555556,
+            "variant_vs_variant_same_corruption": 0.45454545454545453
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.9954545454545455,
+            "subtle": 0.9674017257909875,
+            "visible": 0.9778761061946902
+          },
+          "always_left_accuracy": 0.5002915451895044,
+          "always_right_accuracy": 0.49970845481049564,
+          "best_constant_accuracy": 0.5002915451895044,
+          "brier_score": 0.01661077271249886,
+          "confidence_interval_95": [
+            0.9650716294544658,
+            0.9803326087670866
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.47346938775510206,
+          "pair_count": 1715,
+          "pairwise_accuracy": 0.9737609329446064,
+          "roc_auc": 0.9969876486795973
+        },
+        "val": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.3333333333333333,
+            "alignment_vs_contrast": 0.7,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.6444444444444445,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.75,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6,
+            "spacing": 0.9855072463768116
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.697841726618705,
+            "medium": 0.9885057471264368
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.7604166666666666,
+            "variant_vs_variant_mixed_corruption": 0.8611111111111112,
+            "variant_vs_variant_same_corruption": 0.3333333333333333
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7823834196891192,
+            "visible": 0.9523809523809523
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.16489616202229673,
+          "confidence_interval_95": [
+            0.7616475702353991,
+            0.8606156833362815
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3162393162393162,
+          "pair_count": 234,
+          "pairwise_accuracy": 0.8162393162393162,
+          "roc_auc": 0.8863320914602966
+        }
+      },
+      "subsets": {
+        "balanced_left_right_orientation": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 0.6923076923076923,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.9166666666666666,
+            "spacing": 0.75
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7123287671232876,
+            "medium": 0.8617886178861789
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.75,
+            "original_vs_corrupted": 0.8229166666666666,
+            "variant_vs_variant_mixed_corruption": 0.8611111111111112
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.777027027027027,
+            "visible": 0.7916666666666666
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.12486327270037662,
+          "confidence_interval_95": [
+            0.7635590939694065,
+            0.8665330150400087
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3207547169811321,
+          "pair_count": 212,
+          "pairwise_accuracy": 0.8207547169811321,
+          "roc_auc": 0.9350747597009612
+        },
+        "cross_corruption_hard_pairs": {
+          "accuracy_by_corruption_type": {
+            "alignment_vs_contrast": 0.6923076923076923,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 0.6,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy_vs_spacing": 0.9166666666666666
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7647058823529411,
+            "medium": 0.8909090909090909
+          },
+          "accuracy_by_pair_family": {
+            "variant_vs_variant_mixed_corruption": 0.8611111111111112
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8529411764705882,
+            "visible": 0.6428571428571429
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.13311753877694865,
+          "confidence_interval_95": [
+            0.762868127494437,
+            0.9227726922970102
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.36111111111111116,
+          "pair_count": 72,
+          "pairwise_accuracy": 0.8611111111111112,
+          "roc_auc": 0.9212962962962963
+        },
+        "dinov2_vs_metrics_disagreement": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "equal_or_near_equal_metric_deltas": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 0.6923076923076923,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.9166666666666666,
+            "spacing": 0.7536231884057971
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7123287671232876,
+            "medium": 0.8629032258064516
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.7555555555555555,
+            "original_vs_corrupted": 0.8229166666666666,
+            "variant_vs_variant_mixed_corruption": 0.8611111111111112
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7785234899328859,
+            "visible": 0.7916666666666666
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.12427748741853047,
+          "confidence_interval_95": [
+            0.7646239979214325,
+            0.8671740020785818
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.31924882629107976,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.8215962441314554,
+          "roc_auc": 0.935505201904426
+        },
+        "full_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 0.6923076923076923,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.9166666666666666,
+            "spacing": 0.7536231884057971
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7123287671232876,
+            "medium": 0.8629032258064516
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.7555555555555555,
+            "original_vs_corrupted": 0.8229166666666666,
+            "variant_vs_variant_mixed_corruption": 0.8611111111111112
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7785234899328859,
+            "visible": 0.7916666666666666
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.12427748741853047,
+          "confidence_interval_95": [
+            0.7646239979214325,
+            0.8671740020785818
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.31924882629107976,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.8215962441314554,
+          "roc_auc": 0.935505201904426
+        },
+        "hard_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 0.6923076923076923,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 0.6,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.9166666666666666,
+            "spacing": 0.7536231884057971
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7123287671232876,
+            "medium": 0.83
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.7555555555555555,
+            "original_vs_corrupted": 0.6964285714285714,
+            "variant_vs_variant_mixed_corruption": 0.8611111111111112
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7555555555555555,
+            "visible": 0.6428571428571429
+          },
+          "always_left_accuracy": 0.5028901734104047,
+          "always_right_accuracy": 0.49710982658959535,
+          "available": true,
+          "best_constant_accuracy": 0.5028901734104047,
+          "brier_score": 0.1530120790228204,
+          "confidence_interval_95": [
+            0.7129343202191124,
+            0.8355795896234418
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.2774566473988439,
+          "pair_count": 173,
+          "pairwise_accuracy": 0.7803468208092486,
+          "roc_auc": 0.9047714514835605
+        },
+        "low_vs_medium_severity": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "metrics_ambiguous": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 0.6923076923076923,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.9166666666666666,
+            "spacing": 0.7536231884057971
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7123287671232876,
+            "medium": 0.8629032258064516
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.7555555555555555,
+            "original_vs_corrupted": 0.8229166666666666,
+            "variant_vs_variant_mixed_corruption": 0.8611111111111112
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7785234899328859,
+            "visible": 0.7916666666666666
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.12427748741853047,
+          "confidence_interval_95": [
+            0.7646239979214325,
+            0.8671740020785818
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.31924882629107976,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.8215962441314554,
+          "roc_auc": 0.935505201904426
+        },
+        "same_corruption_close_severity": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_spacing": 0.625,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.8888888888888888,
+            "spacing": 0.75
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7123287671232876
+          },
+          "accuracy_by_pair_family": {
+            "original_vs_corrupted": 0.6964285714285714,
+            "variant_vs_variant_mixed_corruption": 0.7647058823529411
+          },
+          "accuracy_by_severity": {
+            "subtle": 0.7123287671232876
+          },
+          "always_left_accuracy": 0.4794520547945205,
+          "always_right_accuracy": 0.5205479452054795,
+          "available": true,
+          "best_constant_accuracy": 0.5205479452054795,
+          "brier_score": 0.19181316648876182,
+          "confidence_interval_95": [
+            0.5999453676338891,
+            0.8034826837821702
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.1917808219178081,
+          "pair_count": 73,
+          "pairwise_accuracy": 0.7123287671232876,
+          "roc_auc": 0.8334586466165413
+        }
+      }
+    },
+    "design_tokens": {
+      "available": true,
+      "feature_dim": 56,
+      "groups": [
+        "design_tokens"
+      ],
+      "splits": {
+        "test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.5,
+            "spacing": 0.7681159420289855
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7808219178082192,
+            "medium": 0.8629032258064516
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.6444444444444445,
+            "original_vs_corrupted": 0.8854166666666666,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7785234899328859,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.11454329478003931,
+          "confidence_interval_95": [
+            0.790410445897246,
+            0.8875041964385358
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.34272300469483563,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.8450704225352113,
+          "roc_auc": 0.9114794568859108
+        },
+        "train": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5364583333333334,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 0.8918918918918919,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy": 0.9948979591836735,
+            "hierarchy_vs_spacing": 0.975,
+            "spacing": 0.7227191413237924
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.8311036789297659,
+            "medium": 0.8345549738219895
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.5805555555555556,
+            "original_vs_corrupted": 0.8841145833333334,
+            "variant_vs_variant_mixed_corruption": 0.9756944444444444,
+            "variant_vs_variant_same_corruption": 0.5454545454545454
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7641418983700863,
+            "visible": 0.9712389380530974
+          },
+          "always_left_accuracy": 0.5002915451895044,
+          "always_right_accuracy": 0.49970845481049564,
+          "best_constant_accuracy": 0.5002915451895044,
+          "brier_score": 0.09330507924656832,
+          "confidence_interval_95": [
+            0.8312540467843155,
+            0.865145259770268
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3486880466472303,
+          "pair_count": 1715,
+          "pairwise_accuracy": 0.8489795918367347,
+          "roc_auc": 0.9484371132562498
+        },
+        "val": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.6666666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.7777777777777778,
+            "contrast_vs_hierarchy": 0.8571428571428571,
+            "contrast_vs_spacing": 0.625,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.782608695652174
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.8273381294964028,
+            "medium": 0.8390804597701149
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.7254901960784313,
+            "original_vs_corrupted": 0.90625,
+            "variant_vs_variant_mixed_corruption": 0.9305555555555556,
+            "variant_vs_variant_same_corruption": 0.3333333333333333
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8031088082901554,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.11542566521001514,
+          "confidence_interval_95": [
+            0.7849664840837483,
+            0.8793415839184513
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.33760683760683763,
+          "pair_count": 234,
+          "pairwise_accuracy": 0.8376068376068376,
+          "roc_auc": 0.9248301555993864
+        }
+      },
+      "subsets": {
+        "balanced_left_right_orientation": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.5,
+            "spacing": 0.7647058823529411
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7808219178082192,
+            "medium": 0.8617886178861789
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.6363636363636364,
+            "original_vs_corrupted": 0.8854166666666666,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.777027027027027,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.11442859160666148,
+          "confidence_interval_95": [
+            0.7894598018039763,
+            0.886962609338484
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3443396226415094,
+          "pair_count": 212,
+          "pairwise_accuracy": 0.8443396226415094,
+          "roc_auc": 0.9114453542185831
+        },
+        "cross_corruption_hard_pairs": {
+          "accuracy_by_corruption_type": {
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy_vs_spacing": 0.5
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7058823529411765,
+            "medium": 0.9818181818181818
+          },
+          "accuracy_by_pair_family": {
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8235294117647058,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.09945045906089037,
+          "confidence_interval_95": [
+            0.8298764477932348,
+            0.9612475750430503
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.41666666666666663,
+          "pair_count": 72,
+          "pairwise_accuracy": 0.9166666666666666,
+          "roc_auc": 0.8850308641975309
+        },
+        "dinov2_vs_metrics_disagreement": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "equal_or_near_equal_metric_deltas": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.5,
+            "spacing": 0.7681159420289855
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7808219178082192,
+            "medium": 0.8629032258064516
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.6444444444444445,
+            "original_vs_corrupted": 0.8854166666666666,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7785234899328859,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.11454329478003931,
+          "confidence_interval_95": [
+            0.790410445897246,
+            0.8875041964385358
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.34272300469483563,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.8450704225352113,
+          "roc_auc": 0.9114794568859108
+        },
+        "full_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.5,
+            "spacing": 0.7681159420289855
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7808219178082192,
+            "medium": 0.8629032258064516
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.6444444444444445,
+            "original_vs_corrupted": 0.8854166666666666,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7785234899328859,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.11454329478003931,
+          "confidence_interval_95": [
+            0.790410445897246,
+            0.8875041964385358
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.34272300469483563,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.8450704225352113,
+          "roc_auc": 0.9114794568859108
+        },
+        "hard_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.5,
+            "spacing": 0.7681159420289855
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7808219178082192,
+            "medium": 0.83
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.6444444444444445,
+            "original_vs_corrupted": 0.8035714285714286,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7555555555555555,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5028901734104047,
+          "always_right_accuracy": 0.49710982658959535,
+          "available": true,
+          "best_constant_accuracy": 0.5028901734104047,
+          "brier_score": 0.14025212527391157,
+          "confidence_interval_95": [
+            0.7442355344611122,
+            0.8608262011384065
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3063583815028902,
+          "pair_count": 173,
+          "pairwise_accuracy": 0.8092485549132948,
+          "roc_auc": 0.8757016840417001
+        },
+        "low_vs_medium_severity": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "metrics_ambiguous": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.5,
+            "spacing": 0.7681159420289855
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7808219178082192,
+            "medium": 0.8629032258064516
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.6444444444444445,
+            "original_vs_corrupted": 0.8854166666666666,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.7785234899328859,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.11454329478003931,
+          "confidence_interval_95": [
+            0.790410445897246,
+            0.8875041964385358
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.34272300469483563,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.8450704225352113,
+          "roc_auc": 0.9114794568859108
+        },
+        "same_corruption_close_severity": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5416666666666666,
+            "alignment_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.4444444444444444,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7808219178082192
+          },
+          "accuracy_by_pair_family": {
+            "original_vs_corrupted": 0.8035714285714286,
+            "variant_vs_variant_mixed_corruption": 0.7058823529411765
+          },
+          "accuracy_by_severity": {
+            "subtle": 0.7808219178082192
+          },
+          "always_left_accuracy": 0.4794520547945205,
+          "always_right_accuracy": 0.5205479452054795,
+          "available": true,
+          "best_constant_accuracy": 0.5205479452054795,
+          "brier_score": 0.16944146391946652,
+          "confidence_interval_95": [
+            0.673227338877521,
+            0.8603387936404931
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.26027397260273966,
+          "pair_count": 73,
+          "pairwise_accuracy": 0.7808219178082192,
+          "roc_auc": 0.8229323308270676
+        }
+      }
+    },
+    "dinov2": {
+      "available": false,
+      "manual_commands": {
+        "dinov2": "Manual-user-run: uv run ui-jepa-smoke-b0 data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2 --export-embeddings reports/ui_jepa_v0_smoke/dinov2_embeddings.jsonl"
+      },
+      "skipped_reason": "missing feature groups: dinov2"
+    },
+    "m1": {
+      "available": true,
+      "feature_dim": 128,
+      "groups": [
+        "m1"
+      ],
+      "splits": {
+        "test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.2916666666666667,
+            "alignment_vs_contrast": 0.46153846153846156,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 0.4166666666666667,
+            "spacing": 0.37681159420289856
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.4520547945205479,
+            "medium": 0.4112903225806452
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.37777777777777777,
+            "original_vs_corrupted": 0.4583333333333333,
+            "variant_vs_variant_mixed_corruption": 0.4861111111111111
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.65,
+            "subtle": 0.4563758389261745,
+            "visible": 0.08333333333333333
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.34561683005199284,
+          "confidence_interval_95": [
+            0.3853461719025096,
+            0.517808879192379
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.051643192488262935,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.4507042253521127,
+          "roc_auc": 0.5188238405924881
+        },
+        "train": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7239583333333334,
+            "alignment_vs_contrast": 0.8037383177570093,
+            "alignment_vs_hierarchy": 0.6951219512195121,
+            "alignment_vs_spacing": 0.8255813953488372,
+            "contrast": 0.859375,
+            "contrast_vs_hierarchy": 0.7567567567567568,
+            "contrast_vs_spacing": 0.6818181818181818,
+            "hierarchy": 0.7397959183673469,
+            "hierarchy_vs_spacing": 0.4875,
+            "spacing": 0.7137745974955277
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.8333333333333334,
+            "hard": 0.774247491638796,
+            "medium": 0.6931937172774869
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.6361111111111111,
+            "original_vs_corrupted": 0.7981770833333334,
+            "variant_vs_variant_mixed_corruption": 0.7152777777777778,
+            "variant_vs_variant_same_corruption": 0.5454545454545454
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.8136363636363636,
+            "subtle": 0.7190795781399808,
+            "visible": 0.7323008849557522
+          },
+          "always_left_accuracy": 0.5002915451895044,
+          "always_right_accuracy": 0.49970845481049564,
+          "best_constant_accuracy": 0.5002915451895044,
+          "brier_score": 0.17498054699682597,
+          "confidence_interval_95": [
+            0.713291105998732,
+            0.7550476089356372
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.23440233236151609,
+          "pair_count": 1715,
+          "pairwise_accuracy": 0.7346938775510204,
+          "roc_auc": 0.8193867587099792
+        },
+        "val": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4166666666666667,
+            "alignment_vs_contrast": 0.15,
+            "alignment_vs_hierarchy": 0.2727272727272727,
+            "alignment_vs_spacing": 0.7857142857142857,
+            "contrast": 0.3111111111111111,
+            "contrast_vs_hierarchy": 0.5,
+            "contrast_vs_spacing": 0.375,
+            "hierarchy": 0.25,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.4927536231884058
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.375,
+            "hard": 0.4460431654676259,
+            "medium": 0.3563218390804598
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.4117647058823529,
+            "original_vs_corrupted": 0.3958333333333333,
+            "variant_vs_variant_mixed_corruption": 0.4444444444444444,
+            "variant_vs_variant_same_corruption": 0.3333333333333333
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.5,
+            "subtle": 0.44559585492227977,
+            "visible": 0.0
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.3274251793664613,
+          "confidence_interval_95": [
+            0.3491770556755208,
+            0.4742347237162995
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.08974358974358976,
+          "pair_count": 234,
+          "pairwise_accuracy": 0.41025641025641024,
+          "roc_auc": 0.43166045730148295
+        }
+      },
+      "subsets": {
+        "balanced_left_right_orientation": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.2916666666666667,
+            "alignment_vs_contrast": 0.46153846153846156,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 0.4166666666666667,
+            "spacing": 0.38235294117647056
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.4520547945205479,
+            "medium": 0.4146341463414634
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.38636363636363635,
+            "original_vs_corrupted": 0.4583333333333333,
+            "variant_vs_variant_mixed_corruption": 0.4861111111111111
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.65,
+            "subtle": 0.4594594594594595,
+            "visible": 0.08333333333333333
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.34556891225412656,
+          "confidence_interval_95": [
+            0.38725807252507494,
+            0.5200813232088346
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.047169811320754707,
+          "pair_count": 212,
+          "pairwise_accuracy": 0.4528301886792453,
+          "roc_auc": 0.519624421502314
+        },
+        "cross_corruption_hard_pairs": {
+          "accuracy_by_corruption_type": {
+            "alignment_vs_contrast": 0.46153846153846156,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.6,
+            "contrast_vs_hierarchy": 0.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy_vs_spacing": 0.4166666666666667
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.5294117647058824,
+            "medium": 0.4727272727272727
+          },
+          "accuracy_by_pair_family": {
+            "variant_vs_variant_mixed_corruption": 0.4861111111111111
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.5833333333333334,
+            "subtle": 0.5588235294117647,
+            "visible": 0.14285714285714285
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.36261726387830806,
+          "confidence_interval_95": [
+            0.37432674529071863,
+            0.5993024539480719
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.013888888888888895,
+          "pair_count": 72,
+          "pairwise_accuracy": 0.4861111111111111,
+          "roc_auc": 0.5231481481481481
+        },
+        "dinov2_vs_metrics_disagreement": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "equal_or_near_equal_metric_deltas": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.2916666666666667,
+            "alignment_vs_contrast": 0.46153846153846156,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 0.4166666666666667,
+            "spacing": 0.37681159420289856
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.4520547945205479,
+            "medium": 0.4112903225806452
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.37777777777777777,
+            "original_vs_corrupted": 0.4583333333333333,
+            "variant_vs_variant_mixed_corruption": 0.4861111111111111
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.65,
+            "subtle": 0.4563758389261745,
+            "visible": 0.08333333333333333
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.34561683005199284,
+          "confidence_interval_95": [
+            0.3853461719025096,
+            0.517808879192379
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.051643192488262935,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.4507042253521127,
+          "roc_auc": 0.5188238405924881
+        },
+        "full_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.2916666666666667,
+            "alignment_vs_contrast": 0.46153846153846156,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 0.4166666666666667,
+            "spacing": 0.37681159420289856
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.4520547945205479,
+            "medium": 0.4112903225806452
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.37777777777777777,
+            "original_vs_corrupted": 0.4583333333333333,
+            "variant_vs_variant_mixed_corruption": 0.4861111111111111
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.65,
+            "subtle": 0.4563758389261745,
+            "visible": 0.08333333333333333
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.34561683005199284,
+          "confidence_interval_95": [
+            0.3853461719025096,
+            0.517808879192379
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.051643192488262935,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.4507042253521127,
+          "roc_auc": 0.5188238405924881
+        },
+        "hard_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.2916666666666667,
+            "alignment_vs_contrast": 0.46153846153846156,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.6,
+            "contrast_vs_hierarchy": 0.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.4166666666666667,
+            "spacing": 0.37681159420289856
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.4520547945205479,
+            "medium": 0.43
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.37777777777777777,
+            "original_vs_corrupted": 0.42857142857142855,
+            "variant_vs_variant_mixed_corruption": 0.4861111111111111
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.5833333333333334,
+            "subtle": 0.4444444444444444,
+            "visible": 0.14285714285714285
+          },
+          "always_left_accuracy": 0.5028901734104047,
+          "always_right_accuracy": 0.49710982658959535,
+          "available": true,
+          "best_constant_accuracy": 0.5028901734104047,
+          "brier_score": 0.35538921748423546,
+          "confidence_interval_95": [
+            0.36746487688697677,
+            0.5137846890233979
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.06358381502890176,
+          "pair_count": 173,
+          "pairwise_accuracy": 0.4393063583815029,
+          "roc_auc": 0.5087543437583534
+        },
+        "low_vs_medium_severity": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "metrics_ambiguous": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.2916666666666667,
+            "alignment_vs_contrast": 0.46153846153846156,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.6,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 0.4166666666666667,
+            "spacing": 0.37681159420289856
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.4520547945205479,
+            "medium": 0.4112903225806452
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.37777777777777777,
+            "original_vs_corrupted": 0.4583333333333333,
+            "variant_vs_variant_mixed_corruption": 0.4861111111111111
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.65,
+            "subtle": 0.4563758389261745,
+            "visible": 0.08333333333333333
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.34561683005199284,
+          "confidence_interval_95": [
+            0.3853461719025096,
+            0.517808879192379
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.051643192488262935,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.4507042253521127,
+          "roc_auc": 0.5188238405924881
+        },
+        "same_corruption_close_severity": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.2916666666666667,
+            "alignment_vs_spacing": 0.625,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.4444444444444444,
+            "spacing": 0.375
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.4520547945205479
+          },
+          "accuracy_by_pair_family": {
+            "original_vs_corrupted": 0.42857142857142855,
+            "variant_vs_variant_mixed_corruption": 0.5294117647058824
+          },
+          "accuracy_by_severity": {
+            "subtle": 0.4520547945205479
+          },
+          "always_left_accuracy": 0.4794520547945205,
+          "always_right_accuracy": 0.5205479452054795,
+          "available": true,
+          "best_constant_accuracy": 0.5205479452054795,
+          "brier_score": 0.32447949340024096,
+          "confidence_interval_95": [
+            0.34314655832671476,
+            0.5657567849019169
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.06849315068493161,
+          "pair_count": 73,
+          "pairwise_accuracy": 0.4520547945205479,
+          "roc_auc": 0.6056390977443609
+        }
+      }
+    },
+    "m2": {
+      "available": true,
+      "feature_dim": 128,
+      "groups": [
+        "m2"
+      ],
+      "splits": {
+        "test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.38461538461538464,
+            "alignment_vs_hierarchy": 0.7142857142857143,
+            "alignment_vs_spacing": 0.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.4444444444444444,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 0.5416666666666666,
+            "hierarchy_vs_spacing": 0.5833333333333334,
+            "spacing": 0.4057971014492754
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.3424657534246575,
+            "medium": 0.532258064516129
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.5111111111111111,
+            "original_vs_corrupted": 0.4270833333333333,
+            "variant_vs_variant_mixed_corruption": 0.5416666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.75,
+            "subtle": 0.46308724832214765,
+            "visible": 0.16666666666666666
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.3378492815188116,
+          "confidence_interval_95": [
+            0.41734465821901745,
+            0.5503736921459454
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.018779342723004744,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.4835680751173709,
+          "roc_auc": 0.4653941103861753
+        },
+        "train": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7083333333333334,
+            "alignment_vs_contrast": 0.794392523364486,
+            "alignment_vs_hierarchy": 0.6707317073170732,
+            "alignment_vs_spacing": 0.627906976744186,
+            "contrast": 0.9114583333333334,
+            "contrast_vs_hierarchy": 0.6306306306306306,
+            "contrast_vs_spacing": 0.6454545454545455,
+            "hierarchy": 0.9285714285714286,
+            "hierarchy_vs_spacing": 0.65,
+            "spacing": 0.6708407871198568
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.8950617283950617,
+            "hard": 0.745819397993311,
+            "medium": 0.6952879581151833
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.6138888888888889,
+            "original_vs_corrupted": 0.8372395833333334,
+            "variant_vs_variant_mixed_corruption": 0.671875,
+            "variant_vs_variant_same_corruption": 0.36363636363636365
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.8136363636363636,
+            "subtle": 0.6999041227229147,
+            "visible": 0.7654867256637168
+          },
+          "always_left_accuracy": 0.5002915451895044,
+          "always_right_accuracy": 0.49970845481049564,
+          "best_constant_accuracy": 0.5002915451895044,
+          "brier_score": 0.16567054726630304,
+          "confidence_interval_95": [
+            0.7103096690663759,
+            0.7522111736327837
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.23148688046647237,
+          "pair_count": 1715,
+          "pairwise_accuracy": 0.7317784256559767,
+          "roc_auc": 0.8349068279056611
+        },
+        "val": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.16666666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 0.45454545454545453,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.6666666666666666,
+            "contrast_vs_hierarchy": 0.8571428571428571,
+            "contrast_vs_spacing": 0.5,
+            "hierarchy": 0.5,
+            "hierarchy_vs_spacing": 0.8,
+            "spacing": 0.4782608695652174
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.375,
+            "hard": 0.5611510791366906,
+            "medium": 0.6551724137931034
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.4117647058823529,
+            "original_vs_corrupted": 0.5520833333333334,
+            "variant_vs_variant_mixed_corruption": 0.8194444444444444,
+            "variant_vs_variant_same_corruption": 0.3333333333333333
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.75,
+            "subtle": 0.5284974093264249,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.23511200026922488,
+          "confidence_interval_95": [
+            0.5257652762837005,
+            0.6508229443244792
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.08974358974358976,
+          "pair_count": 234,
+          "pairwise_accuracy": 0.5897435897435898,
+          "roc_auc": 0.6553437066257579
+        }
+      },
+      "subsets": {
+        "balanced_left_right_orientation": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.38461538461538464,
+            "alignment_vs_hierarchy": 0.7142857142857143,
+            "alignment_vs_spacing": 0.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.4444444444444444,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 0.5416666666666666,
+            "hierarchy_vs_spacing": 0.5833333333333334,
+            "spacing": 0.4117647058823529
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.3424657534246575,
+            "medium": 0.5365853658536586
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.5227272727272727,
+            "original_vs_corrupted": 0.4270833333333333,
+            "variant_vs_variant_mixed_corruption": 0.5416666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.75,
+            "subtle": 0.46621621621621623,
+            "visible": 0.16666666666666666
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.33728224152498815,
+          "confidence_interval_95": [
+            0.4194233406388714,
+            0.5527784780813014
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.014150943396226412,
+          "pair_count": 212,
+          "pairwise_accuracy": 0.4858490566037736,
+          "roc_auc": 0.46640263438946244
+        },
+        "cross_corruption_hard_pairs": {
+          "accuracy_by_corruption_type": {
+            "alignment_vs_contrast": 0.38461538461538464,
+            "alignment_vs_hierarchy": 0.7142857142857143,
+            "alignment_vs_spacing": 0.0,
+            "contrast_vs_hierarchy": 0.4444444444444444,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy_vs_spacing": 0.5833333333333334
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.23529411764705882,
+            "medium": 0.6363636363636364
+          },
+          "accuracy_by_pair_family": {
+            "variant_vs_variant_mixed_corruption": 0.5416666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.75,
+            "subtle": 0.5,
+            "visible": 0.2857142857142857
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.30466091528109684,
+          "confidence_interval_95": [
+            0.4273986728598905,
+            0.651713729423738
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.04166666666666663,
+          "pair_count": 72,
+          "pairwise_accuracy": 0.5416666666666666,
+          "roc_auc": 0.6149691358024691
+        },
+        "dinov2_vs_metrics_disagreement": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "equal_or_near_equal_metric_deltas": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.38461538461538464,
+            "alignment_vs_hierarchy": 0.7142857142857143,
+            "alignment_vs_spacing": 0.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.4444444444444444,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 0.5416666666666666,
+            "hierarchy_vs_spacing": 0.5833333333333334,
+            "spacing": 0.4057971014492754
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.3424657534246575,
+            "medium": 0.532258064516129
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.5111111111111111,
+            "original_vs_corrupted": 0.4270833333333333,
+            "variant_vs_variant_mixed_corruption": 0.5416666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.75,
+            "subtle": 0.46308724832214765,
+            "visible": 0.16666666666666666
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.3378492815188116,
+          "confidence_interval_95": [
+            0.41734465821901745,
+            0.5503736921459454
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.018779342723004744,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.4835680751173709,
+          "roc_auc": 0.4653941103861753
+        },
+        "full_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.38461538461538464,
+            "alignment_vs_hierarchy": 0.7142857142857143,
+            "alignment_vs_spacing": 0.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.4444444444444444,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 0.5416666666666666,
+            "hierarchy_vs_spacing": 0.5833333333333334,
+            "spacing": 0.4057971014492754
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.3424657534246575,
+            "medium": 0.532258064516129
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.5111111111111111,
+            "original_vs_corrupted": 0.4270833333333333,
+            "variant_vs_variant_mixed_corruption": 0.5416666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.75,
+            "subtle": 0.46308724832214765,
+            "visible": 0.16666666666666666
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.3378492815188116,
+          "confidence_interval_95": [
+            0.41734465821901745,
+            0.5503736921459454
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.018779342723004744,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.4835680751173709,
+          "roc_auc": 0.4653941103861753
+        },
+        "hard_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.38461538461538464,
+            "alignment_vs_hierarchy": 0.7142857142857143,
+            "alignment_vs_spacing": 0.0,
+            "contrast_vs_hierarchy": 0.4444444444444444,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 0.625,
+            "hierarchy_vs_spacing": 0.5833333333333334,
+            "spacing": 0.4057971014492754
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.3424657534246575,
+            "medium": 0.58
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.5111111111111111,
+            "original_vs_corrupted": 0.375,
+            "variant_vs_variant_mixed_corruption": 0.5416666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.75,
+            "subtle": 0.45185185185185184,
+            "visible": 0.2857142857142857
+          },
+          "always_left_accuracy": 0.5028901734104047,
+          "always_right_accuracy": 0.49710982658959535,
+          "available": true,
+          "best_constant_accuracy": 0.5028901734104047,
+          "brier_score": 0.3535361855953012,
+          "confidence_interval_95": [
+            0.4065743311059771,
+            0.5538421908641477
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.023121387283237038,
+          "pair_count": 173,
+          "pairwise_accuracy": 0.4797687861271676,
+          "roc_auc": 0.4504811547714515
+        },
+        "low_vs_medium_severity": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "metrics_ambiguous": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.38461538461538464,
+            "alignment_vs_hierarchy": 0.7142857142857143,
+            "alignment_vs_spacing": 0.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.4444444444444444,
+            "contrast_vs_spacing": 0.9285714285714286,
+            "hierarchy": 0.5416666666666666,
+            "hierarchy_vs_spacing": 0.5833333333333334,
+            "spacing": 0.4057971014492754
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.75,
+            "hard": 0.3424657534246575,
+            "medium": 0.532258064516129
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.5111111111111111,
+            "original_vs_corrupted": 0.4270833333333333,
+            "variant_vs_variant_mixed_corruption": 0.5416666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.75,
+            "subtle": 0.46308724832214765,
+            "visible": 0.16666666666666666
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.3378492815188116,
+          "confidence_interval_95": [
+            0.41734465821901745,
+            0.5503736921459454
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.018779342723004744,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.4835680751173709,
+          "roc_auc": 0.4653941103861753
+        },
+        "same_corruption_close_severity": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_spacing": 0.0,
+            "hierarchy": 0.625,
+            "hierarchy_vs_spacing": 0.4444444444444444,
+            "spacing": 0.20833333333333334
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.3424657534246575
+          },
+          "accuracy_by_pair_family": {
+            "original_vs_corrupted": 0.375,
+            "variant_vs_variant_mixed_corruption": 0.23529411764705882
+          },
+          "accuracy_by_severity": {
+            "subtle": 0.3424657534246575
+          },
+          "always_left_accuracy": 0.4794520547945205,
+          "always_right_accuracy": 0.5205479452054795,
+          "available": true,
+          "best_constant_accuracy": 0.5205479452054795,
+          "brier_score": 0.5005928950559552,
+          "confidence_interval_95": [
+            0.24394867339318554,
+            0.45673374007231865
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.17808219178082202,
+          "pair_count": 73,
+          "pairwise_accuracy": 0.3424657534246575,
+          "roc_auc": 0.15300751879699248
+        }
+      }
+    },
+    "m2_strong": {
+      "available": true,
+      "feature_dim": 512,
+      "groups": [
+        "m2_strong"
+      ],
+      "splits": {
+        "test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7916666666666666,
+            "alignment_vs_contrast": 0.07692307692307693,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.5,
+            "contrast": 0.6666666666666666,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.2753623188405797
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.5,
+            "hard": 0.5205479452054794,
+            "medium": 0.5564516129032258
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.28888888888888886,
+            "original_vs_corrupted": 0.59375,
+            "variant_vs_variant_mixed_corruption": 0.625
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.575,
+            "subtle": 0.5167785234899329,
+            "visible": 0.625
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.38682600688854935,
+          "confidence_interval_95": [
+            0.4728578508549063,
+            0.6055404411158986
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.03755868544600938,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.539906103286385,
+          "roc_auc": 0.5719890671839182
+        },
+        "train": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.8697916666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 0.9634146341463414,
+            "alignment_vs_spacing": 0.9186046511627907,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 0.9009009009009009,
+            "contrast_vs_spacing": 0.9363636363636364,
+            "hierarchy": 0.9948979591836735,
+            "hierarchy_vs_spacing": 0.8625,
+            "spacing": 0.8729874776386404
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.9247491638795987,
+            "medium": 0.9047120418848168
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.8222222222222222,
+            "original_vs_corrupted": 0.9596354166666666,
+            "variant_vs_variant_mixed_corruption": 0.9322916666666666,
+            "variant_vs_variant_same_corruption": 0.8181818181818182
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.9636363636363636,
+            "subtle": 0.8964525407478428,
+            "visible": 0.9557522123893806
+          },
+          "always_left_accuracy": 0.5002915451895044,
+          "always_right_accuracy": 0.49970845481049564,
+          "best_constant_accuracy": 0.5002915451895044,
+          "brier_score": 0.0644993698858035,
+          "confidence_interval_95": [
+            0.9069509358114132,
+            0.9325680277293253
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.42040816326530617,
+          "pair_count": 1715,
+          "pairwise_accuracy": 0.9206997084548105,
+          "roc_auc": 0.9708325513459702
+        },
+        "val": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4166666666666667,
+            "alignment_vs_contrast": 0.25,
+            "alignment_vs_hierarchy": 0.7272727272727273,
+            "alignment_vs_spacing": 0.5,
+            "contrast": 0.4,
+            "contrast_vs_hierarchy": 0.5,
+            "contrast_vs_spacing": 0.375,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 0.6,
+            "spacing": 0.4782608695652174
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.5611510791366906,
+            "medium": 0.27586206896551724
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.29411764705882354,
+            "original_vs_corrupted": 0.5416666666666666,
+            "variant_vs_variant_mixed_corruption": 0.4583333333333333,
+            "variant_vs_variant_same_corruption": 0.6666666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.85,
+            "subtle": 0.48186528497409326,
+            "visible": 0.0
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.3914794741593165,
+          "confidence_interval_95": [
+            0.4071366543170367,
+            0.5340006054802368
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.02991452991452992,
+          "pair_count": 234,
+          "pairwise_accuracy": 0.4700854700854701,
+          "roc_auc": 0.47556432171816787
+        }
+      },
+      "subsets": {
+        "balanced_left_right_orientation": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7916666666666666,
+            "alignment_vs_contrast": 0.07692307692307693,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.5,
+            "contrast": 0.6666666666666666,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.27941176470588236
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.5,
+            "hard": 0.5205479452054794,
+            "medium": 0.5609756097560976
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.29545454545454547,
+            "original_vs_corrupted": 0.59375,
+            "variant_vs_variant_mixed_corruption": 0.625
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.575,
+            "subtle": 0.5202702702702703,
+            "visible": 0.625
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.38515489924018587,
+          "confidence_interval_95": [
+            0.4752300320472357,
+            0.6081645117922457
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.04245283018867929,
+          "pair_count": 212,
+          "pairwise_accuracy": 0.5424528301886793,
+          "roc_auc": 0.5724012103951585
+        },
+        "cross_corruption_hard_pairs": {
+          "accuracy_by_corruption_type": {
+            "alignment_vs_contrast": 0.07692307692307693,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.5,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy_vs_spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7647058823529411,
+            "medium": 0.5818181818181818
+          },
+          "accuracy_by_pair_family": {
+            "variant_vs_variant_mixed_corruption": 0.625
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.625,
+            "subtle": 0.7352941176470589,
+            "visible": 0.35714285714285715
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.33555030348998416,
+          "confidence_interval_95": [
+            0.5095289902692696,
+            0.7278082165816159
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.125,
+          "pair_count": 72,
+          "pairwise_accuracy": 0.625,
+          "roc_auc": 0.7183641975308642
+        },
+        "dinov2_vs_metrics_disagreement": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "equal_or_near_equal_metric_deltas": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7916666666666666,
+            "alignment_vs_contrast": 0.07692307692307693,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.5,
+            "contrast": 0.6666666666666666,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.2753623188405797
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.5,
+            "hard": 0.5205479452054794,
+            "medium": 0.5564516129032258
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.28888888888888886,
+            "original_vs_corrupted": 0.59375,
+            "variant_vs_variant_mixed_corruption": 0.625
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.575,
+            "subtle": 0.5167785234899329,
+            "visible": 0.625
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.38682600688854935,
+          "confidence_interval_95": [
+            0.4728578508549063,
+            0.6055404411158986
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.03755868544600938,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.539906103286385,
+          "roc_auc": 0.5719890671839182
+        },
+        "full_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7916666666666666,
+            "alignment_vs_contrast": 0.07692307692307693,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.5,
+            "contrast": 0.6666666666666666,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.2753623188405797
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.5,
+            "hard": 0.5205479452054794,
+            "medium": 0.5564516129032258
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.28888888888888886,
+            "original_vs_corrupted": 0.59375,
+            "variant_vs_variant_mixed_corruption": 0.625
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.575,
+            "subtle": 0.5167785234899329,
+            "visible": 0.625
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.38682600688854935,
+          "confidence_interval_95": [
+            0.4728578508549063,
+            0.6055404411158986
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.03755868544600938,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.539906103286385,
+          "roc_auc": 0.5719890671839182
+        },
+        "hard_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7916666666666666,
+            "alignment_vs_contrast": 0.07692307692307693,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.5,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.0,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.2753623188405797
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.5205479452054794,
+            "medium": 0.45
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.28888888888888886,
+            "original_vs_corrupted": 0.44642857142857145,
+            "variant_vs_variant_mixed_corruption": 0.625
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.625,
+            "subtle": 0.4666666666666667,
+            "visible": 0.35714285714285715
+          },
+          "always_left_accuracy": 0.5028901734104047,
+          "always_right_accuracy": 0.49710982658959535,
+          "available": true,
+          "best_constant_accuracy": 0.5028901734104047,
+          "brier_score": 0.4423919812108669,
+          "confidence_interval_95": [
+            0.4065743311059771,
+            0.5538421908641477
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.023121387283237038,
+          "pair_count": 173,
+          "pairwise_accuracy": 0.4797687861271676,
+          "roc_auc": 0.48122159850307406
+        },
+        "low_vs_medium_severity": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "metrics_ambiguous": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7916666666666666,
+            "alignment_vs_contrast": 0.07692307692307693,
+            "alignment_vs_hierarchy": 0.5714285714285714,
+            "alignment_vs_spacing": 0.5,
+            "contrast": 0.6666666666666666,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 0.6666666666666666,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.2753623188405797
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.5,
+            "hard": 0.5205479452054794,
+            "medium": 0.5564516129032258
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.28888888888888886,
+            "original_vs_corrupted": 0.59375,
+            "variant_vs_variant_mixed_corruption": 0.625
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.575,
+            "subtle": 0.5167785234899329,
+            "visible": 0.625
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.38682600688854935,
+          "confidence_interval_95": [
+            0.4728578508549063,
+            0.6055404411158986
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.03755868544600938,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.539906103286385,
+          "roc_auc": 0.5719890671839182
+        },
+        "same_corruption_close_severity": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.7916666666666666,
+            "alignment_vs_spacing": 0.5,
+            "hierarchy": 0.0,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.25
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.5205479452054794
+          },
+          "accuracy_by_pair_family": {
+            "original_vs_corrupted": 0.44642857142857145,
+            "variant_vs_variant_mixed_corruption": 0.7647058823529411
+          },
+          "accuracy_by_severity": {
+            "subtle": 0.5205479452054794
+          },
+          "always_left_accuracy": 0.4794520547945205,
+          "always_right_accuracy": 0.5205479452054795,
+          "available": true,
+          "best_constant_accuracy": 0.5205479452054795,
+          "brier_score": 0.4179107508832639,
+          "confidence_interval_95": [
+            0.40781596889792504,
+            0.6312254554326613
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -1.1102230246251565e-16,
+          "pair_count": 73,
+          "pairwise_accuracy": 0.5205479452054794,
+          "roc_auc": 0.4778195488721805
+        }
+      }
+    },
+    "metrics": {
+      "available": true,
+      "feature_dim": 72,
+      "groups": [
+        "metrics"
+      ],
+      "splits": {
+        "test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7857142857142857,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.75,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.9758064516129032
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8791946308724832,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.06384141862694281,
+          "confidence_interval_95": [
+            0.8539863885986632,
+            0.9346081953429606
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.39906103286384975,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.9014084507042254,
+          "roc_auc": 0.9800299770763534
+        },
+        "train": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5989583333333334,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 0.9883720930232558,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 0.990990990990991,
+            "contrast_vs_spacing": 0.9454545454545454,
+            "hierarchy": 0.9336734693877551,
+            "hierarchy_vs_spacing": 0.8875,
+            "spacing": 0.9749552772808586
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.8110367892976589,
+            "medium": 0.9916230366492147
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.8723958333333334,
+            "variant_vs_variant_mixed_corruption": 0.9704861111111112,
+            "variant_vs_variant_same_corruption": 0.45454545454545453
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8926174496644296,
+            "visible": 0.9800884955752213
+          },
+          "always_left_accuracy": 0.5002915451895044,
+          "always_right_accuracy": 0.49970845481049564,
+          "best_constant_accuracy": 0.5002915451895044,
+          "brier_score": 0.04982621146381909,
+          "confidence_interval_95": [
+            0.9163422418857501,
+            0.9406303383606169
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.4291545189504373,
+          "pair_count": 1715,
+          "pairwise_accuracy": 0.9294460641399417,
+          "roc_auc": 0.985399955936712
+        },
+        "val": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.6666666666666666,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.9333333333333333,
+            "contrast_vs_hierarchy": 0.9285714285714286,
+            "contrast_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 1.0,
+            "spacing": 0.9710144927536232
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.8992805755395683,
+            "medium": 1.0
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.8958333333333334,
+            "variant_vs_variant_mixed_corruption": 0.9861111111111112,
+            "variant_vs_variant_same_corruption": 0.8
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.927461139896373,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.06149968909443128,
+          "confidence_interval_95": [
+            0.9020930802610592,
+            0.9640300970076312
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.44017094017094016,
+          "pair_count": 234,
+          "pairwise_accuracy": 0.9401709401709402,
+          "roc_auc": 0.9879465264080649
+        }
+      },
+      "subsets": {
+        "balanced_left_right_orientation": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7857142857142857,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.75,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.975609756097561
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8783783783783784,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.0641410767413087,
+          "confidence_interval_95": [
+            0.8533198467087136,
+            0.9342952895530553
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.40094339622641506,
+          "pair_count": 212,
+          "pairwise_accuracy": 0.9009433962264151,
+          "roc_auc": 0.9798415806336774
+        },
+        "cross_corruption_hard_pairs": {
+          "accuracy_by_corruption_type": {
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7857142857142857,
+            "hierarchy_vs_spacing": 0.75
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.8235294117647058,
+            "medium": 0.9454545454545454
+          },
+          "accuracy_by_pair_family": {
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.9117647058823529,
+            "visible": 0.7857142857142857
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.06830142561355385,
+          "confidence_interval_95": [
+            0.8298764477932348,
+            0.9612475750430503
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.41666666666666663,
+          "pair_count": 72,
+          "pairwise_accuracy": 0.9166666666666666,
+          "roc_auc": 0.9745370370370371
+        },
+        "dinov2_vs_metrics_disagreement": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "equal_or_near_equal_metric_deltas": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7857142857142857,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.75,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.9758064516129032
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8791946308724832,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.06384141862694281,
+          "confidence_interval_95": [
+            0.8539863885986632,
+            0.9346081953429606
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.39906103286384975,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.9014084507042254,
+          "roc_auc": 0.9800299770763534
+        },
+        "full_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7857142857142857,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.75,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.9758064516129032
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8791946308724832,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.06384141862694281,
+          "confidence_interval_95": [
+            0.8539863885986632,
+            0.9346081953429606
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.39906103286384975,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.9014084507042254,
+          "roc_auc": 0.9800299770763534
+        },
+        "hard_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7857142857142857,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.75,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7534246575342466,
+            "medium": 0.97
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.7321428571428571,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8666666666666667,
+            "visible": 0.7857142857142857
+          },
+          "always_left_accuracy": 0.5028901734104047,
+          "always_right_accuracy": 0.49710982658959535,
+          "available": true,
+          "best_constant_accuracy": 0.5028901734104047,
+          "brier_score": 0.07858235051426392,
+          "confidence_interval_95": [
+            0.8215578286121121,
+            0.9192186888041209
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.37572254335260113,
+          "pair_count": 173,
+          "pairwise_accuracy": 0.8786127167630058,
+          "roc_auc": 0.9697273456295108
+        },
+        "low_vs_medium_severity": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "metrics_ambiguous": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7857142857142857,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.75,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.9758064516129032
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.9166666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8791946308724832,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.06384141862694281,
+          "confidence_interval_95": [
+            0.8539863885986632,
+            0.9346081953429606
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.39906103286384975,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.9014084507042254,
+          "roc_auc": 0.9800299770763534
+        },
+        "same_corruption_close_severity": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7534246575342466
+          },
+          "accuracy_by_pair_family": {
+            "original_vs_corrupted": 0.7321428571428571,
+            "variant_vs_variant_mixed_corruption": 0.8235294117647058
+          },
+          "accuracy_by_severity": {
+            "subtle": 0.7534246575342466
+          },
+          "always_left_accuracy": 0.4794520547945205,
+          "always_right_accuracy": 0.5205479452054795,
+          "available": true,
+          "best_constant_accuracy": 0.5205479452054795,
+          "brier_score": 0.15940970942804114,
+          "confidence_interval_95": [
+            0.6435555465577502,
+            0.837955353519482
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.23287671232876705,
+          "pair_count": 73,
+          "pairwise_accuracy": 0.7534246575342466,
+          "roc_auc": 0.8838345864661654
+        }
+      }
+    },
+    "metrics+dinov2": {
+      "available": false,
+      "manual_commands": {
+        "dinov2": "Manual-user-run: uv run ui-jepa-smoke-b0 data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2 --export-embeddings reports/ui_jepa_v0_smoke/dinov2_embeddings.jsonl"
+      },
+      "skipped_reason": "missing feature groups: dinov2"
+    },
+    "metrics+dinov2+regions": {
+      "available": false,
+      "manual_commands": {
+        "dinov2": "Manual-user-run: uv run ui-jepa-smoke-b0 data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2 --export-embeddings reports/ui_jepa_v0_smoke/dinov2_embeddings.jsonl"
+      },
+      "skipped_reason": "missing feature groups: dinov2"
+    },
+    "metrics+dinov2+regions+m2_strong": {
+      "available": false,
+      "manual_commands": {
+        "dinov2": "Manual-user-run: uv run ui-jepa-smoke-b0 data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2 --export-embeddings reports/ui_jepa_v0_smoke/dinov2_embeddings.jsonl"
+      },
+      "skipped_reason": "missing feature groups: dinov2"
+    },
+    "metrics+regions": {
+      "available": true,
+      "feature_dim": 140,
+      "groups": [
+        "metrics",
+        "regions"
+      ],
+      "splits": {
+        "test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.9596774193548387
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.8888888888888888
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.975,
+            "subtle": 0.87248322147651,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.07337981882986638,
+          "confidence_interval_95": [
+            0.8431858768788597,
+            0.9269620501284569
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3896713615023474,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.892018779342723,
+          "roc_auc": 0.965658614001058
+        },
+        "train": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.6302083333333334,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 0.9279279279279279,
+            "contrast_vs_spacing": 0.9727272727272728,
+            "hierarchy": 0.9693877551020408,
+            "hierarchy_vs_spacing": 0.95,
+            "spacing": 0.9946332737030411
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.8561872909698997,
+            "medium": 0.9905759162303664
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.8997395833333334,
+            "variant_vs_variant_mixed_corruption": 0.9739583333333334,
+            "variant_vs_variant_same_corruption": 0.7272727272727273
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.9194630872483222,
+            "visible": 0.9756637168141593
+          },
+          "always_left_accuracy": 0.5002915451895044,
+          "always_right_accuracy": 0.49970845481049564,
+          "best_constant_accuracy": 0.5002915451895044,
+          "brier_score": 0.041388127802633366,
+          "confidence_interval_95": [
+            0.9327532270782235,
+            0.9544722887912334
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.44431486880466475,
+          "pair_count": 1715,
+          "pairwise_accuracy": 0.9446064139941691,
+          "roc_auc": 0.9906562709946607
+        },
+        "val": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.3333333333333333,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 0.8181818181818182,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.8888888888888888,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.875,
+            "hierarchy": 0.8333333333333334,
+            "hierarchy_vs_spacing": 0.8,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7913669064748201,
+            "medium": 1.0
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.7916666666666666,
+            "variant_vs_variant_mixed_corruption": 0.9444444444444444,
+            "variant_vs_variant_same_corruption": 0.6666666666666666
+          },
+          "accuracy_by_severity": {
+            "obvious": 1.0,
+            "subtle": 0.8497409326424871,
+            "visible": 1.0
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.07141892886024138,
+          "confidence_interval_95": [
+            0.8276802270717816,
+            0.912308506905352
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.37606837606837606,
+          "pair_count": 234,
+          "pairwise_accuracy": 0.8760683760683761,
+          "roc_auc": 0.9748703338446928
+        }
+      },
+      "subsets": {
+        "balanced_left_right_orientation": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.959349593495935
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.8888888888888888
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.975,
+            "subtle": 0.8716216216216216,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.07372544591196512,
+          "confidence_interval_95": [
+            0.842470831146356,
+            0.9266121842621948
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3915094339622641,
+          "pair_count": 212,
+          "pairwise_accuracy": 0.8915094339622641,
+          "roc_auc": 0.9653346386614453
+        },
+        "cross_corruption_hard_pairs": {
+          "accuracy_by_corruption_type": {
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy_vs_spacing": 0.6666666666666666
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.8235294117647058,
+            "medium": 0.9090909090909091
+          },
+          "accuracy_by_pair_family": {
+            "variant_vs_variant_mixed_corruption": 0.8888888888888888
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.9583333333333334,
+            "subtle": 0.8823529411764706,
+            "visible": 0.7857142857142857
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.08158894131332384,
+          "confidence_interval_95": [
+            0.7957706176633595,
+            0.9426118036505066
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.38888888888888884,
+          "pair_count": 72,
+          "pairwise_accuracy": 0.8888888888888888,
+          "roc_auc": 0.9575617283950617
+        },
+        "dinov2_vs_metrics_disagreement": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "equal_or_near_equal_metric_deltas": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.9596774193548387
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.8888888888888888
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.975,
+            "subtle": 0.87248322147651,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.07337981882986638,
+          "confidence_interval_95": [
+            0.8431858768788597,
+            0.9269620501284569
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3896713615023474,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.892018779342723,
+          "roc_auc": 0.965658614001058
+        },
+        "full_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.9596774193548387
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.8888888888888888
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.975,
+            "subtle": 0.87248322147651,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.07337981882986638,
+          "confidence_interval_95": [
+            0.8431858768788597,
+            0.9269620501284569
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3896713615023474,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.892018779342723,
+          "roc_auc": 0.965658614001058
+        },
+        "hard_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7534246575342466,
+            "medium": 0.95
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.7321428571428571,
+            "variant_vs_variant_mixed_corruption": 0.8888888888888888
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.9583333333333334,
+            "subtle": 0.8592592592592593,
+            "visible": 0.7857142857142857
+          },
+          "always_left_accuracy": 0.5028901734104047,
+          "always_right_accuracy": 0.49710982658959535,
+          "available": true,
+          "best_constant_accuracy": 0.5028901734104047,
+          "brier_score": 0.0901453564279879,
+          "confidence_interval_95": [
+            0.808407194291826,
+            0.9097501928216215
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.36416184971098264,
+          "pair_count": 173,
+          "pairwise_accuracy": 0.8670520231213873,
+          "roc_auc": 0.9487436514300989
+        },
+        "low_vs_medium_severity": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "metrics_ambiguous": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_contrast": 1.0,
+            "alignment_vs_hierarchy": 1.0,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 1.0,
+            "contrast_vs_hierarchy": 1.0,
+            "contrast_vs_spacing": 0.7142857142857143,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "easy": 1.0,
+            "hard": 0.7534246575342466,
+            "medium": 0.9596774193548387
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 1.0,
+            "original_vs_corrupted": 0.84375,
+            "variant_vs_variant_mixed_corruption": 0.8888888888888888
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.975,
+            "subtle": 0.87248322147651,
+            "visible": 0.875
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.07337981882986638,
+          "confidence_interval_95": [
+            0.8431858768788597,
+            0.9269620501284569
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.3896713615023474,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.892018779342723,
+          "roc_auc": 0.965658614001058
+        },
+        "same_corruption_close_severity": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.375,
+            "alignment_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 1.0
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.7534246575342466
+          },
+          "accuracy_by_pair_family": {
+            "original_vs_corrupted": 0.7321428571428571,
+            "variant_vs_variant_mixed_corruption": 0.8235294117647058
+          },
+          "accuracy_by_severity": {
+            "subtle": 0.7534246575342466
+          },
+          "always_left_accuracy": 0.4794520547945205,
+          "always_right_accuracy": 0.5205479452054795,
+          "available": true,
+          "best_constant_accuracy": 0.5205479452054795,
+          "brier_score": 0.17959473811713303,
+          "confidence_interval_95": [
+            0.6435555465577502,
+            0.837955353519482
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.23287671232876705,
+          "pair_count": 73,
+          "pairwise_accuracy": 0.7534246575342466,
+          "roc_auc": 0.8304511278195489
+        }
+      }
+    },
+    "regions": {
+      "available": true,
+      "feature_dim": 68,
+      "groups": [
+        "regions"
+      ],
+      "splits": {
+        "test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.3076923076923077,
+            "alignment_vs_hierarchy": 0.42857142857142855,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.2222222222222222,
+            "contrast_vs_spacing": 0.0,
+            "hierarchy": 0.75,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 0.5507246376811594
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.375,
+            "hard": 0.6986301369863014,
+            "medium": 0.41935483870967744
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.4444444444444444,
+            "original_vs_corrupted": 0.6145833333333334,
+            "variant_vs_variant_mixed_corruption": 0.4166666666666667
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.225,
+            "subtle": 0.6040268456375839,
+            "visible": 0.4166666666666667
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.26923982162024124,
+          "confidence_interval_95": [
+            0.4449973462421394,
+            0.5780609749257443
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.009389671361502261,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.5117370892018779,
+          "roc_auc": 0.5239816610827015
+        },
+        "train": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5052083333333334,
+            "alignment_vs_contrast": 0.4392523364485981,
+            "alignment_vs_hierarchy": 0.9512195121951219,
+            "alignment_vs_spacing": 0.9651162790697675,
+            "contrast": 0.5052083333333334,
+            "contrast_vs_hierarchy": 0.11711711711711711,
+            "contrast_vs_spacing": 0.11818181818181818,
+            "hierarchy": 0.9132653061224489,
+            "hierarchy_vs_spacing": 0.9,
+            "spacing": 0.6100178890876565
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.5061728395061729,
+            "hard": 0.7575250836120402,
+            "medium": 0.5078534031413613
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.45555555555555555,
+            "original_vs_corrupted": 0.70703125,
+            "variant_vs_variant_mixed_corruption": 0.53125,
+            "variant_vs_variant_same_corruption": 0.6363636363636364
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.33636363636363636,
+            "subtle": 0.675934803451582,
+            "visible": 0.5331858407079646
+          },
+          "always_left_accuracy": 0.5002915451895044,
+          "always_right_accuracy": 0.49970845481049564,
+          "best_constant_accuracy": 0.5002915451895044,
+          "brier_score": 0.23223107649688604,
+          "confidence_interval_95": [
+            0.5713303446824665,
+            0.617750502961844
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.0944606413994169,
+          "pair_count": 1715,
+          "pairwise_accuracy": 0.5947521865889213,
+          "roc_auc": 0.6397051023655458
+        },
+        "val": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.5,
+            "alignment_vs_contrast": 0.4,
+            "alignment_vs_hierarchy": 0.7272727272727273,
+            "alignment_vs_spacing": 0.9285714285714286,
+            "contrast": 0.5333333333333333,
+            "contrast_vs_hierarchy": 0.35714285714285715,
+            "contrast_vs_spacing": 0.625,
+            "hierarchy": 0.625,
+            "hierarchy_vs_spacing": 0.4,
+            "spacing": 0.5652173913043478
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.625,
+            "hard": 0.5899280575539568,
+            "medium": 0.5057471264367817
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.49019607843137253,
+            "original_vs_corrupted": 0.625,
+            "variant_vs_variant_mixed_corruption": 0.5694444444444444,
+            "variant_vs_variant_same_corruption": 0.3333333333333333
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.55,
+            "subtle": 0.5699481865284974,
+            "visible": 0.47619047619047616
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.23560630795095386,
+          "confidence_interval_95": [
+            0.49576792773492956,
+            0.6219575526705234
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.05982905982905984,
+          "pair_count": 234,
+          "pairwise_accuracy": 0.5598290598290598,
+          "roc_auc": 0.6310541310541311
+        }
+      },
+      "subsets": {
+        "balanced_left_right_orientation": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.3076923076923077,
+            "alignment_vs_hierarchy": 0.42857142857142855,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.2222222222222222,
+            "contrast_vs_spacing": 0.0,
+            "hierarchy": 0.75,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 0.5441176470588235
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.375,
+            "hard": 0.6986301369863014,
+            "medium": 0.4146341463414634
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.4318181818181818,
+            "original_vs_corrupted": 0.6145833333333334,
+            "variant_vs_variant_mixed_corruption": 0.4166666666666667
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.225,
+            "subtle": 0.6013513513513513,
+            "visible": 0.4166666666666667
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.26993567350612185,
+          "confidence_interval_95": [
+            0.4425739101667182,
+            0.5759582106864999
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.009433962264150941,
+          "pair_count": 212,
+          "pairwise_accuracy": 0.5094339622641509,
+          "roc_auc": 0.5225169099323602
+        },
+        "cross_corruption_hard_pairs": {
+          "accuracy_by_corruption_type": {
+            "alignment_vs_contrast": 0.3076923076923077,
+            "alignment_vs_hierarchy": 0.42857142857142855,
+            "alignment_vs_spacing": 1.0,
+            "contrast_vs_hierarchy": 0.2222222222222222,
+            "contrast_vs_spacing": 0.0,
+            "hierarchy_vs_spacing": 0.6666666666666666
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.8235294117647058,
+            "medium": 0.2909090909090909
+          },
+          "accuracy_by_pair_family": {
+            "variant_vs_variant_mixed_corruption": 0.4166666666666667
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.125,
+            "subtle": 0.7058823529411765,
+            "visible": 0.21428571428571427
+          },
+          "always_left_accuracy": 0.5,
+          "always_right_accuracy": 0.5,
+          "available": true,
+          "best_constant_accuracy": 0.5,
+          "brier_score": 0.3149448168599924,
+          "confidence_interval_95": [
+            0.30985217474739846,
+            0.5319230206853446
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": -0.08333333333333331,
+          "pair_count": 72,
+          "pairwise_accuracy": 0.4166666666666667,
+          "roc_auc": 0.40316358024691357
+        },
+        "dinov2_vs_metrics_disagreement": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "equal_or_near_equal_metric_deltas": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.3076923076923077,
+            "alignment_vs_hierarchy": 0.42857142857142855,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.2222222222222222,
+            "contrast_vs_spacing": 0.0,
+            "hierarchy": 0.75,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 0.5507246376811594
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.375,
+            "hard": 0.6986301369863014,
+            "medium": 0.41935483870967744
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.4444444444444444,
+            "original_vs_corrupted": 0.6145833333333334,
+            "variant_vs_variant_mixed_corruption": 0.4166666666666667
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.225,
+            "subtle": 0.6040268456375839,
+            "visible": 0.4166666666666667
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.26923982162024124,
+          "confidence_interval_95": [
+            0.4449973462421394,
+            0.5780609749257443
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.009389671361502261,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.5117370892018779,
+          "roc_auc": 0.5239816610827015
+        },
+        "full_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.3076923076923077,
+            "alignment_vs_hierarchy": 0.42857142857142855,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.2222222222222222,
+            "contrast_vs_spacing": 0.0,
+            "hierarchy": 0.75,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 0.5507246376811594
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.375,
+            "hard": 0.6986301369863014,
+            "medium": 0.41935483870967744
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.4444444444444444,
+            "original_vs_corrupted": 0.6145833333333334,
+            "variant_vs_variant_mixed_corruption": 0.4166666666666667
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.225,
+            "subtle": 0.6040268456375839,
+            "visible": 0.4166666666666667
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.26923982162024124,
+          "confidence_interval_95": [
+            0.4449973462421394,
+            0.5780609749257443
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.009389671361502261,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.5117370892018779,
+          "roc_auc": 0.5239816610827015
+        },
+        "hard_test": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.3076923076923077,
+            "alignment_vs_hierarchy": 0.42857142857142855,
+            "alignment_vs_spacing": 1.0,
+            "contrast_vs_hierarchy": 0.2222222222222222,
+            "contrast_vs_spacing": 0.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 0.5507246376811594
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.6986301369863014,
+            "medium": 0.36
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.4444444444444444,
+            "original_vs_corrupted": 0.6607142857142857,
+            "variant_vs_variant_mixed_corruption": 0.4166666666666667
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.125,
+            "subtle": 0.6,
+            "visible": 0.21428571428571427
+          },
+          "always_left_accuracy": 0.5028901734104047,
+          "always_right_accuracy": 0.49710982658959535,
+          "available": true,
+          "best_constant_accuracy": 0.5028901734104047,
+          "brier_score": 0.27498239427350474,
+          "confidence_interval_95": [
+            0.42913562721951576,
+            0.5765191553561808
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.0,
+          "pair_count": 173,
+          "pairwise_accuracy": 0.5028901734104047,
+          "roc_auc": 0.5024726009088479
+        },
+        "low_vs_medium_severity": {
+          "accuracy_by_corruption_type": {},
+          "accuracy_by_difficulty": {},
+          "accuracy_by_pair_family": {},
+          "accuracy_by_severity": {},
+          "always_left_accuracy": null,
+          "always_right_accuracy": null,
+          "available": false,
+          "best_constant_accuracy": null,
+          "brier_score": null,
+          "confidence_interval_95": null,
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": null,
+          "pair_count": 0,
+          "pairwise_accuracy": null,
+          "roc_auc": null
+        },
+        "metrics_ambiguous": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_contrast": 0.3076923076923077,
+            "alignment_vs_hierarchy": 0.42857142857142855,
+            "alignment_vs_spacing": 1.0,
+            "contrast": 0.5,
+            "contrast_vs_hierarchy": 0.2222222222222222,
+            "contrast_vs_spacing": 0.0,
+            "hierarchy": 0.75,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 0.5507246376811594
+          },
+          "accuracy_by_difficulty": {
+            "easy": 0.375,
+            "hard": 0.6986301369863014,
+            "medium": 0.41935483870967744
+          },
+          "accuracy_by_pair_family": {
+            "low_severity_vs_high_severity": 0.4444444444444444,
+            "original_vs_corrupted": 0.6145833333333334,
+            "variant_vs_variant_mixed_corruption": 0.4166666666666667
+          },
+          "accuracy_by_severity": {
+            "obvious": 0.225,
+            "subtle": 0.6040268456375839,
+            "visible": 0.4166666666666667
+          },
+          "always_left_accuracy": 0.5023474178403756,
+          "always_right_accuracy": 0.4976525821596244,
+          "available": true,
+          "best_constant_accuracy": 0.5023474178403756,
+          "brier_score": 0.26923982162024124,
+          "confidence_interval_95": [
+            0.4449973462421394,
+            0.5780609749257443
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.009389671361502261,
+          "pair_count": 213,
+          "pairwise_accuracy": 0.5117370892018779,
+          "roc_auc": 0.5239816610827015
+        },
+        "same_corruption_close_severity": {
+          "accuracy_by_corruption_type": {
+            "alignment": 0.4583333333333333,
+            "alignment_vs_spacing": 1.0,
+            "hierarchy": 1.0,
+            "hierarchy_vs_spacing": 0.6666666666666666,
+            "spacing": 0.75
+          },
+          "accuracy_by_difficulty": {
+            "hard": 0.6986301369863014
+          },
+          "accuracy_by_pair_family": {
+            "original_vs_corrupted": 0.6607142857142857,
+            "variant_vs_variant_mixed_corruption": 0.8235294117647058
+          },
+          "accuracy_by_severity": {
+            "subtle": 0.6986301369863014
+          },
+          "always_left_accuracy": 0.4794520547945205,
+          "always_right_accuracy": 0.5205479452054795,
+          "available": true,
+          "best_constant_accuracy": 0.5205479452054795,
+          "brier_score": 0.23477129362905763,
+          "confidence_interval_95": [
+            0.5856263409869292,
+            0.7917740942087393
+          ],
+          "confidence_interval_method": "wilson",
+          "lift_over_best_constant": 0.17808219178082185,
+          "pair_count": 73,
+          "pairwise_accuracy": 0.6986301369863014,
+          "roc_auc": 0.7131578947368421
+        }
+      }
+    }
+  },
+  "full_test_metrics": {
+    "accuracy_by_corruption_type": {
+      "alignment": 0.375,
+      "alignment_vs_contrast": 1.0,
+      "alignment_vs_hierarchy": 1.0,
+      "alignment_vs_spacing": 1.0,
+      "contrast": 1.0,
+      "contrast_vs_hierarchy": 1.0,
+      "contrast_vs_spacing": 0.7857142857142857,
+      "hierarchy": 1.0,
+      "hierarchy_vs_spacing": 0.75,
+      "spacing": 1.0
+    },
+    "accuracy_by_difficulty": {
+      "easy": 1.0,
+      "hard": 0.7534246575342466,
+      "medium": 0.9758064516129032
+    },
+    "accuracy_by_pair_family": {
+      "low_severity_vs_high_severity": 1.0,
+      "original_vs_corrupted": 0.84375,
+      "variant_vs_variant_mixed_corruption": 0.9166666666666666
+    },
+    "accuracy_by_severity": {
+      "obvious": 1.0,
+      "subtle": 0.8791946308724832,
+      "visible": 0.875
+    },
+    "always_left_accuracy": 0.5023474178403756,
+    "always_right_accuracy": 0.4976525821596244,
+    "best_constant_accuracy": 0.5023474178403756,
+    "brier_score": 0.06384141862694281,
+    "confidence_interval_95": [
+      0.8539863885986632,
+      0.9346081953429606
+    ],
+    "confidence_interval_method": "wilson",
+    "lift_over_best_constant": 0.39906103286384975,
+    "pair_count": 213,
+    "pairwise_accuracy": 0.9014084507042254,
+    "roc_auc": 0.9800299770763534
+  },
+  "hard_subset_metrics": {
+    "balanced_left_right_orientation": {
+      "accuracy_by_corruption_type": {
+        "alignment": 0.375,
+        "alignment_vs_contrast": 1.0,
+        "alignment_vs_hierarchy": 1.0,
+        "alignment_vs_spacing": 1.0,
+        "contrast": 1.0,
+        "contrast_vs_hierarchy": 1.0,
+        "contrast_vs_spacing": 0.7857142857142857,
+        "hierarchy": 1.0,
+        "hierarchy_vs_spacing": 0.75,
+        "spacing": 1.0
+      },
+      "accuracy_by_difficulty": {
+        "easy": 1.0,
+        "hard": 0.7534246575342466,
+        "medium": 0.975609756097561
+      },
+      "accuracy_by_pair_family": {
+        "low_severity_vs_high_severity": 1.0,
+        "original_vs_corrupted": 0.84375,
+        "variant_vs_variant_mixed_corruption": 0.9166666666666666
+      },
+      "accuracy_by_severity": {
+        "obvious": 1.0,
+        "subtle": 0.8783783783783784,
+        "visible": 0.875
+      },
+      "always_left_accuracy": 0.5,
+      "always_right_accuracy": 0.5,
+      "available": true,
+      "best_constant_accuracy": 0.5,
+      "brier_score": 0.0641410767413087,
+      "confidence_interval_95": [
+        0.8533198467087136,
+        0.9342952895530553
+      ],
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": 0.40094339622641506,
+      "pair_count": 212,
+      "pairwise_accuracy": 0.9009433962264151,
+      "roc_auc": 0.9798415806336774
+    },
+    "cross_corruption_hard_pairs": {
+      "accuracy_by_corruption_type": {
+        "alignment_vs_contrast": 1.0,
+        "alignment_vs_hierarchy": 1.0,
+        "alignment_vs_spacing": 1.0,
+        "contrast_vs_hierarchy": 1.0,
+        "contrast_vs_spacing": 0.7857142857142857,
+        "hierarchy_vs_spacing": 0.75
+      },
+      "accuracy_by_difficulty": {
+        "hard": 0.8235294117647058,
+        "medium": 0.9454545454545454
+      },
+      "accuracy_by_pair_family": {
+        "variant_vs_variant_mixed_corruption": 0.9166666666666666
+      },
+      "accuracy_by_severity": {
+        "obvious": 1.0,
+        "subtle": 0.9117647058823529,
+        "visible": 0.7857142857142857
+      },
+      "always_left_accuracy": 0.5,
+      "always_right_accuracy": 0.5,
+      "available": true,
+      "best_constant_accuracy": 0.5,
+      "brier_score": 0.06830142561355385,
+      "confidence_interval_95": [
+        0.8298764477932348,
+        0.9612475750430503
+      ],
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": 0.41666666666666663,
+      "pair_count": 72,
+      "pairwise_accuracy": 0.9166666666666666,
+      "roc_auc": 0.9745370370370371
+    },
+    "dinov2_vs_metrics_disagreement": {
+      "accuracy_by_corruption_type": {},
+      "accuracy_by_difficulty": {},
+      "accuracy_by_pair_family": {},
+      "accuracy_by_severity": {},
+      "always_left_accuracy": null,
+      "always_right_accuracy": null,
+      "available": false,
+      "best_constant_accuracy": null,
+      "brier_score": null,
+      "confidence_interval_95": null,
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": null,
+      "pair_count": 0,
+      "pairwise_accuracy": null,
+      "roc_auc": null
+    },
+    "equal_or_near_equal_metric_deltas": {
+      "accuracy_by_corruption_type": {
+        "alignment": 0.375,
+        "alignment_vs_contrast": 1.0,
+        "alignment_vs_hierarchy": 1.0,
+        "alignment_vs_spacing": 1.0,
+        "contrast": 1.0,
+        "contrast_vs_hierarchy": 1.0,
+        "contrast_vs_spacing": 0.7857142857142857,
+        "hierarchy": 1.0,
+        "hierarchy_vs_spacing": 0.75,
+        "spacing": 1.0
+      },
+      "accuracy_by_difficulty": {
+        "easy": 1.0,
+        "hard": 0.7534246575342466,
+        "medium": 0.9758064516129032
+      },
+      "accuracy_by_pair_family": {
+        "low_severity_vs_high_severity": 1.0,
+        "original_vs_corrupted": 0.84375,
+        "variant_vs_variant_mixed_corruption": 0.9166666666666666
+      },
+      "accuracy_by_severity": {
+        "obvious": 1.0,
+        "subtle": 0.8791946308724832,
+        "visible": 0.875
+      },
+      "always_left_accuracy": 0.5023474178403756,
+      "always_right_accuracy": 0.4976525821596244,
+      "available": true,
+      "best_constant_accuracy": 0.5023474178403756,
+      "brier_score": 0.06384141862694281,
+      "confidence_interval_95": [
+        0.8539863885986632,
+        0.9346081953429606
+      ],
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": 0.39906103286384975,
+      "pair_count": 213,
+      "pairwise_accuracy": 0.9014084507042254,
+      "roc_auc": 0.9800299770763534
+    },
+    "full_test": {
+      "accuracy_by_corruption_type": {
+        "alignment": 0.375,
+        "alignment_vs_contrast": 1.0,
+        "alignment_vs_hierarchy": 1.0,
+        "alignment_vs_spacing": 1.0,
+        "contrast": 1.0,
+        "contrast_vs_hierarchy": 1.0,
+        "contrast_vs_spacing": 0.7857142857142857,
+        "hierarchy": 1.0,
+        "hierarchy_vs_spacing": 0.75,
+        "spacing": 1.0
+      },
+      "accuracy_by_difficulty": {
+        "easy": 1.0,
+        "hard": 0.7534246575342466,
+        "medium": 0.9758064516129032
+      },
+      "accuracy_by_pair_family": {
+        "low_severity_vs_high_severity": 1.0,
+        "original_vs_corrupted": 0.84375,
+        "variant_vs_variant_mixed_corruption": 0.9166666666666666
+      },
+      "accuracy_by_severity": {
+        "obvious": 1.0,
+        "subtle": 0.8791946308724832,
+        "visible": 0.875
+      },
+      "always_left_accuracy": 0.5023474178403756,
+      "always_right_accuracy": 0.4976525821596244,
+      "available": true,
+      "best_constant_accuracy": 0.5023474178403756,
+      "brier_score": 0.06384141862694281,
+      "confidence_interval_95": [
+        0.8539863885986632,
+        0.9346081953429606
+      ],
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": 0.39906103286384975,
+      "pair_count": 213,
+      "pairwise_accuracy": 0.9014084507042254,
+      "roc_auc": 0.9800299770763534
+    },
+    "hard_test": {
+      "accuracy_by_corruption_type": {
+        "alignment": 0.375,
+        "alignment_vs_contrast": 1.0,
+        "alignment_vs_hierarchy": 1.0,
+        "alignment_vs_spacing": 1.0,
+        "contrast_vs_hierarchy": 1.0,
+        "contrast_vs_spacing": 0.7857142857142857,
+        "hierarchy": 1.0,
+        "hierarchy_vs_spacing": 0.75,
+        "spacing": 1.0
+      },
+      "accuracy_by_difficulty": {
+        "hard": 0.7534246575342466,
+        "medium": 0.97
+      },
+      "accuracy_by_pair_family": {
+        "low_severity_vs_high_severity": 1.0,
+        "original_vs_corrupted": 0.7321428571428571,
+        "variant_vs_variant_mixed_corruption": 0.9166666666666666
+      },
+      "accuracy_by_severity": {
+        "obvious": 1.0,
+        "subtle": 0.8666666666666667,
+        "visible": 0.7857142857142857
+      },
+      "always_left_accuracy": 0.5028901734104047,
+      "always_right_accuracy": 0.49710982658959535,
+      "available": true,
+      "best_constant_accuracy": 0.5028901734104047,
+      "brier_score": 0.07858235051426392,
+      "confidence_interval_95": [
+        0.8215578286121121,
+        0.9192186888041209
+      ],
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": 0.37572254335260113,
+      "pair_count": 173,
+      "pairwise_accuracy": 0.8786127167630058,
+      "roc_auc": 0.9697273456295108
+    },
+    "low_vs_medium_severity": {
+      "accuracy_by_corruption_type": {},
+      "accuracy_by_difficulty": {},
+      "accuracy_by_pair_family": {},
+      "accuracy_by_severity": {},
+      "always_left_accuracy": null,
+      "always_right_accuracy": null,
+      "available": false,
+      "best_constant_accuracy": null,
+      "brier_score": null,
+      "confidence_interval_95": null,
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": null,
+      "pair_count": 0,
+      "pairwise_accuracy": null,
+      "roc_auc": null
+    },
+    "metrics_ambiguous": {
+      "accuracy_by_corruption_type": {
+        "alignment": 0.375,
+        "alignment_vs_contrast": 1.0,
+        "alignment_vs_hierarchy": 1.0,
+        "alignment_vs_spacing": 1.0,
+        "contrast": 1.0,
+        "contrast_vs_hierarchy": 1.0,
+        "contrast_vs_spacing": 0.7857142857142857,
+        "hierarchy": 1.0,
+        "hierarchy_vs_spacing": 0.75,
+        "spacing": 1.0
+      },
+      "accuracy_by_difficulty": {
+        "easy": 1.0,
+        "hard": 0.7534246575342466,
+        "medium": 0.9758064516129032
+      },
+      "accuracy_by_pair_family": {
+        "low_severity_vs_high_severity": 1.0,
+        "original_vs_corrupted": 0.84375,
+        "variant_vs_variant_mixed_corruption": 0.9166666666666666
+      },
+      "accuracy_by_severity": {
+        "obvious": 1.0,
+        "subtle": 0.8791946308724832,
+        "visible": 0.875
+      },
+      "always_left_accuracy": 0.5023474178403756,
+      "always_right_accuracy": 0.4976525821596244,
+      "available": true,
+      "best_constant_accuracy": 0.5023474178403756,
+      "brier_score": 0.06384141862694281,
+      "confidence_interval_95": [
+        0.8539863885986632,
+        0.9346081953429606
+      ],
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": 0.39906103286384975,
+      "pair_count": 213,
+      "pairwise_accuracy": 0.9014084507042254,
+      "roc_auc": 0.9800299770763534
+    },
+    "same_corruption_close_severity": {
+      "accuracy_by_corruption_type": {
+        "alignment": 0.375,
+        "alignment_vs_spacing": 1.0,
+        "hierarchy": 1.0,
+        "hierarchy_vs_spacing": 0.6666666666666666,
+        "spacing": 1.0
+      },
+      "accuracy_by_difficulty": {
+        "hard": 0.7534246575342466
+      },
+      "accuracy_by_pair_family": {
+        "original_vs_corrupted": 0.7321428571428571,
+        "variant_vs_variant_mixed_corruption": 0.8235294117647058
+      },
+      "accuracy_by_severity": {
+        "subtle": 0.7534246575342466
+      },
+      "always_left_accuracy": 0.4794520547945205,
+      "always_right_accuracy": 0.5205479452054795,
+      "available": true,
+      "best_constant_accuracy": 0.5205479452054795,
+      "brier_score": 0.15940970942804114,
+      "confidence_interval_95": [
+        0.6435555465577502,
+        0.837955353519482
+      ],
+      "confidence_interval_method": "wilson",
+      "lift_over_best_constant": 0.23287671232876705,
+      "pair_count": 73,
+      "pairwise_accuracy": 0.7534246575342466,
+      "roc_auc": 0.8838345864661654
+    }
+  },
+  "issue_heads": {
+    "alignment": {
+      "available": true,
+      "label_provenance": "synthetic",
+      "splits": {
+        "test": {
+          "f1": 0.5591397849462365,
+          "precision": 0.4406779661016949,
+          "recall": 0.7647058823529411,
+          "screen_count": 99
+        },
+        "train": {
+          "f1": 0.8057553956834532,
+          "precision": 0.7466666666666667,
+          "recall": 0.875,
+          "screen_count": 792
+        },
+        "val": {
+          "f1": 0.7294117647058823,
+          "precision": 0.6078431372549019,
+          "recall": 0.9117647058823529,
+          "screen_count": 99
+        }
+      }
+    },
+    "contrast": {
+      "available": true,
+      "label_provenance": "synthetic",
+      "splits": {
+        "test": {
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "screen_count": 99
+        },
+        "train": {
+          "f1": 0.9948186528497409,
+          "precision": 1.0,
+          "recall": 0.9896907216494846,
+          "screen_count": 792
+        },
+        "val": {
+          "f1": 0.8260869565217391,
+          "precision": 1.0,
+          "recall": 0.7037037037037037,
+          "screen_count": 99
+        }
+      }
+    },
+    "hierarchy": {
+      "available": true,
+      "label_provenance": "synthetic",
+      "splits": {
+        "test": {
+          "f1": 0.761904761904762,
+          "precision": 0.6153846153846154,
+          "recall": 1.0,
+          "screen_count": 99
+        },
+        "train": {
+          "f1": 0.9604221635883904,
+          "precision": 0.9732620320855615,
+          "recall": 0.9479166666666666,
+          "screen_count": 792
+        },
+        "val": {
+          "f1": 0.8571428571428571,
+          "precision": 0.75,
+          "recall": 1.0,
+          "screen_count": 99
+        }
+      }
+    },
+    "spacing": {
+      "available": true,
+      "label_provenance": "synthetic",
+      "splits": {
+        "test": {
+          "f1": 0.6764705882352942,
+          "precision": 0.8846153846153846,
+          "recall": 0.5476190476190477,
+          "screen_count": 99
+        },
+        "train": {
+          "f1": 0.7500000000000001,
+          "precision": 0.8588709677419355,
+          "recall": 0.665625,
+          "screen_count": 792
+        },
+        "val": {
+          "f1": 0.870967741935484,
+          "precision": 0.84375,
+          "recall": 0.9,
+          "screen_count": 99
+        }
+      }
+    }
+  },
+  "jepa_features_add_value": false,
+  "manual_commands": {
+    "dinov2": "Manual-user-run: uv run ui-jepa-smoke-b0 data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2 --export-embeddings reports/ui_jepa_v0_smoke/dinov2_embeddings.jsonl",
+    "m1": "Manual-user-run if missing: uv run ui-jepa-m1-probe data/processed/ui_jepa_v0_smoke --checkpoint checkpoints/ui_jepa_m1/checkpoints/m1_last.pt --report-out reports/ui_jepa_v0_smoke/m1_report.json --b0-report reports/ui_jepa_v0_smoke/b0_report.json --device cpu",
+    "m2": "Manual-user-run if missing: uv run ui-jepa-m2-train data/processed/ui_jepa_v0_smoke --out checkpoints/ui_jepa_m2 --report-out reports/ui_jepa_v0_smoke/m2_report.json --b0-report reports/ui_jepa_v0_smoke/b0_report.json --m1-report reports/ui_jepa_v0_smoke/m1_report.json --device cpu --epochs 1",
+    "m2_strong": "Manual-user-run if missing: run CUDA M2 strong externally, then write checkpoints/ui_jepa_m2_strong/probe/embeddings.jsonl and reports/ui_jepa_v0_smoke/m2_strong_report.json"
+  },
+  "metrics_still_dominate": true,
+  "output_dir": "/home/nxank4/Code/personal/codepawl/reports/ui_jepa_v0_smoke/preference_critic",
+  "recommended_next_stage": "freeze_jepa_architecture_work_for_this_corpus",
+  "runtime_seconds": 3.2675,
+  "schema_version": "ui_preference_critic_report_v1",
+  "valid": true
+}

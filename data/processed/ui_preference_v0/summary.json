@@ -1,0 +1,21 @@
+{
+  "embedding_paths": {
+    "dinov2": null,
+    "m1": "/home/nxank4/Code/personal/codepawl/checkpoints/ui_jepa_m1/probe/embeddings.jsonl",
+    "m2": "/home/nxank4/Code/personal/codepawl/checkpoints/ui_jepa_m2/probe/embeddings.jsonl",
+    "m2_strong": "/home/nxank4/Code/personal/codepawl/checkpoints/ui_jepa_m2_strong/probe/embeddings.jsonl"
+  },
+  "label_provenance": "synthetic",
+  "manual_embedding_commands": {
+    "dinov2": "Manual-user-run: uv run ui-jepa-smoke-b0 data/processed/ui_jepa_v0_smoke --out reports/ui_jepa_v0_smoke --backend dinov2 --export-embeddings reports/ui_jepa_v0_smoke/dinov2_embeddings.jsonl"
+  },
+  "pair_count": 2162,
+  "schema_version": "ui_preference_v0_summary_v1",
+  "screen_count": 990,
+  "source_dataset": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke",
+  "split_counts": {
+    "test": 213,
+    "train": 1715,
+    "val": 234
+  }
+}

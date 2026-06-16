@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hidden-dim", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--no-dummy", dest="allow_dummy", action="store_false", default=True)
+    parser.add_argument("--export-embeddings", default=None, help="Optional screen_id-keyed embedding JSONL output path.")
     return parser
 
 
@@ -39,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
                 hidden_dim=args.hidden_dim,
                 learning_rate=args.learning_rate,
                 allow_dummy=args.allow_dummy,
+                export_embeddings=Path(args.export_embeddings) if args.export_embeddings else None,
             )
         )
     except Exception as exc:
@@ -48,3 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     if not result.report["valid_for_model_selection"]:
         print("B0 report is not valid for model selection; see warnings in the report.", file=sys.stderr)
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
