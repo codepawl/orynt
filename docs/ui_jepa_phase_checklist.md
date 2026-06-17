@@ -153,8 +153,8 @@ Goal from plan: prove real frontend value.
 - [ ] Production app route rendering is not implemented yet; outside `apps/site/pilot_routes`, `apps/site` and `apps/design` are placeholders with no package manager workspace, framework route tree, dev server, or build command.
 - [x] PR screenshot review has a target-specific CI gate that can pass independently from DOM-aware JEPA.
   Evidence: `ui-jepa-scale-gate --target pr-review` exits zero when `pr_review_ready: true`; `--target dom-aware` remains blocked while M2.5 blocks DOM-aware work.
-- [x] PR screenshot review has a disabled/manual GitHub Actions artifact-upload integration layer.
-  Evidence: `.github/workflows/pr-visual-review.yml.disabled`, `ui-pr-review-ci`, `validate_pr_review_ci_artifacts`, and `docs/GITHUB_ACTIONS_VISUAL_REVIEW.md`.
+- [x] PR screenshot review has a manual GitHub Actions artifact-upload integration layer.
+  Evidence: `.github/workflows/pr-visual-review.yml`, `ui-pr-review-ci --target pr-review`, `validate_pr_review_ci_artifacts`, and `docs/GITHUB_ACTIONS_VISUAL_REVIEW.md`.
 - [x] Real PR/change trial support exists for local captured frontend changes.
   Evidence: `data/pr_review_v0/real_pr_trial/`, `ui-pr-review-trial`, `reports/ui_pr_review_v0/real_pr_trial/trial_report.json`, and `docs/REAL_PR_TRIAL.md`.
 - [ ] GitHub PR bot integration is not implemented; PR review remains local-first and artifact-based.
@@ -172,7 +172,7 @@ Current Phase 4B evidence: deterministic non-oracle patch mode passes `loop_mixe
 7. Use Preference Critic v0 as the next frontend-loop scaffold: metrics currently dominates, M2-strong adds no useful lift, DOM-aware JEPA remains blocked, and closed-loop patch evaluation is the next practical validation path.
 8. Phase 4B mixed/hard closed-loop validation is implemented and passed locally for deterministic non-oracle patches.
 9. Phase 4C selected 20 mixed/hard manual calibration tasks and exported Codex patch artifacts plus blank review templates. The current local manual-patch import reports show rendered manual patch evidence for the selected batch, and completed human labels make `pr_review_foundation_ready` true.
-10. Run local PR screenshot review with `ui-pr-review`; use `screenshots-only` for CI/sandbox paths and `render` for local HTML/project paths. The CodePawl web pilot runs with `--pilot-config data/pr_review_v0/codepawl_web_pilot/metadata.json` and uses pilot-only static route files under `apps/site/pilot_routes`. Gate CI with `ui-jepa-scale-gate --target pr-review`; keep `--target dom-aware` blocked until M2.5 evidence changes. The disabled GitHub Actions artifact upload template, `ui-pr-review-ci`, and `ui-pr-review-trial` now exist; next stage is collecting and reviewing 5-10 real frontend change cases, not auto-commenting or required PR checks.
+10. Run local PR screenshot review with `ui-pr-review`; use `screenshots-only` for CI/sandbox paths and `render` for local HTML/project paths. The CodePawl web pilot runs with `--pilot-config data/pr_review_v0/codepawl_web_pilot/metadata.json` and uses pilot-only static route files under `apps/site/pilot_routes`. Gate CI with `ui-pr-review-ci --target pr-review` and keep `--target dom-aware` blocked until M2.5 evidence changes. The manual GitHub Actions artifact upload workflow and `ui-pr-review-trial` now exist; next stage is running the manual workflow on 5-10 more real frontend changes, not auto-commenting or required PR checks.
 
 ## Phase 4C Manual Review UI Notes
 

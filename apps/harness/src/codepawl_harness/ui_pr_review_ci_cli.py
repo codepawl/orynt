@@ -27,6 +27,7 @@ class PrReviewCiConfig:
     preference_critic_report: Path = Path("reports/ui_jepa_v0_smoke/preference_critic_report.json")
     closed_loop_report: Path = Path("reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json")
     manual_batch_report: Path = Path("reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json")
+    target: str = "pr-review"
     validate_only: bool = False
 
 
@@ -49,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--preference-critic-report", default=str(PrReviewCiConfig.preference_critic_report))
     parser.add_argument("--closed-loop-report", default=str(PrReviewCiConfig.closed_loop_report))
     parser.add_argument("--manual-batch-report", default=str(PrReviewCiConfig.manual_batch_report))
+    parser.add_argument(
+        "--target",
+        default=PrReviewCiConfig.target,
+        choices=["pr-review"],
+        help="Gate target for CI exit semantics. CI intentionally supports only pr-review.",
+    )
     parser.add_argument("--validate-only", action="store_true", help="Validate existing artifacts without rerunning review or gate.")
     return parser
 
@@ -69,6 +76,7 @@ def config_from_args(args: argparse.Namespace) -> PrReviewCiConfig:
         preference_critic_report=Path(args.preference_critic_report),
         closed_loop_report=Path(args.closed_loop_report),
         manual_batch_report=Path(args.manual_batch_report),
+        target=args.target,
         validate_only=args.validate_only,
     )
 
@@ -76,7 +84,7 @@ def config_from_args(args: argparse.Namespace) -> PrReviewCiConfig:
 def build_scale_gate_args(config: PrReviewCiConfig, pr_review_report: Path) -> list[str]:
     return [
         "--target",
-        "pr-review",
+        config.target,
         "--dataset",
         str(config.dataset),
         "--b0-report",

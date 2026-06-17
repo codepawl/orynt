@@ -122,6 +122,23 @@ Low-confidence cases should stay `needs_manual_review`. Do not auto-comment and 
 
 ## Enablement Rule
 
-Only consider renaming `.github/workflows/pr-visual-review.yml.disabled` after the real trial report says `enable_artifact_only_workflow`. Even then, keep `workflow_dispatch` as the only trigger until more production-route evidence is reviewed.
+The real trial report now supports the first manual artifact-only workflow because `reports/ui_pr_review_v0/real_pr_trial/trial_report.json` says `readiness_decision: "enable_artifact_only_workflow"`.
+
+The enabled workflow is `.github/workflows/pr-visual-review.yml`, and it must stay `workflow_dispatch` only until more production-route evidence is reviewed. Do not make it a required pull-request check and do not add PR comments in this phase.
+
+Next criteria before enabling an automatic `pull_request` trigger:
+
+- run the manual workflow on 5-10 more real frontend changes
+- confirm the uploaded `codepawl-pr-visual-review` artifact is useful for human review
+- keep missed regressions at zero
+- keep false positives within the conservative trial threshold
+- document reviewer agreement and any ambiguous cases
+
+Next criteria before adding PR comments:
+
+- artifact-only pull request runs are already useful
+- comment wording has been reviewed against real artifacts
+- required permissions are narrowly scoped and documented
+- comments remain advisory until the check has enough production evidence
 
 DOM-aware JEPA remains blocked because this trial measures artifact usefulness for PR screenshot review, not DOM-aware representation readiness.

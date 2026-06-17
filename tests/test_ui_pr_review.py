@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import yaml
 from PIL import Image
 
 from codepawl_harness.ui_jepa_scale_gate_cli import main as scale_gate_main
@@ -725,6 +726,14 @@ def test_pr_review_ci_scale_gate_args_are_target_specific(tmp_path: Path) -> Non
     assert "dom-aware" not in args
 
 
+def test_pr_review_ci_scale_gate_target_is_pr_review_only() -> None:
+    config = PrReviewCiConfig(target="pr-review")
+
+    args = build_scale_gate_args(config, Path("pr_review_report.json"))
+
+    assert args[args.index("--target") + 1] == "pr-review"
+
+
 def test_real_trial_case_schema_accepts_screenshots_only_case(tmp_path: Path) -> None:
     trial_root = _trial_fixture(tmp_path, count=1)
     cases, errors = load_pr_review_trial_cases(trial_root)
@@ -851,18 +860,31 @@ def test_real_trial_gate_selection_uses_pr_review_case_report(tmp_path: Path) ->
     assert gate_report == tmp_path / "reports" / "ui_pr_review_v0" / "real_pr_trial" / "trial_case_1" / "pr_review_report.json"
 
 
-def test_disabled_pr_visual_review_workflow_template_is_artifact_only() -> None:
-    path = Path(".github/workflows/pr-visual-review.yml.disabled")
+def test_pr_visual_review_workflow_is_manual_artifact_only() -> None:
+    path = Path(".github/workflows/pr-visual-review.yml")
     text = path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(text)
+    triggers = workflow["on"]
+    jobs = workflow["jobs"]
+    permissions = workflow["permissions"]
 
     assert path.is_file()
-    assert "workflow_dispatch:" in text
-    assert "ui-pr-review" in text
-    assert "ui-jepa-scale-gate" in text
+    assert "workflow_dispatch" in triggers
+    assert "pull_request" not in triggers
+    assert permissions == {"contents": "read"}
+    assert "review" in jobs
+    assert "ui-pr-review-ci" in text
     assert "--target pr-review" in text
     assert "actions/upload-artifact" in text
-    assert "ui-pr-review-ci" in text
+    assert "codepawl-pr-visual-review" in text
+    assert "scale_gate_pr_review.json" in text
+    assert "reports/ui_pr_review_v0/${{ inputs.review_id }}/" in text
+    assert ".github/workflows/pr-visual-review.yml.disabled" not in text
     assert "dom-aware" not in text
     assert "github-script" not in text
     assert "gh pr comment" not in text
     assert "pull-requests: write" not in text
+    assert "issues: write" not in text
+    assert "comments: write" not in text
+    assert "ui-jepa-train" not in text
+    assert "cuda" not in text.lower()

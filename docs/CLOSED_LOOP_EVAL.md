@@ -247,7 +247,7 @@ Manual agreement or disagreement with the critic is the required next evidence b
 
 ## PR Visual Review CI Artifact Layer
 
-PR Screenshot Regression Review v0 now has a disabled/manual GitHub Actions artifact-upload template and local CI wrapper. This layer stays separate from DOM-aware JEPA: CI uses `ui-jepa-scale-gate --target pr-review`, while `--target dom-aware` remains blocked until M2.5 evidence changes.
+PR Screenshot Regression Review v0 now has a manual-only GitHub Actions artifact-upload workflow and local CI wrapper. This layer stays separate from DOM-aware JEPA: CI uses `ui-pr-review-ci --target pr-review`, while `--target dom-aware` remains blocked until M2.5 evidence changes.
 
 Local dry-run:
 
@@ -264,7 +264,7 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci \
   --gate-out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json
 ```
 
-The disabled workflow template is `.github/workflows/pr-visual-review.yml.disabled`. It uploads JSON, Markdown, before/after screenshots, screenshot diffs when available, critic JSON, patch summaries, review/pilot metadata, and `scale_gate_pr_review.json`. It does not post to PRs or create a required check.
+The manual workflow is `.github/workflows/pr-visual-review.yml`. It uploads JSON, Markdown, before/after screenshots, screenshot diffs when available, critic JSON, patch summaries, review/pilot metadata, and `scale_gate_pr_review.json` as `codepawl-pr-visual-review`. It does not post to PRs or create a required check.
 
 For the Phase 4C manual batch, use the local web reviewer instead of editing JSON:
 

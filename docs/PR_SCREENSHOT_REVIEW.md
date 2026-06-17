@@ -207,40 +207,28 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-jepa-scale-gate \
   --pr-review-report reports/ui_pr_review_v0/fixture_manual_patch/pr_review_report.json
 ```
 
-## Disabled CI Draft
+## Manual GitHub Actions Workflow
 
-The checked-in disabled workflow template is:
+The checked-in manual workflow is:
 
 ```text
-.github/workflows/pr-visual-review.yml.disabled
+.github/workflows/pr-visual-review.yml
 ```
 
-It is manual-only by YAML trigger and disabled by filename. It checks out the repo, sets up Python and uv, runs the CodePawl web pilot, runs `ui-jepa-scale-gate --target pr-review`, validates the artifact contract with `ui-pr-review-ci --validate-only`, and uploads `reports/ui_pr_review_v0/codepawl_web_pilot/` plus `reports/ui_jepa_v0_smoke/scale_gate_pr_review.json`.
+It is manual-only by YAML trigger. It checks out the repo, sets up Python and uv, runs `ui-pr-review-ci --target pr-review`, validates the artifact contract with `ui-pr-review-ci --validate-only --target pr-review`, and uploads the stable artifact bundle named `codepawl-pr-visual-review`. The bundle includes `reports/ui_pr_review_v0/codepawl_web_pilot/`, `reports/ui_jepa_v0_smoke/scale_gate_pr_review.json`, and checked-in real-trial summary metadata when present.
 
 Local command sequence that mirrors the workflow:
 
 ```bash
-UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
-  --pilot-config data/pr_review_v0/codepawl_web_pilot/metadata.json \
-  --out reports/ui_pr_review_v0/codepawl_web_pilot \
-  --reviewer-id ci
-
-UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-jepa-scale-gate \
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci \
   --target pr-review \
-  --dataset data/processed/ui_jepa_v0_smoke \
-  --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
-  --m1-report reports/ui_jepa_v0_smoke/m1_report.json \
-  --m2-report reports/ui_jepa_v0_smoke/m2_report.json \
-  --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json \
-  --m2-strong-report reports/ui_jepa_v0_smoke/m2_strong_report.json \
-  --preference-critic-report reports/ui_jepa_v0_smoke/preference_critic_report.json \
-  --closed-loop-report reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json \
-  --manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json \
-  --pr-review-report reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.json \
-  --out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json
+  --out reports/ui_pr_review_v0/codepawl_web_pilot \
+  --gate-out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json \
+  --reviewer-id ci
 
 UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci \
   --validate-only \
+  --target pr-review \
   --out reports/ui_pr_review_v0/codepawl_web_pilot \
   --gate-out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json
 ```
@@ -253,6 +241,8 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci
 
 Do not enable auto-commenting yet. CI should upload the artifact contract above and let a human inspect it. The checked-in web pilot supports artifact upload using `reports/ui_pr_review_v0/codepawl_web_pilot/pilot_report.json` plus each per-case report. See `docs/GITHUB_ACTIONS_VISUAL_REVIEW.md` for the enablement checklist.
 
+Do not enable an automatic `pull_request` trigger yet. The next enablement criteria are: run the manual workflow on 5-10 more real frontend changes, confirm the uploaded reports are useful, confirm no missed regressions, keep false positives within the trial threshold, and document reviewer agreement. The future trigger snippet is documented in `docs/GITHUB_ACTIONS_VISUAL_REVIEW.md` but intentionally absent from the active workflow.
+
 ## Before GitHub Bot Integration
 
 Evidence still needed before a GitHub PR bot:
@@ -262,6 +252,7 @@ Evidence still needed before a GitHub PR bot:
 - low false-positive rate for `request_changes`
 - documented artifact retention paths for screenshots, diffs, JSON, and Markdown summaries
 - CI jobs that run with `UV_NO_SYNC=1` and no network access
+- artifact-only pull request runs that reviewers find useful before any comment permissions are granted
 
 ## Real PR Trial
 

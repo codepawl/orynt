@@ -1,6 +1,14 @@
-# GitHub Actions Visual Review Template
+# GitHub Actions Visual Review
 
-Status: disabled/manual CI template for PR Screenshot Regression Review v0. It does not train models, call external APIs, run CUDA jobs, post to PRs, or run the DOM-aware gate.
+Status: enabled manual-only artifact workflow for PR Screenshot Regression Review v0. It does not train models, call external APIs, run CUDA jobs, post to PRs, enable a required check, or run the DOM-aware gate.
+
+The active workflow is:
+
+```text
+.github/workflows/pr-visual-review.yml
+```
+
+Run it from GitHub Actions with **Run workflow**. The default `review_id` is `codepawl_web_pilot`, which writes `reports/ui_pr_review_v0/codepawl_web_pilot/`. Keep `upload_artifacts` enabled unless you are only checking failure behavior.
 
 ## Artifact Directory
 
@@ -36,30 +44,18 @@ UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci \
 
 ## Local Dry Run
 
-Run the same sequence as the disabled workflow without GitHub Actions:
+Run the same artifact-only sequence as the workflow without GitHub Actions:
 
 ```bash
-UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review \
-  --pilot-config data/pr_review_v0/codepawl_web_pilot/metadata.json \
-  --out reports/ui_pr_review_v0/codepawl_web_pilot \
-  --reviewer-id ci
-
-UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-jepa-scale-gate \
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci \
   --target pr-review \
-  --dataset data/processed/ui_jepa_v0_smoke \
-  --b0-report reports/ui_jepa_v0_smoke/b0_report.json \
-  --m1-report reports/ui_jepa_v0_smoke/m1_report.json \
-  --m2-report reports/ui_jepa_v0_smoke/m2_report.json \
-  --m25-report reports/ui_jepa_v0_smoke/m25_diagnostics_report.json \
-  --m2-strong-report reports/ui_jepa_v0_smoke/m2_strong_report.json \
-  --preference-critic-report reports/ui_jepa_v0_smoke/preference_critic_report.json \
-  --closed-loop-report reports/ui_loop_v0_mixed_deterministic/closed_loop_report.json \
-  --manual-batch-report reports/ui_loop_v0_manual_batch/combined_manual_patch_report.json \
-  --pr-review-report reports/ui_pr_review_v0/codepawl_web_pilot/docs_api_reference_contrast/pr_review_report.json \
-  --out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json
+  --out reports/ui_pr_review_v0/codepawl_web_pilot \
+  --gate-out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json \
+  --reviewer-id ci
 
 UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-ci \
   --validate-only \
+  --target pr-review \
   --out reports/ui_pr_review_v0/codepawl_web_pilot \
   --gate-out reports/ui_jepa_v0_smoke/scale_gate_pr_review.json
 ```
@@ -76,23 +72,29 @@ Expected exit codes:
 - `1`: the `pr-review` gate blocks or required artifacts are missing.
 - `2`: the review pilot itself could not run.
 
-## Workflow Template
+## Workflow Trigger
 
-The disabled template lives at:
+The workflow is manual-only by design:
 
-```text
-.github/workflows/pr-visual-review.yml.disabled
+```yaml
+on:
+  workflow_dispatch:
 ```
 
-To enable it manually, rename it to:
+Do not add the workflow as a required branch protection check yet. A failed manual run should block only the manual run, not a pull request merge.
 
-```text
-.github/workflows/pr-visual-review.yml
+Future pull request trigger snippet, intentionally not active:
+
+```yaml
+on:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "frontend/**"
 ```
 
-Keep `workflow_dispatch` as the only trigger until more production-route PR review reports have been inspected. Do not make it a required pull-request check yet.
-
-Before enabling the disabled file, run the real trial workflow in `docs/REAL_PR_TRIAL.md`. The artifact-only workflow is not ready to enable unless `reports/ui_pr_review_v0/real_pr_trial/trial_report.json` has `readiness_decision: "enable_artifact_only_workflow"`.
+Enable the pull request trigger only after Phase 10A has 5-10 additional real frontend changes with useful uploaded artifacts, no missed regressions, acceptable false positives, and reviewer agreement that the artifact bundle is worth inspecting.
 
 ## Why The Target Is `pr-review`
 
@@ -102,4 +104,6 @@ The workflow must not run `--target dom-aware` or `--target all`, because those 
 
 ## Disabled Automation
 
-The template only uploads artifacts. Posting to PRs is intentionally off until there is evidence from multiple production-route reports showing a low false-positive rate for `request_changes`, completed manual labels for ambiguous cases, stable artifact retention, and reviewer agreement that the artifact bundle is useful enough to become a required check.
+The workflow only uploads `codepawl-pr-visual-review`. Posting to PRs is intentionally off until there is evidence from multiple production-route reports showing a low false-positive rate for `request_changes`, completed manual labels for ambiguous cases, stable artifact retention, and reviewer agreement that the artifact bundle is useful enough to become a required check.
+
+Add PR comments only after the artifact-only workflow is useful on real pull requests, the comment content is human-reviewed, and comment permissions can stay narrowly scoped. Until then, keep `permissions: contents: read` and do not grant `pull-requests: write`, `issues: write`, or comment permissions.
