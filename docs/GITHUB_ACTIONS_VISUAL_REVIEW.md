@@ -92,6 +92,8 @@ To enable it manually, rename it to:
 
 Keep `workflow_dispatch` as the only trigger until more production-route PR review reports have been inspected. Do not make it a required pull-request check yet.
 
+Before enabling the disabled file, run the real trial workflow in `docs/REAL_PR_TRIAL.md`. The artifact-only workflow is not ready to enable unless `reports/ui_pr_review_v0/real_pr_trial/trial_report.json` has `readiness_decision: "enable_artifact_only_workflow"`.
+
 ## Why The Target Is `pr-review`
 
 `ui-jepa-scale-gate --target pr-review` checks the PR Screenshot Regression Review evidence and can pass while DOM-aware JEPA remains blocked. This is intentional: PR screenshot artifact review is ready for manual artifact upload, but DOM-aware JEPA still lacks useful representation evidence.

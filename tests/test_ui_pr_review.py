@@ -5,18 +5,27 @@ from PIL import Image
 
 from codepawl_harness.ui_jepa_scale_gate_cli import main as scale_gate_main
 from codepawl_harness.ui_pr_review_ci_cli import PrReviewCiConfig, build_scale_gate_args
+from codepawl_harness.ui_pr_review_trial_cli import select_trial_gate_report
 from pawlbench_design.ui_jepa_smoke import check_ui_jepa_scaling_gate
 from pawlbench_design.ui_pr_review import (
     PR_REVIEW_INPUT_SCHEMA_VERSION,
     PR_REVIEW_PILOT_SCHEMA_VERSION,
+    PR_REVIEW_TRIAL_CASE_SCHEMA_VERSION,
+    PR_REVIEW_TRIAL_REVIEWER_LABEL_SCHEMA_VERSION,
     PrReviewConfig,
     PrReviewPilotConfig,
+    PrReviewTrialConfig,
     aggregate_pr_review_pilot_reports,
+    decide_pr_review_trial_readiness,
+    load_pr_review_trial_cases,
     run_pr_review,
     run_pr_review_pilot,
+    run_pr_review_trial,
     validate_pr_review_ci_artifacts,
     validate_pr_review_pilot_config,
     validate_pr_review_input,
+    validate_pr_review_trial_case,
+    validate_trial_reviewer_label,
 )
 
 
@@ -151,6 +160,62 @@ def _pilot_fixture(tmp_path: Path, *, include_skip: bool = False) -> Path:
         },
     )
     return pilot_root / "metadata.json"
+
+
+def _trial_case_fixture(
+    trial_root: Path,
+    case_id: str,
+    *,
+    preferred: str = "after",
+    critic_agree: bool = True,
+    false_positive: bool = False,
+    missed: bool = False,
+    after_contrast: int = 0,
+    after_min_contrast: float = 7.0,
+    after_overflow: bool = False,
+) -> Path:
+    root = trial_root / case_id
+    _png(root / "before.png", (220, 220, 220))
+    _png(root / "after.png", (238, 238, 238))
+    _metrics(root / "before_metrics.json", contrast=1, min_contrast=3.0, fill=0.35)
+    _metrics(root / "after_metrics.json", contrast=after_contrast, min_contrast=after_min_contrast, overflow=after_overflow, fill=0.8)
+    (root / "patch.diff").write_text("--- a/index.html\n+++ b/index.html\n- before\n+ after\n", encoding="utf-8")
+    _write_json(
+        root / "metadata.json",
+        {
+            "schema_version": PR_REVIEW_TRIAL_CASE_SCHEMA_VERSION,
+            "case_id": case_id,
+            "source_branch": "local-trial",
+            "route_or_component": f"/trial/{case_id}",
+            "mode": "screenshots-only",
+            "before": {"screenshot_path": "before.png", "metrics_path": "before_metrics.json"},
+            "after": {"screenshot_path": "after.png", "metrics_path": "after_metrics.json"},
+            "patch_diff_path": "patch.diff",
+            "reviewer_label_path": "reviewer_label.json",
+        },
+    )
+    _write_json(
+        root / "reviewer_label.json",
+        {
+            "schema_version": PR_REVIEW_TRIAL_REVIEWER_LABEL_SCHEMA_VERSION,
+            "case_id": case_id,
+            "preferred": preferred,
+            "critic_decision_agree": critic_agree,
+            "visual_regression_missed": missed,
+            "false_positive": false_positive,
+            "notes": "fixture label",
+            "reviewer_id": "tester",
+            "created_at": "2026-06-17T00:00:00Z",
+        },
+    )
+    return root
+
+
+def _trial_fixture(tmp_path: Path, count: int = 5) -> Path:
+    trial_root = tmp_path / "data" / "pr_review_v0" / "real_pr_trial"
+    for index in range(count):
+        _trial_case_fixture(trial_root, f"trial_case_{index}")
+    return trial_root
 
 
 def test_pr_review_schema_validation_accepts_screenshots_only_fixture(tmp_path: Path) -> None:
@@ -658,6 +723,132 @@ def test_pr_review_ci_scale_gate_args_are_target_specific(tmp_path: Path) -> Non
     assert "--pr-review-report" in args
     assert str(tmp_path / "pr_review_report.json") in args
     assert "dom-aware" not in args
+
+
+def test_real_trial_case_schema_accepts_screenshots_only_case(tmp_path: Path) -> None:
+    trial_root = _trial_fixture(tmp_path, count=1)
+    cases, errors = load_pr_review_trial_cases(trial_root)
+
+    assert errors == []
+    assert len(cases) == 1
+    assert validate_pr_review_trial_case(cases[0]) == []
+
+
+def test_real_trial_loader_reads_multiple_cases(tmp_path: Path) -> None:
+    trial_root = _trial_fixture(tmp_path, count=5)
+
+    cases, errors = load_pr_review_trial_cases(trial_root)
+
+    assert errors == []
+    assert [case["case_id"] for case in cases] == [f"trial_case_{index}" for index in range(5)]
+
+
+def test_real_trial_case_schema_reports_missing_artifact(tmp_path: Path) -> None:
+    trial_root = _trial_fixture(tmp_path, count=1)
+    missing = trial_root / "trial_case_0" / "after.png"
+    missing.unlink()
+    cases, _ = load_pr_review_trial_cases(trial_root)
+
+    errors = validate_pr_review_trial_case(cases[0])
+
+    assert any("after screenshot is missing" in error for error in errors)
+
+
+def test_real_trial_reviewer_label_parsing_validates_required_fields() -> None:
+    label = {
+        "schema_version": PR_REVIEW_TRIAL_REVIEWER_LABEL_SCHEMA_VERSION,
+        "case_id": "case_a",
+        "preferred": "after",
+        "critic_decision_agree": True,
+        "visual_regression_missed": False,
+        "false_positive": False,
+        "notes": "",
+        "reviewer_id": "tester",
+        "created_at": "2026-06-17T00:00:00Z",
+    }
+
+    assert validate_trial_reviewer_label(label, expected_case_id="case_a") == []
+    broken = dict(label)
+    broken["false_positive"] = "no"
+    assert any("false_positive must be boolean" in error for error in validate_trial_reviewer_label(broken, expected_case_id="case_a"))
+
+
+def test_real_trial_runner_generates_aggregate_report_and_readiness(tmp_path: Path) -> None:
+    trial_root = _trial_fixture(tmp_path, count=5)
+
+    report = run_pr_review_trial(
+        PrReviewTrialConfig(
+            trial_root=trial_root,
+            output_dir=tmp_path / "reports" / "ui_pr_review_v0" / "real_pr_trial",
+            reviewer_id="tester",
+        )
+    )
+
+    out = tmp_path / "reports" / "ui_pr_review_v0" / "real_pr_trial"
+    assert report["valid"] is True
+    assert report["case_count"] == 5
+    assert report["reviewed_count"] == 5
+    assert report["skipped_count"] == 0
+    assert report["critic_vs_reviewer_agreement"] == 1.0
+    assert report["false_positive_count"] == 0
+    assert report["missed_regression_count"] == 0
+    assert report["readiness_decision"] == "enable_artifact_only_workflow"
+    assert report["artifact_only_github_workflow_ready"] is True
+    assert (out / "trial_report.json").is_file()
+    assert (out / "trial_report.md").is_file()
+    assert (out / "trial_case_0" / "pr_review_report.json").is_file()
+
+
+def test_real_trial_readiness_collects_more_cases_below_five() -> None:
+    result = decide_pr_review_trial_readiness(
+        reviewed_count=4,
+        agreement_rate=1.0,
+        false_positive_rate=0.0,
+        missed_regression_count=0,
+        accessibility_regression_rate=0.0,
+        responsive_regression_rate=0.0,
+        reviewer_errors=[],
+    )
+
+    assert result["decision"] == "collect_more_real_cases"
+
+
+def test_real_trial_readiness_is_conservative_for_false_positives_and_missed_regressions() -> None:
+    false_positive = decide_pr_review_trial_readiness(
+        reviewed_count=5,
+        agreement_rate=0.9,
+        false_positive_rate=0.4,
+        missed_regression_count=0,
+        accessibility_regression_rate=0.0,
+        responsive_regression_rate=0.0,
+        reviewer_errors=[],
+    )
+    missed = decide_pr_review_trial_readiness(
+        reviewed_count=5,
+        agreement_rate=1.0,
+        false_positive_rate=0.0,
+        missed_regression_count=1,
+        accessibility_regression_rate=0.0,
+        responsive_regression_rate=0.0,
+        reviewer_errors=[],
+    )
+
+    assert false_positive["decision"] == "tune_thresholds"
+    assert missed["decision"] == "do_not_productize_yet"
+
+
+def test_real_trial_gate_selection_uses_pr_review_case_report(tmp_path: Path) -> None:
+    trial_root = _trial_fixture(tmp_path, count=2)
+    report = run_pr_review_trial(
+        PrReviewTrialConfig(
+            trial_root=trial_root,
+            output_dir=tmp_path / "reports" / "ui_pr_review_v0" / "real_pr_trial",
+        )
+    )
+
+    gate_report = select_trial_gate_report(report, "trial_case_1")
+
+    assert gate_report == tmp_path / "reports" / "ui_pr_review_v0" / "real_pr_trial" / "trial_case_1" / "pr_review_report.json"
 
 
 def test_disabled_pr_visual_review_workflow_template_is_artifact_only() -> None:

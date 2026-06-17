@@ -32,6 +32,9 @@ PR_REVIEW_PATCH_SUMMARY_SCHEMA_VERSION = "ui_pr_review_v0_patch_summary_v1"
 PR_REVIEW_PILOT_SCHEMA_VERSION = "ui_pr_review_v0_pilot_v1"
 PR_REVIEW_PILOT_REPORT_SCHEMA_VERSION = "ui_pr_review_v0_pilot_report_v1"
 PR_REVIEW_CI_ARTIFACT_CONTRACT_SCHEMA_VERSION = "ui_pr_review_v0_ci_artifact_contract_v1"
+PR_REVIEW_TRIAL_CASE_SCHEMA_VERSION = "ui_pr_review_v0_real_trial_case_v1"
+PR_REVIEW_TRIAL_REVIEWER_LABEL_SCHEMA_VERSION = "ui_pr_review_v0_reviewer_label_v1"
+PR_REVIEW_TRIAL_REPORT_SCHEMA_VERSION = "ui_pr_review_v0_real_trial_report_v1"
 SUPPORTED_PR_REVIEW_MODES = {"render", "screenshots-only"}
 PR_REVIEW_DECISIONS = {
     "approve_visual",
@@ -62,6 +65,16 @@ class PrReviewPilotConfig:
     output_dir: Path = Path("reports/ui_pr_review_v0/codepawl_web_pilot")
     reviewer_id: str = ""
     open_report: bool = False
+
+
+@dataclass(frozen=True)
+class PrReviewTrialConfig:
+    trial_root: Path = Path("data/pr_review_v0/real_pr_trial")
+    output_dir: Path = Path("reports/ui_pr_review_v0/real_pr_trial")
+    reviewer_id: str = ""
+    open_report: bool = False
+    viewport_width: int = 1440
+    viewport_height: int = 900
 
 
 def run_pr_review(config: PrReviewConfig) -> dict[str, Any]:
@@ -235,6 +248,52 @@ def run_pr_review_pilot(config: PrReviewPilotConfig) -> dict[str, Any]:
     return report
 
 
+def run_pr_review_trial(config: PrReviewTrialConfig) -> dict[str, Any]:
+    trial_root = config.trial_root.expanduser().resolve()
+    output_dir = config.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cases, load_errors = load_pr_review_trial_cases(trial_root)
+    case_reports: list[dict[str, Any]] = []
+    for case in cases:
+        case_id = validate_review_id(str(case.get("case_id") or ""))
+        case_dir = Path(str(case["case_dir"]))
+        case_out = output_dir / case_id
+        validation_errors = validate_pr_review_trial_case(case)
+        skipped_reason = "; ".join(validation_errors)
+        if skipped_reason:
+            report = write_skipped_trial_case_report(case, skipped_reason, case_out)
+        else:
+            report = run_pr_review(
+                PrReviewConfig(
+                    review_id=case_id,
+                    output_dir=output_dir,
+                    mode=str(case.get("mode") or "screenshots-only"),
+                    reviewer_id=config.reviewer_id,
+                    open_report=False,
+                    review_root=trial_root,
+                    viewport_width=int((case.get("viewport") or {}).get("width") or config.viewport_width),
+                    viewport_height=int((case.get("viewport") or {}).get("height") or config.viewport_height),
+                )
+            )
+        report = attach_trial_case_context(report, case, case_dir)
+        case_reports.append(report)
+
+    report = aggregate_pr_review_trial_reports(
+        case_reports,
+        trial_root=trial_root,
+        output_dir=output_dir,
+        validation_errors=load_errors,
+    )
+    write_json(output_dir / "trial_report.json", report)
+    (output_dir / "trial_report.md").write_text(pr_review_trial_markdown(report), encoding="utf-8")
+    if config.open_report:
+        try:
+            webbrowser.open((output_dir / "trial_report.md").resolve().as_uri())
+        except Exception:
+            pass
+    return report
+
+
 def validate_review_id(review_id: str) -> str:
     cleaned = str(review_id or "").strip()
     if not cleaned:
@@ -251,6 +310,110 @@ def load_pr_review_pilot_config(config_path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"pilot config must be a JSON object: {config_path}")
     return payload
+
+
+def load_pr_review_trial_cases(trial_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    if not trial_root.is_dir():
+        return [], [f"trial root is missing: {trial_root}"]
+    cases: list[dict[str, Any]] = []
+    for path in sorted(trial_root.glob("*/metadata.json")):
+        try:
+            payload = read_json(path)
+        except Exception as exc:
+            errors.append(f"trial case metadata is unreadable: {path}: {exc}")
+            continue
+        if not isinstance(payload, dict):
+            errors.append(f"trial case metadata must be a JSON object: {path}")
+            continue
+        case_dir = path.parent.resolve()
+        case = dict(payload)
+        case.setdefault("case_id", case_dir.name)
+        case["case_dir"] = str(case_dir)
+        case["metadata_path"] = str(path.resolve())
+        cases.append(case)
+    if not cases:
+        errors.append(f"trial root has no case metadata files: {trial_root}")
+    return cases, errors
+
+
+def validate_pr_review_trial_case(case: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    case_id = str(case.get("case_id") or "").strip()
+    try:
+        validate_review_id(case_id)
+    except ValueError as exc:
+        errors.append(str(exc).replace("--review-id", "case_id"))
+    if case.get("schema_version") != PR_REVIEW_TRIAL_CASE_SCHEMA_VERSION:
+        errors.append(f"unsupported trial case schema_version: {case.get('schema_version')}")
+    if not case.get("source_branch") and not case.get("local_identifier"):
+        errors.append("source_branch or local_identifier is required")
+    if not case.get("route_or_component"):
+        errors.append("route_or_component is required")
+    mode = str(case.get("mode") or "screenshots-only")
+    if mode not in SUPPORTED_PR_REVIEW_MODES:
+        errors.append(f"unsupported mode: {mode}")
+    case_dir = Path(str(case.get("case_dir") or "."))
+    before = entry_from_metadata(case, "before")
+    after = entry_from_metadata(case, "after")
+    if mode == "screenshots-only":
+        for side, entry in (("before", before), ("after", after)):
+            screenshot = path_from_entry(entry, "screenshot_path", case_dir)
+            if screenshot is None or not screenshot.is_file():
+                errors.append(f"{side} screenshot is missing for screenshots-only mode")
+            metrics = path_from_entry(entry, "metrics_path", case_dir)
+            if metrics is None or not metrics.is_file():
+                errors.append(f"{side} metrics are missing for screenshots-only mode")
+    else:
+        for side, entry in (("before", before), ("after", after)):
+            html_path = path_from_entry(entry, "path", case_dir)
+            if html_path is None or resolve_project_entry(html_path) is None:
+                errors.append(f"{side} HTML/project path is missing or not renderable")
+    patch = path_from_entry(case, "patch_diff_path", case_dir)
+    if patch is None or not patch.is_file():
+        errors.append("patch_diff_path is missing")
+    label_path = resolve_trial_reviewer_label_path(case, case_dir)
+    if label_path and label_path.is_file():
+        label = read_trial_reviewer_label(label_path)
+        errors.extend(validate_trial_reviewer_label(label, expected_case_id=case_id))
+    return errors
+
+
+def resolve_trial_reviewer_label_path(case: dict[str, Any], case_dir: Path) -> Path | None:
+    path = path_from_entry(case, "reviewer_label_path", case_dir)
+    if path is not None:
+        return path
+    conventional = case_dir / "reviewer_label.json"
+    return conventional.resolve() if conventional.is_file() else None
+
+
+def read_trial_reviewer_label(path: Path) -> dict[str, Any]:
+    try:
+        payload = read_json(path)
+    except Exception as exc:
+        return {"_read_error": str(exc), "_path": str(path)}
+    return payload if isinstance(payload, dict) else {"_read_error": "reviewer label must be a JSON object", "_path": str(path)}
+
+
+def validate_trial_reviewer_label(label: dict[str, Any], *, expected_case_id: str | None = None) -> list[str]:
+    errors: list[str] = []
+    if label.get("_read_error"):
+        return [f"reviewer label is unreadable: {label.get('_read_error')}"]
+    if label.get("schema_version") != PR_REVIEW_TRIAL_REVIEWER_LABEL_SCHEMA_VERSION:
+        errors.append(f"unsupported reviewer label schema_version: {label.get('schema_version')}")
+    case_id = str(label.get("case_id") or "").strip()
+    if expected_case_id and case_id != expected_case_id:
+        errors.append(f"reviewer label case_id {case_id!r} does not match {expected_case_id!r}")
+    if label.get("preferred") not in {"before", "after", "tie"}:
+        errors.append("reviewer label preferred must be before, after, or tie")
+    for key in ("critic_decision_agree", "visual_regression_missed", "false_positive"):
+        if not isinstance(label.get(key), bool):
+            errors.append(f"reviewer label {key} must be boolean")
+    if not str(label.get("reviewer_id") or "").strip():
+        errors.append("reviewer label reviewer_id is required")
+    if not str(label.get("created_at") or "").strip():
+        errors.append("reviewer label created_at is required")
+    return errors
 
 
 def validate_pr_review_pilot_config(pilot: dict[str, Any], config_path: Path | None = None) -> list[str]:
@@ -699,6 +862,317 @@ def pr_review_pilot_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def write_skipped_trial_case_report(case: dict[str, Any], skipped_reason: str, output_dir: Path) -> dict[str, Any]:
+    case_id = str(case.get("case_id") or "unknown")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report = {
+        "schema_version": PR_REVIEW_REPORT_SCHEMA_VERSION,
+        "valid": False,
+        "review_id": case_id,
+        "case_id": case_id,
+        "mode": case.get("mode") or "screenshots-only",
+        "output_dir": str(output_dir),
+        "route_or_component": case.get("route_or_component"),
+        "source_branch": case.get("source_branch"),
+        "local_identifier": case.get("local_identifier"),
+        "skipped": True,
+        "skipped_reason": skipped_reason,
+        "artifact_paths": {
+            "before_screenshot": None,
+            "after_screenshot": None,
+            "screenshot_diff": None,
+            "critic_review_json": None,
+            "patch_summary_json": None,
+            "patch_diff": None,
+            "before_metrics": None,
+            "after_metrics": None,
+            "review_metadata_json": None,
+        },
+        "severe_missing_artifacts": [skipped_reason],
+        "critic_delta": None,
+        "regression_flags": default_regressions() | {"visual_regression": False},
+        "regression_thresholds_pass": False,
+        "manual_review": {"labels_available": False, "status": "pending"},
+        "recommended_decision": "blocked_missing_artifacts",
+        "constraints": {
+            "external_apis_used": False,
+            "network_required": False,
+            "model_training_used": False,
+            "cuda_used": False,
+            "canonical_datasets_modified": False,
+            "dom_aware_jepa_implemented": False,
+        },
+    }
+    write_json(output_dir / "pr_review_report.json", report)
+    (output_dir / "pr_review_report.md").write_text(pr_review_markdown(report), encoding="utf-8")
+    return report
+
+
+def attach_trial_case_context(report: dict[str, Any], case: dict[str, Any], case_dir: Path) -> dict[str, Any]:
+    enriched = dict(report)
+    case_id = str(case.get("case_id") or report.get("review_id") or "")
+    label_path = resolve_trial_reviewer_label_path(case, case_dir)
+    label = {}
+    label_errors: list[str] = []
+    if label_path and label_path.is_file():
+        label = read_trial_reviewer_label(label_path)
+        label_errors = validate_trial_reviewer_label(label, expected_case_id=case_id)
+    enriched.update(
+        {
+            "case_id": case_id,
+            "source_branch": case.get("source_branch"),
+            "local_identifier": case.get("local_identifier"),
+            "route_or_component": case.get("route_or_component"),
+            "case_dir": str(case_dir),
+            "case_metadata_path": case.get("metadata_path"),
+            "reviewer_label_path": str(label_path) if label_path else None,
+            "reviewer_label": label if label and not label_errors else None,
+            "reviewer_label_errors": label_errors,
+        }
+    )
+    return enriched
+
+
+def aggregate_pr_review_trial_reports(
+    case_reports: list[dict[str, Any]],
+    *,
+    trial_root: Path,
+    output_dir: Path,
+    validation_errors: list[str],
+) -> dict[str, Any]:
+    decisions = {decision: 0 for decision in sorted(PR_REVIEW_DECISIONS)}
+    critic_deltas: list[float] = []
+    visual_regressions = 0
+    accessibility_regressions = 0
+    responsive_regressions = 0
+    skipped_count = 0
+    reviewed_count = 0
+    agreement_count = 0
+    false_positive_count = 0
+    missed_regression_count = 0
+    reviewer_errors: list[str] = []
+    artifact_paths: list[dict[str, Any]] = []
+    for report in case_reports:
+        decision = report.get("recommended_decision")
+        if decision in decisions:
+            decisions[decision] += 1
+        if report.get("skipped"):
+            skipped_count += 1
+        delta = report.get("critic_delta")
+        if isinstance(delta, int | float):
+            critic_deltas.append(float(delta))
+        regressions = report.get("regression_flags") or {}
+        visual_regressions += int(bool(regressions.get("visual_regression")))
+        accessibility_regressions += int(bool(regressions.get("accessibility_regression")))
+        responsive_regressions += int(bool(regressions.get("responsive_regression")))
+        label_errors = report.get("reviewer_label_errors") or []
+        reviewer_errors.extend(f"{report.get('case_id')}: {error}" for error in label_errors)
+        label = report.get("reviewer_label") or {}
+        if label:
+            reviewed_count += 1
+            agreement_count += int(bool(label.get("critic_decision_agree")))
+            false_positive_count += int(bool(label.get("false_positive")))
+            missed_regression_count += int(bool(label.get("visual_regression_missed")))
+        artifact_paths.append(
+            {
+                "case_id": report.get("case_id") or report.get("review_id"),
+                "source_branch": report.get("source_branch"),
+                "local_identifier": report.get("local_identifier"),
+                "route_or_component": report.get("route_or_component"),
+                "decision": decision,
+                "skipped": bool(report.get("skipped")),
+                "skipped_reason": report.get("skipped_reason"),
+                "reviewed": bool(label),
+                "reviewer_label_path": report.get("reviewer_label_path"),
+                "output_dir": report.get("output_dir"),
+                "artifact_paths": {
+                    "pr_review_report_json": str(Path(str(report.get("output_dir") or "")) / "pr_review_report.json") if report.get("output_dir") else None,
+                    "pr_review_report_md": str(Path(str(report.get("output_dir") or "")) / "pr_review_report.md") if report.get("output_dir") else None,
+                    **(report.get("artifact_paths") or {}),
+                },
+            }
+        )
+
+    agreement_rate = round(agreement_count / reviewed_count, 6) if reviewed_count else None
+    false_positive_rate = round(false_positive_count / reviewed_count, 6) if reviewed_count else None
+    accessibility_rate = round(accessibility_regressions / max(1, len(case_reports)), 6)
+    responsive_rate = round(responsive_regressions / max(1, len(case_reports)), 6)
+    thresholds = default_trial_thresholds()
+    readiness = decide_pr_review_trial_readiness(
+        reviewed_count=reviewed_count,
+        agreement_rate=agreement_rate,
+        false_positive_rate=false_positive_rate,
+        missed_regression_count=missed_regression_count,
+        accessibility_regression_rate=accessibility_rate,
+        responsive_regression_rate=responsive_rate,
+        reviewer_errors=reviewer_errors,
+        thresholds=thresholds,
+    )
+    return {
+        "schema_version": PR_REVIEW_TRIAL_REPORT_SCHEMA_VERSION,
+        "valid": bool(case_reports and not validation_errors),
+        "trial_root": str(trial_root),
+        "output_dir": str(output_dir),
+        "validation_errors": validation_errors,
+        "reviewer_label_errors": reviewer_errors,
+        "case_count": len(case_reports),
+        "reviewed_count": reviewed_count,
+        "skipped_count": skipped_count,
+        "approve_visual_count": decisions["approve_visual"],
+        "request_changes_count": decisions["request_changes"],
+        "needs_manual_review_count": decisions["needs_manual_review"],
+        "blocked_missing_artifacts_count": decisions["blocked_missing_artifacts"],
+        "critic_vs_reviewer_agreement_count": agreement_count,
+        "critic_vs_reviewer_agreement": agreement_rate,
+        "false_positive_count": false_positive_count,
+        "false_positive_rate": false_positive_rate,
+        "missed_regression_count": missed_regression_count,
+        "mean_critic_delta": round(sum(critic_deltas) / len(critic_deltas), 6) if critic_deltas else None,
+        "visual_regression_count": visual_regressions,
+        "accessibility_regression_count": accessibility_regressions,
+        "responsive_regression_count": responsive_regressions,
+        "accessibility_regression_rate": accessibility_rate,
+        "responsive_regression_rate": responsive_rate,
+        "artifact_paths": artifact_paths,
+        "threshold_recommendations": trial_threshold_recommendations(thresholds, readiness),
+        "readiness_decision": readiness["decision"],
+        "readiness_reasons": readiness["reasons"],
+        "artifact_only_github_workflow_ready": readiness["decision"] == "enable_artifact_only_workflow",
+        "constraints": {
+            "external_apis_used": False,
+            "network_required": False,
+            "model_training_used": False,
+            "cuda_used": False,
+            "github_auto_comments_enabled": False,
+            "github_required_check_enabled": False,
+            "dom_aware_jepa_implemented": False,
+        },
+    }
+
+
+def default_trial_thresholds() -> dict[str, Any]:
+    return {
+        "min_reviewed_cases": 5,
+        "recommended_case_count_range": [5, 10],
+        "minimum_reviewer_agreement": 0.8,
+        "maximum_false_positive_rate": 0.2,
+        "maximum_missed_regression_count": 0,
+        "maximum_accessibility_regression_rate": 0.1,
+        "maximum_responsive_regression_rate": 0.1,
+        "low_confidence_decision": "needs_manual_review",
+        "auto_commenting": "disabled",
+        "required_check": "disabled",
+    }
+
+
+def decide_pr_review_trial_readiness(
+    *,
+    reviewed_count: int,
+    agreement_rate: float | None,
+    false_positive_rate: float | None,
+    missed_regression_count: int,
+    accessibility_regression_rate: float,
+    responsive_regression_rate: float,
+    reviewer_errors: list[str],
+    thresholds: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    thresholds = thresholds or default_trial_thresholds()
+    reasons: list[str] = []
+    if reviewed_count < int(thresholds["min_reviewed_cases"]):
+        reasons.append(f"fewer than {thresholds['min_reviewed_cases']} reviewed real cases")
+        return {"decision": "collect_more_real_cases", "reasons": reasons}
+    if reviewer_errors:
+        reasons.append("reviewer label errors are present")
+        return {"decision": "improve_report_ux", "reasons": reasons}
+    if missed_regression_count > int(thresholds["maximum_missed_regression_count"]):
+        reasons.append("reviewer found missed visual regressions")
+        return {"decision": "do_not_productize_yet", "reasons": reasons}
+    if accessibility_regression_rate > float(thresholds["maximum_accessibility_regression_rate"]):
+        reasons.append("accessibility regression rate is above threshold")
+        return {"decision": "do_not_productize_yet", "reasons": reasons}
+    if responsive_regression_rate > float(thresholds["maximum_responsive_regression_rate"]):
+        reasons.append("responsive regression rate is above threshold")
+        return {"decision": "do_not_productize_yet", "reasons": reasons}
+    if false_positive_rate is None or false_positive_rate > float(thresholds["maximum_false_positive_rate"]):
+        reasons.append("false positive rate is above conservative threshold")
+        return {"decision": "tune_thresholds", "reasons": reasons}
+    if agreement_rate is None or agreement_rate < float(thresholds["minimum_reviewer_agreement"]):
+        reasons.append("critic/reviewer agreement is below threshold")
+        return {"decision": "improve_report_ux", "reasons": reasons}
+    reasons.append("reviewed real cases meet artifact-only workflow thresholds")
+    return {"decision": "enable_artifact_only_workflow", "reasons": reasons}
+
+
+def trial_threshold_recommendations(thresholds: dict[str, Any], readiness: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "thresholds": thresholds,
+        "current_readiness_decision": readiness.get("decision"),
+        "decision_policy": {
+            "approve_visual": "Use only when artifacts are complete, no regression flags are set, critic delta is non-negative or reviewer agrees, and confidence is not low.",
+            "needs_manual_review": "Prefer this over request_changes when evidence is ambiguous, reviewer agreement is below threshold, or a case lacks completed reviewer labels.",
+            "request_changes": "Reserve for clear visual, accessibility, overflow, responsive, or reviewer-confirmed regressions.",
+        },
+        "github_policy": {
+            "artifact_upload": "enable only after readiness_decision is enable_artifact_only_workflow",
+            "auto_commenting": "keep disabled",
+            "required_check": "keep disabled",
+        },
+    }
+
+
+def pr_review_trial_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# Real PR Visual Review Trial",
+        "",
+        f"- Valid: {report.get('valid')}",
+        f"- Cases: {report.get('case_count')}",
+        f"- Reviewed: {report.get('reviewed_count')}",
+        f"- Skipped: {report.get('skipped_count')}",
+        f"- Approve visual: {report.get('approve_visual_count')}",
+        f"- Request changes: {report.get('request_changes_count')}",
+        f"- Needs manual review: {report.get('needs_manual_review_count')}",
+        f"- Blocked missing artifacts: {report.get('blocked_missing_artifacts_count')}",
+        f"- Critic/reviewer agreement: {report.get('critic_vs_reviewer_agreement')}",
+        f"- False positives: {report.get('false_positive_count')}",
+        f"- Missed regressions: {report.get('missed_regression_count')}",
+        f"- Mean critic delta: {report.get('mean_critic_delta')}",
+        f"- Readiness decision: {report.get('readiness_decision')}",
+        f"- Artifact-only workflow ready: {report.get('artifact_only_github_workflow_ready')}",
+        "",
+        "## Readiness Reasons",
+        "",
+    ]
+    lines.extend(f"- {reason}" for reason in report.get("readiness_reasons") or [])
+    lines.extend(["", "## Cases", ""])
+    for item in report.get("artifact_paths") or []:
+        lines.extend(
+            [
+                f"### {item.get('case_id')}",
+                "",
+                f"- Route/component: {item.get('route_or_component')}",
+                f"- Source branch/local id: {item.get('source_branch') or item.get('local_identifier')}",
+                f"- Decision: {item.get('decision')}",
+                f"- Reviewed: {item.get('reviewed')}",
+                f"- Skipped: {item.get('skipped')}",
+                f"- Skipped reason: {item.get('skipped_reason')}",
+                f"- Report JSON: {(item.get('artifact_paths') or {}).get('pr_review_report_json')}",
+                f"- Report Markdown: {(item.get('artifact_paths') or {}).get('pr_review_report_md')}",
+                f"- Before screenshot: {(item.get('artifact_paths') or {}).get('before_screenshot')}",
+                f"- After screenshot: {(item.get('artifact_paths') or {}).get('after_screenshot')}",
+                f"- Screenshot diff: {(item.get('artifact_paths') or {}).get('screenshot_diff')}",
+                f"- Reviewer label: {item.get('reviewer_label_path')}",
+                "",
+            ]
+        )
+    errors = (report.get("validation_errors") or []) + (report.get("reviewer_label_errors") or [])
+    if errors:
+        lines.extend(["## Validation Errors", ""])
+        lines.extend(f"- {error}" for error in errors)
+        lines.append("")
+    lines.append("Auto-commenting and required PR checks remain disabled. DOM-aware JEPA remains blocked.")
+    return "\n".join(lines) + "\n"
+
+
 def resolve_pilot_path(config_dir: Path, value: Any) -> Path:
     path = Path(str(value or "")).expanduser()
     if not path.is_absolute():
@@ -725,6 +1199,9 @@ def build_review_input(config: PrReviewConfig, review_dir: Path, metadata: dict[
     errors: list[str] = []
     before = entry_from_metadata(metadata, "before")
     after = entry_from_metadata(metadata, "after")
+    schema_version = metadata.get("schema_version") or PR_REVIEW_INPUT_SCHEMA_VERSION
+    if schema_version == PR_REVIEW_TRIAL_CASE_SCHEMA_VERSION:
+        schema_version = PR_REVIEW_INPUT_SCHEMA_VERSION
     before_path = resolve_maybe_path(config.before, review_dir) or path_from_entry(before, "path", review_dir) or conventional_path(review_dir, "before.html")
     after_path = resolve_maybe_path(config.after, review_dir) or path_from_entry(after, "path", review_dir) or conventional_path(review_dir, "after.html")
     patch_diff = resolve_maybe_path(config.patch_diff, review_dir) or path_from_entry(metadata, "patch_diff_path", review_dir) or conventional_path(review_dir, "patch.diff")
@@ -738,7 +1215,7 @@ def build_review_input(config: PrReviewConfig, review_dir: Path, metadata: dict[
         after_screenshot = path_from_entry(after, "screenshot_path", review_dir)
 
     review_input = {
-        "schema_version": metadata.get("schema_version") or PR_REVIEW_INPUT_SCHEMA_VERSION,
+        "schema_version": schema_version,
         "review_id": config.review_id,
         "review_dir": str(review_dir),
         "mode": config.mode,

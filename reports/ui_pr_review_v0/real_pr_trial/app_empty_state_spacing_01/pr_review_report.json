@@ -1,0 +1,173 @@
+{
+  "allowed_decisions": [
+    "approve_visual",
+    "blocked_missing_artifacts",
+    "needs_manual_review",
+    "request_changes"
+  ],
+  "artifact_paths": {
+    "after_metrics": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/after_metrics.json",
+    "after_screenshot": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/after.png",
+    "before_metrics": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/before_metrics.json",
+    "before_screenshot": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/before.png",
+    "critic_review_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/critic_review.json",
+    "patch_diff": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/patch.diff",
+    "patch_summary_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/patch_summary.json",
+    "review_metadata_json": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/review_metadata.json",
+    "screenshot_diff": null
+  },
+  "constraints": {
+    "canonical_datasets_modified": false,
+    "cuda_used": false,
+    "dom_aware_jepa_implemented": false,
+    "external_apis_used": false,
+    "model_training_used": false,
+    "network_required": false
+  },
+  "critic_delta": 0.14,
+  "critic_review": {
+    "after": {
+      "issues": [],
+      "overall_score": 1.0,
+      "preference_confidence": 0.55,
+      "recommended_instruction": "Preserve the current layout; no high-confidence synthetic issue was detected.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "app_empty_state_spacing_01__after"
+    },
+    "after_deterministic_quality_score": 1.0,
+    "before": {
+      "issues": [
+        {
+          "confidence": 0.64,
+          "evidence": {
+            "feature_group": "metrics",
+            "metrics": {
+              "average_contrast_ratio": 9.02,
+              "contrast_checked_text_node_count": 7.0,
+              "contrast_issue_count": 0.0,
+              "cta_like_element_count": 1.0,
+              "font_size_ratio": 3.0,
+              "has_horizontal_overflow": 0.0,
+              "has_vertical_overflow": 1.0,
+              "heading_count": 1.0,
+              "hierarchy_warning_count": 0.0,
+              "horizontal_overflow_px": 0.0,
+              "max_font_size": 48.0,
+              "max_right_overflow_px": 0.0,
+              "median_element_area": 14300.0,
+              "min_contrast_ratio": 5.81,
+              "min_font_size": 16.0,
+              "vertical_scroll_height": 904.0,
+              "viewport_fill_ratio": 1.0,
+              "visible_element_count": 13.0
+            }
+          },
+          "instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+          "region_id": "app_empty_state_spacing_01__before__synthetic_spacing",
+          "region_type": "card_grid",
+          "severity": "medium",
+          "type": "spacing"
+        }
+      ],
+      "overall_score": 0.86,
+      "preference_confidence": 0.63,
+      "recommended_instruction": "Normalize card padding and vertical rhythm using the existing spacing scale.",
+      "schema_version": "ui_preference_critic_json_v1",
+      "screen_id": "app_empty_state_spacing_01__before"
+    },
+    "before_deterministic_quality_score": 1.0,
+    "critic_delta": 0.14,
+    "deterministic_metric_deltas": {
+      "contrast_issue_count": 0.0,
+      "font_size_ratio": 0.0,
+      "hierarchy_warning_count": 0.0,
+      "horizontal_overflow_px": 0.0,
+      "max_right_overflow_px": 0.0,
+      "min_contrast_ratio": 0.0,
+      "quality_score_delta": 0.0,
+      "viewport_fill_ratio": 0.0
+    },
+    "preference_prediction": "after",
+    "regression_flags": {
+      "accessibility_regression": false,
+      "overflow_regression": false,
+      "responsive_regression": false,
+      "visual_regression": false
+    },
+    "review_id": "app_empty_state_spacing_01",
+    "schema_version": "ui_pr_review_v0_critic_review_v1",
+    "valid": true
+  },
+  "deterministic_metric_deltas": {
+    "contrast_issue_count": 0.0,
+    "font_size_ratio": 0.0,
+    "hierarchy_warning_count": 0.0,
+    "horizontal_overflow_px": 0.0,
+    "max_right_overflow_px": 0.0,
+    "min_contrast_ratio": 0.0,
+    "quality_score_delta": 0.0,
+    "viewport_fill_ratio": 0.0
+  },
+  "input": {
+    "after": {
+      "metrics_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0009__app_empty_state__spacing_bad_seed01/manual_patch_import/render/metrics.json",
+      "path": null,
+      "screenshot_path": "/home/nxank4/Code/personal/codepawl/reports/ui_loop_v0_manual_batch/hard_manual_patch_import/work/loop_hard_100__0009__app_empty_state__spacing_bad_seed01/manual_patch_import/render/screenshot.png"
+    },
+    "before": {
+      "metrics_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/spacing_bad_seed01/metrics.json",
+      "path": null,
+      "screenshot_path": "/home/nxank4/Code/personal/codepawl/data/processed/ui_jepa_v0_smoke/samples/app_empty_state/jittered/spacing_bad_seed01/screenshot.png"
+    },
+    "manual_label_path": null,
+    "metadata_path": "/home/nxank4/Code/personal/codepawl/data/pr_review_v0/real_pr_trial/app_empty_state_spacing_01/metadata.json",
+    "mode": "screenshots-only",
+    "patch_diff_path": "/home/nxank4/Code/personal/codepawl/data/manual_patches/ui_loop_v0/loop_hard_100__0009__app_empty_state__spacing_bad_seed01/patch.diff",
+    "review_dir": "/home/nxank4/Code/personal/codepawl/data/pr_review_v0/real_pr_trial/app_empty_state_spacing_01",
+    "review_id": "app_empty_state_spacing_01",
+    "schema_version": "ui_pr_review_v0_input_v1"
+  },
+  "manual_review": {
+    "critic_vs_human_agreement": null,
+    "labels_available": false,
+    "manual_label_template_path": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/manual_label_template.json",
+    "skipped_reason": "manual PR review label is pending",
+    "status": "pending"
+  },
+  "mode": "screenshots-only",
+  "output_dir": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01",
+  "patch_summary": {
+    "added_lines": 1,
+    "available": true,
+    "files_changed": 2,
+    "path": "/home/nxank4/Code/personal/codepawl/reports/ui_pr_review_v0/real_pr_trial/app_empty_state_spacing_01/patch.diff",
+    "removed_lines": 23,
+    "schema_version": "ui_pr_review_v0_patch_summary_v1"
+  },
+  "recommended_decision": "approve_visual",
+  "regression_flags": {
+    "accessibility_regression": false,
+    "overflow_regression": false,
+    "responsive_regression": false,
+    "visual_regression": false
+  },
+  "regression_thresholds_pass": true,
+  "review_id": "app_empty_state_spacing_01",
+  "reviewer_id": "trial",
+  "runtime_seconds": 0.0257,
+  "schema_version": "ui_pr_review_v0_report_v1",
+  "screenshot_diff_stats": {
+    "after_size": [
+      1440,
+      900
+    ],
+    "available": false,
+    "before_size": [
+      1440,
+      904
+    ],
+    "reason": "screenshot sizes differ"
+  },
+  "severe_missing_artifacts": [],
+  "valid": true
+}

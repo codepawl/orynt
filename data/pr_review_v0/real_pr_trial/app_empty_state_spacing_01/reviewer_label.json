@@ -1,0 +1,11 @@
+{
+  "schema_version": "ui_pr_review_v0_reviewer_label_v1",
+  "case_id": "app_empty_state_spacing_01",
+  "preferred": "after",
+  "critic_decision_agree": true,
+  "visual_regression_missed": false,
+  "false_positive": false,
+  "notes": "After state fixes empty-state spacing and remains visually stable.",
+  "reviewer_id": "sample_local_trial",
+  "created_at": "2026-06-17T00:00:00Z"
+}

@@ -262,3 +262,25 @@ Evidence still needed before a GitHub PR bot:
 - low false-positive rate for `request_changes`
 - documented artifact retention paths for screenshots, diffs, JSON, and Markdown summaries
 - CI jobs that run with `UV_NO_SYNC=1` and no network access
+
+## Real PR Trial
+
+Use the real trial layer to evaluate 5-10 local frontend change cases before enabling artifact-only GitHub Actions:
+
+```bash
+UV_NO_SYNC=1 UV_CACHE_DIR=/tmp/uv-cache uv run ui-pr-review-trial
+```
+
+Trial inputs live under:
+
+```text
+data/pr_review_v0/real_pr_trial/<case_id>/
+```
+
+Trial outputs live under:
+
+```text
+reports/ui_pr_review_v0/real_pr_trial/
+```
+
+The aggregate report includes case counts, reviewer-label coverage, critic/reviewer agreement, false positives, missed regressions, regression rates, threshold recommendations, and a readiness decision. The only readiness decision that can justify enabling the disabled artifact-only workflow is `enable_artifact_only_workflow`; auto-commenting and required checks remain off. See `docs/REAL_PR_TRIAL.md`.
