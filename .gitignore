@@ -15,6 +15,10 @@ venv/
 .env
 .env.*
 
+# Local agent metadata
+.agents/
+.codex/
+
 # Node/browser tooling for future Playwright harness
 node_modules/
 .playwright/
