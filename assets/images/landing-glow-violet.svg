@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-label="Abstract violet report light field">
+  <defs>
+    <filter id="noise" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.74" numOctaves="4" seed="47" result="grain"/>
+      <feColorMatrix in="grain" type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.2"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+    <linearGradient id="violetA" x1="52%" x2="52%" y1="0%" y2="100%">
+      <stop offset="0" stop-color="#50e6ff" stop-opacity="0"/>
+      <stop offset="0.18" stop-color="#35d7ff" stop-opacity="0.92"/>
+      <stop offset="0.42" stop-color="#005397" stop-opacity="0.78"/>
+      <stop offset="0.68" stop-color="#7d35ff" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#ff8788" stop-opacity="0.18"/>
+    </linearGradient>
+    <radialGradient id="violetB" cx="48%" cy="50%" r="48%">
+      <stop offset="0" stop-color="#865cff"/>
+      <stop offset="0.35" stop-color="#005397"/>
+      <stop offset="1" stop-color="#020303" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g filter="url(#noise)">
+    <path d="M565 0 C720 180 705 335 610 488 C545 592 548 680 665 760 L435 760 C542 648 518 575 468 470 C388 300 405 145 565 0Z" fill="url(#violetA)" opacity="0.88"/>
+    <ellipse cx="590" cy="380" rx="460" ry="310" fill="url(#violetB)" opacity="0.72"/>
+    <path d="M0 620 C260 480 458 560 620 610 C830 675 970 520 1200 545 L1200 760 L0 760Z" fill="#060615" opacity="0.74"/>
+  </g>
+</svg>

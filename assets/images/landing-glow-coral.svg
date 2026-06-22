@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-label="Abstract coral technical light field">
+  <defs>
+    <filter id="noise" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" seed="23" result="grain"/>
+      <feColorMatrix in="grain" type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.2"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+    <radialGradient id="coralA" cx="18%" cy="12%" r="64%">
+      <stop offset="0" stop-color="#ffe6a1"/>
+      <stop offset="0.24" stop-color="#ff8788"/>
+      <stop offset="0.52" stop-color="#b93446"/>
+      <stop offset="1" stop-color="#020303" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coralB" x1="0%" x2="78%" y1="0%" y2="64%">
+      <stop offset="0" stop-color="#ffb45f" stop-opacity="0.95"/>
+      <stop offset="0.42" stop-color="#ff8788" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#020303" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g filter="url(#noise)">
+    <path d="M-80 135 C190 -45 520 20 706 170 C818 260 780 370 598 408 C386 452 142 350 -80 465Z" fill="url(#coralB)" opacity="0.94"/>
+    <ellipse cx="260" cy="150" rx="430" ry="290" fill="url(#coralA)" opacity="0.86"/>
+    <path d="M0 520 C250 410 452 610 690 535 C865 480 980 360 1200 395 L1200 760 L0 760Z" fill="#1a0507" opacity="0.72"/>
+  </g>
+</svg>

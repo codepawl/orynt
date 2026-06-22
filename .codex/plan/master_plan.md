@@ -338,7 +338,14 @@ MVP goal:
 
 > Given a local repo after an AI coding session, CodePawl analyzes the current diff, detected commands/logs, and repo policy, then generates a useful session report with verdict, risks, missing validation, and next action.
 
-MVP features:
+MVP arc:
+
+* v0.1 proves the local CLI/report/history loop.
+* v0.2 adds local Studio over real local data.
+* v0.3 adds GitHub Action reports without CloudPawl.
+* v0.4 adds opt-in agent hooks without wrapper-first UX.
+
+First local features:
 
 1. CLI setup
 
@@ -367,14 +374,14 @@ MVP features:
    * JSON report
    * terminal summary
 
-6. Basic local Studio
+6. Local Studio after v0.1
 
    * simple web UI or TUI
    * list projects
    * list reports
    * open latest analysis
 
-7. Optional AI diagnosis
+7. Optional AI diagnosis later
 
    * pluggable model provider
    * evidence-bound prompt
@@ -428,7 +435,8 @@ Milestone 4: GitHub/report surface
 Done when:
 
 * CodePawl can generate PR-ready markdown
-* optional GitHub App or GitHub Action can post report
+* GitHub Action can write a job summary and upload redacted report artifacts
+* later GitHub App can post sticky PR reports
 * no cloud required
 
 ## 11. Pricing direction
@@ -486,57 +494,66 @@ Dashboard must be an action queue, not a stats page.
 
 ## 13. Initial repo structure
 
-Recommended structure:
+Recommended Rust-first structure:
 
 ```txt
 codepawl/
+  Cargo.toml
+  crates/
+    codepawl-core/        # data models, analysis pipeline, rules
+    codepawl-cli/         # command line interface
+    codepawl-git/         # git diff/status/branch inspection
+    codepawl-evidence/    # validation/log evidence parser
+    codepawl-policy/      # codepawl.yml parser and path rules
+    codepawl-report/      # markdown/json report generation
+    codepawl-store/       # SQLite migrations and queries
   apps/
-    studio/          # local web UI later
+    studio/               # local web UI later
+    desktop/              # Tauri shell later
+    cloud/                # CloudPawl later
   packages/
-    cli/             # command line interface
-    core/            # schemas, analysis pipeline
-    store/           # SQLite/file store
-    integrations/    # codex/claude/github adapters
-    report/          # markdown/json report generation
+    github-action/        # GitHub Action wrapper later
+    vscode-extension/     # IDE extension later
   fixtures/
     sessions/
     repos/
+    reports/
   docs/
-    product-master-plan.md
-    architecture.md
-    mvp.md
+    privacy.md            # public docs later
+    reports.md            # public docs later
+  .codex/
+    plan/
+    ui/
+  AGENTS.md
   README.md
-  PLAN.md
 ```
 
 ## 14. First Codex prompt
 
-Use this for the empty repo:
+Use this for the first implementation pass. The detailed sprint order lives in `.codex/plan/execution_plan.md`; the platform boundaries live in `.codex/plan/technical_plan.md`.
 
 ```txt
 /plan
 
-Goal: scaffold the initial CodePawl repository as a local-first AI coding session intelligence tool.
+Goal: scaffold CodePawl as a Rust-first local session intelligence tool with TypeScript surfaces reserved for Studio and GitHub later.
 
-Context: this is an empty repo. First create a minimal workspace for a TypeScript/Node project. CodePawl’s product direction is: “Turn every AI coding session into measurable engineering work.” The first MVP should analyze a local git repo after an AI coding session and generate a markdown/json report with changed files, validation evidence, risks, and next actions.
+Context: CodePawl’s product direction is: “Turn every AI coding session into measurable engineering work.” The first milestone is local fixture analysis that generates `report.json` and `report.md` with verdict, evidence references, risks, and next action.
 
 Constraints:
-- Do not build cloud, auth, billing, GitHub App, or full dashboard yet.
+- Use a Rust workspace for core, CLI, git/evidence/policy/report/store crates.
+- Do not build cloud, auth, billing, GitHub App, desktop, extension, or full dashboard yet.
 - Keep scope small and testable.
-- Prefer pnpm workspace.
-- Use TypeScript.
-- Design packages so future Studio UI, agent hooks, and CloudPawl sync can be added later.
 - Do not upload source code or add telemetry.
 - Keep local-first defaults.
-- Include clear README and PLAN.md.
+- Every analysis claim must reference evidence.
+- Keep report schema stable and snapshot-tested.
+- Include clear README guidance for the first local commands.
 - Add minimal tests for core analysis/report logic.
 
 Done when:
-- pnpm install works.
-- pnpm test works.
-- CLI command can run on a sample fixture.
-- Core package can produce a report object from sample changed files/check results.
-- Report package can render markdown and JSON.
+- `cargo test --workspace` passes.
+- `codepawl analyze --fixture fixtures/sessions/basic` can run on a sample fixture.
+- Core/report crates can produce and render a report object from sample changed files/check results.
 - README explains the thesis, MVP, and first commands.
 ```
 
@@ -553,6 +570,3 @@ But the first build should be smaller:
 The first value is not the dashboard. The first value is:
 
 > After the agent stops, CodePawl tells you what happened, what is missing, what is risky, what to do next, and what should be remembered.
-
-```
-```
