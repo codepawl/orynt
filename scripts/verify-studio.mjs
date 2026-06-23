@@ -20,8 +20,17 @@ const requiredFiles = [
   "apps/studio/e2e/studio-smoke.spec.ts",
   "apps/studio/src/App.tsx",
   "apps/studio/src/components.tsx",
+  "apps/studio/src/fixtures/report-fixtures.ts",
   "apps/studio/src/fixtures/studio-fixtures.ts",
   "apps/studio/src/fixtures/mockup-source-map.ts",
+  "apps/studio/src/fixtures/reports/report-blocked-severe-policy.json",
+  "apps/studio/src/fixtures/reports/report-failed-command-log.json",
+  "apps/studio/src/fixtures/reports/report-fixture-basic.json",
+  "apps/studio/src/fixtures/reports/report-needs-evidence-ui-missing-e2e.json",
+  "apps/studio/src/fixtures/reports/report-risky-protected-path.json",
+  "apps/studio/src/reports/report-adapter.ts",
+  "apps/studio/src/reports/report-adapter.test.ts",
+  "apps/studio/src/reports/report-schema.ts",
   "apps/studio/src/styles.css",
 ];
 
@@ -47,6 +56,7 @@ const requiredSurfaces = [
   "Responsive Report Review",
   "LocalSourceInventory",
   "No source upload by default",
+  "Report Data Source",
 ];
 
 const requiredSessionDetailTerms = [
@@ -104,6 +114,9 @@ if (failures.length === 0) {
   const app = read("apps/studio/src/App.tsx");
   const components = read("apps/studio/src/components.tsx");
   const fixtures = read("apps/studio/src/fixtures/studio-fixtures.ts");
+  const reportFixtures = read("apps/studio/src/fixtures/report-fixtures.ts");
+  const reportAdapter = read("apps/studio/src/reports/report-adapter.ts");
+  const reportSchema = read("apps/studio/src/reports/report-schema.ts");
   const sourceMap = read("apps/studio/src/fixtures/mockup-source-map.ts");
   const styles = read("apps/studio/src/styles.css");
   const packageJson = read("apps/studio/package.json");
@@ -217,13 +230,13 @@ if (failures.length === 0) {
   }
 
   for (const verdict of allowedVerdicts) {
-    if (!fixtures.includes(`"${verdict}"`)) {
-      failures.push(`Missing allowed verdict fixture value: ${verdict}`);
+    if (!fixtures.includes(`"${verdict}"`) && !reportSchema.includes(`"${verdict}"`)) {
+      failures.push(`Missing allowed verdict value: ${verdict}`);
     }
   }
 
   for (const banned of bannedVerdictText) {
-    if (` ${app} ${fixtures} `.toLowerCase().includes(banned)) {
+    if (` ${app} ${fixtures} ${reportAdapter} `.toLowerCase().includes(banned)) {
       failures.push(`Banned verdict/workflow wording still present: ${banned.trim()}`);
     }
   }
@@ -242,6 +255,18 @@ if (failures.length === 0) {
 
   if (!packageJson.includes('"smoke:visual"')) {
     failures.push("Missing Playwright visual smoke script");
+  }
+
+  for (const marker of [
+    "buildReportDataState",
+    "adaptCodePawlReport",
+    "isCodePawlReport",
+    "browser Studio cannot read arbitrary project files",
+    "report-needs-evidence-ui-missing-e2e",
+  ]) {
+    if (!reportAdapter.includes(marker) && !reportFixtures.includes(marker) && !reportSchema.includes(marker)) {
+      failures.push(`Missing report adapter marker: ${marker}`);
+    }
   }
 
   if (!playwright.includes("screenshot") && !smoke.includes("screenshot")) {

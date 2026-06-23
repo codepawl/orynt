@@ -1,0 +1,94 @@
+{
+  "id": "report-risky-protected-path",
+  "created_at": "2026-06-23T00:03:00Z",
+  "project": {
+    "name": "codepawl-fixture",
+    "path": "fixtures/sessions/risky_protected_path"
+  },
+  "session": {
+    "id": "fixture-risky-protected-path",
+    "source": "fixture",
+    "summary": "Synthetic protected path and dependency change."
+  },
+  "agent": "Codex",
+  "branch": "fixture/risky",
+  "verdict": "risky",
+  "summary": "Synthetic protected path and dependency change. 3 file(s) on branch `fixture/risky`. Verdict: risky.",
+  "changed_files": [
+    {
+      "path": "apps/api/billing/route.ts",
+      "status": "modified",
+      "evidence_ref": "diff.patch"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "evidence_ref": "diff.patch"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "status": "modified",
+      "evidence_ref": "diff.patch"
+    }
+  ],
+  "validation_evidence": [
+    {
+      "check": "build",
+      "status": "passed",
+      "source": "logs/build.log",
+      "summary": "build evidence Passed: cargo build --workspace"
+    },
+    {
+      "check": "test",
+      "status": "passed",
+      "source": "logs/test.log",
+      "summary": "test evidence Passed: cargo test --workspace"
+    },
+    {
+      "check": "typecheck",
+      "status": "passed",
+      "source": "logs/typecheck.log",
+      "summary": "typecheck evidence Passed: cargo check --workspace"
+    }
+  ],
+  "risks": [
+    {
+      "severity": "High",
+      "title": "Protected path touched",
+      "detail": "Protected policy paths changed: apps/api/billing/route.ts.",
+      "evidence_refs": [
+        "diff.patch",
+        "policy.protected_paths"
+      ]
+    },
+    {
+      "severity": "Medium",
+      "title": "Dependency or lockfile changed",
+      "detail": "Dependency or lockfile changes need review: package.json, pnpm-lock.yaml.",
+      "evidence_refs": [
+        "diff.patch",
+        "policy.risky_patterns"
+      ]
+    }
+  ],
+  "missing_evidence": [],
+  "next_actions": [
+    "Review dependency and lockfile changes before marking this session ready: package.json, pnpm-lock.yaml.",
+    "Review protected path changes before merge: apps/api/billing/route.ts."
+  ],
+  "follow_up_prompt": "Continue from this CodePawl report. Focus only on the cited evidence and complete this next action: Review dependency and lockfile changes before marking this session ready: package.json, pnpm-lock.yaml.",
+  "memory_candidates": [
+    "Review future sessions for risk pattern: Protected path touched.",
+    "Review future sessions for risk pattern: Dependency or lockfile changed."
+  ],
+  "artifacts": [
+    {
+      "kind": "raw_events",
+      "path": "raw-events.jsonl"
+    },
+    {
+      "kind": "diff",
+      "path": "diff.patch"
+    }
+  ]
+}

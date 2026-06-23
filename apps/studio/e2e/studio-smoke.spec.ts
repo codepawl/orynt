@@ -6,6 +6,8 @@ test("Studio fixture prototype renders required pages and captures screenshots",
   await expect(page.getByRole("heading", { name: /CodePawl Studio/ })).toBeVisible();
   await expect(page.getByText("Local-only").first()).toBeVisible();
   await expect(page.getByText("No source upload by default").first()).toBeVisible();
+  await expect(page.getByText("Report Data Source")).toBeVisible();
+  await expect(page.getByText("Rendering generated CodePawl report JSON through the Studio adapter.")).toBeVisible();
   await expect(page.getByText("Most Urgent Decision")).toBeVisible();
   await expect(page.getByText("Weekly AI Shipping Funnel")).toBeVisible();
 
@@ -15,7 +17,7 @@ test("Studio fixture prototype renders required pages and captures screenshots",
   });
 
   await page.getByRole("button", { name: "Open session detail" }).click();
-  await expect(page.getByRole("heading", { name: /Codex - codepawl\/web redesign/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Codex - Synthetic UI change missing e2e evidence/ })).toBeVisible();
   await expect(page.getByText("Evidence Audit Trail")).toBeVisible();
   await expect(page.getByText("Recommended Action").first()).toBeVisible();
   await expect(page.getByText("Memory Candidate")).toBeVisible();

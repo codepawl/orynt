@@ -1,0 +1,61 @@
+{
+  "id": "report-fixture-basic",
+  "created_at": "2026-06-23T00:00:00Z",
+  "project": {
+    "name": "codepawl-fixture",
+    "path": "fixtures/sessions/basic"
+  },
+  "session": {
+    "id": "fixture-basic",
+    "source": "fixture",
+    "summary": "Synthetic scoped change with complete validation evidence."
+  },
+  "agent": "Codex",
+  "branch": "fixture/basic",
+  "verdict": "verified",
+  "summary": "Synthetic scoped change with complete validation evidence. 1 file(s) on branch `fixture/basic`. Verdict: verified.",
+  "changed_files": [
+    {
+      "path": "crates/codepawl-core/src/lib.rs",
+      "status": "modified",
+      "evidence_ref": "diff.patch"
+    }
+  ],
+  "validation_evidence": [
+    {
+      "check": "test",
+      "status": "passed",
+      "source": "logs/test.log",
+      "summary": "test evidence Passed: cargo test --workspace"
+    },
+    {
+      "check": "typecheck",
+      "status": "passed",
+      "source": "logs/typecheck.log",
+      "summary": "typecheck evidence Passed: cargo check --workspace"
+    },
+    {
+      "check": "build",
+      "status": "passed",
+      "source": "logs/build.log",
+      "summary": "build evidence Passed: cargo build --workspace"
+    }
+  ],
+  "risks": [],
+  "missing_evidence": [],
+  "next_actions": [
+    "No immediate action required; keep the report with the session record."
+  ],
+  "follow_up_prompt": "No rerun prompt is needed for this verified report.",
+  "memory_candidates": [],
+  "artifacts": [
+    {
+      "kind": "raw_events",
+      "path": "raw-events.jsonl"
+    },
+    {
+      "kind": "diff",
+      "path": "diff.patch"
+    }
+  ]
+}

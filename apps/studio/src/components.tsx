@@ -23,7 +23,7 @@ export const verdictLabels: Record<Verdict, string> = {
 };
 
 function statusClass(status: EvidenceStatus | Verdict | string) {
-  if (status === "verified" || status === "passed" || status === "healthy" || status === "connected" || status === "enabled") {
+  if (status === "verified" || status === "passed" || status === "connected" || status === "enabled") {
     return "verified";
   }
   if (status === "risky" || status === "failed") {
@@ -298,7 +298,7 @@ export function CommandBlock({ command }: { command: string }) {
   return (
     <div className="action-command">
       <div className="card-title">Recommended Action</div>
-      <p>Copy the command before applying a ready workflow label.</p>
+      <p>Copy the command before applying a readiness label.</p>
       <div className="command-line">{command}</div>
       <div className="card-actions"><button type="button" className="btn">Copy command</button></div>
     </div>

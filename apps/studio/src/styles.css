@@ -432,6 +432,7 @@ p {
 .card,
 .decision-console,
 .attention-lead,
+.report-data-notice,
 .viewport-frame,
 .drawer-preview {
   border: 1px solid var(--border);
@@ -439,6 +440,29 @@ p {
   background: var(--surface);
   box-shadow: var(--shadow);
   padding: 18px;
+}
+
+.report-data-notice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.36fr);
+  gap: 16px;
+  margin-bottom: 16px;
+  border-left: 5px solid var(--evidence);
+  box-shadow: none;
+}
+
+.notice-errors {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.notice-errors code,
+.empty-inline {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted-surface);
+  padding: 10px;
 }
 
 .card.tall,
@@ -791,6 +815,7 @@ p {
   .shell,
   .attention-lead,
   .decision-console,
+  .report-data-notice,
   .viewport-gallery {
     grid-template-columns: 1fr;
   }

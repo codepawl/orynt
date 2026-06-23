@@ -31,7 +31,7 @@ export interface SessionFixture {
   nextAction: string;
   changedFiles: Array<{ path: string; scope: "in_scope" | "suspicious" | "protected" }>;
   validationEvidence: Array<{ check: string; status: EvidenceStatus; evidence: string }>;
-  risks: Array<{ severity: "High" | "Medium" | "Low"; title: string; detail: string }>;
+  risks: Array<{ severity: "Blocker" | "High" | "Medium" | "Low"; title: string; detail: string }>;
   timeline: Array<{ time: string; title: string; detail: string }>;
   auditTrail: Array<{ status: EvidenceStatus; detail: string; evidence: string }>;
   aiDiagnosis: string;
@@ -42,7 +42,7 @@ export interface SessionFixture {
 export interface ProjectFixture {
   name: string;
   detail: string;
-  status: Verdict | "healthy" | "optional" | "connected" | "enabled" | "off";
+  status: Verdict | "optional" | "connected" | "enabled" | "off";
 }
 
 export const verdicts: Verdict[] = ["verified", "needs_evidence", "risky", "failed", "blocked"];
@@ -292,9 +292,9 @@ export const sessions: SessionFixture[] = [
 
 export const projects: ProjectFixture[] = [
   { name: "codepawl/web", detail: "Checks: test, typecheck, build, e2e - 12 recent sessions", status: "needs_evidence" },
-  { name: "pawlm/tokenizer", detail: "Checks: test, typecheck - 8 recent sessions", status: "healthy" },
+  { name: "pawlm/tokenizer", detail: "Checks: test, typecheck - 8 recent sessions", status: "verified" },
   { name: "client-app", detail: "Protected paths: auth, billing, database", status: "risky" },
-  { name: "docs-site", detail: "Checks: markdown lint, link check - 4 recent sessions", status: "healthy" },
+  { name: "docs-site", detail: "Checks: markdown lint, link check - 4 recent sessions", status: "verified" },
 ];
 
 export const memories = [

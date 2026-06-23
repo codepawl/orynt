@@ -24,17 +24,57 @@ import {
   evidenceConsoleOrder,
   memories,
   pages,
-  primarySession,
+  primarySession as fallbackPrimarySession,
   projects,
-  sessions,
+  sessions as fixtureSessions,
   type PageFixture,
   type PageId,
   type SessionFixture,
 } from "./fixtures/studio-fixtures";
+import { reportDataState } from "./fixtures/report-fixtures";
 import { mockupInventory } from "./fixtures/mockup-source-map";
+import { type ReportDataState } from "./reports/report-adapter";
 
 function findPage(id: PageId) {
   return pages.find((page) => page.id === id) ?? pages[0];
+}
+
+function pageWithReportContext(page: PageFixture, primarySession: SessionFixture): PageFixture {
+  if (page.id !== "session-detail") return page;
+  return {
+    ...page,
+    title: primarySession.session,
+    kicker: `${primarySession.branch} - ${primarySession.changedFileCount} files changed - ${primarySession.reportId}`,
+  };
+}
+
+function evidenceCount(session: SessionFixture) {
+  const passed = session.validationEvidence.filter((item) => item.status === "passed").length;
+  return `${passed}/${session.validationEvidence.length}`;
+}
+
+function ReportDataNotice({ state }: { state: ReportDataState }) {
+  const label =
+    state.status === "report-backed"
+      ? "Report JSON"
+      : state.status === "empty"
+        ? "No report JSON found"
+        : "Malformed report data";
+
+  return (
+    <div className="report-data-notice">
+      <div>
+        <div className="card-title">Report Data Source <StatusChip tone={state.status === "report-backed" ? "evidence" : "warning"}>{label}</StatusChip></div>
+        <p>{state.statusMessage}</p>
+        <p className="muted">{state.bridgeNote}</p>
+      </div>
+      {state.errors.length > 0 ? (
+        <div className="notice-errors">
+          {state.errors.map((error) => <code key={error}>{error}</code>)}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function LocalSourceInventory() {
@@ -54,7 +94,7 @@ function OnboardingPage() {
   return (
     <div className="grid">
       <EmptyState />
-      {["Add project folders", "Enable Codex integration", "Enable Claude Code integration", "Open sample report"].map((step, index) => (
+      {["Add project folders", "Enable Codex integration", "Enable Claude Code integration", "Open generated sample report"].map((step, index) => (
         <div className="card span-3" key={step}>
           <div className="card-title">Step {index + 1}</div>
           <h3>{step}</h3>
@@ -65,7 +105,17 @@ function OnboardingPage() {
   );
 }
 
-function OverviewPage({ onOpenSession }: { onOpenSession: () => void }) {
+function OverviewPage({
+  onOpenSession,
+  sessions,
+  primarySession,
+  reportState,
+}: {
+  onOpenSession: () => void;
+  sessions: SessionFixture[];
+  primarySession: SessionFixture;
+  reportState: ReportDataState;
+}) {
   const counts = useMemo(
     () =>
       sessions.reduce(
@@ -75,26 +125,29 @@ function OverviewPage({ onOpenSession }: { onOpenSession: () => void }) {
         },
         { verified: 0, needs_evidence: 0, risky: 0, failed: 0, blocked: 0 },
       ),
-    [],
+    [sessions],
   );
+  const nonVerified = sessions.filter((session) => session.verdict !== "verified");
+  const primaryNextCheck = primarySession.validationEvidence.find((item) => item.status !== "passed")?.check ?? "inspect";
 
   return (
     <>
+      <ReportDataNotice state={reportState} />
       <div className="attention-lead">
         <div>
           <div className="card-title">Most Urgent Decision <StatusChip tone="risk">High</StatusChip></div>
-          <div className="attention-title">Codex web redesign cannot be marked ready yet.</div>
-          <p className="muted">UI files changed without Playwright or screenshot evidence. The console keeps the reason, proof gap, and command in one decision path.</p>
+          <div className="attention-title">{primarySession.session} needs a report decision.</div>
+          <p className="muted">{primarySession.reason} The console keeps the verdict, evidence, risk, and next action in one decision path.</p>
           <div className="card-actions">
             <button type="button" className="btn" onClick={onOpenSession}>Open session detail</button>
             <button type="button" className="btn secondary">Copy next command</button>
           </div>
         </div>
         <div className="signal-strip">
-          <div className="signal-card"><span className="tiny">Evidence</span><strong>1/4</strong><span className="muted">Checks found</span></div>
-          <div className="signal-card"><span className="tiny">Risk</span><strong>2</strong><span className="muted">Open issues</span></div>
-          <div className="signal-card"><span className="tiny">Scope</span><strong>1</strong><span className="muted">Suspicious path</span></div>
-          <div className="signal-card"><span className="tiny">Action</span><strong>e2e</strong><span className="muted">Run before ready</span></div>
+          <div className="signal-card"><span className="tiny">Evidence</span><strong>{evidenceCount(primarySession)}</strong><span className="muted">Checks found</span></div>
+          <div className="signal-card"><span className="tiny">Risk</span><strong>{primarySession.risks.length}</strong><span className="muted">Open issues</span></div>
+          <div className="signal-card"><span className="tiny">Scope</span><strong>{primarySession.changedFileCount}</strong><span className="muted">Changed files</span></div>
+          <div className="signal-card"><span className="tiny">Action</span><strong>{primaryNextCheck}</strong><span className="muted">Next before ready</span></div>
         </div>
       </div>
       <div className="metric-row">
@@ -106,7 +159,7 @@ function OverviewPage({ onOpenSession }: { onOpenSession: () => void }) {
       <div className="grid">
         <div className="card span-5 tall">
           <div className="card-title">Needs Attention <StatusChip tone="warning">Actionable</StatusChip></div>
-          <div className="list">{sessions.filter((session) => session.verdict !== "verified").slice(0, 3).map((session) => <SessionCard key={session.id} session={session} />)}</div>
+          <div className="list">{nonVerified.slice(0, 3).map((session) => <SessionCard key={session.id} session={session} />)}</div>
         </div>
         <div className="card span-7 tall">
           <div className="card-title">Recent Sessions</div>
@@ -144,7 +197,7 @@ function OverviewPage({ onOpenSession }: { onOpenSession: () => void }) {
   );
 }
 
-function SessionsPage() {
+function SessionsPage({ sessions, primarySession }: { sessions: SessionFixture[]; primarySession: SessionFixture }) {
   return (
     <div className="grid">
       <div className="card span-8 tall">
@@ -159,21 +212,28 @@ function SessionsPage() {
         <h3>{primarySession.session}</h3>
         <p className="muted">{primarySession.summary}</p>
         <div className="list">
-          <div className="row"><span>Evidence</span><strong>1/4</strong></div>
-          <div className="row"><span>Risks</span><strong>2</strong></div>
-          <div className="row"><span>Next</span><strong>e2e</strong></div>
+          <div className="row"><span>Evidence</span><strong>{evidenceCount(primarySession)}</strong></div>
+          <div className="row"><span>Risks</span><strong>{primarySession.risks.length}</strong></div>
+          <div className="row"><span>Next</span><strong>{primarySession.nextAction}</strong></div>
         </div>
       </div>
     </div>
   );
 }
 
-function NeedsAttentionPage() {
+function NeedsAttentionPage({ sessions }: { sessions: SessionFixture[] }) {
+  const queue = sessions.filter((session) => session.verdict !== "verified");
+
   return (
     <div className="card">
       <div className="card-title">Decision Queue <StatusChip tone="warning">Evidence first</StatusChip></div>
       <div className="attention-board">
-        {sessions.filter((session) => session.verdict !== "verified").map((session) => (
+        {queue.length === 0 ? (
+          <div className="empty-inline">
+            <strong>No sessions need attention.</strong>
+            <p className="muted">Generated report JSON currently contains only verified sessions.</p>
+          </div>
+        ) : queue.map((session) => (
           <div className="attention-row" key={session.id}>
             <StatusChip tone={session.verdict === "risky" || session.verdict === "failed" ? "risk" : "warning"}>{session.verdictLabel}</StatusChip>
             <div><strong>{session.session}</strong><p className="muted">{session.reason}</p></div>
@@ -194,12 +254,12 @@ function SessionDetailPage({ session }: { session: SessionFixture }) {
         <div>
           <div className="card-title">Verdict Hero <VerdictBadge verdict={session.verdict} /></div>
           <div className="decision-title">{session.summary}</div>
-          <p className="muted">Main issue: {session.reason} Next action: run Playwright before marking this session ready.</p>
+          <p className="muted">Main issue: {session.reason} Next action: {session.nextAction}</p>
           <div className="signal-strip">
-            <div className="signal-card"><span className="tiny">Evidence</span><strong>1/4</strong><span className="muted">Only test log found</span></div>
-            <div className="signal-card"><span className="tiny">Scope</span><strong>31/32</strong><span className="muted">One suspicious file</span></div>
-            <div className="signal-card"><span className="tiny">Risks</span><strong>2</strong><span className="muted">One high severity</span></div>
-            <div className="signal-card"><span className="tiny">Memory</span><strong>1</strong><span className="muted">Candidate rule</span></div>
+            <div className="signal-card"><span className="tiny">Evidence</span><strong>{evidenceCount(session)}</strong><span className="muted">Checks found</span></div>
+            <div className="signal-card"><span className="tiny">Scope</span><strong>{session.changedFileCount}</strong><span className="muted">Changed files</span></div>
+            <div className="signal-card"><span className="tiny">Risks</span><strong>{session.risks.length}</strong><span className="muted">Detected risks</span></div>
+            <div className="signal-card"><span className="tiny">Memory</span><strong>{session.memoryCandidate.startsWith("No memory") ? 0 : 1}</strong><span className="muted">Candidate rule</span></div>
           </div>
         </div>
         <CommandBlock command={session.nextAction} />
@@ -251,9 +311,20 @@ function SessionDetailPage({ session }: { session: SessionFixture }) {
   );
 }
 
-function ReportsPage() {
+function ReportsPage({
+  sessions,
+  primarySession,
+  reportState,
+}: {
+  sessions: SessionFixture[];
+  primarySession: SessionFixture;
+  reportState: ReportDataState;
+}) {
   return (
     <div className="grid">
+      <div className="span-12">
+        <ReportDataNotice state={reportState} />
+      </div>
       <div className="card span-8 tall">
         <div className="card-title">Report List</div>
         <Table>
@@ -264,7 +335,7 @@ function ReportsPage() {
       <div className="card span-4 tall">
         <div className="card-title">Selected Report Preview</div>
         <p className="muted">Reason: {primarySession.reason}</p>
-        <div className="prompt">## CodePawl Session Report<br />Verdict: Needs Evidence<br />Next action: Run Playwright before marking ready.</div>
+        <div className="prompt">## CodePawl Session Report<br />Verdict: {primarySession.verdictLabel}<br />Next action: {primarySession.nextAction}</div>
         <Modal title="Export Report modal">Markdown and JSON exports stay local by default.</Modal>
       </div>
     </div>
@@ -325,7 +396,7 @@ function SettingsPage() {
   );
 }
 
-function ResponsiveReportReviewPage() {
+function ResponsiveReportReviewPage({ primarySession }: { primarySession: SessionFixture }) {
   return (
     <div className="viewport-gallery">
       {[
@@ -338,8 +409,8 @@ function ResponsiveReportReviewPage() {
           <div className={`viewport-frame ${size}`}>
             <div className="review-top"><span className="brand"><img src={darkLogo} alt="CodePawl logo" />CodePawl Report</span><StatusChip>Local-only | Sync off</StatusChip></div>
             <div className="report-hero">
-              <div className="report-hero-row"><div><div className="report-title">{primarySession.session}</div><p className="muted">{primarySession.branch} - {primarySession.changedFileCount} files - {primarySession.reportId}</p></div><span className="verdict-pill">Needs Evidence</span></div>
-              <div className="report-stats"><div className="report-stat"><div className="stat-value">1/4</div><div className="tiny">Checks</div></div><div className="report-stat"><div className="stat-value">2</div><div className="tiny">Risks</div></div><div className="report-stat"><div className="stat-value">1</div><div className="tiny">Memory</div></div></div>
+              <div className="report-hero-row"><div><div className="report-title">{primarySession.session}</div><p className="muted">{primarySession.branch} - {primarySession.changedFileCount} files - {primarySession.reportId}</p></div><span className="verdict-pill">{primarySession.verdictLabel}</span></div>
+              <div className="report-stats"><div className="report-stat"><div className="stat-value">{evidenceCount(primarySession)}</div><div className="tiny">Checks</div></div><div className="report-stat"><div className="stat-value">{primarySession.risks.length}</div><div className="tiny">Risks</div></div><div className="report-stat"><div className="stat-value">{primarySession.memoryCandidate.startsWith("No memory") ? 0 : 1}</div><div className="tiny">Memory</div></div></div>
             </div>
             <div className="review-body"><CommandBlock command={primarySession.nextAction} /><div className="evidence-strip">{primarySession.validationEvidence.map((item) => <div className="evidence-item" key={item.check}><span className={`evidence-dot ${item.status}`} /><strong>{item.check}</strong><span className="tiny">{item.status}</span></div>)}</div><RiskList session={primarySession} /><MemoryCandidate>{primarySession.memoryCandidate}</MemoryCandidate></div>
           </div>
@@ -349,31 +420,39 @@ function ResponsiveReportReviewPage() {
   );
 }
 
-function renderPage(active: PageId, onOpenSession: () => void) {
+function renderPage(
+  active: PageId,
+  onOpenSession: () => void,
+  sessions: SessionFixture[],
+  primarySession: SessionFixture,
+  reportState: ReportDataState,
+) {
   if (active === "onboarding") return <OnboardingPage />;
-  if (active === "overview") return <OverviewPage onOpenSession={onOpenSession} />;
-  if (active === "sessions") return <SessionsPage />;
-  if (active === "needs-attention") return <NeedsAttentionPage />;
+  if (active === "overview") return <OverviewPage onOpenSession={onOpenSession} sessions={sessions} primarySession={primarySession} reportState={reportState} />;
+  if (active === "sessions") return <SessionsPage sessions={sessions} primarySession={primarySession} />;
+  if (active === "needs-attention") return <NeedsAttentionPage sessions={sessions} />;
   if (active === "session-detail") return <SessionDetailPage session={primarySession} />;
-  if (active === "reports") return <ReportsPage />;
+  if (active === "reports") return <ReportsPage sessions={sessions} primarySession={primarySession} reportState={reportState} />;
   if (active === "projects") return <ProjectsPage />;
   if (active === "agents") return <AgentsPage />;
   if (active === "memory") return <MemoryPage />;
   if (active === "integrations") return <IntegrationsPage />;
   if (active === "settings") return <SettingsPage />;
-  return <ResponsiveReportReviewPage />;
+  return <ResponsiveReportReviewPage primarySession={primarySession} />;
 }
 
 function App() {
   const [activePage, setActivePage] = useState<PageId>("overview");
-  const currentPage: PageFixture = findPage(activePage);
+  const reportSessions = reportDataState.sessions.length > 0 ? reportDataState.sessions : fixtureSessions;
+  const primarySession = reportSessions[0] ?? fallbackPrimarySession;
+  const currentPage: PageFixture = pageWithReportContext(findPage(activePage), primarySession);
 
   return (
     <main className="app-frame">
       <LocalSourceInventory />
       <AppShell activePage={activePage} currentPage={currentPage} onSelect={setActivePage}>
         <PageHeader page={currentPage} />
-        {renderPage(activePage, () => setActivePage("session-detail"))}
+        {renderPage(activePage, () => setActivePage("session-detail"), reportSessions, primarySession, reportDataState)}
       </AppShell>
     </main>
   );

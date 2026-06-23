@@ -1,0 +1,63 @@
+{
+  "id": "report-needs-evidence-ui-missing-e2e",
+  "created_at": "2026-06-23T00:02:00Z",
+  "project": {
+    "name": "codepawl-fixture",
+    "path": "fixtures/sessions/needs_evidence_ui_missing_e2e"
+  },
+  "session": {
+    "id": "fixture-needs-evidence-ui-missing-e2e",
+    "source": "fixture",
+    "summary": "Synthetic UI change missing e2e evidence."
+  },
+  "agent": "Codex",
+  "branch": "fixture/ui-missing-e2e",
+  "verdict": "needs_evidence",
+  "summary": "Synthetic UI change missing e2e evidence. 1 file(s) on branch `fixture/ui-missing-e2e`. Verdict: needs_evidence.",
+  "changed_files": [
+    {
+      "path": "apps/web/app/page.tsx",
+      "status": "modified",
+      "evidence_ref": "diff.patch"
+    }
+  ],
+  "validation_evidence": [
+    {
+      "check": "e2e",
+      "status": "missing",
+      "source": "logs/e2e.log",
+      "summary": "No e2e validation log found."
+    },
+    {
+      "check": "test",
+      "status": "passed",
+      "source": "logs/test.log",
+      "summary": "test evidence Passed: cargo test --workspace"
+    }
+  ],
+  "risks": [],
+  "missing_evidence": [
+    {
+      "check": "e2e",
+      "expected": "Expected validation evidence for `e2e`.",
+      "evidence_ref": "logs/e2e.log"
+    }
+  ],
+  "next_actions": [
+    "Run or attach missing validation evidence for: e2e."
+  ],
+  "follow_up_prompt": "Continue from this CodePawl report. Focus only on the cited evidence and complete this next action: Run or attach missing validation evidence for: e2e.",
+  "memory_candidates": [
+    "Require validation evidence for e2e before marking similar sessions verified."
+  ],
+  "artifacts": [
+    {
+      "kind": "raw_events",
+      "path": "raw-events.jsonl"
+    },
+    {
+      "kind": "diff",
+      "path": "diff.patch"
+    }
+  ]
+}
