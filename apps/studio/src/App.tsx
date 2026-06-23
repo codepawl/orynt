@@ -32,7 +32,6 @@ import {
   type SessionFixture,
 } from "./fixtures/studio-fixtures";
 import { reportDataState } from "./fixtures/report-fixtures";
-import { mockupInventory } from "./fixtures/mockup-source-map";
 import { type ReportDataState } from "./reports/report-adapter";
 
 function findPage(id: PageId) {
@@ -73,19 +72,6 @@ function ReportDataNotice({ state }: { state: ReportDataState }) {
           {state.errors.map((error) => <code key={error}>{error}</code>)}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function LocalSourceInventory() {
-  return (
-    <div className="source-map-strip" aria-label=".codex/ui inventory">
-      {mockupInventory.map((source) => (
-        <div key={source.file}>
-          <strong>{source.file}</strong>
-          <span>{source.role} - {source.drives}</span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -449,7 +435,6 @@ function App() {
 
   return (
     <main className="app-frame">
-      <LocalSourceInventory />
       <AppShell activePage={activePage} currentPage={currentPage} onSelect={setActivePage}>
         <PageHeader page={currentPage} />
         {renderPage(activePage, () => setActivePage("session-detail"), reportSessions, primarySession, reportDataState)}

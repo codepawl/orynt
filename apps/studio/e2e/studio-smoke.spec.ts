@@ -1,8 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-test("Studio fixture prototype renders required pages and captures screenshots", async ({ page }, testInfo) => {
+test("Studio runtime renders full-page report-driven app without design reference cards", async ({ page }, testInfo) => {
   await page.goto("/");
 
+  await expect(page.getByText(".codex/ui/mockup-light-theme.html")).toHaveCount(0);
+  await expect(page.getByText(".codex/ui/mockup-dark-theme.html")).toHaveCount(0);
+  await expect(page.getByText(".codex/ui/wireframe-light-theme.html")).toHaveCount(0);
+  await expect(page.getByText(".codex/ui/wireframe-dark-theme.html")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /CodePawl Studio/ })).toBeVisible();
   await expect(page.getByText("Local-only").first()).toBeVisible();
   await expect(page.getByText("No source upload by default").first()).toBeVisible();
@@ -10,6 +14,17 @@ test("Studio fixture prototype renders required pages and captures screenshots",
   await expect(page.getByText("Rendering generated CodePawl report JSON through the Studio adapter.")).toBeVisible();
   await expect(page.getByText("Most Urgent Decision")).toBeVisible();
   await expect(page.getByText("Weekly AI Shipping Funnel")).toBeVisible();
+  await expect(page.locator(".screen")).toHaveCSS("border-radius", "0px");
+
+  const screenBox = await page.locator(".screen").boundingBox();
+  const viewport = page.viewportSize();
+  expect(screenBox?.x).toBe(0);
+  expect(screenBox?.y).toBe(0);
+  expect(Math.round(screenBox?.width ?? 0)).toBe(viewport?.width);
+  await expect(page.locator(".nav-item .chip").first()).toHaveCSS("min-height", "22px");
+  await expect(page.locator(".btn").first()).toHaveCSS("min-height", "36px");
+  await expect(page.locator(".attention-lead .card-actions")).toHaveCSS("gap", "10px");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport?.width ?? 0);
 
   await page.screenshot({
     path: testInfo.outputPath("studio-overview.png"),

@@ -54,7 +54,6 @@ const requiredSurfaces = [
   "Decision Queue",
   "Evidence Audit Trail",
   "Responsive Report Review",
-  "LocalSourceInventory",
   "No source upload by default",
   "Report Data Source",
 ];
@@ -223,6 +222,27 @@ if (failures.length === 0) {
 
   if (!app.includes('data-source="mockup-light-theme.html"') && !components.includes('data-source="mockup-light-theme.html"')) {
     failures.push("Studio app must identify the light mockup as the app UI source");
+  }
+
+  if (app.includes("<LocalSourceInventory") || app.includes("function LocalSourceInventory")) {
+    failures.push("Design reference inventory must not render in the default Studio runtime");
+  }
+
+  if (styles.includes("max-width: var(--layout-max)") || styles.includes("border-radius: 18px") || styles.includes("padding: 26px var(--layout-pad) 44px")) {
+    failures.push("Studio runtime shell must not use the old centered prototype frame styles");
+  }
+
+  for (const densityMarker of [
+    "--chip-height: 22px",
+    "--control-height: 36px",
+    "--card-pad: 20px",
+    ".nav-item .chip",
+    ".attention-lead .card-actions",
+    ".metric-card",
+  ]) {
+    if (!styles.includes(densityMarker)) {
+      failures.push(`Missing Studio density/spacing marker: ${densityMarker}`);
+    }
   }
 
   if (app.includes("CriticalSurfaceLauncher")) {
