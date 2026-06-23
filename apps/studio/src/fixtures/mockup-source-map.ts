@@ -1,0 +1,56 @@
+export const mockupInventory = [
+  {
+    file: ".codex/ui/mockup-light-theme.html",
+    role: "light high-fidelity mockup",
+    drives: "main app UI reference",
+    appAreas: [
+      "Evidence Console App Shell",
+      "Onboarding And Empty State",
+      "Overview Dashboard",
+      "Sessions",
+      "Needs Attention Queue",
+      "Session Detail",
+      "Reports",
+      "Projects",
+      "Agents",
+      "Memory",
+      "Integrations",
+      "Settings",
+      "Design System",
+      "Responsive Report Review",
+    ],
+  },
+  {
+    file: ".codex/ui/mockup-dark-theme.html",
+    role: "dark high-fidelity mockup",
+    drives: "landing/marketing style reference",
+    appAreas: ["Landing/marketing only; not used for app shell styling"],
+  },
+  {
+    file: ".codex/ui/wireframe-light-theme.html",
+    role: "low-fidelity wireframes",
+    drives: "structure, flow, hierarchy, and responsive behavior",
+    appAreas: ["App shell page previews", "Responsive report review"],
+  },
+  {
+    file: ".codex/ui/wireframe-dark-theme.html",
+    role: "low-fidelity wireframes",
+    drives: "structure, flow, hierarchy, and responsive behavior",
+    appAreas: ["Dark structural parity check only"],
+  },
+] as const;
+
+export const routeSourceMap = {
+  onboarding: "mockup-light-theme.html: Onboarding And Empty State",
+  overview: "mockup-light-theme.html: Overview Dashboard",
+  sessions: "mockup-light-theme.html: Sessions",
+  "needs-attention": "mockup-light-theme.html: Needs Attention Queue",
+  "session-detail": "mockup-light-theme.html: Session Detail",
+  reports: "mockup-light-theme.html: Reports",
+  projects: "mockup-light-theme.html: Projects",
+  agents: "mockup-light-theme.html: Agents",
+  memory: "mockup-light-theme.html: Memory",
+  integrations: "mockup-light-theme.html: Integrations",
+  settings: "mockup-light-theme.html: Settings",
+  "responsive-report-review": "mockup-light-theme.html: Responsive Report Review; wireframes for responsive hierarchy",
+} as const;

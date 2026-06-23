@@ -1,0 +1,17 @@
+{
+  "report_id": "report-risky-protected-path",
+  "created_at": "2026-06-23T00:03:00Z",
+  "project": {
+    "name": "codepawl-fixture",
+    "path": "fixtures/sessions/risky_protected_path"
+  },
+  "session": {
+    "id": "fixture-risky-protected-path",
+    "source": "fixture",
+    "summary": "Synthetic protected path and dependency change."
+  },
+  "agent": "Codex",
+  "branch": "fixture/risky",
+  "required_checks": ["test", "typecheck", "build"],
+  "protected_paths": [".github/**"]
+}

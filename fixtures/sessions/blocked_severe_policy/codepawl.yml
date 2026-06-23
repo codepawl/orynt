@@ -1,0 +1,15 @@
+project:
+  name: codepawl-fixture
+
+checks:
+  test:
+    required: true
+    log: logs/test.log
+
+policy:
+  protected_paths:
+    - "schema/**"
+  risky_patterns:
+    - "Cargo.toml"
+  blocked_paths:
+    - "schema/destructive/**"

@@ -1,0 +1,22 @@
+project:
+  name: codepawl-fixture
+
+checks:
+  test:
+    required: true
+    log: logs/test.log
+  typecheck:
+    required: true
+    log: logs/typecheck.log
+  build:
+    required: true
+    log: logs/build.log
+
+policy:
+  protected_paths:
+    - "apps/api/billing/**"
+  risky_patterns:
+    - "package.json"
+    - "pnpm-lock.yaml"
+    - "Cargo.toml"
+    - "Cargo.lock"

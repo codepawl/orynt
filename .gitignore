@@ -1,0 +1,9 @@
+node_modules/
+target/
+apps/*/node_modules/
+apps/*/dist/
+apps/*/test-results/
+apps/*/playwright-report/
+.turbo/
+.vite/
+.codepawl/

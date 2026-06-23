@@ -1,0 +1,19 @@
+project:
+  name: codepawl-fixture
+
+checks:
+  test:
+    required: true
+    log: logs/test.log
+  e2e:
+    required_for:
+      - "apps/web/**"
+      - "components/**"
+    log: logs/e2e.log
+
+policy:
+  protected_paths:
+    - ".github/**"
+  risky_patterns:
+    - "package.json"
+    - "pnpm-lock.yaml"

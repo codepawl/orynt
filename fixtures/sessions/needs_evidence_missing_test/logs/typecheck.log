@@ -1,0 +1,2 @@
+cargo check --workspace
+Finished dev profile successfully

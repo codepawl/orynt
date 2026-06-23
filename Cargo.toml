@@ -1,0 +1,23 @@
+[workspace]
+members = [
+  "crates/codepawl-cli",
+  "crates/codepawl-core",
+  "crates/codepawl-evidence",
+  "crates/codepawl-git",
+  "crates/codepawl-policy",
+  "crates/codepawl-report",
+  "crates/codepawl-store",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1.0.98"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+tempfile = "3.10.1"

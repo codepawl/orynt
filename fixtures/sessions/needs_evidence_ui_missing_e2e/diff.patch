@@ -1,0 +1,7 @@
+diff --git a/apps/web/app/page.tsx b/apps/web/app/page.tsx
+index 1111111..2222222 100644
+--- a/apps/web/app/page.tsx
++++ b/apps/web/app/page.tsx
+@@ -1 +1,2 @@
+ export function Page() { return null; }
++export const changed = true;

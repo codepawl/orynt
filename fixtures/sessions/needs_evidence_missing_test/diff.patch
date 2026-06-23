@@ -1,0 +1,7 @@
+diff --git a/crates/codepawl-core/src/lib.rs b/crates/codepawl-core/src/lib.rs
+index 1111111..2222222 100644
+--- a/crates/codepawl-core/src/lib.rs
++++ b/crates/codepawl-core/src/lib.rs
+@@ -1 +1,2 @@
+ pub struct Report;
++pub struct MissingEvidenceCase;

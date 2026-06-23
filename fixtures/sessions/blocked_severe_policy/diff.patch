@@ -1,0 +1,7 @@
+diff --git a/schema/destructive/drop.sql b/schema/destructive/drop.sql
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/schema/destructive/drop.sql
+@@ -0,0 +1 @@
++drop table users;

@@ -1,0 +1,6 @@
+{"type":"session_start","agent":"Codex","session_id":"fixture-basic"}
+{"type":"user_prompt","summary":"Implement a scoped Rust report helper."}
+{"type":"command_result","command":"cargo test --workspace","status":"passed","evidence":"logs/test.log"}
+{"type":"command_result","command":"cargo check --workspace","status":"passed","evidence":"logs/typecheck.log"}
+{"type":"command_result","command":"cargo build --workspace","status":"passed","evidence":"logs/build.log"}
+{"type":"session_stop","summary":"Scoped change complete with validation evidence."}

@@ -22,11 +22,94 @@ The UI should feel like a calm engineering cockpit: precise, readable, analytica
 
 ## Design source of truth
 
-Figma is the future design source of truth for CodePawl.
+The web prototype is the active design source of truth for CodePawl. Figma is optional later for presentation/handoff.
 
-Existing HTML mockups and wireframes remain references and prototypes. They are useful for layout, flow, tone, and coverage, but they must not be treated as final component architecture, production CSS, implementation API, or exact data contract.
+Existing HTML mockups and wireframes remain references. They are useful for layout, flow, tone, and coverage, but they must not be treated as final component architecture, production CSS, implementation API, or exact data contract.
 
-Final design should be rebuilt in Figma using:
+The active design surface should move into `apps/studio` as fixture-backed React components. The same components should become the real Studio UI later rather than creating a separate throwaway prototype.
+
+The current low-fidelity structural references live in `.codex/ui/wireframe-light-theme.html` and `.codex/ui/wireframe-dark-theme.html`. The current high-fidelity references live in `.codex/ui/mockup-light-theme.html` and `.codex/ui/mockup-dark-theme.html`.
+
+## Web prototype source of truth
+
+Build product UI directly in `apps/studio`.
+
+Prototype rules:
+
+* Use fixture-backed data first.
+* Do not require the backend, Rust core, local daemon, or SQLite store for design iteration.
+* Later connect the same components to the local daemon/store.
+* Let design evolve directly in React components, not in a detached design artifact.
+* Preserve the report schema vocabulary, verdict taxonomy, evidence model, risk model, and next-action model.
+* Keep fixture mode available after real data integration so design states remain testable.
+
+Recommended web stack:
+
+* Vite
+* React
+* TypeScript
+* Tailwind CSS
+* shadcn/ui
+* Radix primitives
+* lucide-react
+* Recharts later, after fixture-backed chart needs stabilize
+* Storybook later, when components stabilize
+
+Theme decision:
+
+* App UI is light-first.
+* Dark marketing/landing pages are allowed.
+* Dark app theme is optional later.
+* Do not implement a dark app theme before the light app is stable.
+
+Implementation source hierarchy:
+
+1. `design_plan.md` defines design principles, product coverage, semantic rules, and implementation constraints.
+2. HTML mockups and wireframes are references for structure, coverage, and visual direction.
+3. `apps/studio` fixture mode is the active design surface.
+4. The real app should reuse the same components when connecting to local CodePawl data.
+5. Figma is optional later for presentation, sales, investor, or handoff material.
+
+Do not overbuild:
+
+* Do not mark auth, payment, cloud sync, GitHub App, desktop, billing, or team features as live.
+* Do not build fake analytics unsupported by fixtures or the report schema.
+* Do not introduce a Figma dependency before implementation.
+* Do not create a separate throwaway prototype if `apps/studio` can serve fixture mode.
+* Do not build the dark app theme before the light app is stable.
+
+First web prototype scope:
+
+Required pages:
+
+* onboarding
+* overview
+* sessions
+* needs attention
+* session detail
+* reports
+* projects
+* agents
+* memory
+* integrations
+* settings
+* responsive report review
+
+Required critical modals/drawers:
+
+* Analyze Current Repo modal
+* Add Project modal
+* AI Analyze Consent modal
+* Save Memory modal
+* Export Report modal
+* GitHub Action Setup drawer
+* GitHub PR Sticky Comment preview
+
+## Optional Figma strategy
+
+Create one Figma file later only if it helps presentation or handoff.
+
+If created, rebuild selected screens in Figma using:
 
 * components
 * variants
@@ -35,9 +118,7 @@ Final design should be rebuilt in Figma using:
 * reusable tokens
 * prototype links for primary flows
 
-Figma Dev Mode and Code Connect can be considered later for implementation handoff, but neither should block v0.1. The first implementation should use this design plan, the report schema, and fixture-backed data before depending on a finalized Figma file.
-
-The current low-fidelity structural references live in `.codex/ui/wireframe-light-theme.html` and `.codex/ui/wireframe-dark-theme.html`. The current high-fidelity references live in `.codex/ui/mockup-light-theme.html` and `.codex/ui/mockup-dark-theme.html`.
+Figma Dev Mode and Code Connect can be considered later for implementation handoff, but neither should block v0.1.
 
 ## Current design inventory
 
@@ -70,9 +151,9 @@ Existing wireframe coverage:
 
 Design coverage is broad enough for the current product direction. The main remaining design work is consolidation, missing states, interaction coverage, verdict normalization, and implementation handoff clarity.
 
-## Figma migration strategy
+## Figma file structure
 
-Create one Figma file later.
+If a Figma file is created later, use a structure like this:
 
 Suggested Figma pages:
 
@@ -88,9 +169,9 @@ Suggested Figma pages:
 * `09 Prototype`
 * `10 Archive / HTML References`
 
-Import or screenshot HTML mockups only into `10 Archive / HTML References`. Rebuild final screens with components, variants, Auto Layout, and variables instead of converting HTML directly into production assumptions.
+Import or screenshot HTML mockups only into `10 Archive / HTML References`. Rebuild selected screens with components, variants, Auto Layout, and variables instead of converting HTML directly into production assumptions.
 
-Use one component system with light and dark modes, not separate duplicated design systems. App UI remains light-first; dark app theme is optional later.
+Use one component system with light and dark modes if a dark app theme is ever designed, not separate duplicated design systems. App UI remains light-first; dark app theme is optional later.
 
 ## Visual direction decision
 
@@ -203,7 +284,7 @@ Required components:
 * Table
 * Toast/Notification
 
-Figma components should map directly to future React components where practical. Do not create different names for the same concept across Figma, design docs, and implementation.
+React component names should match the design docs where practical. If optional Figma work is created later, use the same names instead of creating a parallel component vocabulary.
 
 ## Component states
 
@@ -274,7 +355,8 @@ code: command-bg, command-border, command-text, command-copy
 
 ## Implementation handoff rules
 
-* Figma components should map to React components.
+* `apps/studio` React components are the active implementation design surface.
+* Optional Figma components should map to React components if Figma is created later.
 * Token names should match implementation token names.
 * Use fixture-backed data for charts and sample reports.
 * Do not build fake analytics not supported by the report schema.
@@ -283,6 +365,7 @@ code: command-bg, command-border, command-text, command-copy
 * Session Detail has priority over dashboard polish.
 * Overview dashboard routes users to actionable sessions; it is not the core product alone.
 * HTML mockups are references, not production markup or implementation contracts.
+* Do not create a separate throwaway prototype when `apps/studio` fixture mode can express the design.
 * GitHub PR surfaces must follow the GitHub integration and security/privacy plans.
 
 ## Accessibility checklist
@@ -1118,9 +1201,11 @@ For Studio:
 * TanStack Router
 * TanStack Query
 * Tailwind CSS
-* shadcn/ui or Radix primitives
-* Recharts for charts
+* shadcn/ui
+* Radix primitives
 * lucide-react for icons
+* Recharts later for charts
+* Storybook later when components stabilize
 
 Core components to implement first:
 
@@ -1333,26 +1418,29 @@ When implementing UI:
 
 ## First UI implementation contract
 
-Goal: implement the initial CodePawl Studio UI direction with a session-first dashboard and report detail surface.
+Goal: implement the initial CodePawl Studio web prototype in `apps/studio` with fixture-backed data and reusable components that can later connect to the local daemon/store.
 
 Context: CodePawl is a local-first session intelligence tool for AI coding agents. The primary tagline is “Turn every AI coding session into measurable engineering work.” The first UI should not be a generic admin dashboard. It should show session verdicts, evidence, risks, next actions, and memory candidates.
 
 Constraints:
 
 * Use Vite React TypeScript.
-* Use Tailwind and shadcn/Radix-style components.
+* Use Tailwind CSS, shadcn/ui, Radix primitives, and lucide-react.
 * Use fixture-backed data only.
-* Build AppShell, Sidebar, Topbar, Overview, Session Detail, and Reports list.
+* Build the first web prototype scope defined above.
 * Keep local-only/sync-off status visible.
 * Do not build auth/cloud/billing.
 * Do not build vanity charts first.
+* Do not require backend, Rust core, daemon, or SQLite setup for design iteration.
 * Prioritize accessibility and readable contrast.
 * Keep colors semantic.
 
 Done when:
 
-* Studio renders an Overview page with AI Shipping Health, Needs Attention, Recent Sessions, and Weekly Shipping Funnel.
-* Studio renders a Session Detail page with Outcome, Evidence, Risks, Timeline, Next Action, Follow-up Prompt, and Memory Candidate.
+* Studio fixture mode renders the required pages.
+* Studio fixture mode renders the required critical modals/drawers.
+* Overview shows AI Shipping Health, Needs Attention, Recent Sessions, and Weekly Shipping Funnel.
+* Session Detail shows Outcome, Evidence, Risks, Timeline, Next Action, Follow-up Prompt, and Memory Candidate.
 * UI uses reusable components.
 * Empty states are useful.
 * Build and typecheck pass.
