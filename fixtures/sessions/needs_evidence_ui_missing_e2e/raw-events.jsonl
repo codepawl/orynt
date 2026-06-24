@@ -1,3 +1,0 @@
-{"type":"session_start","agent":"Codex","session_id":"fixture-needs-evidence-ui-missing-e2e"}
-{"type":"command_result","command":"cargo test --workspace","status":"passed","evidence":"logs/test.log"}
-{"type":"session_stop","summary":"UI evidence was not attached."}

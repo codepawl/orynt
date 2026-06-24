@@ -1,4 +1,0 @@
-cargo test --workspace
-failures:
-    report_rules::failed_case
-test result: FAILED. 11 passed; 1 failed

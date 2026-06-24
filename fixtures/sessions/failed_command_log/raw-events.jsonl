@@ -1,4 +1,0 @@
-{"type":"session_start","agent":"Codex","session_id":"fixture-failed-command-log"}
-{"type":"agent_claim","summary":"All validation passed."}
-{"type":"command_result","command":"cargo test --workspace","status":"failed","evidence":"logs/test.log"}
-{"type":"session_stop","summary":"Test evidence failed despite the claim."}

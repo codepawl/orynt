@@ -1,3 +1,0 @@
-{"type":"session_start","agent":"Codex","session_id":"fixture-blocked-severe-policy"}
-{"type":"command_result","command":"cargo test --workspace","status":"passed","evidence":"logs/test.log"}
-{"type":"session_stop","summary":"Blocked policy path changed."}

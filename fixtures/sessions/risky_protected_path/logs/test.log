@@ -1,2 +1,0 @@
-cargo test --workspace
-test result: ok. 12 passed; 0 failed
