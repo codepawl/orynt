@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="420" viewBox="0 0 1440 420" role="img" aria-labelledby="title desc">
+  <title id="title">Reusable trace ribbon UI element</title>
+  <desc id="desc">A transparent diagonal trace ribbon with halftone dots and abstract ASCII marks.</desc>
+  <defs>
+    <linearGradient id="ribbonPaint" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#39eaa8" stop-opacity="0.82"/>
+      <stop offset="38%" stop-color="#e8f58d" stop-opacity="0.72"/>
+      <stop offset="72%" stop-color="#ff8f5d" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#ef3a89" stop-opacity="0.72"/>
+    </linearGradient>
+    <pattern id="traceDots" width="16" height="16" patternUnits="userSpaceOnUse">
+      <rect x="6" y="6" width="4.5" height="4.5" fill="#ffffff"/>
+    </pattern>
+    <pattern id="traceDotsDark" width="18" height="18" patternUnits="userSpaceOnUse">
+      <rect x="7" y="7" width="5" height="5" fill="#124f66"/>
+    </pattern>
+    <filter id="ribbonBlur" x="-20%" y="-40%" width="140%" height="180%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <mask id="ribbonMask">
+      <rect width="1440" height="420" fill="black"/>
+      <path d="M-30 345 C170 250 300 250 520 280 C770 315 890 165 1095 112 C1220 80 1330 88 1470 128 L1470 305 C1290 245 1180 242 1020 310 C820 395 640 402 420 355 C235 315 105 330 -30 412 Z" fill="white"/>
+    </mask>
+  </defs>
+  <path d="M-30 345 C170 250 300 250 520 280 C770 315 890 165 1095 112 C1220 80 1330 88 1470 128 L1470 305 C1290 245 1180 242 1020 310 C820 395 640 402 420 355 C235 315 105 330 -30 412 Z" fill="url(#ribbonPaint)" opacity="0.72" filter="url(#ribbonBlur)"/>
+  <g mask="url(#ribbonMask)">
+    <rect width="1440" height="420" fill="url(#traceDots)" opacity="0.62"/>
+    <rect x="620" y="0" width="820" height="420" fill="url(#traceDotsDark)" opacity="0.32"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="26" letter-spacing="7" fill="#fbfbef" opacity="0.52">
+    <text x="145" y="320">++ xx X 8 0 S # @ @ # S 0</text>
+    <text x="400" y="350">==++XXX8800SS###</text>
+    <text x="790" y="235"># S 0 8 X x + == --</text>
+    <text x="1015" y="175">++ X88800 SS##</text>
+  </g>
+</svg>

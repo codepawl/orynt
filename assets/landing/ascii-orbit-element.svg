@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Reusable ASCII orbit UI element</title>
+  <desc id="desc">A transparent decorative ASCII orbit element for landing page cards and panels.</desc>
+  <defs>
+    <radialGradient id="orbitGlow" cx="54%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f4fff2" stop-opacity="0.92"/>
+      <stop offset="28%" stop-color="#7df2d8" stop-opacity="0.58"/>
+      <stop offset="60%" stop-color="#22bdc8" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#22bdc8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="orbitGlyph" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1cf2e6" stop-opacity="0.14"/>
+      <stop offset="58%" stop-color="#eefff0" stop-opacity="0.86"/>
+      <stop offset="100%" stop-color="#36ebe2" stop-opacity="0.38"/>
+    </linearGradient>
+    <filter id="orbitBloom" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <ellipse cx="620" cy="360" rx="430" ry="230" fill="url(#orbitGlow)" filter="url(#orbitBloom)" opacity="0.76"/>
+  <g fill="none" stroke="#43f2e8" stroke-opacity="0.34" stroke-width="2">
+    <ellipse cx="620" cy="360" rx="480" ry="250"/>
+    <ellipse cx="620" cy="360" rx="360" ry="170"/>
+    <path d="M155 350 C300 210 460 160 655 185 C875 215 1035 330 1080 475"/>
+  </g>
+  <g font-family="'Roboto Slab', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" letter-spacing="8" fill="url(#orbitGlyph)" filter="url(#orbitBloom)">
+    <text x="175" y="175">---===++xx X8880</text>
+    <text x="330" y="235">++XXX8 00SS ##@@@</text>
+    <text x="455" y="295">X880S# @@@@@ @@@</text>
+    <text x="520" y="355">80SS# @@@@@@ @# S</text>
+    <text x="500" y="415">X80S## @@@ @@ ##S0</text>
+    <text x="380" y="475">++XXX880S S### 008</text>
+    <text x="220" y="535">---==++xxXX 8800</text>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" letter-spacing="8" fill="#1cf2e6" opacity="0.24">
+    <text x="700" y="145">++==---  ---==++</text>
+    <text x="830" y="220">x x X 8 0 S #</text>
+    <text x="880" y="500"># S 0 8 X x +</text>
+    <text x="690" y="585">++==--- ---==++</text>
+  </g>
+</svg>

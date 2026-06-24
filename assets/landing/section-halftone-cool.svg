@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Cool halftone landing page section background</title>
+  <desc id="desc">A cool abstract halftone section background with mint, blue, pink, green, and white dot fields.</desc>
+  <defs>
+    <linearGradient id="coolBase" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3ee5a0"/>
+      <stop offset="34%" stop-color="#eeb9e9"/>
+      <stop offset="66%" stop-color="#f6d6f2"/>
+      <stop offset="100%" stop-color="#d9f3c8"/>
+    </linearGradient>
+    <radialGradient id="blueLake" cx="72%" cy="75%" r="45%">
+      <stop offset="0%" stop-color="#3c7ff2"/>
+      <stop offset="62%" stop-color="#3c7ff2"/>
+      <stop offset="100%" stop-color="#3c7ff2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="mintBank" cx="8%" cy="78%" r="55%">
+      <stop offset="0%" stop-color="#42efaa"/>
+      <stop offset="58%" stop-color="#42efaa"/>
+      <stop offset="100%" stop-color="#42efaa" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="whiteDots" width="15" height="15" patternUnits="userSpaceOnUse">
+      <rect x="5.5" y="5.5" width="4" height="4" fill="#fff8ff"/>
+    </pattern>
+    <pattern id="greenDots" width="17" height="17" patternUnits="userSpaceOnUse">
+      <rect x="6" y="6" width="4.8" height="4.8" fill="#72ca52"/>
+    </pattern>
+    <pattern id="blueDots" width="18" height="18" patternUnits="userSpaceOnUse">
+      <rect x="7" y="7" width="5" height="5" fill="#3279ef"/>
+    </pattern>
+    <mask id="pinkDotMask">
+      <rect width="1920" height="1080" fill="black"/>
+      <ellipse cx="790" cy="210" rx="790" ry="360" fill="white"/>
+      <path d="M0 505 C290 420 440 540 610 650 C830 790 970 740 1160 590 C1370 420 1620 410 1920 545 L1920 0 L0 0 Z" fill="white"/>
+    </mask>
+    <mask id="greenDotMask">
+      <rect width="1920" height="1080" fill="black"/>
+      <path d="M0 390 C350 470 520 710 720 770 C1020 858 1190 608 1460 450 C1640 345 1780 300 1920 250 L1920 1080 L0 1080 Z" fill="white"/>
+    </mask>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#coolBase)"/>
+  <path d="M-80 580 C230 495 420 600 600 735 C860 930 1100 860 1330 670 C1540 500 1730 445 2000 500 L2000 1120 L-80 1120 Z" fill="url(#blueLake)"/>
+  <path d="M-120 520 C170 495 360 660 480 865 C560 1005 650 1060 770 1120 L-120 1120 Z" fill="url(#mintBank)"/>
+  <g mask="url(#pinkDotMask)" opacity="0.68">
+    <rect width="1920" height="1080" fill="url(#whiteDots)"/>
+  </g>
+  <g mask="url(#greenDotMask)" opacity="0.64">
+    <rect width="1920" height="1080" fill="url(#greenDots)"/>
+  </g>
+  <ellipse cx="1340" cy="790" rx="520" ry="250" fill="url(#blueDots)" opacity="0.52"/>
+  <ellipse cx="1120" cy="145" rx="420" ry="210" fill="url(#greenDots)" opacity="0.42"/>
+  <path d="M0 470 C300 485 510 642 700 720 C970 832 1100 692 1270 540 C1425 400 1640 350 1920 365" fill="none" stroke="#fff8ff" stroke-width="42" stroke-opacity="0.4"/>
+</svg>

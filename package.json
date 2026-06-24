@@ -1,0 +1,12 @@
+{
+  "name": "codepawl",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.4",
+  "scripts": {
+    "build": "pnpm --filter @codepawl/marketing-site build",
+    "dev:marketing": "pnpm --filter @codepawl/marketing-site dev",
+    "test": "pnpm --filter @codepawl/marketing-site test",
+    "preview:marketing": "pnpm --filter @codepawl/marketing-site preview"
+  }
+}

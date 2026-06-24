@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Teal ASCII glow landing hero background</title>
+  <desc id="desc">A dark landing page background with soft teal glow, abstract ASCII texture, and quiet copy space.</desc>
+  <defs>
+    <radialGradient id="tealGlow" cx="70%" cy="45%" r="58%">
+      <stop offset="0%" stop-color="#d8ffe8" stop-opacity="0.9"/>
+      <stop offset="24%" stop-color="#80f4d8" stop-opacity="0.65"/>
+      <stop offset="52%" stop-color="#24c6c8" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#071012" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07090d"/>
+      <stop offset="48%" stop-color="#101918"/>
+      <stop offset="100%" stop-color="#071012"/>
+    </linearGradient>
+    <linearGradient id="glyphFade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1df7ee" stop-opacity="0"/>
+      <stop offset="36%" stop-color="#1df7ee" stop-opacity="0.18"/>
+      <stop offset="70%" stop-color="#eaffdc" stop-opacity="0.78"/>
+      <stop offset="100%" stop-color="#1df7ee" stop-opacity="0.58"/>
+    </linearGradient>
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="mist" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="42"/>
+    </filter>
+    <mask id="copySpace">
+      <rect width="1920" height="1080" fill="white"/>
+      <ellipse cx="420" cy="430" rx="560" ry="470" fill="black" opacity="0.74"/>
+    </mask>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#shell)"/>
+  <ellipse cx="1340" cy="520" rx="720" ry="520" fill="url(#tealGlow)" filter="url(#mist)"/>
+  <ellipse cx="1050" cy="690" rx="470" ry="260" fill="#5ff2d6" opacity="0.17" filter="url(#mist)"/>
+  <g mask="url(#copySpace)" filter="url(#softGlow)" font-family="'Roboto Slab', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="42" letter-spacing="10" fill="url(#glyphFade)">
+    <text x="610" y="95">---===++xxxXX  X8880000  08888XXX++</text>
+    <text x="760" y="155">==++  +XXXX8  8x8888X  XXXXXXxx  x +++</text>
+    <text x="910" y="215">=++xx    00000   00  0 0 888X xXXxx+</text>
+    <text x="1040" y="275">xX880SS# #S #  SSS  088XXXX</text>
+    <text x="1120" y="335">80S # @@@ @ @@# SSS    88</text>
+    <text x="1040" y="395">XX80S#@@@@@ @   @@@@ S 0 08</text>
+    <text x="960" y="455">XXX 8 0SS @@@@@ @   @# 0008</text>
+    <text x="845" y="515">XX88880 S### @@@@@@ @@@ # S 08</text>
+    <text x="710" y="575">X 88 000 S #####@@ @ @@@@@@@# S000</text>
+    <text x="585" y="635">++xx X 8 000 SS# ## @ @@@@@@ @ ### 0 8X</text>
+    <text x="510" y="695">+x x880 SSS S #@# @ @@@@@ @@@@ @ ###S008</text>
+    <text x="610" y="755">++XXXXX800S ##@ @@@ @@@@@ @ @@@@ @ ## S 08</text>
+    <text x="720" y="815">++xX 8 S##@@ @@ @@ @@@@@ @@@@@ ## ## S 8</text>
+    <text x="820" y="875">++xxx 0 @@@ @@ @@@@ @@ #S#### # SS 008</text>
+    <text x="930" y="935">++XXXX80S# @@@ @@@ @@## ##SSSS 0 0 8X</text>
+    <text x="1060" y="995">XX80 0SS##@##@## @## SSS08 X +=</text>
+  </g>
+  <g opacity="0.28" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" letter-spacing="8" fill="#20e7df">
+    <text x="410" y="270">---====+   ++ xx xxxxX</text>
+    <text x="320" y="420">===++xx  X 8 000</text>
+    <text x="300" y="535">--  =+ x X80SS</text>
+    <text x="380" y="650">===+xxX 8 S##@@</text>
+  </g>
+</svg>

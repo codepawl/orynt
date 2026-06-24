@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Violet ASCII glow landing hero background</title>
+  <desc id="desc">A dark violet landing page background with magenta ASCII texture, cyan edges, and copy space.</desc>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#070719"/>
+      <stop offset="50%" stop-color="#121335"/>
+      <stop offset="100%" stop-color="#060812"/>
+    </linearGradient>
+    <radialGradient id="violetCore" cx="78%" cy="33%" r="58%">
+      <stop offset="0%" stop-color="#ffe8ff" stop-opacity="0.92"/>
+      <stop offset="25%" stop-color="#e37aff" stop-opacity="0.62"/>
+      <stop offset="52%" stop-color="#3446ff" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#090a17" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bluePool" cx="30%" cy="76%" r="52%">
+      <stop offset="0%" stop-color="#3454ff" stop-opacity="0.5"/>
+      <stop offset="58%" stop-color="#2130a8" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#070719" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glyphPaint" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2455ff" stop-opacity="0.35"/>
+      <stop offset="48%" stop-color="#f36dff" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#fff5ff" stop-opacity="0.9"/>
+    </linearGradient>
+    <filter id="bloom" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="wideBlur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="46"/>
+    </filter>
+    <mask id="leftQuiet">
+      <rect width="1920" height="1080" fill="white"/>
+      <ellipse cx="455" cy="420" rx="660" ry="500" fill="black" opacity="0.82"/>
+      <rect x="0" y="0" width="760" height="1080" fill="black" opacity="0.28"/>
+    </mask>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#night)"/>
+  <ellipse cx="1460" cy="340" rx="720" ry="460" fill="url(#violetCore)" filter="url(#wideBlur)"/>
+  <ellipse cx="660" cy="800" rx="620" ry="420" fill="url(#bluePool)" filter="url(#wideBlur)"/>
+  <g mask="url(#leftQuiet)" filter="url(#bloom)" font-family="'Roboto Slab', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="42" letter-spacing="11" fill="url(#glyphPaint)">
+    <text x="670" y="70">;;--- ===++xxxxx  X88800000 088888XXXX++</text>
+    <text x="540" y="130">;--=== + xx XXX8 88000SSS SSS0000088XXX++</text>
+    <text x="410" y="190">;--===++xxxXX 88 80000SSSSS##SS SSS00088XXX</text>
+    <text x="300" y="250">;--===++xxxXXX8 8880 0 0000SSSS ####S SS 00888XX</text>
+    <text x="185" y="310">--==+xxxxXXX8 888X X Xxxx xx+ x xxx XXX88000SSSS</text>
+    <text x="250" y="390">;--==++xxXXXXXx  ++==---;;;   ;;;---==++xXX880</text>
+    <text x="465" y="470">;--===++x X888000 SSSSS000888</text>
+    <text x="750" y="550">;---== ++ xXXX X X 8000SS#####</text>
+    <text x="970" y="630">++ ++xxxXXX8 00SS ##@@@@@@@@@@@@</text>
+    <text x="1110" y="710">++ xxXXX 800 S###@ @@@ @@@</text>
+    <text x="1210" y="790">++ xXXXX800S S##@@@@ @@@</text>
+    <text x="1320" y="870">++xxxXX888 0SSS####@@@</text>
+    <text x="1450" y="950">+xxXXX 88800 SSS ###</text>
+    <text x="1580" y="1030">++ xXXXX888000S S</text>
+  </g>
+  <g opacity="0.32" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="36" letter-spacing="10" fill="#274dff">
+    <text x="0" y="420">;--=++xxxx++=--;</text>
+    <text x="0" y="520">====++===--</text>
+    <text x="40" y="620">---==;</text>
+    <text x="910" y="315">;;;---====</text>
+  </g>
+</svg>
