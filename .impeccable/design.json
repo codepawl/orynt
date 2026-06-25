@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-25T00:00:00+07:00",
+  "title": "Design System: CodePawl",
+  "extensions": {
+    "colorMeta": {
+      "mono-950": {
+        "role": "primary",
+        "displayName": "Charcoal Console",
+        "canonical": "#1c1c1c",
+        "tonalRamp": ["#101010", "#1c1c1c", "#2a2a2a", "#474747", "#717171", "#9c9c9c", "#c6c6c6", "#f1f1f1"]
+      },
+      "mono-100": {
+        "role": "primary",
+        "displayName": "Control White",
+        "canonical": "#f1f1f1",
+        "tonalRamp": ["#1c1c1c", "#474747", "#717171", "#9c9c9c", "#c6c6c6", "#e0e0e0", "#f1f1f1", "#ffffff"]
+      },
+      "accent-success": {
+        "role": "tertiary",
+        "displayName": "Success Signal",
+        "canonical": "#78c99b",
+        "tonalRamp": ["#173226", "#25523d", "#357355", "#4d9570", "#78c99b", "#9edbb8", "#c4ebd4", "#e8f8ef"]
+      },
+      "accent-warning": {
+        "role": "tertiary",
+        "displayName": "Risk Amber",
+        "canonical": "#d4a94f",
+        "tonalRamp": ["#33250d", "#584019", "#7e5d25", "#a67f35", "#d4a94f", "#e3c477", "#f0dda8", "#fbf3dc"]
+      },
+      "accent-info": {
+        "role": "tertiary",
+        "displayName": "Inspection Blue",
+        "canonical": "#8fb6e8",
+        "tonalRamp": ["#13243b", "#213b5d", "#335983", "#537caf", "#8fb6e8", "#b2cef1", "#d3e3f8", "#eef6ff"]
+      },
+      "accent-alert": {
+        "role": "tertiary",
+        "displayName": "Stop Red",
+        "canonical": "#df7272",
+        "tonalRamp": ["#3a1616", "#5d2525", "#843737", "#b24e4e", "#df7272", "#ea9999", "#f4c3c3", "#fdeaea"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero headlines and the strongest brand moments."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Major section headings and CTA headlines."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Readable product explanation and dense supporting copy."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Navigation, buttons, tabs, and compact metadata."
+      }
+    },
+    "shadows": [
+      {
+        "name": "preview-ambient",
+        "value": "0 28px 90px rgba(0, 0, 0, 0.42)",
+        "purpose": "Major product-preview and CTA surfaces."
+      },
+      {
+        "name": "logo-lift",
+        "value": "0 12px 32px rgba(0, 0, 0, 0.28)",
+        "purpose": "Brand logo only."
+      },
+      {
+        "name": "active-dot-glow",
+        "value": "0 0 18px rgba(241, 241, 241, 0.44)",
+        "purpose": "Timeline emphasis and active state marks."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ascii-wave-drift",
+        "value": "34-36s ease-in-out alternate transform drift",
+        "purpose": "Slow atmospheric ASCII movement behind the landing page."
+      },
+      {
+        "name": "ascii-glow-pulse",
+        "value": "16s ease-in-out opacity and blur pulse",
+        "purpose": "Soft foreground glow for the trace imagery."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "@media (prefers-reduced-motion: reduce) { animation: none; transform: none; }",
+        "purpose": "Required alternative for decorative ASCII motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tablet",
+        "value": "1120px"
+      },
+      {
+        "name": "mobile",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "High-contrast CTA for trial and approval actions.",
+      "html": "<button class=\"ds-button-primary\">Start free trial</button>",
+      "css": ".ds-button-primary { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; padding: 0 22px; border: 1px solid rgba(255,255,255,0.58); border-radius: 8px; background: linear-gradient(180deg, #f1f1f1, #c6c6c6); color: #1c1c1c; font: 800 13px/1 Lato, ui-sans-serif, system-ui, sans-serif; cursor: pointer; } .ds-button-primary:focus-visible { outline: 2px solid #8fb6e8; outline-offset: 3px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Quiet action for demo or secondary navigation.",
+      "html": "<button class=\"ds-button-secondary\">Book demo</button>",
+      "css": ".ds-button-secondary { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; padding: 0 22px; border: 1px solid rgba(241,241,241,0.25); border-radius: 8px; background: rgba(241,241,241,0.03); color: #f1f1f1; font: 800 13px/1 Lato, ui-sans-serif, system-ui, sans-serif; cursor: pointer; } .ds-button-secondary:focus-visible { outline: 2px solid #8fb6e8; outline-offset: 3px; }"
+    },
+    {
+      "name": "Panel Card",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Major translucent cockpit surface.",
+      "html": "<article class=\"ds-panel-card\"><h3>Trace & inspect</h3><p>Inspect traces, inputs, and results to understand every decision.</p></article>",
+      "css": ".ds-panel-card { padding: 22px; border: 1px solid rgba(241,241,241,0.14); border-radius: 8px; background: linear-gradient(180deg, rgba(241,241,241,0.06), rgba(241,241,241,0.025)), rgba(28,28,28,0.78); color: #f1f1f1; box-shadow: 0 28px 90px rgba(0,0,0,0.42); font-family: Lato, ui-sans-serif, system-ui, sans-serif; } .ds-panel-card h3 { margin: 0; font: 700 18px/1.2 'Roboto Slab', Georgia, serif; } .ds-panel-card p { margin: 7px 0 0; color: rgba(241,241,241,0.68); line-height: 1.5; }"
+    },
+    {
+      "name": "Approval Pill",
+      "kind": "chip",
+      "refersTo": "approval-status",
+      "description": "Small status mark for pending approvals.",
+      "html": "<span class=\"ds-approval-pill\">1 pending</span>",
+      "css": ".ds-approval-pill { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border: 1px solid rgba(241,241,241,0.14); border-radius: 999px; color: rgba(241,241,241,0.68); background: rgba(241,241,241,0.035); font: 700 11px/1 Lato, ui-sans-serif, system-ui, sans-serif; }"
+    },
+    {
+      "name": "Mock Address Field",
+      "kind": "input",
+      "refersTo": "mock-address",
+      "description": "Read-only browser address field inside product previews.",
+      "html": "<div class=\"ds-mock-address\">https://www.example.com/pricing</div>",
+      "css": ".ds-mock-address { padding: 8px 12px; border: 1px solid rgba(241,241,241,0.14); border-radius: 8px; background: rgba(28,28,28,0.7); color: rgba(241,241,241,0.44); font: 400 11px/1.4 Lato, ui-sans-serif, system-ui, sans-serif; }"
+    },
+    {
+      "name": "Header Navigation",
+      "kind": "nav",
+      "refersTo": "primary-nav",
+      "description": "Compact top navigation for the landing page.",
+      "html": "<nav class=\"ds-primary-nav\"><a>Product</a><a>Pricing</a><a>Docs</a></nav>",
+      "css": ".ds-primary-nav { display: flex; align-items: center; justify-content: center; gap: 34px; color: #f1f1f1; font: 700 13px/1 Lato, ui-sans-serif, system-ui, sans-serif; } .ds-primary-nav a { color: inherit; text-decoration: none; } .ds-primary-nav a:hover, .ds-primary-nav a:focus-visible { color: #ffffff; outline: none; text-decoration: underline; text-underline-offset: 4px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Operator Cockpit",
+    "overview": "CodePawl's interface should feel like a controlled operating room for computer agents: dark, legible, instrumented, and calm under pressure. The visual system uses a charcoal monochrome shell, restrained semantic accents, compact panels, and visible traces of agent work through ASCII motion and product-preview artifacts.\n\nThe brand is premium because it is precise, not because it is decorative. The page should show runtime mechanics, approval gates, live browser surfaces, usage metrics, and replayable traces as proof that the product keeps powerful agents bounded.",
+    "keyCharacteristics": [
+      "Charcoal monochrome foundation with rare semantic color.",
+      "8px compact geometry across buttons, cards, previews, and panels.",
+      "Lato body text paired with Roboto Slab display and section headings.",
+      "Product evidence over abstract decoration.",
+      "Atmospheric ASCII/trace motion that never hides content."
+    ],
+    "rules": [
+      {
+        "name": "The Semantic Accent Rule",
+        "body": "Accent colors must explain state or risk. Do not use the status palette as decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Monochrome Confidence Rule",
+        "body": "Most surfaces stay charcoal and white; color appears because the operator needs to understand a run.",
+        "section": "colors"
+      },
+      {
+        "name": "The No Costume Mono Rule",
+        "body": "Monospace is for code snippets, telemetry, and ASCII atmosphere only; it is not the default way to say \"technical.\"",
+        "section": "typography"
+      },
+      {
+        "name": "The Slab Restraint Rule",
+        "body": "Roboto Slab carries brand voice in headings and labels. Do not introduce a second display family unless the identity is deliberately refreshed.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Ambient Shadow Rule",
+        "body": "Use the large shadow for meaningful surface separation only. Small nested items rely on borders and tonal fills.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep CodePawl dark, calm, and legible with #1c1c1c as the dominant surface.",
+      "Do use semantic accents only for success, risk, info, and destructive states.",
+      "Do keep card and panel radius at 8px unless a pill status label is required.",
+      "Do show approvals, traces, cost, and current run state as product proof.",
+      "Do preserve reduced-motion support for ASCII and trace motion.",
+      "Do keep body text contrast strong; muted copy should remain readable on dark and translucent surfaces."
+    ],
+    "donts": [
+      "Don't make CodePawl look like a neon cyberpunk agent dashboard.",
+      "Don't build an overloaded observability wall full of charts before the user understands the run.",
+      "Don't make the product feel like a raw terminal-first tool.",
+      "Don't promise effortless full autonomy, enterprise RPA replacement, CAPTCHA bypassing, or safety without human approval.",
+      "Don't use accent color as decoration.",
+      "Don't pair wide decorative shadows with every bordered nested item.",
+      "Don't introduce repeated tiny uppercase section eyebrows as a default scaffold."
+    ]
+  }
+}

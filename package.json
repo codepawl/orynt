@@ -5,8 +5,13 @@
   "packageManager": "pnpm@10.34.4",
   "scripts": {
     "build": "pnpm --filter @codepawl/marketing-site build",
+    "build:desktop": "pnpm --filter @codepawl/desktop build",
+    "dev": "pnpm --filter @codepawl/marketing-site dev",
+    "dev:desktop": "pnpm --filter @codepawl/desktop dev",
     "dev:marketing": "pnpm --filter @codepawl/marketing-site dev",
     "test": "pnpm --filter @codepawl/marketing-site test",
+    "test:contracts": "pnpm --filter @codepawl/shared test && pnpm --filter @codepawl/ipc-contracts test",
+    "test:desktop": "pnpm --filter @codepawl/desktop test",
     "preview:marketing": "pnpm --filter @codepawl/marketing-site preview"
   }
 }

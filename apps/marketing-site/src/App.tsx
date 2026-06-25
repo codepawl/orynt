@@ -1,7 +1,10 @@
+import { useEffect, useRef, useState } from "react";
+import type { PointerEvent, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck,
   BarChart3,
+  Check,
   Code2,
   Eye,
   Globe2,
@@ -14,14 +17,14 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-import lightThemeLogo from "../../../assets/pictures/light-theme-logo.svg";
+import darkThemeLogo from "../../../assets/pictures/dark-theme-logo.svg";
 
 const navItems = [
   { label: "Product", href: "#product" },
+  { label: "Features", href: "#features" },
+  { label: "Workflow", href: "#workflow" },
+  { label: "Cockpit", href: "#demo" },
   { label: "Pricing", href: "#pricing" },
-  { label: "Docs", href: "#docs" },
-  { label: "Changelog", href: "#changelog" },
-  { label: "Company", href: "#company" },
 ];
 
 const taskPreview = [
@@ -44,8 +47,8 @@ type WorkflowStep = IconCard & {
 const valueProps: IconCard[] = [
   {
     icon: Monitor,
-    title: "Local-first",
-    copy: "Your data stays on your machine.",
+    title: "Closed-source",
+    copy: "Commercial product with controlled releases.",
   },
   {
     icon: ShieldCheck,
@@ -128,32 +131,204 @@ const pricing = [
   {
     name: "Free Trial",
     price: "$0",
-    meta: "7 days",
+    meta: "Planned: 7 days",
+    badge: "Best price",
+    savings: "100% off trial window",
+    tone: "price",
+    fit: "Best for evaluating CodePawl before committing.",
     copy: "Explore CodePawl with full access.",
-    cta: "Start free trial",
-    features: ["All core features", "Up to 50 agent steps", "Local-first by default", "Community support"],
+    cta: "Trial waitlist opens soon",
+    features: ["All core features", "Up to 50 agent steps", "Closed-source product access", "Community support"],
   },
   {
     name: "Starter",
     price: "$19",
     meta: "Per user / month",
+    badge: "Best value",
+    savings: "20% off yearly planned",
+    tone: "value",
+    fit: "Best for solo operators running recurring browser work.",
     copy: "For individuals getting started.",
-    cta: "Start Starter",
+    cta: "Starter waitlist opens soon",
     features: ["Unlimited tasks", "Up to 10k steps / month", "Cost & token tracking", "Email support"],
   },
   {
     name: "Pro",
     price: "$49",
     meta: "Per user / month",
+    badge: "Most control",
+    savings: "Priority support lane",
+    tone: "control",
+    fit: "Best for heavier usage, shared skills, and tighter approvals.",
     copy: "For power users and teams.",
-    cta: "Start Pro",
+    cta: "Pro waitlist opens soon",
     features: ["Unlimited tasks & steps", "Advanced approval rules", "Skills library & sharing", "Priority support"],
   },
 ];
 
-function App() {
+const billingPeriods = [
+  {
+    id: "monthly",
+    label: "Monthly",
+    planMeta: "Per user / month",
+    note: "Monthly planning numbers shown.",
+  },
+  {
+    id: "quarterly",
+    label: "Quarterly",
+    planMeta: "Per user / quarter",
+    note: "Quarterly billing cadence planned; prices remain alpha monthly anchors.",
+  },
+  {
+    id: "yearly",
+    label: "Yearly",
+    planMeta: "Per user / year",
+    note: "Yearly billing cadence planned; prices remain alpha monthly anchors.",
+  },
+] as const;
+
+type BillingPeriod = (typeof billingPeriods)[number]["id"];
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+function CheckItem({ children }: { children: ReactNode }) {
   return (
-    <main className="landing-shell">
+    <li className="check-list-item">
+      <span className="check-icon" aria-hidden="true">
+        <Check aria-hidden="true" />
+      </span>
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function App() {
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("monthly");
+  const shellRef = useRef<HTMLElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const targetGridDragRef = useRef({ x: 0, y: 0 });
+  const currentGridDragRef = useRef({ x: 0, y: 0 });
+  const prefersReducedMotionRef = useRef(false);
+  const selectedBillingPeriod =
+    billingPeriods.find((period) => period.id === billingPeriod) ?? billingPeriods[0];
+
+  const setGridDragStyle = (x: number, y: number) => {
+    const shell = shellRef.current;
+    if (!shell) {
+      return;
+    }
+
+    shell.style.setProperty("--grid-drag-x", `${x.toFixed(2)}px`);
+    shell.style.setProperty("--grid-drag-y", `${y.toFixed(2)}px`);
+  };
+
+  const cancelGridDragFrame = () => {
+    if (animationFrameRef.current === null) {
+      return;
+    }
+
+    window.cancelAnimationFrame(animationFrameRef.current);
+    animationFrameRef.current = null;
+  };
+
+  const animateGridDrag = () => {
+    const current = currentGridDragRef.current;
+    const target = targetGridDragRef.current;
+    const nextX = current.x + (target.x - current.x) * 0.08;
+    const nextY = current.y + (target.y - current.y) * 0.08;
+    const settled = Math.abs(target.x - nextX) < 0.08 && Math.abs(target.y - nextY) < 0.08;
+
+    currentGridDragRef.current = settled ? { ...target } : { x: nextX, y: nextY };
+    setGridDragStyle(currentGridDragRef.current.x, currentGridDragRef.current.y);
+
+    animationFrameRef.current = settled ? null : window.requestAnimationFrame(animateGridDrag);
+  };
+
+  const startGridDragFrame = () => {
+    if (prefersReducedMotionRef.current || animationFrameRef.current !== null) {
+      return;
+    }
+
+    animationFrameRef.current = window.requestAnimationFrame(animateGridDrag);
+  };
+
+  const resetGridDrag = () => {
+    targetGridDragRef.current = { x: 0, y: 0 };
+    startGridDragFrame();
+  };
+
+  const handleShellPointerMove = (event: PointerEvent<HTMLElement>) => {
+    if (prefersReducedMotionRef.current) {
+      return;
+    }
+
+    const viewportWidth = window.innerWidth || 1;
+    const viewportHeight = window.innerHeight || 1;
+    const normalizedX = event.clientX / viewportWidth - 0.5;
+    const normalizedY = event.clientY / viewportHeight - 0.5;
+    targetGridDragRef.current = {
+      x: Math.max(-18, Math.min(18, normalizedX * 36)),
+      y: Math.max(-12, Math.min(12, normalizedY * 24)),
+    };
+    startGridDragFrame();
+  };
+
+  const resetTiltCard = (event: PointerEvent<HTMLElement>) => {
+    const card = event.currentTarget;
+    card.style.setProperty("--tilt-rotate-x", "0deg");
+    card.style.setProperty("--tilt-rotate-y", "0deg");
+    card.style.setProperty("--tilt-lift", "0");
+  };
+
+  const handleTiltCardPointerMove = (event: PointerEvent<HTMLElement>) => {
+    if (prefersReducedMotionRef.current) {
+      resetTiltCard(event);
+      return;
+    }
+
+    const card = event.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const width = rect.width || 1;
+    const height = rect.height || 1;
+    const normalizedX = (event.clientX - rect.left) / width - 0.5;
+    const normalizedY = (event.clientY - rect.top) / height - 0.5;
+
+    card.style.setProperty("--tilt-rotate-x", `${clamp(normalizedY * -12, -6, 6).toFixed(2)}deg`);
+    card.style.setProperty("--tilt-rotate-y", `${clamp(normalizedX * 12, -6, 6).toFixed(2)}deg`);
+    card.style.setProperty("--tilt-lift", "1");
+  };
+
+  useEffect(() => {
+    const motionQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const syncMotionPreference = () => {
+      prefersReducedMotionRef.current = motionQuery?.matches ?? false;
+
+      if (prefersReducedMotionRef.current) {
+        cancelGridDragFrame();
+        targetGridDragRef.current = { x: 0, y: 0 };
+        currentGridDragRef.current = { x: 0, y: 0 };
+        setGridDragStyle(0, 0);
+      }
+    };
+
+    syncMotionPreference();
+    motionQuery?.addEventListener("change", syncMotionPreference);
+    window.addEventListener("blur", resetGridDrag);
+
+    return () => {
+      motionQuery?.removeEventListener("change", syncMotionPreference);
+      window.removeEventListener("blur", resetGridDrag);
+      cancelGridDragFrame();
+    };
+  }, []);
+
+  return (
+    <main
+      className="landing-shell"
+      onPointerLeave={resetGridDrag}
+      onPointerMove={handleShellPointerMove}
+      ref={shellRef}
+    >
       <div className="ascii-motion-layer" aria-hidden="true">
         <span>.:--==++**##%%@@%%##**++==--:.. .:-=+*#%@#*+=-:.</span>
         <span>..::--==++**##%%##**++==--::..   ..:-=+*##*+=-:..</span>
@@ -164,7 +339,7 @@ function App() {
 
       <header className="site-header">
         <a className="brand" href="/" aria-label="CodePawl home">
-          <img className="brand-logo" src={lightThemeLogo} alt="" width="40" height="40" />
+          <img className="brand-logo" src={darkThemeLogo} alt="" width="40" height="40" />
           <span>CodePawl</span>
         </a>
 
@@ -178,39 +353,37 @@ function App() {
 
         <div className="header-actions">
           <a className="button button-secondary" href="#demo">
-            Book demo
+            See cockpit
           </a>
           <a className="button button-primary" href="#pricing">
-            Start free trial
+            View early access plans
           </a>
         </div>
       </header>
 
       <section className="hero-section" aria-labelledby="hero-title">
         <div className="hero-copy">
-          <p className="eyebrow">Local-first, approval-based, built for operators.</p>
           <h1 id="hero-title">Run computer agents without losing control.</h1>
           <p className="hero-lede">
-            CodePawl is your local control cockpit for browser agents. Start tasks, watch every step,
+            CodePawl is your closed-source control cockpit for browser agents. Start tasks, watch every step,
             approve risky actions, track cost, and save successful runs as reusable skills.
           </p>
           <div className="hero-actions">
             <a className="button button-primary" href="#pricing">
-              Start free trial
+              View early access plans
             </a>
             <a className="button button-secondary" href="#demo">
-              Book demo
+              See cockpit
             </a>
           </div>
           <ul className="trust-list" aria-label="Trial highlights">
-            <li>No credit card</li>
-            <li>7-day free trial</li>
-            <li>Local-first by default</li>
+            <CheckItem>No credit card</CheckItem>
+            <CheckItem>7-day trial planned</CheckItem>
+            <CheckItem>Closed-source product</CheckItem>
           </ul>
         </div>
 
         <section className="product-preview" aria-label="CodePawl product preview" id="product">
-          <div className="preview-ascii" aria-hidden="true" />
           <div className="preview-shell">
             <aside className="preview-sidebar" aria-label="Preview tasks">
               <div className="preview-brand">
@@ -341,12 +514,23 @@ function App() {
         ))}
       </section>
 
-      <section className="section features-section" aria-labelledby="features-title">
-        <p className="section-kicker">Features</p>
-        <h2 id="features-title">Everything you need to run agents with confidence.</h2>
+      <section className="section features-section" aria-labelledby="features-title" id="features">
+        <div className="section-intro">
+          <div>
+            <h2 id="features-title">Everything you need to run agents with confidence.</h2>
+            <p className="section-note">
+              Control, approvals, trace inspection, usage visibility, and reusable skills sit in one operator surface.
+            </p>
+          </div>
+        </div>
         <div className="feature-grid">
           {features.map((feature) => (
-            <article className="feature-card" key={feature.title}>
+            <article
+              className="feature-card tilt-card"
+              key={feature.title}
+              onPointerLeave={resetTiltCard}
+              onPointerMove={handleTiltCardPointerMove}
+            >
               <span className="line-icon" aria-hidden="true">
                 <feature.icon aria-hidden="true" />
               </span>
@@ -359,9 +543,15 @@ function App() {
         </div>
       </section>
 
-      <section className="section workflow-section" aria-labelledby="workflow-title">
-        <p className="section-kicker">How it works</p>
-        <h2 id="workflow-title">A simple operator workflow.</h2>
+      <section className="section workflow-section" aria-labelledby="workflow-title" id="workflow">
+        <div className="section-intro">
+          <div>
+            <h2 id="workflow-title">A simple operator workflow.</h2>
+            <p className="section-note">
+              Move from prompt to live run to human review to repeatable skill without hiding the agent's decisions.
+            </p>
+          </div>
+        </div>
         <div className="workflow-grid">
           {workflow.map((item) => (
             <article className="workflow-card" key={item.step}>
@@ -377,8 +567,14 @@ function App() {
       </section>
 
       <section className="section cockpit-section" aria-labelledby="cockpit-title" id="demo">
-        <p className="section-kicker">Built for operators</p>
-        <h2 id="cockpit-title">Your cockpit for computer agents.</h2>
+        <div className="section-intro">
+          <div>
+            <h2 id="cockpit-title">Your cockpit for computer agents.</h2>
+            <p className="section-note">
+              The demo surface keeps task state, trace data, approvals, and budget signals visible while the agent runs.
+            </p>
+          </div>
+        </div>
         <div className="cockpit-grid">
           <article className="trace-panel">
             <div className="panel-tabs">
@@ -456,76 +652,131 @@ function App() {
       </section>
 
       <section className="section pricing-section" aria-labelledby="pricing-title" id="pricing">
-        <p className="section-kicker">Pricing</p>
-        <h2 id="pricing-title">Simple, predictable pricing.</h2>
+        <div className="section-intro">
+          <div>
+            <h2 id="pricing-title">Simple, predictable pricing.</h2>
+            <p className="pricing-note">
+              Early access packaging. These are alpha planning numbers, not a live checkout. Provider/model usage is
+              billed separately unless trial credits are included.
+            </p>
+            <div className="billing-toggle-wrap">
+              <div className="billing-toggle" role="group" aria-label="Billing period">
+                {billingPeriods.map((period) => (
+                  <button
+                    className={
+                      period.id === billingPeriod
+                        ? "billing-period-button billing-period-button-active"
+                        : "billing-period-button"
+                    }
+                    type="button"
+                    aria-pressed={period.id === billingPeriod}
+                    onClick={() => setBillingPeriod(period.id)}
+                    key={period.id}
+                  >
+                    {period.label}
+                  </button>
+                ))}
+              </div>
+              <p className="billing-period-note">{selectedBillingPeriod.note}</p>
+            </div>
+          </div>
+        </div>
         <div className="pricing-grid">
           {pricing.map((plan) => (
-            <article className="pricing-card" key={plan.name}>
+            <article
+              className={`pricing-card pricing-card-${plan.tone} tilt-card${
+                plan.name === "Starter" ? " pricing-card-featured" : ""
+              }`}
+              key={plan.name}
+              onPointerLeave={resetTiltCard}
+              onPointerMove={handleTiltCardPointerMove}
+            >
               <div className="price-header">
                 <div>
                   <h3>{plan.name}</h3>
-                  <span>{plan.meta}</span>
+                  <span>{plan.name === "Free Trial" ? plan.meta : selectedBillingPeriod.planMeta}</span>
                 </div>
                 <strong>{plan.price}</strong>
               </div>
+              <div className="plan-bait-row" aria-label={`${plan.name} pricing highlights`}>
+                <span className="plan-badge">{plan.badge}</span>
+                <span className="plan-savings">{plan.savings}</span>
+              </div>
+              <p className="plan-fit">{plan.fit}</p>
               <p>{plan.copy}</p>
               <ul>
                 {plan.features.map((feature) => (
-                  <li key={feature}>{feature}</li>
+                  <CheckItem key={feature}>{feature}</CheckItem>
                 ))}
               </ul>
-              <a className="button button-primary" href="#pricing">
+              <button className="button button-primary pricing-status" type="button" disabled>
                 {plan.cta}
-              </a>
+              </button>
             </article>
           ))}
         </div>
+        <ul className="pricing-reassurance" aria-label="Pricing notes">
+          <li>
+            <strong>No live checkout</strong>
+            <span>Plans are directional until early access opens.</span>
+          </li>
+          <li>
+            <strong>Provider usage separate</strong>
+            <span>Model and browser-provider costs remain pass-through.</span>
+          </li>
+          <li>
+            <strong>Terms may change before launch</strong>
+            <span>We will keep the final package explicit before signup.</span>
+          </li>
+        </ul>
       </section>
 
       <section className="final-cta" aria-label="Final call to action">
         <div>
           <h2>Run agents with power. Stay in control.</h2>
         </div>
-        <a className="button button-primary" href="#pricing">
-          Start free trial
-        </a>
-        <a className="button button-secondary" href="#demo">
-          Start demo
-        </a>
+        <div className="final-cta-actions">
+          <a className="button button-primary" href="#pricing">
+            View early access plans
+          </a>
+          <a className="button button-secondary" href="#demo">
+            See cockpit
+          </a>
+        </div>
       </section>
 
       <footer className="site-footer">
         <div>
           <a className="brand" href="/" aria-label="CodePawl home footer">
-            <img className="brand-logo" src={lightThemeLogo} alt="" width="36" height="36" />
+            <img className="brand-logo" src={darkThemeLogo} alt="" width="36" height="36" />
             <span>CodePawl</span>
           </a>
-          <p>Local-first control cockpit for computer agents.</p>
-          <small>© 2025 CodePawl. All rights reserved.</small>
+          <p>Closed-source control cockpit for computer agents.</p>
+          <small>© 2026 CodePawl. All rights reserved.</small>
         </div>
         <nav aria-label="Footer product links">
           <strong>Product</strong>
+          <a href="#product">Product preview</a>
           <a href="#features">Features</a>
-          <a href="#product">Integrations</a>
-          <a href="#changelog">Changelog</a>
+          <a href="#workflow">Workflow</a>
         </nav>
         <nav aria-label="Footer resource links" id="docs">
           <strong>Resources</strong>
-          <a href="#docs">Docs</a>
-          <a href="#docs">Guides</a>
-          <a href="#docs">API Reference</a>
+          <span>Docs coming soon</span>
+          <span>Guides coming soon</span>
+          <span>API reference coming soon</span>
         </nav>
         <nav aria-label="Footer company links" id="company">
           <strong>Company</strong>
-          <a href="#company">About</a>
-          <a href="#company">Blog</a>
-          <a href="#company">Careers</a>
+          <span>About coming soon</span>
+          <span>Build log coming soon</span>
+          <span>Careers later</span>
         </nav>
         <nav aria-label="Footer legal links">
           <strong>Legal</strong>
-          <a href="#privacy">Privacy</a>
-          <a href="#terms">Terms</a>
-          <a href="#security">Security</a>
+          <span>Privacy coming soon</span>
+          <span>Terms coming soon</span>
+          <span>Security notes coming soon</span>
         </nav>
       </footer>
     </main>

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "onboarding",
+  "description": "Onboarding setup surface for local alpha settings and provider checks.",
+  "windows": ["main"],
+  "permissions": ["core:default", "core:event:default", "core:window:default", "core:app:default"]
+}
