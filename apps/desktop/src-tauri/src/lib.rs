@@ -14,6 +14,8 @@ pub struct AppState {
 #[serde(rename_all = "camelCase")]
 pub struct BudgetPolicy {
     max_steps: u32,
+    max_wall_time_ms: u64,
+    max_model_tokens: u32,
     max_usd: Option<f64>,
     stop_on_budget_exceeded: bool,
 }
@@ -21,9 +23,11 @@ pub struct BudgetPolicy {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRunInput {
-    task: String,
-    surface_kind: String,
-    budget_policy: BudgetPolicy,
+    goal: String,
+    capability_id: String,
+    task_id: String,
+    workspace_id: String,
+    budget: BudgetPolicy,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,26 +51,19 @@ pub enum ApprovalDecision {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type")]
-pub enum RunEvent {
-    #[serde(rename = "run.created", rename_all = "camelCase")]
-    Created {
-        run_id: String,
-        task: String,
-        summary: String,
-    },
-    #[serde(rename = "run.step_added", rename_all = "camelCase")]
-    StepAdded {
-        run_id: String,
-        step_index: u32,
-        summary: String,
-    },
-    #[serde(rename = "approval.resolved", rename_all = "camelCase")]
-    ApprovalResolved {
-        run_id: String,
-        approval_id: String,
-        decision: ApprovalDecision,
-    },
+#[serde(rename_all = "camelCase")]
+pub struct RunEvent {
+    id: String,
+    run_id: String,
+    sequence: u32,
+    #[serde(rename = "type")]
+    event_type: String,
+    timestamp: String,
+    actor: serde_json::Value,
+    payload: serde_json::Value,
+    redaction: serde_json::Value,
+    artifacts: Vec<serde_json::Value>,
+    safety: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -118,27 +115,36 @@ impl serde::Serialize for AppError {
 }
 
 fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
-    if input.task.trim().is_empty() {
-        return Err(AppError::Validation("task is required".into()));
+    if input.goal.trim().is_empty() {
+        return Err(AppError::Validation("goal is required".into()));
     }
 
-    if input.surface_kind != "browser" {
+    if input.capability_id.trim().is_empty()
+        || input.task_id.trim().is_empty()
+        || input.workspace_id.trim().is_empty()
+    {
         return Err(AppError::Validation(
-            "browser is the only executable MVP surface".into(),
+            "capabilityId, taskId, and workspaceId are required".into(),
         ));
     }
 
-    if input.budget_policy.max_steps == 0 {
+    if input.budget.max_steps == 0 {
         return Err(AppError::Validation("maxSteps must be greater than zero".into()));
     }
 
-    if let Some(max_usd) = input.budget_policy.max_usd {
+    if input.budget.max_wall_time_ms == 0 || input.budget.max_model_tokens == 0 {
+        return Err(AppError::Validation(
+            "maxWallTimeMs and maxModelTokens must be greater than zero".into(),
+        ));
+    }
+
+    if let Some(max_usd) = input.budget.max_usd {
         if !max_usd.is_finite() || max_usd <= 0.0 {
             return Err(AppError::Validation("maxUsd must be greater than zero".into()));
         }
     }
 
-    if !input.budget_policy.stop_on_budget_exceeded {
+    if !input.budget.stop_on_budget_exceeded {
         return Err(AppError::Validation(
             "stopOnBudgetExceeded must be enabled for the MVP".into(),
         ));
@@ -153,6 +159,32 @@ fn now_run_id() -> String {
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
     format!("run-{millis}")
+}
+
+fn now_iso_like() -> String {
+    "2026-06-26T00:00:00.000Z".into()
+}
+
+fn run_event(
+    run_id: &str,
+    sequence: u32,
+    event_type: &str,
+    actor_kind: &str,
+    actor_id: &str,
+    summary: &str,
+) -> RunEvent {
+    RunEvent {
+        id: format!("{run_id}-event-{sequence}"),
+        run_id: run_id.into(),
+        sequence,
+        event_type: event_type.into(),
+        timestamp: now_iso_like(),
+        actor: serde_json::json!({ "kind": actor_kind, "id": actor_id }),
+        payload: serde_json::json!({ "summary": summary }),
+        redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+        artifacts: vec![],
+        safety: None,
+    }
 }
 
 #[tauri::command]
@@ -172,20 +204,74 @@ async fn run_create(
 
     app.emit(
         "run_event",
-        RunEvent::Created {
-            run_id: run_id.clone(),
-            task: input.task.clone(),
-            summary: "Mock run created".into(),
-        },
+        run_event(
+            &run_id,
+            1,
+            "run_started",
+            "runtime",
+            "tauri-host",
+            "Mock repository run started",
+        ),
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
     app.emit(
         "run_event",
-        RunEvent::StepAdded {
-            run_id: run_id.clone(),
-            step_index: 1,
-            summary: "Mock Rust host validated the run and queued browser observation".into(),
-        },
+        run_event(
+            &run_id,
+            2,
+            "goal_received",
+            "user",
+            "operator",
+            &input.goal,
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            3,
+            "policy_checked",
+            "policy",
+            "core-policy",
+            "Allowed: command is on the conservative allowlist",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            4,
+            "sandbox_planned",
+            "policy",
+            "core-policy",
+            "Planned isolated repository worktree without executing commands",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            5,
+            "sandbox_ready_mock",
+            "runtime",
+            "tauri-host",
+            "Dry-run sandbox boundary is ready; no worktree was created",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            6,
+            "context_initialized",
+            "runtime",
+            "tauri-host",
+            "Mock Rust host validated the run and initialized repository context",
+        ),
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
 
@@ -210,12 +296,35 @@ async fn approval_respond(app: AppHandle, input: ApprovalDecisionInput) -> Resul
         return Err(AppError::Validation("approvalId is required".into()));
     }
 
+    let decision_label = match &input.decision {
+        ApprovalDecision::Approved => "approved",
+        ApprovalDecision::Denied => "denied",
+    };
+
     app.emit(
         "run_event",
-        RunEvent::ApprovalResolved {
+        RunEvent {
+            id: format!("{}-event-approval-{}", input.run_id, input.approval_id),
             run_id: input.run_id,
-            approval_id: input.approval_id,
-            decision: input.decision,
+            sequence: 10_000,
+            event_type: "action_blocked_or_approved".into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "policy", "id": "tauri-host" }),
+            payload: serde_json::json!({
+                "summary": format!("Approval {} for {}", decision_label, input.approval_id),
+                "approvalId": input.approval_id,
+                "decision": input.decision,
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![],
+            safety: Some(serde_json::json!({
+                "policyMode": "safe",
+                "riskLevel": "low",
+                "approvalRequired": false,
+                "protectedPathTouched": false,
+                "commandAllowed": true,
+                "reasons": ["operator decision recorded"],
+            })),
         },
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
@@ -228,8 +337,13 @@ async fn settings_get() -> Result<SettingsSnapshot, AppError> {
     Ok(SettingsSnapshot {
         workspace_id: "workspace-local-alpha".into(),
         permission_mode: "safe".into(),
-        executable_surfaces: vec!["browser".into()],
-        blocked_surfaces: vec!["desktop".into(), "files".into(), "terminal".into()],
+        executable_surfaces: vec!["repository".into()],
+        blocked_surfaces: vec![
+            "browser".into(),
+            "desktop".into(),
+            "files".into(),
+            "terminal".into(),
+        ],
     })
 }
 
@@ -306,10 +420,14 @@ mod tests {
 
     fn valid_run_input() -> CreateRunInput {
         CreateRunInput {
-            task: "Fill a browser form".into(),
-            surface_kind: "browser".into(),
-            budget_policy: BudgetPolicy {
+            goal: "Fix a failing unit test".into(),
+            capability_id: "coding-apprentice".into(),
+            task_id: "task-1".into(),
+            workspace_id: "workspace-1".into(),
+            budget: BudgetPolicy {
                 max_steps: 40,
+                max_wall_time_ms: 1_800_000,
+                max_model_tokens: 120_000,
                 max_usd: Some(1.0),
                 stop_on_budget_exceeded: true,
             },
@@ -317,23 +435,26 @@ mod tests {
     }
 
     #[test]
-    fn validate_create_run_accepts_browser_only_mvp_input() {
+    fn validate_create_run_accepts_repository_run_input() {
         assert!(validate_create_run(&valid_run_input()).is_ok());
     }
 
     #[test]
-    fn validate_create_run_rejects_future_surfaces() {
+    fn validate_create_run_rejects_missing_identifiers() {
         let mut input = valid_run_input();
-        input.surface_kind = "terminal".into();
+        input.workspace_id = "".into();
 
-        let error = validate_create_run(&input).expect_err("terminal must be blocked");
-        assert_eq!(error.to_string(), "browser is the only executable MVP surface");
+        let error = validate_create_run(&input).expect_err("workspace id is required");
+        assert_eq!(
+            error.to_string(),
+            "capabilityId, taskId, and workspaceId are required"
+        );
     }
 
     #[test]
     fn validate_create_run_requires_budget_stop() {
         let mut input = valid_run_input();
-        input.budget_policy.stop_on_budget_exceeded = false;
+        input.budget.stop_on_budget_exceeded = false;
 
         let error = validate_create_run(&input).expect_err("budget stop is required");
         assert_eq!(

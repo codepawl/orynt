@@ -1,5 +1,11 @@
 # Implementation Sequence — Tauri-first
 
+Status: legacy browser-first sequence. Do not use this as the current P0
+implementation path. The current CLDSA-Lite / Coding Apprentice sequence lives
+in `.codex/plan/cldsa-lite/plans/02_IMPLEMENTATION_ROADMAP.md` and
+`.codex/plan/cldsa-lite/work-contracts/`. Keep this document as future
+browser-operator capability context.
+
 ## Phase 0 — Tauri foundation
 
 Done when:

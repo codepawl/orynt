@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { RunEvent } from "@codepawl/ipc-contracts";
 import { createMockRunState, MVP_BLOCKED_SURFACES } from "@codepawl/shared";
-import type { SurfaceKind } from "@codepawl/shared";
+import type { RunEvent, SurfaceKind } from "@codepawl/shared";
 
 import { codepawl } from "./codepawlClient";
 import "./styles.css";
@@ -9,6 +8,7 @@ import "./styles.css";
 const navItems = ["Run", "Tasks", "Dashboard", "Permissions", "Skills", "Usage", "Settings"];
 
 const surfaceLabels: Record<SurfaceKind, string> = {
+  repository: "Repository",
   browser: "Browser",
   desktop: "Desktop",
   files: "Files",
@@ -20,14 +20,8 @@ function formatUsd(value: number) {
 }
 
 function describeRunEvent(event: RunEvent): string {
-  if (event.type === "run.created") {
-    return event.summary;
-  }
-  if (event.type === "run.step_added") {
-    return event.summary;
-  }
-
-  return `Approval ${event.decision} for ${event.approvalId}`;
+  const summary = (event.payload as { summary?: unknown }).summary;
+  return typeof summary === "string" ? summary : event.type.replaceAll("_", " ");
 }
 
 function App() {
@@ -42,11 +36,11 @@ function App() {
 
     codepawl.onRunEvent((event) => {
       setEvents((current) => [...current, event]);
-      if (event.type === "run.created") {
+      if (event.type === "run_started") {
         setCurrentRunId(event.runId);
       }
-      if (event.type === "approval.resolved") {
-        setApprovalStatus(`Approval ${event.decision} for ${event.approvalId}`);
+      if (event.type === "action_blocked_or_approved") {
+        setApprovalStatus(describeRunEvent(event));
       }
     }).then((listener) => {
       if (mounted) {
@@ -66,10 +60,14 @@ function App() {
 
   const handleRunTask = async () => {
     const run = await codepawl.createRun({
-      task: runState.activeTask.title,
-      surfaceKind: "browser",
-      budgetPolicy: {
-        maxSteps: 40,
+      goal: runState.activeTask.title,
+      capabilityId: "coding-apprentice",
+      taskId: runState.activeTask.id,
+      workspaceId: runState.workspace.id,
+      budget: {
+        maxSteps: runState.runSummary.run.budget.maxSteps,
+        maxWallTimeMs: runState.runSummary.run.budget.maxWallTimeMs,
+        maxModelTokens: runState.runSummary.run.budget.maxModelTokens,
         maxUsd: runState.usageBudget.runLimitUsd,
         stopOnBudgetExceeded: true,
       },
@@ -124,7 +122,7 @@ function App() {
       <section className="run-surface">
         <header className="run-header">
           <div>
-            <p className="eyebrow">Browser surface</p>
+            <p className="eyebrow">Repository workspace</p>
             <h1>Run cockpit</h1>
           </div>
           <div className="run-status">
@@ -135,7 +133,7 @@ function App() {
 
         <section className="composer" aria-label="Task prompt">
           <p>{runState.activeTask.title}</p>
-          <span>Mock runtime only. Live sidecar and Playwright are intentionally not connected in this slice.</span>
+          <span>Mock runtime only. Codex execution and browser automation are intentionally not connected in this slice.</span>
         </section>
 
         <section className="timeline" aria-label="Run timeline">
@@ -154,7 +152,7 @@ function App() {
         <section className="approval-card" aria-label="Approval request">
           <div>
             <p className="eyebrow">Approval center</p>
-            <h2>Submit/export extracted pricing?</h2>
+            <h2>Approve protected repository action?</h2>
             <p>{approvalStatus}</p>
           </div>
           <div className="approval-actions">
@@ -190,14 +188,14 @@ function App() {
           <h2>
             {formatUsd(runState.activeTask.costUsd)} / {formatUsd(runState.usageBudget.runLimitUsd)}
           </h2>
-          <span>{runState.traceSummary.contextPacketTokens.toLocaleString()} context tokens</span>
+          <span>{runState.traceSummary.modelTokens.toLocaleString()} model tokens</span>
         </section>
 
         <section aria-label="Allowed surfaces">
           <p className="eyebrow">Allowed surfaces</p>
           <ul className="surface-list">
             <li>
-              <span>Browser</span>
+              <span>Repository</span>
               <strong>enabled</strong>
             </li>
             {MVP_BLOCKED_SURFACES.map((surface) => (
@@ -211,14 +209,14 @@ function App() {
 
         <section>
           <p className="eyebrow">Trace</p>
-          <h2>{runState.traceSummary.observationGraphNodes} graph nodes</h2>
-          <span>{runState.traceSummary.candidateActions} candidate actions</span>
+          <h2>{runState.traceSummary.eventCount} events</h2>
+          <span>{runState.traceSummary.artifactCount} artifacts</span>
         </section>
 
         <section>
-          <p className="eyebrow">Skill draft</p>
+          <p className="eyebrow">Verifier</p>
           <h2>{runState.skillDraft.name}</h2>
-          <span>Replay: {runState.skillDraft.replayModelCalls} model calls</span>
+          <span>Latest verdict: {runState.traceSummary.latestVerdict}</span>
         </section>
       </aside>
     </main>

@@ -4,34 +4,36 @@ Generated: 2026-06-24
 
 This directory is the planning source for CodePawl.
 
-CodePawl is a cost-aware semantic control cockpit for computer agents. The north star is full-system control. The MVP starts with browser control because browser surfaces are the easiest place to build reliable observation, action, verification, token budgeting, trace replay, and user approvals.
+CodePawl is a cost-aware semantic control cockpit for computer agents. The north star is full-system control. The current P0 starts with CLDSA-Lite: a supervised Coding Apprentice that delegates repository tasks to Codex inside an isolated worktree, verifies outcomes, records append-only evidence, controls cost, and proposes candidate memory from user corrections.
 
-Do not reduce CodePawl to a browser automation wrapper. Browser is Surface Adapter v1. The long-term product is a full computer-agent control plane.
+Do not reduce CodePawl to a coding-agent wrapper. Codex is an executor/provider behind a CodePawl adapter, not the system architecture. Browser automation remains a future capability pack behind the same permissioned SurfaceAdapter architecture.
 
 ## How Codex should read this pack
 
 Read in this order:
 
-1. `02_vision_north_star.md`
-2. `03_master_plan.md`
-3. `04_mvp_scope_feature_breakdown.md`
-4. `11_technical_strategy.md`
-5. `12_repo_structure.md`
-6. `15_surface_adapter_architecture.md`
-7. `18_semantic_ui_graph.md`
-8. `21_token_economy_engine.md`
-9. `23_weak_model_support_runtime.md`
-10. `30_security_threat_model.md`
-11. `41_codex_work_contracts.md`
+1. `cldsa-lite/README.md`
+2. `cldsa-lite/plans/00_CLDSA_LITE_MASTER_PLAN.md`
+3. `cldsa-lite/plans/01_ARCHITECTURE_BOUNDARIES.md`
+4. `cldsa-lite/plans/02_IMPLEMENTATION_ROADMAP.md`
+5. `cldsa-lite/plans/03_DATA_CONTRACTS.md`
+6. `cldsa-lite/plans/04_MVP_VERTICAL_SLICE_CODING_APPRENTICE.md`
+7. `cldsa-lite/plans/05_EVALS_AND_MATURITY.md`
+8. `cldsa-lite/work-contracts/00_NEXT_AFTER_REPO_AUDIT.md`
 
 ## P0 product promise
 
-A user can open CodePawl, launch a controlled browser, give a task, watch the agent operate through structured UI understanding, inspect every action, approve risky steps, see token/cost impact, and save successful flows as replayable skills.
+A user can open CodePawl, select a local repository, describe a small coding task, watch Codex work in an isolated worktree, inspect every event and diff, approve risky actions, see validation and token/cost evidence, and convert corrections into candidate memory or skills.
 
 ## Non-negotiables
 
-- Full-system north star, browser-first MVP.
-- Semantic UI graph before screenshots.
+- Full-system north star, Coding Apprentice P0.
+- Run is the central execution primitive.
+- RunEvent is append-only.
+- Deterministic verification is required before success.
+- Codex is an adapter/provider, not the product architecture.
+- Stable and Candidate knowledge remain separate.
+- Browser operator is a future capability pack.
 - Cost and token control are core runtime features, not analytics afterthoughts.
 - Weak/local model support is a design constraint.
 - Every action is inspectable and replayable.

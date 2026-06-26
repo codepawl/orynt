@@ -2,6 +2,11 @@
 
 Generated: 2026-06-24
 
+Status: legacy browser-first work-contract set. Do not use this as the current
+P0 implementation path. The current path is CLDSA-Lite / Coding Apprentice in
+`.codex/plan/cldsa-lite/work-contracts/`. Keep this file as future
+browser-operator capability material.
+
 Use these prompts with Codex. Keep them as executable work contracts.
 
 ## Contract 1: Inspect and sequence

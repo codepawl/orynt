@@ -2,7 +2,7 @@
 
 CodePawl is a closed-source control cockpit for inspectable, replayable computer agents.
 
-The current repo is in Tauri-first MVP bootstrap. The marketing site already lives in `apps/marketing-site`; the product app starts in `apps/desktop` and keeps browser automation as the only executable MVP surface.
+The current repo is in Tauri-first MVP bootstrap. The marketing site already lives in `apps/marketing-site`; the product app starts in `apps/desktop`. The current P0 is CLDSA-Lite: a supervised Coding Apprentice that delegates repository tasks to Codex inside an isolated git worktree, verifies outcomes, records append-only evidence, controls cost, and proposes candidate memory from user corrections.
 
 ## Current Apps
 
@@ -18,9 +18,9 @@ The current repo is in Tauri-first MVP bootstrap. The marketing site already liv
 
 - React renderer talks only to Tauri commands/events.
 - Rust/Tauri host owns app trust boundaries, payload validation, settings, keychain access, and sidecar supervision.
-- Node/Playwright sidecar will own browser automation, semantic UI graph extraction, action execution, model calls, trace writing, and skill replay.
-- Browser is the only enabled MVP surface. Desktop, files, and terminal remain future surfaces and are blocked in the MVP shell.
-- Token economy, semantic UI graph, trace/replay, permissions, memory, and Codex/provider integration are core primitives.
+- Node/TypeScript sidecar will own the run orchestrator, Codex adapter, repository workspace adapter, event persistence, verification, model calls, memory extraction, and token/cost accounting.
+- Browser automation remains a later capability pack behind the same permissioned surface-adapter architecture.
+- Runs, append-only events, deterministic verification, permissions, bounded context, resource budgets, candidate memory, and Codex/provider integration are core primitives.
 
 ## Commands
 
@@ -36,13 +36,13 @@ pnpm --filter @codepawl/desktop exec tauri dev
 
 ## MVP Sequence
 
-1. Product shell and shared contracts.
-2. Mock Tauri command/event bridge.
-3. Rust sidecar supervisor.
-4. Node stdio JSON-RPC sidecar.
-5. BrowserSurfaceAdapter on local fixtures.
-6. Semantic UI graph and candidate actions.
-7. Action compiler, verifier, policy, and approvals.
-8. Token economy and model router.
-9. Trace store, memory, and skill replay.
-10. Internal alpha package.
+1. Architecture reconciliation against `.codex/plan/cldsa-lite/`.
+2. Run state machine and append-only event spine.
+3. Safety policy, action gate, budgets, and isolated git worktree sandbox.
+4. Codex adapter with event normalization, cancellation, and timeout handling.
+5. Deterministic verifier for tests, lint, typecheck, build, diff, and protected paths.
+6. Bounded context workspace and resource governor.
+7. Episodic event store, candidate memory, and user review flow.
+8. Post-run consolidation and lifecycle policy.
+9. Adaptive control and lightweight transition prediction.
+10. Browser operator and other future capability packs.

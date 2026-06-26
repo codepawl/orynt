@@ -1,4 +1,5 @@
-import type { ApprovalDecisionInput, CreateRunInput, RunEvent, RunId } from "@codepawl/ipc-contracts";
+import { createMockRunSequence } from "@codepawl/shared";
+import type { ApprovalDecisionInput, CreateRunInput, RunEvent, RunId } from "@codepawl/shared";
 
 type UnlistenFn = () => void;
 
@@ -45,20 +46,12 @@ export const codepawl = {
       return tauri.core.invoke<RunId>("run_create", { input });
     }
 
-    const runId = "mock-run-1";
+    const mockRun = createMockRunSequence();
+    const runId = mockRun.run.id;
     queueMicrotask(() => {
-      emitMockRunEvent({
-        type: "run.created",
-        runId,
-        task: input.task,
-        summary: "Mock run created",
-      });
-      emitMockRunEvent({
-        type: "run.step_added",
-        runId,
-        stepIndex: 1,
-        summary: "Built mock context packet and queued browser observation",
-      });
+      for (const event of mockRun.events) {
+        emitMockRunEvent(event);
+      }
     });
 
     return { id: runId };
@@ -80,10 +73,27 @@ export const codepawl = {
 
     queueMicrotask(() => {
       emitMockRunEvent({
-        type: "approval.resolved",
+        id: `${input.runId}-event-approval-${input.approvalId}`,
         runId: input.runId,
-        approvalId: input.approvalId,
-        decision: input.decision,
+        sequence: 10_000,
+        type: "action_blocked_or_approved",
+        timestamp: new Date().toISOString(),
+        actor: { kind: "policy", id: "mock-policy", displayName: "Mock Policy" },
+        payload: {
+          summary: `Approval ${input.decision} for ${input.approvalId}`,
+          approvalId: input.approvalId,
+          decision: input.decision,
+        },
+        redaction: { applied: false, redactedPaths: [] },
+        artifacts: [],
+        safety: {
+          policyMode: "safe",
+          riskLevel: input.decision === "approved" ? "low" : "blocked",
+          approvalRequired: false,
+          protectedPathTouched: false,
+          commandAllowed: input.decision === "approved",
+          reasons: [`operator ${input.decision}`],
+        },
       });
     });
   },

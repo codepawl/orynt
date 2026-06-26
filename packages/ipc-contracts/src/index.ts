@@ -1,7 +1,7 @@
 export const CODEPAWL_ERROR_CODES = [
   "SIDECAR_SPAWN_FAILED",
   "SIDECAR_PROTOCOL_MISMATCH",
-  "BROWSER_LAUNCH_FAILED",
+  "REPOSITORY_CONTEXT_FAILED",
   "OBSERVATION_FAILED",
   "MODEL_SCHEMA_INVALID",
   "POLICY_DENIED",
@@ -40,30 +40,30 @@ export type RpcEvent<TPayload = unknown> = {
 };
 
 export type RunEvent =
-  | {
-      type: "run.created";
-      runId: string;
-      task: string;
-      summary: string;
-    }
-  | {
-      type: "run.step_added";
-      runId: string;
-      stepIndex: number;
-      summary: string;
-    }
-  | {
-      type: "approval.resolved";
-      runId: string;
-      approvalId: string;
-      decision: "approved" | "denied";
-    };
+  | "run_started"
+  | "goal_received"
+  | "context_initialized"
+  | "policy_checked"
+  | "sandbox_planned"
+  | "sandbox_ready_mock"
+  | "action_proposed"
+  | "approval_required"
+  | "action_blocked"
+  | "action_blocked_or_approved"
+  | "policy_violation"
+  | "verification_recorded"
+  | "budget_recorded"
+  | "run_finished";
 
 export type CreateRunInput = {
-  task: string;
-  surfaceKind: "browser";
-  budgetPolicy: {
+  goal: string;
+  capabilityId: string;
+  taskId: string;
+  workspaceId: string;
+  budget: {
     maxSteps: number;
+    maxWallTimeMs: number;
+    maxModelTokens: number;
     maxUsd?: number;
     stopOnBudgetExceeded: boolean;
   };

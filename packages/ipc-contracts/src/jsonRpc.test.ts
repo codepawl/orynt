@@ -10,7 +10,14 @@ import {
 
 describe("CodePawl IPC contracts", () => {
   it("validates newline-delimited JSON-RPC request, response, and event envelopes", () => {
-    expect(isRpcRequest({ jsonrpc: "2.0", id: "run-1", method: "run.create", params: { task: "Fill form" } })).toBe(
+    expect(
+      isRpcRequest({
+        jsonrpc: "2.0",
+        id: "run-1",
+        method: "run.create",
+        params: { goal: "Fix failing test", capabilityId: "coding-apprentice" },
+      }),
+    ).toBe(
       true,
     );
     expect(isRpcRequest({ jsonrpc: "2.0", id: "", method: "run.create" })).toBe(false);
@@ -22,15 +29,16 @@ describe("CodePawl IPC contracts", () => {
     );
     expect(isRpcResponse({ jsonrpc: "2.0", id: "run-1", error: { code: "", message: "Denied" } })).toBe(false);
 
-    const event = createRpcEvent("run.step_added", { runId: "r1", stepIndex: 2 });
+    const event = createRpcEvent("run_started", { runId: "r1", sequence: 1 });
     expect(isRpcEvent(event)).toBe(true);
-    expect(event).toEqual({ type: "event", event: "run.step_added", payload: { runId: "r1", stepIndex: 2 } });
+    expect(event).toEqual({ type: "event", event: "run_started", payload: { runId: "r1", sequence: 1 } });
   });
 
   it("keeps the MVP runtime error vocabulary explicit", () => {
     expect(CODEPAWL_ERROR_CODES).toContain("APPROVAL_REQUIRED");
     expect(CODEPAWL_ERROR_CODES).toContain("BUDGET_EXCEEDED");
     expect(CODEPAWL_ERROR_CODES).toContain("SIDECAR_PROTOCOL_MISMATCH");
+    expect(CODEPAWL_ERROR_CODES).toContain("REPOSITORY_CONTEXT_FAILED");
     expect(CODEPAWL_ERROR_CODES).not.toContain("SHELL_EXEC_FAILED");
   });
 });

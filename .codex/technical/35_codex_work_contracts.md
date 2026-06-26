@@ -1,5 +1,10 @@
 # Codex Technical Work Contracts — Tauri-first
 
+Status: legacy browser-first technical work-contract set. Do not use this as
+the current P0 implementation path. The current CLDSA-Lite / Coding Apprentice
+contracts live in `.codex/plan/cldsa-lite/work-contracts/`. Keep this document
+as future browser-operator capability context.
+
 ## 0. Repo review
 
 ```text

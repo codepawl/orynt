@@ -2,7 +2,9 @@
 
 This pack replaces the earlier vague platform-style mockups with a simpler commercial MVP product direction.
 
-CodePawl is now framed as a closed-source desktop product with a free trial. The product UI should feel like a small agent command center: Discord-style navigation, ChatGPT/Claude-style conversation, and Codex-style task supervision. The MVP is browser-first, but the shell must not visually or architecturally imply that CodePawl is only a browser automation app.
+CodePawl is now framed as a closed-source desktop product with a free trial. The product UI should feel like a small agent command center: Discord-style navigation, ChatGPT/Claude-style conversation, and Codex-style task supervision. The current P0 is a supervised Coding Apprentice, but the shell must not visually or architecturally imply that CodePawl is only a coding app.
+
+Earlier browser-first UI material remains useful as future browser-operator capability guidance. For current P0 implementation, prioritize repository selection, isolated worktree status, run events, approval cards, diff review, validation evidence, cost/budget state, and candidate-memory review.
 
 Use this pack as Codex reference material before implementing UI.
 

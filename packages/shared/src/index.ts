@@ -1,8 +1,13 @@
-export type SurfaceKind = "browser" | "desktop" | "files" | "terminal";
+export * from "./runSpine";
+export * from "./corePolicy";
+
+import { createMockRunSequence } from "./runSpine";
+import type { PermissionMode } from "./corePolicy";
+import type { RunEvent, RunSummary } from "./runSpine";
+
+export type SurfaceKind = "repository" | "browser" | "desktop" | "files" | "terminal";
 
 export type TaskStatus = "draft" | "queued" | "running" | "waiting_approval" | "succeeded" | "failed" | "paused";
-
-export type PermissionMode = "safe" | "balanced" | "manual";
 
 export type RiskLevel = "low" | "medium" | "high" | "blocked";
 
@@ -28,7 +33,7 @@ export type AgentStep = {
   id: string;
   taskId: string;
   index: number;
-  type: "observe" | "plan" | "act" | "verify" | "approval" | "error";
+  type: RunEvent["type"];
   title: string;
   detail: string;
   costUsd?: number;
@@ -55,10 +60,10 @@ export type UsageBudget = {
 
 export type TraceSummary = {
   runId: string;
-  observationGraphNodes: number;
-  candidateActions: number;
-  modelCalls: number;
-  contextPacketTokens: number;
+  eventCount: number;
+  artifactCount: number;
+  latestVerdict: string;
+  modelTokens: number;
 };
 
 export type SkillDraft = {
@@ -77,26 +82,29 @@ export type MockRunState = {
   permissionPolicy: PermissionPolicy;
   usageBudget: UsageBudget;
   traceSummary: TraceSummary;
+  runSummary: RunSummary;
+  events: RunEvent[];
   skillDraft: SkillDraft;
 };
 
-export const MVP_EXECUTABLE_SURFACES = ["browser"] as const satisfies readonly SurfaceKind[];
+export const MVP_EXECUTABLE_SURFACES = ["repository"] as const satisfies readonly SurfaceKind[];
 
-export const MVP_BLOCKED_SURFACES = ["desktop", "files", "terminal"] as const satisfies readonly SurfaceKind[];
+export const MVP_BLOCKED_SURFACES = ["browser", "desktop", "files", "terminal"] as const satisfies readonly SurfaceKind[];
 
 export function isExecutableMvpSurface(surface: SurfaceKind): boolean {
-  return surface === "browser";
+  return surface === "repository";
 }
 
 export function createMockRunState(): MockRunState {
+  const mockRun = createMockRunSequence();
   const activeTask: AgentTask = {
-    id: "task-competitor-pricing",
-    title: "Research competitor pricing",
-    status: "waiting_approval",
-    surface: "browser",
+    id: mockRun.run.taskId,
+    title: mockRun.run.goal,
+    status: "succeeded",
+    surface: "repository",
     createdAt: "2026-06-25T16:00:00.000Z",
-    costUsd: 0.42,
-    screenshotCount: 1,
+    costUsd: 0,
+    screenshotCount: 0,
     savedAsSkill: false,
   };
 
@@ -112,9 +120,9 @@ export function createMockRunState(): MockRunState {
       activeTask,
       {
         id: "task-update-page",
-        title: "Update pricing page copy",
+        title: "Refactor stale shared type",
         status: "paused",
-        surface: "browser",
+        surface: "repository",
         createdAt: "2026-06-25T15:20:00.000Z",
         costUsd: 0.18,
         screenshotCount: 0,
@@ -122,84 +130,39 @@ export function createMockRunState(): MockRunState {
       },
       {
         id: "task-check-dashboard",
-        title: "Extract dashboard metrics",
+        title: "Add validation test coverage",
         status: "succeeded",
-        surface: "browser",
+        surface: "repository",
         createdAt: "2026-06-25T14:10:00.000Z",
         costUsd: 0.31,
-        screenshotCount: 1,
+        screenshotCount: 0,
         savedAsSkill: true,
       },
     ],
-    steps: [
-      {
-        id: "step-observe-1",
-        taskId: activeTask.id,
-        index: 1,
-        type: "observe",
-        title: "Observe pricing page",
-        detail: "Built a compact browser UI graph from DOM and accessibility data.",
-        costUsd: 0.02,
-        tokens: 620,
-        status: "passed",
-      },
-      {
-        id: "step-plan-1",
-        taskId: activeTask.id,
-        index: 2,
-        type: "plan",
-        title: "Rank candidate actions",
-        detail: "Selected top browser actions without sending the full DOM to the model.",
-        costUsd: 0.08,
-        tokens: 2800,
-        status: "passed",
-      },
-      {
-        id: "step-act-1",
-        taskId: activeTask.id,
-        index: 3,
-        type: "act",
-        title: "Extract pricing cards",
-        detail: "Read plan names, prices, feature lists, and CTA states.",
-        costUsd: 0.19,
-        tokens: 5100,
-        status: "passed",
-      },
-      {
-        id: "step-approval-1",
-        taskId: activeTask.id,
-        index: 4,
-        type: "approval",
-        title: "Approval required",
-        detail: "Submit/export action is paused until the operator approves.",
-        costUsd: 0.0,
-        tokens: 0,
-        status: "blocked",
-      },
-      {
-        id: "step-verify-1",
-        taskId: activeTask.id,
-        index: 5,
-        type: "verify",
-        title: "Verify extracted table",
-        detail: "Pending until approval resolves the final browser action.",
-        costUsd: 0.13,
-        tokens: 2200,
-        status: "pending",
-      },
-    ],
+    steps: mockRun.events.map((event) => ({
+      id: event.id,
+      taskId: activeTask.id,
+      index: event.sequence,
+      type: event.type,
+      title: event.type.replaceAll("_", " "),
+      detail: String((event.payload as { summary?: unknown }).summary ?? event.type),
+      costUsd: event.budget?.estimatedUsd,
+      tokens: event.budget?.modelTokens,
+      status: event.verdict?.status === "fail" ? "failed" : "passed",
+    })),
     permissionPolicy: {
       mode: "safe",
       allowedSurfaces: {
-        browser: true,
+        repository: true,
+        browser: false,
         desktop: false,
         files: false,
         terminal: false,
       },
-      askBefore: ["submit", "download", "upload", "delete"],
-      neverAllow: ["payment", "terminal_write", "filesystem_write"],
-      domainAllowlist: ["example.com", "docs.example.com"],
-      domainDenylist: ["bank.example", "checkout.example"],
+      askBefore: ["protected_path_change", "destructive_command", "network_access", "secret_access"],
+      neverAllow: ["secret_exfiltration", "unapproved_filesystem_write", "unapproved_shell_command"],
+      domainAllowlist: [],
+      domainDenylist: [],
     },
     usageBudget: {
       monthlyLimitUsd: 25,
@@ -209,18 +172,20 @@ export function createMockRunState(): MockRunState {
       warnAtPercent: 80,
     },
     traceSummary: {
-      runId: "run-local-alpha-1",
-      observationGraphNodes: 17,
-      candidateActions: 5,
-      modelCalls: 2,
-      contextPacketTokens: 11840,
+      runId: mockRun.run.id,
+      eventCount: mockRun.summary.eventCount,
+      artifactCount: mockRun.summary.artifactCount,
+      latestVerdict: mockRun.summary.latestVerdict?.status ?? "inconclusive",
+      modelTokens: mockRun.summary.latestBudget?.modelTokens ?? 0,
     },
+    runSummary: mockRun.summary,
+    events: mockRun.events,
     skillDraft: {
-      id: "skill-competitor-pricing",
-      name: "Competitor pricing extraction",
-      sourceRunId: "run-local-alpha-1",
+      id: "candidate-memory-failing-test",
+      name: "Candidate repository rule from verified correction",
+      sourceRunId: mockRun.run.id,
       replayModelCalls: 0,
-      replaySavingsEstimateUsd: 0.34,
+      replaySavingsEstimateUsd: 0,
     },
   };
 }

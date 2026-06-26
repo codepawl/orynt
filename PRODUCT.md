@@ -7,28 +7,30 @@ brand
 ## Users
 
 CodePawl is for technical solo users and small teams who already use AI coding,
-agent, QA, or automation tools and feel the limits of brittle browser and
-computer automation.
+agent, QA, or automation tools and feel the limits of unsupervised coding
+agents, brittle browser automation, and opaque computer-use tools.
 
 Primary users include AI engineers and automation builders debugging agent
-runs, QA engineers exploring and replaying browser workflows, data operators
-extracting information from logged-in dashboards, and indie builders who need
-local automation without enterprise RPA overhead.
+runs, engineers supervising repository changes, QA engineers exploring and
+replaying workflows, data operators extracting information from logged-in
+dashboards, and indie builders who need local automation without enterprise RPA
+overhead.
 
 The marketing surface should meet these users in an evaluation mindset: they
 want to understand whether CodePawl gives them more control, lower cost, better
-debuggability, and a believable path from browser-first automation to broader
+debuggability, and a believable path from supervised coding work to broader
 computer control.
 
 ## Product Purpose
 
-CodePawl is the control cockpit for computer agents, starting with browser
-control. It exists to make agent work inspectable, replayable, permissioned, and
-economically controllable.
+CodePawl is the control cockpit for computer agents, starting with a supervised
+Coding Apprentice. It exists to make agent work inspectable, replayable,
+permissioned, and economically controllable.
 
-The product turns UI state into structured action context, shows each step of an
-agent run, gates risky actions with human approval, tracks token and cost usage,
-and turns successful workflows into reusable skills.
+The product turns repository state and run evidence into structured action
+context, shows each step of an agent run, gates risky actions with human
+approval, tracks token and cost usage, and turns verified corrections into
+candidate memory and skills.
 
 Success for the brand surface means a technical visitor quickly understands that
 CodePawl is not a black-box autonomy pitch. It is a closed-source operating
@@ -66,8 +68,8 @@ Do not make CodePawl look or sound like:
    sensitive workflows stay bounded by the user's decisions.
 4. Be technical without costume. Use real product mechanics, not generic hacker
    aesthetics, to earn credibility with builders and QA users.
-5. Promise the wedge, not the whole future at once. Browser control is the MVP;
-   full-system control is the direction, not the launch claim.
+5. Promise the wedge, not the whole future at once. Coding Apprentice is the
+   MVP; browser and full-system control are the direction, not the launch claim.
 
 ## Accessibility & Inclusion
 
