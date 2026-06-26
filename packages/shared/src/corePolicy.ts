@@ -72,14 +72,17 @@ export type PolicyViolation = {
     | "broad_filesystem_write"
     | "network_denied"
     | "secret_access"
-    | "budget_exceeded";
+    | "budget_exceeded"
+    | "unsafe_repository_path"
+    | "repository_not_git"
+    | "sandbox_unmanaged";
   message: string;
   evidence: string[];
 };
 
 export type PolicyAction = {
   id: string;
-  kind: "command" | "file_write" | "network" | "secret_access" | "sandbox_plan";
+  kind: "command" | "file_write" | "network" | "secret_access" | "sandbox_plan" | "sandbox_create";
   summary: string;
   command?: string;
   paths?: string[];
@@ -124,8 +127,76 @@ export type SandboxPlan = {
   cleanupRequired: boolean;
 };
 
+export type RepositoryInspection = {
+  repositoryPath: string;
+  gitRoot: string;
+  currentBranch: string | null;
+  currentCommit: string;
+  isDirty: boolean;
+  hasRemote: boolean;
+  remotes: string[];
+};
+
+export type WorktreePlan = {
+  id: string;
+  runId: string;
+  taskId: string;
+  repositoryPath: string;
+  gitRoot: string;
+  baseRef: string;
+  branchName: string;
+  worktreePath: string;
+  gitArgs: string[];
+  policyDecision: PolicyDecision;
+};
+
+export type RepositorySandbox = {
+  id: string;
+  runId: string;
+  taskId: string;
+  repositoryPath: string;
+  gitRoot: string;
+  worktreePath: string;
+  branchName: string;
+  baseRef: string;
+  currentCommit: string;
+  createdAt: string;
+};
+
+export type SandboxCleanupPlan = {
+  sandboxId: string;
+  runId?: string;
+  worktreePath?: string;
+  branchName?: string;
+  dryRun: true;
+  blocked: boolean;
+  reasons: string[];
+  gitArgs: string[][];
+};
+
+export type RepositorySandboxError = {
+  code:
+    | "path_not_found"
+    | "path_not_directory"
+    | "unsafe_repository_path"
+    | "repository_out_of_scope"
+    | "repository_not_git"
+    | "policy_denied"
+    | "approval_required"
+    | "worktree_create_failed"
+    | "sandbox_not_found";
+  message: string;
+  evidence: string[];
+};
+
 export interface SandboxManager {
+  inspectRepository(request: SandboxPlanRequest, policy: CorePolicy): Promise<RepositoryInspection>;
   planRepositorySandbox(request: SandboxPlanRequest, policy: CorePolicy): SandboxPlan;
+  planWorktree(request: SandboxPlanRequest, policy: CorePolicy, inspection: RepositoryInspection): WorktreePlan;
+  createRepositorySandbox(request: SandboxPlanRequest, policy: CorePolicy): Promise<RepositorySandbox>;
+  createWorktree(plan: WorktreePlan): Promise<RepositorySandbox>;
+  listSandboxes(): Promise<RepositorySandbox[]>;
+  cleanupSandboxPlan(sandboxId: string, runId?: string): Promise<SandboxCleanupPlan>;
 }
 
 const DANGEROUS_COMMAND_PATTERN = /\b(git\s+(?:push|merge)|git\s+branch\s+-D|rm\s+-rf|sudo|curl|wget)\b/i;
@@ -268,6 +339,10 @@ export class ConservativePolicyEngine implements PolicyEngine {
       return createDecision(action, "allow", "low", ["Write is scoped to repository paths and below changed-file limits."], []);
     }
 
+    if (action.kind === "sandbox_create") {
+      return createDecision(action, "allow", "low", ["Repository sandbox creation is allowed after path and policy validation."], []);
+    }
+
     return createDecision(action, "allow", "low", ["Sandbox planning is a dry-run metadata action."], []);
   }
 
@@ -286,6 +361,18 @@ export class ConservativePolicyEngine implements PolicyEngine {
 }
 
 export class DryRunSandboxManager implements SandboxManager {
+  async inspectRepository(request: SandboxPlanRequest, _policy: CorePolicy): Promise<RepositoryInspection> {
+    return {
+      repositoryPath: request.repositoryPath,
+      gitRoot: request.repositoryPath,
+      currentBranch: null,
+      currentCommit: request.baseRef,
+      isDirty: false,
+      hasRemote: false,
+      remotes: [],
+    };
+  }
+
   planRepositorySandbox(request: SandboxPlanRequest, policy: CorePolicy): SandboxPlan {
     const safeRunId = request.runId.replace(/[^a-zA-Z0-9_-]/g, "-");
     return {
@@ -299,6 +386,67 @@ export class DryRunSandboxManager implements SandboxManager {
       profile: policy.sandbox,
       commands: [`git worktree add ${policy.sandbox.repository.worktreePath}/${safeRunId} ${request.baseRef}`],
       cleanupRequired: true,
+    };
+  }
+
+  planWorktree(request: SandboxPlanRequest, policy: CorePolicy, inspection: RepositoryInspection): WorktreePlan {
+    const plan = this.planRepositorySandbox(request, policy);
+    const policyDecision = new ConservativePolicyEngine().evaluateAction(
+      {
+        id: `sandbox-create-${plan.id}`,
+        kind: "sandbox_create",
+        summary: "Create repository worktree sandbox",
+        paths: [plan.plannedWorktreePath],
+      },
+      policy,
+    );
+
+    return {
+      id: plan.id,
+      runId: request.runId,
+      taskId: request.taskId,
+      repositoryPath: request.repositoryPath,
+      gitRoot: inspection.gitRoot,
+      baseRef: request.baseRef,
+      branchName: `codepawl/${request.runId}-${request.taskId}`,
+      worktreePath: plan.plannedWorktreePath,
+      gitArgs: ["-C", inspection.gitRoot, "worktree", "add", "-b", `codepawl/${request.runId}-${request.taskId}`, plan.plannedWorktreePath, request.baseRef],
+      policyDecision,
+    };
+  }
+
+  async createRepositorySandbox(request: SandboxPlanRequest, policy: CorePolicy): Promise<RepositorySandbox> {
+    const inspection = await this.inspectRepository(request, policy);
+    return this.createWorktree(this.planWorktree(request, policy, inspection));
+  }
+
+  async createWorktree(plan: WorktreePlan): Promise<RepositorySandbox> {
+    return {
+      id: plan.id,
+      runId: plan.runId,
+      taskId: plan.taskId,
+      repositoryPath: plan.repositoryPath,
+      gitRoot: plan.gitRoot,
+      worktreePath: plan.worktreePath,
+      branchName: plan.branchName,
+      baseRef: plan.baseRef,
+      currentCommit: plan.baseRef,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  async listSandboxes(): Promise<RepositorySandbox[]> {
+    return [];
+  }
+
+  async cleanupSandboxPlan(sandboxId: string, runId?: string): Promise<SandboxCleanupPlan> {
+    return {
+      sandboxId,
+      runId,
+      dryRun: true,
+      blocked: false,
+      reasons: ["Dry-run sandbox manager does not own real worktrees."],
+      gitArgs: [],
     };
   }
 }
