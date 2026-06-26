@@ -6,6 +6,7 @@ import {
   policyViolationToRunEvent,
   sandboxPlanToArtifacts,
 } from "./corePolicy";
+import { BoundedContextWorkspace, ConservativeResourceGovernor } from "./contextWorkspace";
 
 export type RunStatus =
   | "created"
@@ -24,6 +25,14 @@ export type RunStatus =
 export const RUN_EVENT_TYPES = [
   "run_started",
   "goal_received",
+  "budget_initialized",
+  "budget_checked",
+  "budget_warning",
+  "budget_stop_requested",
+  "budget_exceeded",
+  "workspace_initialized",
+  "workspace_item_added",
+  "context_packet_created",
   "context_initialized",
   "policy_checked",
   "sandbox_inspected",
@@ -506,10 +515,27 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     actor: { kind: "user", id: "local-user", displayName: "Operator" },
     payload: { summary: run.goal, constraints: ["mock runtime only", "no Codex execution", "no browser automation"] },
   });
+  const governor = new ConservativeResourceGovernor({ runStore: store, actor: budget });
+  governor.initializeBudget(run.id, {
+    usage: {
+      startedAt: run.createdAt,
+      updatedAt: run.createdAt,
+      elapsedMs: 0,
+      toolSteps: 0,
+      commandCount: 0,
+      fileChangeCount: 0,
+      artifactCount: 0,
+      verificationCommandCount: 0,
+      estimatedModelTokens: 0,
+      riskLevel: "low",
+      estimatedUsd: 0,
+    },
+  });
 
   const corePolicy = createConservativeCodingApprenticePolicy("/repos/codepawl", "/tmp/codepawl-worktrees");
   const policyEngine = new ConservativePolicyEngine();
   const sandboxManager = new DryRunSandboxManager();
+  governor.checkBeforeOperation(run.id, "inspect_repository");
   const safeInspectionDecision = policyEngine.evaluateAction(
     {
       id: "safe-inspection",
@@ -563,6 +589,28 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
       reasons: ["mock sandbox readiness event"],
     },
   });
+  const workspace = new BoundedContextWorkspace({ runStore: store, actor: runtime });
+  workspace.initialize({
+    runId: run.id,
+    taskId: run.taskId,
+    goal: run.goal,
+    policy: corePolicy,
+    constraints: [
+      { id: "mock-no-codex", description: "Do not execute Codex in this slice.", source: "runtime", priority: "required" },
+      { id: "mock-no-browser", description: "Do not use browser automation.", source: "runtime", priority: "required" },
+    ],
+    artifacts: sandboxPlanToArtifacts(sandboxPlan).map((ref) => ({ ref, summary: ref.label })),
+    recentEvents: store.listEvents(run.id),
+  });
+  workspace.addItem({
+    id: "mock-sandbox-workspace-item",
+    kind: "sandbox",
+    title: "Sandbox boundary",
+    summary: `Dry-run worktree boundary planned at ${sandboxPlan.plannedWorktreePath}`,
+    priority: 90,
+    tags: ["sandbox", "policy"],
+    artifactRefs: sandboxPlanToArtifacts(sandboxPlan),
+  });
   store.appendEvent(run.id, {
     type: "codex_missing",
     actor: runtime,
@@ -572,6 +620,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
       executionMode: "contract_only",
     },
   });
+  governor.checkBeforeOperation(run.id, "generate_codex_contract", { toolSteps: 2, estimatedModelTokens: 1_200 });
   store.appendEvent(run.id, {
     type: "codex_contract_requested",
     actor: runtime,
@@ -607,6 +656,15 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     },
     artifacts: codexArtifacts,
   });
+  workspace.addItem({
+    id: "mock-codex-contract-workspace-item",
+    kind: "codex_contract",
+    title: "Codex work contract",
+    summary: "Safe contract artifact generated for manual review; no provider execution occurred.",
+    priority: 75,
+    tags: ["codex", "contract"],
+    artifactRefs: codexArtifacts,
+  });
   store.appendEvent(run.id, {
     type: "codex_manual_next_step",
     actor: runtime,
@@ -624,6 +682,8 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
   });
 
   store.updateRunStatus(run.id, "planning");
+  workspace.focus({ activeSubgoal: "Plan the next repository action", selectedItemIds: ["workspace-goal", "mock-sandbox-workspace-item", "mock-codex-contract-workspace-item"] });
+  workspace.createContextPacket();
   store.appendEvent(run.id, {
     type: "policy_checked",
     actor: policy,
@@ -683,6 +743,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
   });
 
   store.updateRunStatus(run.id, "verifying");
+  governor.checkBeforeOperation(run.id, "run_verifier", { toolSteps: 8, commandCount: 2, verificationCommandCount: 1, estimatedModelTokens: 2_000 });
   const validationArtifacts: ArtifactRef[] = [
     {
       id: "mock-verification-result",
@@ -755,6 +816,15 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
       reason: "Policy-allowed validation and diff scope checks passed",
       confidence: 1,
     },
+  });
+  workspace.addItem({
+    id: "mock-verifier-result-workspace-item",
+    kind: "verifier_result",
+    title: "Verifier result",
+    summary: "Policy-allowed validation and diff scope checks passed.",
+    priority: 95,
+    tags: ["verifier", "evidence"],
+    artifactRefs: validationArtifacts,
   });
   store.appendEvent(run.id, {
     type: "verification_passed",

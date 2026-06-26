@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   InMemoryRunStore,
   MVP_BLOCKED_SURFACES,
+  BoundedContextWorkspace,
   ConservativePolicyEngine,
+  ConservativeResourceGovernor,
   DryRunSandboxManager,
   appendPolicyDecisionEvent,
   assertValidRunStatusTransition,
@@ -34,20 +36,28 @@ describe("CodePawl shared product contracts", () => {
     expect(state.steps.map((step) => step.type)).toEqual([
       "run_started",
       "goal_received",
+      "budget_initialized",
+      "budget_checked",
       "policy_checked",
       "sandbox_planned",
       "sandbox_ready_mock",
+      "workspace_initialized",
+      "workspace_item_added",
       "codex_missing",
+      "budget_checked",
       "codex_contract_requested",
       "codex_contract_created",
+      "workspace_item_added",
       "codex_manual_next_step",
       "context_initialized",
+      "context_packet_created",
       "policy_checked",
       "approval_required",
       "action_blocked",
       "policy_violation",
       "action_proposed",
       "action_blocked_or_approved",
+      "budget_checked",
       "verification_planned",
       "verification_policy_checked",
       "verification_started",
@@ -55,6 +65,7 @@ describe("CodePawl shared product contracts", () => {
       "verification_command_finished",
       "verification_diff_checked",
       "verification_recorded",
+      "workspace_item_added",
       "verification_passed",
       "budget_recorded",
       "run_finished",
@@ -139,7 +150,7 @@ describe("Run and event spine", () => {
   it("summarizes budget, safety, verdict, artifacts, and event count", () => {
     const mockRun = createMockRunSequence();
 
-    expect(mockRun.summary.eventCount).toBe(26);
+    expect(mockRun.summary.eventCount).toBe(35);
     expect(mockRun.summary.latestBudget?.exceeded).toBe(false);
     expect(mockRun.summary.latestSafety?.riskLevel).toBe("low");
     expect(mockRun.summary.latestVerdict?.status).toBe("pass");
@@ -147,20 +158,28 @@ describe("Run and event spine", () => {
     expect(mockRun.events.map((event) => event.type)).toEqual([
       "run_started",
       "goal_received",
+      "budget_initialized",
+      "budget_checked",
       "policy_checked",
       "sandbox_planned",
       "sandbox_ready_mock",
+      "workspace_initialized",
+      "workspace_item_added",
       "codex_missing",
+      "budget_checked",
       "codex_contract_requested",
       "codex_contract_created",
+      "workspace_item_added",
       "codex_manual_next_step",
       "context_initialized",
+      "context_packet_created",
       "policy_checked",
       "approval_required",
       "action_blocked",
       "policy_violation",
       "action_proposed",
       "action_blocked_or_approved",
+      "budget_checked",
       "verification_planned",
       "verification_policy_checked",
       "verification_started",
@@ -168,6 +187,7 @@ describe("Run and event spine", () => {
       "verification_command_finished",
       "verification_diff_checked",
       "verification_recorded",
+      "workspace_item_added",
       "verification_passed",
       "budget_recorded",
       "run_finished",
@@ -268,5 +288,115 @@ describe("CorePolicy and sandbox boundary", () => {
     expect(event.sequence).toBe(1);
     expect(event.safety?.approvalRequired).toBe(true);
     expect(store.listEvents(run.id).map((item) => item.type)).toEqual(["approval_required"]);
+  });
+});
+
+describe("ContextWorkspace and ResourceGovernor", () => {
+  function createRun(store = new InMemoryRunStore()) {
+    return store.createRun({
+      goal: "Fix a failing unit test",
+      capabilityId: "coding-apprentice",
+      taskId: "task-context",
+      workspaceId: "workspace-1",
+      budget: createDefaultRunBudget(),
+    });
+  }
+
+  it("keeps the workspace bounded by priority and creates context packets", () => {
+    const workspace = new BoundedContextWorkspace({ config: { maxItems: 3, maxContextTokens: 400 } });
+    const snapshot = workspace.initialize({
+      runId: "run-context",
+      taskId: "task-context",
+      goal: "Fix the repository task",
+      policy: createConservativeCodingApprenticePolicy("/repo/codepawl", "/tmp/codepawl-worktrees"),
+    });
+
+    expect(snapshot.items.length).toBeLessThanOrEqual(3);
+    workspace.addItem({ id: "low", kind: "summary", title: "Low", summary: "Low priority", priority: 1, tags: [], artifactRefs: [] });
+    workspace.addItem({ id: "high", kind: "summary", title: "High", summary: "High priority", priority: 100, tags: [], artifactRefs: [] });
+    workspace.addItem({ id: "medium", kind: "summary", title: "Medium", summary: "Medium priority", priority: 50, tags: [], artifactRefs: [] });
+    const packet = workspace.createContextPacket();
+
+    expect(packet.items.length).toBeLessThanOrEqual(3);
+    expect(packet.provenanceItemIds).toContain("high");
+    expect(packet.tokenEstimate).toBeGreaterThan(0);
+  });
+
+  it("redacts sensitive values before storing workspace items and packets", () => {
+    const workspace = new BoundedContextWorkspace();
+    workspace.initialize({
+      runId: "run-redact",
+      taskId: "task-context",
+      goal: "Fix bug with apiKey=sk-testshouldnotpersist",
+    });
+    workspace.addItem({
+      id: "secret-item",
+      kind: "summary",
+      title: "Secret output",
+      summary: "token=ghp_shouldnotpersist",
+      priority: 80,
+      tags: ["secret"],
+      artifactRefs: [],
+    });
+    const packetText = JSON.stringify(workspace.createContextPacket());
+
+    expect(packetText).not.toContain("sk-testshouldnotpersist");
+    expect(packetText).not.toContain("ghp_shouldnotpersist");
+    expect(packetText).toContain("[REDACTED]");
+  });
+
+  it("emits workspace lifecycle events", () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const workspace = new BoundedContextWorkspace({ runStore: store });
+
+    workspace.initialize({ runId: run.id, taskId: run.taskId, goal: run.goal });
+    workspace.addItem({ id: "item-1", kind: "summary", title: "Item", summary: "Safe summary", priority: 1, tags: [], artifactRefs: [] });
+    workspace.createContextPacket();
+
+    expect(store.listEvents(run.id).map((event) => event.type)).toEqual([
+      "workspace_initialized",
+      "workspace_item_added",
+      "context_packet_created",
+    ]);
+  });
+
+  it("initializes budget state and summarizes usage", () => {
+    const governor = new ConservativeResourceGovernor();
+    governor.initializeBudget("run-budget");
+    governor.recordUsage("run-budget", { toolSteps: 3, commandCount: 1, estimatedModelTokens: 500 });
+
+    expect(governor.summarizeBudget("run-budget")).toContain("3/40 steps");
+    expect(governor.shouldStop("run-budget")).toBe(false);
+  });
+
+  it("warns and stops when conservative resource limits are approached or exceeded", () => {
+    const governor = new ConservativeResourceGovernor({ config: { maxSteps: 10, warningThreshold: 0.8 } });
+    governor.initializeBudget("run-budget");
+
+    const warning = governor.checkBeforeOperation("run-budget", "next_tool_call", { toolSteps: 8 });
+    const stop = governor.checkBeforeOperation("run-budget", "next_tool_call", { toolSteps: 10 });
+
+    expect(warning.decision).toBe("warn");
+    expect(stop.decision).toBe("stop");
+    expect(stop.stopReason).toBe("step_limit");
+  });
+
+  it("emits budget lifecycle events", () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const governor = new ConservativeResourceGovernor({ runStore: store, config: { maxSteps: 2, warningThreshold: 0.5 } });
+
+    governor.initializeBudget(run.id);
+    governor.checkBeforeOperation(run.id, "preflight", { toolSteps: 1 });
+    governor.recordUsage(run.id, { toolSteps: 2 });
+
+    expect(store.listEvents(run.id).map((event) => event.type)).toEqual([
+      "budget_initialized",
+      "budget_checked",
+      "budget_warning",
+      "budget_recorded",
+      "budget_exceeded",
+    ]);
   });
 });

@@ -2,6 +2,7 @@ export * from "./runSpine";
 export * from "./corePolicy";
 export * from "./codexContracts";
 export * from "./verifierContracts";
+export * from "./contextWorkspace";
 
 import { createMockRunSequence } from "./runSpine";
 import type { PermissionMode } from "./corePolicy";

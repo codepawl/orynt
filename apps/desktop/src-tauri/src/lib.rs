@@ -349,6 +349,78 @@ async fn run_create(
         run_event(
             &run_id,
             11,
+            "budget_initialized",
+            "budget",
+            "resource-governor",
+            "Initialized ResourceGovernor budget",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            12,
+            "budget_checked",
+            "budget",
+            "resource-governor",
+            "Allowed: budget is within conservative limits",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            13,
+            "workspace_initialized",
+            "runtime",
+            "tauri-host",
+            "Initialized bounded ContextWorkspace",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            14,
+            "workspace_item_added",
+            "runtime",
+            "tauri-host",
+            "Added workspace item: sandbox boundary",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            15,
+            "budget_checked",
+            "budget",
+            "resource-governor",
+            "Allowed: budget check before verifier",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            16,
+            "context_packet_created",
+            "runtime",
+            "tauri-host",
+            "Created bounded ContextPacket",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            17,
             "verification_planned",
             "verifier",
             "tauri-host",
@@ -360,7 +432,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            12,
+            18,
             "verification_policy_checked",
             "verifier",
             "tauri-host",
@@ -372,7 +444,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            13,
+            19,
             "verification_started",
             "verifier",
             "tauri-host",
@@ -384,7 +456,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            14,
+            20,
             "verification_command_started",
             "verifier",
             "tauri-host",
@@ -396,7 +468,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            15,
+            21,
             "verification_command_finished",
             "verifier",
             "tauri-host",
@@ -408,7 +480,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            16,
+            22,
             "verification_diff_checked",
             "verifier",
             "tauri-host",
@@ -419,9 +491,9 @@ async fn run_create(
     app.emit(
         "run_event",
         RunEvent {
-            id: format!("{run_id}-event-17"),
+            id: format!("{run_id}-event-23"),
             run_id: run_id.clone(),
-            sequence: 17,
+            sequence: 23,
             event_type: "verification_recorded".into(),
             timestamp: now_iso_like(),
             actor: serde_json::json!({ "kind": "verifier", "id": "tauri-host" }),
@@ -446,7 +518,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            18,
+            24,
             "verification_passed",
             "verifier",
             "tauri-host",
