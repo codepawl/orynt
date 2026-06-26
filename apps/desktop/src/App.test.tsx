@@ -17,12 +17,13 @@ describe("CodePawl desktop shell", () => {
     expect(within(timeline).getByText("codex contract created")).toBeInTheDocument();
     expect(within(timeline).getByText("approval required")).toBeInTheDocument();
     expect(within(timeline).getByText("policy violation")).toBeInTheDocument();
+    expect(within(timeline).getByText("verification planned")).toBeInTheDocument();
     expect(within(timeline).getByText("verification recorded")).toBeInTheDocument();
 
     const inspector = screen.getByRole("complementary", { name: "Run inspector" });
     expect(within(inspector).getByText("Safe")).toBeInTheDocument();
     expect(within(inspector).getByText("$0.00 / $1.00")).toBeInTheDocument();
-    expect(within(inspector).getByText("19 events")).toBeInTheDocument();
+    expect(within(inspector).getByText("26 events")).toBeInTheDocument();
     expect(within(inspector).getByText("Latest verdict: pass")).toBeInTheDocument();
   });
 

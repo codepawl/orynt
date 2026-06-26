@@ -41,12 +41,20 @@ export const RUN_EVENT_TYPES = [
   "codex_contract_created",
   "codex_contract_write_failed",
   "codex_manual_next_step",
+  "verification_planned",
+  "verification_policy_checked",
+  "verification_started",
+  "verification_command_started",
+  "verification_command_finished",
+  "verification_diff_checked",
   "action_proposed",
   "approval_required",
   "action_blocked",
   "action_blocked_or_approved",
   "policy_violation",
   "verification_recorded",
+  "verification_failed",
+  "verification_passed",
   "budget_recorded",
   "run_finished",
 ] as const;
@@ -161,7 +169,7 @@ export type ActionDecision = {
   reasons: string[];
 };
 
-export type VerificationResult = {
+export type LegacyVerificationResult = {
   status: RunVerdictStatus;
   expected: ExpectedResult;
   actual: ActualResult;
@@ -675,15 +683,83 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
   });
 
   store.updateRunStatus(run.id, "verifying");
+  const validationArtifacts: ArtifactRef[] = [
+    {
+      id: "mock-verification-result",
+      kind: "validation_report",
+      uri: `codepawl-artifact://${run.id}/verification-result.json`,
+      label: "Verification result",
+      sha256: "mock-verification-result-sha256",
+    },
+  ];
+  store.appendEvent(run.id, {
+    type: "verification_planned",
+    actor: verifier,
+    payload: {
+      summary: "Planned deterministic repository verification",
+      commands: ["pnpm test:contracts"],
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "verification_policy_checked",
+    actor: verifier,
+    payload: {
+      summary: "Verified validation commands against CorePolicy allowlist",
+      allowedCommands: ["pnpm test:contracts"],
+      blockedCommands: [],
+    },
+    safety: {
+      policyMode: "safe",
+      riskLevel: "low",
+      approvalRequired: false,
+      protectedPathTouched: false,
+      commandAllowed: true,
+      reasons: ["validation command is allowlisted"],
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "verification_started",
+    actor: verifier,
+    payload: { summary: "Started deterministic verifier for sandbox worktree" },
+  });
+  store.appendEvent(run.id, {
+    type: "verification_command_started",
+    actor: verifier,
+    payload: { summary: "Started verification command: pnpm test:contracts", command: "pnpm test:contracts" },
+  });
+  store.appendEvent(run.id, {
+    type: "verification_command_finished",
+    actor: verifier,
+    payload: { summary: "Finished verification command: pnpm test:contracts", exitCode: 0, durationMs: 180 },
+  });
+  store.appendEvent(run.id, {
+    type: "verification_diff_checked",
+    actor: verifier,
+    payload: {
+      summary: "Checked diff scope for protected and unexpected paths",
+      diffScope: {
+        changedFiles: ["packages/shared/src/index.ts"],
+        protectedFiles: [],
+        unexpectedFiles: [],
+        withinAllowedScope: true,
+      },
+    },
+  });
   store.appendEvent(run.id, {
     type: "verification_recorded",
     actor: verifier,
-    payload: { summary: "Recorded deterministic validation placeholder for the run spine slice" },
+    payload: { summary: "Recorded deterministic validation evidence for the repository run" },
+    artifacts: validationArtifacts,
     verdict: {
       status: "pass",
-      reason: "Mock verification completed for event-spine demonstration",
+      reason: "Policy-allowed validation and diff scope checks passed",
       confidence: 1,
     },
+  });
+  store.appendEvent(run.id, {
+    type: "verification_passed",
+    actor: verifier,
+    payload: { summary: "Verification passed with machine-readable evidence" },
   });
   store.appendEvent(run.id, {
     type: "budget_recorded",

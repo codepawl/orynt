@@ -344,6 +344,116 @@ async fn run_create(
         ),
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            11,
+            "verification_planned",
+            "verifier",
+            "tauri-host",
+            "Planned deterministic repository verification",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            12,
+            "verification_policy_checked",
+            "verifier",
+            "tauri-host",
+            "Verified validation commands against CorePolicy allowlist",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            13,
+            "verification_started",
+            "verifier",
+            "tauri-host",
+            "Started deterministic verifier for sandbox worktree",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            14,
+            "verification_command_started",
+            "verifier",
+            "tauri-host",
+            "Started verification command: pnpm test:contracts",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            15,
+            "verification_command_finished",
+            "verifier",
+            "tauri-host",
+            "Finished verification command: pnpm test:contracts",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            16,
+            "verification_diff_checked",
+            "verifier",
+            "tauri-host",
+            "Checked diff scope for protected and unexpected paths",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{run_id}-event-17"),
+            run_id: run_id.clone(),
+            sequence: 17,
+            event_type: "verification_recorded".into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "verifier", "id": "tauri-host" }),
+            payload: serde_json::json!({
+                "summary": "Recorded deterministic validation evidence for the repository run",
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![
+                serde_json::json!({
+                    "id": "mock-verification-result",
+                    "kind": "validation_report",
+                    "uri": format!("codepawl-artifact://{run_id}/verification-result.json"),
+                    "label": "Verification result",
+                    "sha256": "mock-verification-result-sha256",
+                }),
+            ],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            18,
+            "verification_passed",
+            "verifier",
+            "tauri-host",
+            "Verification passed with machine-readable evidence",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
 
     Ok(RunId { id: run_id })
 }

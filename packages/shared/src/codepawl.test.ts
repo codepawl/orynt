@@ -48,7 +48,14 @@ describe("CodePawl shared product contracts", () => {
       "policy_violation",
       "action_proposed",
       "action_blocked_or_approved",
+      "verification_planned",
+      "verification_policy_checked",
+      "verification_started",
+      "verification_command_started",
+      "verification_command_finished",
+      "verification_diff_checked",
       "verification_recorded",
+      "verification_passed",
       "budget_recorded",
       "run_finished",
     ]);
@@ -132,11 +139,11 @@ describe("Run and event spine", () => {
   it("summarizes budget, safety, verdict, artifacts, and event count", () => {
     const mockRun = createMockRunSequence();
 
-    expect(mockRun.summary.eventCount).toBe(19);
+    expect(mockRun.summary.eventCount).toBe(26);
     expect(mockRun.summary.latestBudget?.exceeded).toBe(false);
     expect(mockRun.summary.latestSafety?.riskLevel).toBe("low");
     expect(mockRun.summary.latestVerdict?.status).toBe("pass");
-    expect(mockRun.summary.artifactCount).toBe(3);
+    expect(mockRun.summary.artifactCount).toBe(4);
     expect(mockRun.events.map((event) => event.type)).toEqual([
       "run_started",
       "goal_received",
@@ -154,7 +161,14 @@ describe("Run and event spine", () => {
       "policy_violation",
       "action_proposed",
       "action_blocked_or_approved",
+      "verification_planned",
+      "verification_policy_checked",
+      "verification_started",
+      "verification_command_started",
+      "verification_command_finished",
+      "verification_diff_checked",
       "verification_recorded",
+      "verification_passed",
       "budget_recorded",
       "run_finished",
     ]);

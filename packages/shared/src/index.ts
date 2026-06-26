@@ -1,6 +1,7 @@
 export * from "./runSpine";
 export * from "./corePolicy";
 export * from "./codexContracts";
+export * from "./verifierContracts";
 
 import { createMockRunSequence } from "./runSpine";
 import type { PermissionMode } from "./corePolicy";
