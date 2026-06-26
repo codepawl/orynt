@@ -72,6 +72,12 @@ export const RUN_EVENT_TYPES = [
   "verification_recorded",
   "verification_failed",
   "verification_passed",
+  "memory_extraction_started",
+  "memory_episode_written",
+  "candidate_rule_proposed",
+  "memory_redaction_applied",
+  "memory_extraction_finished",
+  "memory_extraction_failed",
   "budget_recorded",
   "run_finished",
 ] as const;
@@ -107,7 +113,10 @@ export type ArtifactRef = {
     | "codex_contract_metadata"
     | "codex_result_bundle"
     | "verifier_input"
-    | "validation_report";
+    | "validation_report"
+    | "memory_episode"
+    | "candidate_rule"
+    | "memory_summary";
   uri: string;
   label: string;
   sha256?: string;
@@ -932,6 +941,58 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
       remainingSteps: 27,
       remainingModelTokens: 120_000,
       exceeded: false,
+    },
+  });
+
+  const memoryArtifacts: ArtifactRef[] = [
+    {
+      id: "mock-memory-episode",
+      kind: "memory_episode",
+      uri: `codepawl-artifact://${run.id}/memory/memory-store.json#episode`,
+      label: "Episodic memory item",
+      sha256: "mock-memory-episode-sha256",
+    },
+    {
+      id: "mock-candidate-rule",
+      kind: "candidate_rule",
+      uri: `codepawl-artifact://${run.id}/memory/memory-store.json#candidate-rule`,
+      label: "Candidate project rule",
+      sha256: "mock-candidate-rule-sha256",
+    },
+  ];
+  store.updateRunStatus(run.id, "learning");
+  store.appendEvent(run.id, {
+    type: "memory_extraction_started",
+    actor: runtime,
+    payload: {
+      summary: "Memory extraction started from redacted verifier and import evidence",
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "memory_episode_written",
+    actor: runtime,
+    payload: {
+      summary: "Wrote successful run episode memory with verifier provenance",
+      kind: "run_episode",
+    },
+    artifacts: [memoryArtifacts[0]],
+  });
+  store.appendEvent(run.id, {
+    type: "candidate_rule_proposed",
+    actor: runtime,
+    payload: {
+      summary: "Candidate rule proposed from verified package-only change",
+      status: "candidate",
+    },
+    artifacts: [memoryArtifacts[1]],
+  });
+  store.appendEvent(run.id, {
+    type: "memory_extraction_finished",
+    actor: runtime,
+    payload: {
+      summary: "Memory extraction finished with candidate-only learning output",
+      episodeCount: 1,
+      candidateRuleCount: 1,
     },
   });
 

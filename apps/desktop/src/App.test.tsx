@@ -26,11 +26,15 @@ describe("CodePawl desktop shell", () => {
     expect(within(timeline).getByText("policy violation")).toBeInTheDocument();
     expect(within(timeline).getByText("verification planned")).toBeInTheDocument();
     expect(within(timeline).getByText("verification recorded")).toBeInTheDocument();
+    expect(within(timeline).getByText("memory extraction started")).toBeInTheDocument();
+    expect(within(timeline).getByText("memory episode written")).toBeInTheDocument();
+    expect(within(timeline).getByText("candidate rule proposed")).toBeInTheDocument();
+    expect(within(timeline).getByText("memory extraction finished")).toBeInTheDocument();
 
     const inspector = screen.getByRole("complementary", { name: "Run inspector" });
     expect(within(inspector).getByText("Safe")).toBeInTheDocument();
     expect(within(inspector).getByText("$0.00 / $1.00")).toBeInTheDocument();
-    expect(within(inspector).getByText("42 events")).toBeInTheDocument();
+    expect(within(inspector).getByText("46 events")).toBeInTheDocument();
     expect(within(inspector).getByText("Latest verdict: pass")).toBeInTheDocument();
   });
 

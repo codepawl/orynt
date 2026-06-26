@@ -104,8 +104,17 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       "verification_diff_checked",
       "verification_recorded",
       "verification_passed",
+      "memory_extraction_started",
+      "memory_redaction_applied",
+      "memory_episode_written",
+      "memory_episode_written",
+      "memory_episode_written",
+      "memory_extraction_finished",
       "run_finished",
     ]);
+    expect(result.memoryExtractionResult.episodes.map((episode) => episode.kind)).toEqual(
+      expect.arrayContaining(["run_episode", "command_observation", "allowed_scope_pattern"]),
+    );
   });
 
   it("returns a verifier no-change failure when imported result has no changed files", async () => {
@@ -116,6 +125,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     expect(result.importBundle.failureReasons).toContain("no_changes");
     expect(result.verificationResult.status).toBe("fail");
     expect(result.verificationResult.verdict.failureClass).toBe("no_changes");
+    expect(result.memoryExtractionResult.episodes.map((episode) => episode.kind)).toContain("run_episode");
     expect(result.events.map((event) => event.type)).toContain("manual_review_required");
     expect(result.events.at(-1)?.verdict?.status).toBe("fail");
   });

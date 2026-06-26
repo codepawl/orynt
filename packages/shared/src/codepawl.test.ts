@@ -16,6 +16,9 @@ import {
   createMockRunState,
   isExecutableMvpSurface,
   validateRunEvent,
+  type ArtifactRef,
+  type CandidateRule,
+  type EpisodicMemoryItem,
 } from "./index";
 
 describe("CodePawl shared product contracts", () => {
@@ -76,12 +79,16 @@ describe("CodePawl shared product contracts", () => {
       "workspace_item_added",
       "verification_passed",
       "budget_recorded",
+      "memory_extraction_started",
+      "memory_episode_written",
+      "candidate_rule_proposed",
+      "memory_extraction_finished",
       "run_finished",
     ]);
     expect(state.permissionPolicy.askBefore).toContain("protected_path_change");
     expect(state.usageBudget.runLimitUsd).toBeGreaterThan(0);
     expect(state.traceSummary.eventCount).toBeGreaterThan(0);
-    expect(state.traceSummary.artifactCount).toBe(6);
+    expect(state.traceSummary.artifactCount).toBe(8);
     expect(state.skillDraft.replayModelCalls).toBe(0);
   });
 
@@ -98,6 +105,61 @@ describe("CodePawl shared product contracts", () => {
         "verifier_input_created",
       ]),
     );
+  });
+
+  it("declares memory extraction events and artifact refs as canonical contracts", () => {
+    expect(RUN_EVENT_TYPES).toEqual(
+      expect.arrayContaining([
+        "memory_extraction_started",
+        "memory_episode_written",
+        "candidate_rule_proposed",
+        "memory_redaction_applied",
+        "memory_extraction_finished",
+        "memory_extraction_failed",
+      ]),
+    );
+
+    const memoryArtifact: ArtifactRef = {
+      id: "memory-episode-artifact",
+      kind: "memory_episode",
+      uri: "codepawl-artifact://run/memory/episode.json",
+      label: "Memory episode",
+    };
+    const episode: EpisodicMemoryItem = {
+      id: "episode-1",
+      namespace: { capabilityId: "coding-apprentice", workspaceId: "workspace-1", repositoryPath: "/repo/codepawl" },
+      kind: "run_episode",
+      summary: "Verifier passed after a package-only change.",
+      content: { status: "pass" },
+      provenance: {
+        runId: "run-1",
+        taskId: "task-1",
+        eventIds: ["run-1-event-1"],
+        artifactRefs: [memoryArtifact],
+        sources: ["verification_result"],
+      },
+      retention: { ttlDays: 30 },
+      redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
+      confidence: 1,
+      createdAt: "2026-06-26T00:00:00.000Z",
+    };
+    const rule: CandidateRule = {
+      id: "candidate-rule-1",
+      namespace: episode.namespace,
+      status: "candidate",
+      title: "Keep package fixes scoped",
+      rule: "Keep source-only fixes under packages/** unless the contract says otherwise.",
+      scope: { repositoryPath: "/repo/codepawl", allowedPaths: ["packages/**"], protectedPaths: [] },
+      evidence: [{ kind: "allowed_scope_pattern", summary: "Verifier passed.", eventIds: ["run-1-event-1"], artifactRefs: [memoryArtifact], confidence: 1 }],
+      provenance: episode.provenance,
+      redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
+      createdAt: "2026-06-26T00:00:00.000Z",
+      updatedAt: "2026-06-26T00:00:00.000Z",
+    };
+
+    expect(episode.kind).toBe("run_episode");
+    expect(rule.status).toBe("candidate");
+    expect(memoryArtifact.kind).toBe("memory_episode");
   });
 });
 
@@ -174,11 +236,11 @@ describe("Run and event spine", () => {
   it("summarizes budget, safety, verdict, artifacts, and event count", () => {
     const mockRun = createMockRunSequence();
 
-    expect(mockRun.summary.eventCount).toBe(42);
+    expect(mockRun.summary.eventCount).toBe(46);
     expect(mockRun.summary.latestBudget?.exceeded).toBe(false);
     expect(mockRun.summary.latestSafety?.riskLevel).toBe("low");
     expect(mockRun.summary.latestVerdict?.status).toBe("pass");
-    expect(mockRun.summary.artifactCount).toBe(6);
+    expect(mockRun.summary.artifactCount).toBe(8);
     expect(mockRun.events.map((event) => event.type)).toEqual([
       "run_started",
       "goal_received",
@@ -221,6 +283,10 @@ describe("Run and event spine", () => {
       "workspace_item_added",
       "verification_passed",
       "budget_recorded",
+      "memory_extraction_started",
+      "memory_episode_written",
+      "candidate_rule_proposed",
+      "memory_extraction_finished",
       "run_finished",
     ]);
   });

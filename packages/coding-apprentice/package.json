@@ -12,11 +12,12 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && tsc -p tsconfig.json",
-    "test": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && vitest run"
+    "build": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && pnpm --filter @codepawl/memory build && tsc -p tsconfig.json",
+    "test": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && pnpm --filter @codepawl/memory build && vitest run"
   },
   "dependencies": {
     "@codepawl/codex-adapter": "workspace:*",
+    "@codepawl/memory": "workspace:*",
     "@codepawl/repository-sandbox": "workspace:*",
     "@codepawl/shared": "workspace:*",
     "@codepawl/verifier": "workspace:*"

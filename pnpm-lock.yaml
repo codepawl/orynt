@@ -121,6 +121,9 @@ importers:
       '@codepawl/codex-adapter':
         specifier: workspace:*
         version: link:../codex-adapter
+      '@codepawl/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@codepawl/repository-sandbox':
         specifier: workspace:*
         version: link:../repository-sandbox
@@ -143,6 +146,22 @@ importers:
 
   packages/ipc-contracts:
     devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1)(vite@8.1.0(@types/node@26.0.1))
+
+  packages/memory:
+    dependencies:
+      '@codepawl/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@types/node':
+        specifier: ^26.0.1
+        version: 26.0.1
       typescript:
         specifier: 6.0.3
         version: 6.0.3

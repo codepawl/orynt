@@ -89,6 +89,12 @@ export type RunEvent =
   | "verification_recorded"
   | "verification_failed"
   | "verification_passed"
+  | "memory_extraction_started"
+  | "memory_episode_written"
+  | "candidate_rule_proposed"
+  | "memory_redaction_applied"
+  | "memory_extraction_finished"
+  | "memory_extraction_failed"
   | "budget_recorded"
   | "run_finished";
 

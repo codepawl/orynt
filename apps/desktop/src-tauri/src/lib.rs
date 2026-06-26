@@ -641,6 +641,54 @@ async fn run_create(
         ),
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            32,
+            "memory_extraction_started",
+            "runtime",
+            "tauri-host",
+            "Memory extraction started from redacted verifier and import evidence",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            33,
+            "memory_episode_written",
+            "runtime",
+            "tauri-host",
+            "Wrote successful run episode memory with verifier provenance",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            34,
+            "candidate_rule_proposed",
+            "runtime",
+            "tauri-host",
+            "Candidate rule proposed from verified package-only change",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            35,
+            "memory_extraction_finished",
+            "runtime",
+            "tauri-host",
+            "Memory extraction finished with candidate-only learning output",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
 
     Ok(RunId { id: run_id })
 }

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { LocalCodexContractAdapter, LocalManualCodexResultImporter } from "@codepawl/codex-adapter";
+import { LocalJsonMemoryStore, LocalMemoryExtractor } from "@codepawl/memory";
 import { GitRepositorySandboxManager } from "@codepawl/repository-sandbox";
 import {
   createConservativeCodingApprenticePolicy,
@@ -14,6 +15,11 @@ import {
   type CodexContractArtifact,
   type CodexResultBundle,
   type CorePolicy,
+  type CandidateRule,
+  type EpisodicMemoryItem,
+  type MemoryExtractionResult,
+  type MemoryNamespace,
+  type MemoryStore,
   type RepositoryInspection,
   type RepositorySandbox,
   type Run,
@@ -53,6 +59,9 @@ export type CodingApprenticeDemoRequest = {
   manualLogPath?: string;
   validationTranscriptPath?: string;
   userNotes?: string;
+  enableMemoryExtraction?: boolean;
+  memoryRoot?: string;
+  memoryNamespace?: MemoryNamespace;
   applyManualChange?: (context: ManualDemoChangeContext) => Promise<ManualDemoChangeResult | void> | ManualDemoChangeResult | void;
 };
 
@@ -67,12 +76,17 @@ export type CodingApprenticeDemoResult = {
   verifierInputPath: string;
   verificationPlan: VerificationPlan;
   verificationResult: VerificationResult;
+  memoryExtractionResult: MemoryExtractionResult;
+  memorySummary: string;
+  episodes: EpisodicMemoryItem[];
+  candidateRules: CandidateRule[];
   summary: string;
   artifacts: ArtifactRef[];
 };
 
 export type LocalCodingApprenticeDemoOrchestratorOptions = {
   runStore?: RunStore;
+  memoryStore?: MemoryStore;
   actor?: Actor;
 };
 
@@ -113,10 +127,12 @@ function createDemoPolicy(request: CodingApprenticeDemoRequest): CorePolicy {
 
 export class LocalCodingApprenticeDemoOrchestrator {
   private readonly runStore: RunStore;
+  private readonly memoryStore?: MemoryStore;
   private readonly actor: Actor;
 
   constructor(options: LocalCodingApprenticeDemoOrchestratorOptions = {}) {
     this.runStore = options.runStore ?? new InMemoryRunStore();
+    this.memoryStore = options.memoryStore;
     this.actor = options.actor ?? DEFAULT_ACTOR;
   }
 
@@ -257,6 +273,42 @@ export class LocalCodingApprenticeDemoOrchestrator {
     });
     const verificationPlan = verifier.createPlan(verifierInput);
     const verificationResult = await verifier.runVerification(verificationPlan, policy);
+    const memoryRoot = path.resolve(request.memoryRoot ?? path.join(runArtifactRoot, "memory"));
+    const memoryStore = this.memoryStore ?? new LocalJsonMemoryStore({ memoryRoot });
+    const memoryExtractor = new LocalMemoryExtractor({
+      memoryStore,
+      runStore: this.runStore,
+      managedMemoryRoot: memoryRoot,
+    });
+    const memoryNamespace = request.memoryNamespace ?? {
+      capabilityId: run.capabilityId,
+      workspaceId: run.workspaceId,
+      repositoryPath: inspection.gitRoot,
+    };
+    const memoryExtractionResult =
+      request.enableMemoryExtraction === false
+        ? {
+            id: `memory-extraction-skipped-${run.id}`,
+            runId: run.id,
+            taskId: run.taskId,
+            namespace: memoryNamespace,
+            episodes: [],
+            candidateRules: [],
+            redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
+            artifacts: [],
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            summary: "Memory extraction skipped by request.",
+          }
+        : await memoryExtractor.extractRunMemory({
+            run: this.runStore.getRun(run.id) ?? run,
+            events: this.runStore.listEvents(run.id),
+            namespace: memoryNamespace,
+            artifactRoot: memoryRoot,
+            importBundle,
+            verificationResult,
+            retention: { ttlDays: 30, archiveAfterDays: 90 },
+          });
     const summary = verifier.summarizeResult(verificationResult);
     this.runStore.appendEvent(run.id, {
       type: "run_finished",
@@ -293,6 +345,10 @@ export class LocalCodingApprenticeDemoOrchestrator {
       verifierInputPath,
       verificationPlan,
       verificationResult,
+      memoryExtractionResult,
+      memorySummary: memoryExtractionResult.summary,
+      episodes: memoryExtractionResult.episodes,
+      candidateRules: memoryExtractionResult.candidateRules,
       summary,
       artifacts: events.flatMap((event) => event.artifacts),
     };

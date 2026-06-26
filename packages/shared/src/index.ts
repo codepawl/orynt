@@ -4,6 +4,7 @@ export * from "./codexContracts";
 export * from "./codexResultImportContracts";
 export * from "./verifierContracts";
 export * from "./contextWorkspace";
+export * from "./memoryContracts";
 
 import { createMockRunSequence } from "./runSpine";
 import type { PermissionMode } from "./corePolicy";
