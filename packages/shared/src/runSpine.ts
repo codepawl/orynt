@@ -35,6 +35,12 @@ export const RUN_EVENT_TYPES = [
   "sandbox_create_failed",
   "sandbox_cleanup_planned",
   "sandbox_cleanup_blocked",
+  "codex_detected",
+  "codex_missing",
+  "codex_contract_requested",
+  "codex_contract_created",
+  "codex_contract_write_failed",
+  "codex_manual_next_step",
   "action_proposed",
   "approval_required",
   "action_blocked",
@@ -65,7 +71,16 @@ export type Actor = {
 
 export type ArtifactRef = {
   id: string;
-  kind: "diff" | "test_output" | "log" | "summary" | "policy_decision" | "sandbox_plan" | "validation_report";
+  kind:
+    | "diff"
+    | "test_output"
+    | "log"
+    | "summary"
+    | "policy_decision"
+    | "sandbox_plan"
+    | "codex_contract"
+    | "codex_contract_metadata"
+    | "validation_report";
   uri: string;
   label: string;
   sha256?: string;
@@ -538,6 +553,58 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
       protectedPathTouched: false,
       commandAllowed: false,
       reasons: ["mock sandbox readiness event"],
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "codex_missing",
+    actor: runtime,
+    payload: {
+      summary: "Codex CLI was not required for contract-only mode",
+      providerId: "codex-contract-provider",
+      executionMode: "contract_only",
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "codex_contract_requested",
+    actor: runtime,
+    payload: {
+      summary: "Requested safe Codex work contract generation",
+      runId: run.id,
+      sandboxPath: sandboxPlan.plannedWorktreePath,
+    },
+  });
+  const codexArtifacts: ArtifactRef[] = [
+    {
+      id: "mock-codex-contract-md",
+      kind: "codex_contract",
+      uri: `codepawl-artifact://${run.id}/codex-contract.md`,
+      label: "Generated Codex work contract",
+      sha256: "mock-codex-contract-md-sha256",
+    },
+    {
+      id: "mock-codex-contract-metadata",
+      kind: "codex_contract_metadata",
+      uri: `codepawl-artifact://${run.id}/codex-contract.metadata.json`,
+      label: "Generated Codex contract metadata",
+      sha256: "mock-codex-contract-metadata-sha256",
+    },
+  ];
+  store.appendEvent(run.id, {
+    type: "codex_contract_created",
+    actor: runtime,
+    payload: {
+      summary: "Generated safe Codex work contract artifact",
+      contractId: `codex-contract-${run.id}`,
+      artifactCount: codexArtifacts.length,
+    },
+    artifacts: codexArtifacts,
+  });
+  store.appendEvent(run.id, {
+    type: "codex_manual_next_step",
+    actor: runtime,
+    payload: {
+      summary: "Manual next step: review the generated Codex contract before any provider execution",
+      executionMode: "contract_only",
     },
   });
 

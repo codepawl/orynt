@@ -267,6 +267,76 @@ async fn run_create(
         run_event(
             &run_id,
             6,
+            "codex_missing",
+            "runtime",
+            "tauri-host",
+            "Codex CLI was not required for contract-only mode",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            7,
+            "codex_contract_requested",
+            "runtime",
+            "tauri-host",
+            "Requested safe Codex work contract generation",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{run_id}-event-8"),
+            run_id: run_id.clone(),
+            sequence: 8,
+            event_type: "codex_contract_created".into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "runtime", "id": "tauri-host" }),
+            payload: serde_json::json!({
+                "summary": "Generated safe Codex work contract artifact",
+                "contractId": format!("codex-contract-{run_id}"),
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![
+                serde_json::json!({
+                    "id": "mock-codex-contract-md",
+                    "kind": "codex_contract",
+                    "uri": format!("codepawl-artifact://{run_id}/codex-contract.md"),
+                    "label": "Generated Codex work contract",
+                    "sha256": "mock-codex-contract-md-sha256",
+                }),
+                serde_json::json!({
+                    "id": "mock-codex-contract-metadata",
+                    "kind": "codex_contract_metadata",
+                    "uri": format!("codepawl-artifact://{run_id}/codex-contract.metadata.json"),
+                    "label": "Generated Codex contract metadata",
+                    "sha256": "mock-codex-contract-metadata-sha256",
+                }),
+            ],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            9,
+            "codex_manual_next_step",
+            "runtime",
+            "tauri-host",
+            "Manual next step: review the generated Codex contract before any provider execution",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            10,
             "context_initialized",
             "runtime",
             "tauri-host",

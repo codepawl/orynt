@@ -14,6 +14,7 @@ describe("CodePawl desktop shell", () => {
     const timeline = screen.getByRole("region", { name: "Run timeline" });
     expect(within(timeline).getByText("run started")).toBeInTheDocument();
     expect(within(timeline).getByText("sandbox planned")).toBeInTheDocument();
+    expect(within(timeline).getByText("codex contract created")).toBeInTheDocument();
     expect(within(timeline).getByText("approval required")).toBeInTheDocument();
     expect(within(timeline).getByText("policy violation")).toBeInTheDocument();
     expect(within(timeline).getByText("verification recorded")).toBeInTheDocument();
@@ -21,7 +22,7 @@ describe("CodePawl desktop shell", () => {
     const inspector = screen.getByRole("complementary", { name: "Run inspector" });
     expect(within(inspector).getByText("Safe")).toBeInTheDocument();
     expect(within(inspector).getByText("$0.00 / $1.00")).toBeInTheDocument();
-    expect(within(inspector).getByText("15 events")).toBeInTheDocument();
+    expect(within(inspector).getByText("19 events")).toBeInTheDocument();
     expect(within(inspector).getByText("Latest verdict: pass")).toBeInTheDocument();
   });
 

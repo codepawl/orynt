@@ -37,6 +37,10 @@ describe("CodePawl shared product contracts", () => {
       "policy_checked",
       "sandbox_planned",
       "sandbox_ready_mock",
+      "codex_missing",
+      "codex_contract_requested",
+      "codex_contract_created",
+      "codex_manual_next_step",
       "context_initialized",
       "policy_checked",
       "approval_required",
@@ -128,17 +132,21 @@ describe("Run and event spine", () => {
   it("summarizes budget, safety, verdict, artifacts, and event count", () => {
     const mockRun = createMockRunSequence();
 
-    expect(mockRun.summary.eventCount).toBe(15);
+    expect(mockRun.summary.eventCount).toBe(19);
     expect(mockRun.summary.latestBudget?.exceeded).toBe(false);
     expect(mockRun.summary.latestSafety?.riskLevel).toBe("low");
     expect(mockRun.summary.latestVerdict?.status).toBe("pass");
-    expect(mockRun.summary.artifactCount).toBe(1);
+    expect(mockRun.summary.artifactCount).toBe(3);
     expect(mockRun.events.map((event) => event.type)).toEqual([
       "run_started",
       "goal_received",
       "policy_checked",
       "sandbox_planned",
       "sandbox_ready_mock",
+      "codex_missing",
+      "codex_contract_requested",
+      "codex_contract_created",
+      "codex_manual_next_step",
       "context_initialized",
       "policy_checked",
       "approval_required",
