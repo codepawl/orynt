@@ -30,9 +30,12 @@ pnpm --filter @codepawl/marketing-site test
 pnpm --filter @codepawl/marketing-site build
 pnpm test:contracts
 pnpm test:desktop
+pnpm test:tauri
 pnpm build:desktop
 pnpm --filter @codepawl/desktop exec tauri dev
 ```
+
+On Linux/Fedora, `pnpm test:tauri` forces Cargo to use system `pkg-config` when `/usr/bin/pkg-config` is available. This avoids Homebrew `pkg-config` shadowing Fedora's native Tauri `.pc` files; the wrapper also clears `PKG_CONFIG_LIBDIR` and `PKG_CONFIG_SYSROOT_DIR` and adds `/usr/lib64/pkgconfig:/usr/share/pkgconfig` to `PKG_CONFIG_PATH`.
 
 ## MVP Sequence
 

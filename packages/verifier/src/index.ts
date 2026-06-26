@@ -148,7 +148,7 @@ async function runGit(args: string[], cwd: string): Promise<string> {
   if (outcome.exitCode !== 0) {
     throw new Error(outcome.stderr || "git command failed");
   }
-  return outcome.stdout.trim();
+  return outcome.stdout.trimEnd();
 }
 
 export class LocalRepositoryVerifier implements Verifier {

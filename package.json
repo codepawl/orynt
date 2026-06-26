@@ -12,6 +12,7 @@
     "test": "pnpm --filter @codepawl/marketing-site test",
     "test:contracts": "pnpm --filter @codepawl/shared test && pnpm --filter @codepawl/ipc-contracts test",
     "test:desktop": "pnpm --filter @codepawl/desktop test",
+    "test:tauri": "node scripts/test-tauri.mjs",
     "preview:marketing": "pnpm --filter @codepawl/marketing-site preview"
   }
 }
