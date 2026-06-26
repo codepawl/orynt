@@ -50,6 +50,14 @@ export const RUN_EVENT_TYPES = [
   "codex_contract_created",
   "codex_contract_write_failed",
   "codex_manual_next_step",
+  "codex_result_import_requested",
+  "codex_sandbox_diff_inspected",
+  "codex_manual_log_imported",
+  "codex_result_redacted",
+  "codex_result_imported",
+  "codex_result_import_failed",
+  "manual_review_required",
+  "verifier_input_created",
   "verification_planned",
   "verification_policy_checked",
   "verification_started",
@@ -97,6 +105,8 @@ export type ArtifactRef = {
     | "sandbox_plan"
     | "codex_contract"
     | "codex_contract_metadata"
+    | "codex_result_bundle"
+    | "verifier_input"
     | "validation_report";
   uri: string;
   label: string;
@@ -672,6 +682,85 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
       summary: "Manual next step: review the generated Codex contract before any provider execution",
       executionMode: "contract_only",
     },
+  });
+  const importArtifacts: ArtifactRef[] = [
+    {
+      id: "mock-codex-result-import",
+      kind: "codex_result_bundle",
+      uri: `codepawl-artifact://${run.id}/codex-result-import.json`,
+      label: "Imported manual Codex result bundle",
+      sha256: "mock-codex-result-import-sha256",
+    },
+  ];
+  const verifierInputArtifacts: ArtifactRef[] = [
+    {
+      id: "mock-verifier-input",
+      kind: "verifier_input",
+      uri: `codepawl-artifact://${run.id}/verifier-input.json`,
+      label: "Verifier input from imported Codex result",
+      sha256: "mock-verifier-input-sha256",
+    },
+  ];
+  store.appendEvent(run.id, {
+    type: "codex_result_import_requested",
+    actor: runtime,
+    payload: {
+      summary: "Requested manual Codex result import from the managed sandbox artifact directory",
+      sandboxPath: sandboxPlan.plannedWorktreePath,
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "codex_sandbox_diff_inspected",
+    actor: runtime,
+    payload: {
+      summary: "Inspected sandbox diff scope before trusting imported result notes",
+      changedFiles: ["packages/shared/src/index.ts"],
+      protectedFiles: [],
+      unexpectedFiles: [],
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "codex_manual_log_imported",
+    actor: runtime,
+    payload: {
+      summary: "Imported optional manual Codex log from the CodePawl-managed artifact directory",
+      malformed: false,
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "codex_result_redacted",
+    actor: runtime,
+    payload: {
+      summary: "Redacted imported manual result content before persistence",
+      redactionCount: 0,
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "codex_result_imported",
+    actor: runtime,
+    payload: {
+      summary: "Imported structured manual Codex result bundle for verifier handoff",
+      status: "imported",
+      changedFileCount: 1,
+    },
+    artifacts: importArtifacts,
+  });
+  store.appendEvent(run.id, {
+    type: "manual_review_required",
+    actor: runtime,
+    payload: {
+      summary: "Manual review checkpoint remains required before adopting imported work",
+      reason: "imported provider output is advisory until deterministic verification passes",
+    },
+  });
+  store.appendEvent(run.id, {
+    type: "verifier_input_created",
+    actor: verifier,
+    payload: {
+      summary: "Created verifier input from imported Codex result without running verification",
+      commands: ["pnpm test:contracts"],
+    },
+    artifacts: verifierInputArtifacts,
   });
 
   store.updateRunStatus(run.id, "observing");

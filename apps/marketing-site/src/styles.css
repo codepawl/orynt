@@ -38,11 +38,11 @@
   --background-deep: #050607;
   --background-mid: #111315;
   --background-veil: rgba(5, 6, 7, 0.18);
-  --ascii-gradient-glow: rgba(143, 182, 232, 0.16);
-  --ascii-gradient-dim: rgba(120, 201, 155, 0.12);
-  --ascii-gradient-warm: rgba(212, 169, 79, 0.08);
+  --ascii-gradient-glow: rgba(241, 241, 241, 0.12);
+  --ascii-gradient-dim: rgba(198, 198, 198, 0.09);
+  --ascii-gradient-warm: rgba(113, 113, 113, 0.08);
   --dither-dot: rgba(241, 241, 241, 0.045);
-  --dither-dot-soft: rgba(143, 182, 232, 0.035);
+  --dither-dot-soft: rgba(198, 198, 198, 0.032);
   --dither-shadow: rgba(5, 6, 7, 0.42);
   --accent-success: #78c99b;
   --accent-warning: #d4a94f;
@@ -136,8 +136,6 @@ h3,
   position: relative;
   min-height: 100vh;
   overflow: hidden;
-  --grid-drag-x: 0px;
-  --grid-drag-y: 0px;
   background:
     radial-gradient(circle at 18% 10%, var(--ascii-gradient-glow), transparent 34%),
     radial-gradient(circle at 84% 16%, var(--ascii-gradient-dim), transparent 38%),
@@ -177,18 +175,18 @@ h3,
     radial-gradient(circle at center, var(--dither-dot) 0 0.72px, transparent 1.24px),
     radial-gradient(circle at center, var(--dither-dot-soft) 0 0.86px, transparent 1.42px),
     radial-gradient(circle at center, var(--dither-shadow) 0 0.62px, transparent 1.36px),
-    linear-gradient(120deg, transparent 20%, rgba(143, 182, 232, 0.09) 42%, rgba(120, 201, 155, 0.07) 58%, transparent 78%),
+    linear-gradient(120deg, transparent 20%, rgba(241, 241, 241, 0.052) 42%, rgba(198, 198, 198, 0.04) 58%, transparent 78%),
     linear-gradient(90deg, rgba(241, 241, 241, 0.04) 1px, transparent 1px),
     linear-gradient(0deg, rgba(241, 241, 241, 0.035) 1px, transparent 1px),
     radial-gradient(circle at 50% 0, rgba(241, 241, 241, 0.12), transparent 42%);
   background-position:
-    calc(0px + var(--grid-drag-x)) calc(0px + var(--grid-drag-y)),
-    calc(5px + var(--grid-drag-x)) calc(7px + var(--grid-drag-y)),
-    calc(3px + var(--grid-drag-x)) calc(2px + var(--grid-drag-y)),
-    calc(0% + var(--grid-drag-x)) calc(50% + var(--grid-drag-y)),
-    calc(0px + var(--grid-drag-x)) calc(0px + var(--grid-drag-y)),
-    calc(0px + var(--grid-drag-x)) calc(0px + var(--grid-drag-y)),
-    calc(50% + var(--grid-drag-x)) calc(0px + var(--grid-drag-y));
+    0 0,
+    5px 7px,
+    3px 2px,
+    0% 50%,
+    0 0,
+    0 0,
+    50% 0;
   background-size: 9px 9px, 13px 13px, 17px 17px, 220% 220%, 34px 34px, 34px 34px, auto;
   mask-image: linear-gradient(180deg, #000, transparent 82%);
 }
@@ -1352,7 +1350,7 @@ pre {
   inset: -86px 11% -96px 18%;
   z-index: 0;
   background:
-    radial-gradient(circle at 50% 48%, rgba(143, 182, 232, 0.14), transparent 42%),
+    radial-gradient(circle at 50% 48%, rgba(241, 241, 241, 0.1), transparent 42%),
     url("../../../assets/landing/ascii-orbit-element.svg") center / min(560px, 88vw) auto no-repeat;
   filter: grayscale(1) blur(0.4px) brightness(0.88);
   opacity: 0.3;
@@ -1369,7 +1367,7 @@ pre {
       transparent 66%,
       color-mix(in srgb, var(--background-deep) 74%, transparent)
     ),
-    radial-gradient(circle at 50% 50%, rgba(120, 201, 155, 0.08), transparent 42%),
+    radial-gradient(circle at 50% 50%, rgba(198, 198, 198, 0.06), transparent 42%),
     url("../../../assets/landing/trace-ribbon-element.svg") right -82px center / 330px auto no-repeat;
   filter: grayscale(1) brightness(0.82);
   opacity: 0.48;

@@ -204,74 +204,9 @@ function CheckItem({ children }: { children: ReactNode }) {
 
 function App() {
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("monthly");
-  const shellRef = useRef<HTMLElement | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const targetGridDragRef = useRef({ x: 0, y: 0 });
-  const currentGridDragRef = useRef({ x: 0, y: 0 });
   const prefersReducedMotionRef = useRef(false);
   const selectedBillingPeriod =
     billingPeriods.find((period) => period.id === billingPeriod) ?? billingPeriods[0];
-
-  const setGridDragStyle = (x: number, y: number) => {
-    const shell = shellRef.current;
-    if (!shell) {
-      return;
-    }
-
-    shell.style.setProperty("--grid-drag-x", `${x.toFixed(2)}px`);
-    shell.style.setProperty("--grid-drag-y", `${y.toFixed(2)}px`);
-  };
-
-  const cancelGridDragFrame = () => {
-    if (animationFrameRef.current === null) {
-      return;
-    }
-
-    window.cancelAnimationFrame(animationFrameRef.current);
-    animationFrameRef.current = null;
-  };
-
-  const animateGridDrag = () => {
-    const current = currentGridDragRef.current;
-    const target = targetGridDragRef.current;
-    const nextX = current.x + (target.x - current.x) * 0.08;
-    const nextY = current.y + (target.y - current.y) * 0.08;
-    const settled = Math.abs(target.x - nextX) < 0.08 && Math.abs(target.y - nextY) < 0.08;
-
-    currentGridDragRef.current = settled ? { ...target } : { x: nextX, y: nextY };
-    setGridDragStyle(currentGridDragRef.current.x, currentGridDragRef.current.y);
-
-    animationFrameRef.current = settled ? null : window.requestAnimationFrame(animateGridDrag);
-  };
-
-  const startGridDragFrame = () => {
-    if (prefersReducedMotionRef.current || animationFrameRef.current !== null) {
-      return;
-    }
-
-    animationFrameRef.current = window.requestAnimationFrame(animateGridDrag);
-  };
-
-  const resetGridDrag = () => {
-    targetGridDragRef.current = { x: 0, y: 0 };
-    startGridDragFrame();
-  };
-
-  const handleShellPointerMove = (event: PointerEvent<HTMLElement>) => {
-    if (prefersReducedMotionRef.current) {
-      return;
-    }
-
-    const viewportWidth = window.innerWidth || 1;
-    const viewportHeight = window.innerHeight || 1;
-    const normalizedX = event.clientX / viewportWidth - 0.5;
-    const normalizedY = event.clientY / viewportHeight - 0.5;
-    targetGridDragRef.current = {
-      x: Math.max(-18, Math.min(18, normalizedX * 36)),
-      y: Math.max(-12, Math.min(12, normalizedY * 24)),
-    };
-    startGridDragFrame();
-  };
 
   const resetTiltCard = (event: PointerEvent<HTMLElement>) => {
     const card = event.currentTarget;
@@ -302,33 +237,18 @@ function App() {
     const motionQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     const syncMotionPreference = () => {
       prefersReducedMotionRef.current = motionQuery?.matches ?? false;
-
-      if (prefersReducedMotionRef.current) {
-        cancelGridDragFrame();
-        targetGridDragRef.current = { x: 0, y: 0 };
-        currentGridDragRef.current = { x: 0, y: 0 };
-        setGridDragStyle(0, 0);
-      }
     };
 
     syncMotionPreference();
     motionQuery?.addEventListener("change", syncMotionPreference);
-    window.addEventListener("blur", resetGridDrag);
 
     return () => {
       motionQuery?.removeEventListener("change", syncMotionPreference);
-      window.removeEventListener("blur", resetGridDrag);
-      cancelGridDragFrame();
     };
   }, []);
 
   return (
-    <main
-      className="landing-shell"
-      onPointerLeave={resetGridDrag}
-      onPointerMove={handleShellPointerMove}
-      ref={shellRef}
-    >
+    <main className="landing-shell">
       <div className="ascii-motion-layer" aria-hidden="true">
         <span>.:--==++**##%%@@%%##**++==--:.. .:-=+*#%@#*+=-:.</span>
         <span>..::--==++**##%%##**++==--::..   ..:-=+*##*+=-:..</span>

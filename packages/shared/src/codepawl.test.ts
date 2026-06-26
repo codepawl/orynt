@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   InMemoryRunStore,
   MVP_BLOCKED_SURFACES,
+  RUN_EVENT_TYPES,
   BoundedContextWorkspace,
   ConservativePolicyEngine,
   ConservativeResourceGovernor,
@@ -49,6 +50,13 @@ describe("CodePawl shared product contracts", () => {
       "codex_contract_created",
       "workspace_item_added",
       "codex_manual_next_step",
+      "codex_result_import_requested",
+      "codex_sandbox_diff_inspected",
+      "codex_manual_log_imported",
+      "codex_result_redacted",
+      "codex_result_imported",
+      "manual_review_required",
+      "verifier_input_created",
       "context_initialized",
       "context_packet_created",
       "policy_checked",
@@ -73,7 +81,23 @@ describe("CodePawl shared product contracts", () => {
     expect(state.permissionPolicy.askBefore).toContain("protected_path_change");
     expect(state.usageBudget.runLimitUsd).toBeGreaterThan(0);
     expect(state.traceSummary.eventCount).toBeGreaterThan(0);
+    expect(state.traceSummary.artifactCount).toBe(6);
     expect(state.skillDraft.replayModelCalls).toBe(0);
+  });
+
+  it("declares manual Codex result import events as canonical run events", () => {
+    expect(RUN_EVENT_TYPES).toEqual(
+      expect.arrayContaining([
+        "codex_result_import_requested",
+        "codex_sandbox_diff_inspected",
+        "codex_manual_log_imported",
+        "codex_result_redacted",
+        "codex_result_imported",
+        "codex_result_import_failed",
+        "manual_review_required",
+        "verifier_input_created",
+      ]),
+    );
   });
 });
 
@@ -150,11 +174,11 @@ describe("Run and event spine", () => {
   it("summarizes budget, safety, verdict, artifacts, and event count", () => {
     const mockRun = createMockRunSequence();
 
-    expect(mockRun.summary.eventCount).toBe(35);
+    expect(mockRun.summary.eventCount).toBe(42);
     expect(mockRun.summary.latestBudget?.exceeded).toBe(false);
     expect(mockRun.summary.latestSafety?.riskLevel).toBe("low");
     expect(mockRun.summary.latestVerdict?.status).toBe("pass");
-    expect(mockRun.summary.artifactCount).toBe(4);
+    expect(mockRun.summary.artifactCount).toBe(6);
     expect(mockRun.events.map((event) => event.type)).toEqual([
       "run_started",
       "goal_received",
@@ -171,6 +195,13 @@ describe("Run and event spine", () => {
       "codex_contract_created",
       "workspace_item_added",
       "codex_manual_next_step",
+      "codex_result_import_requested",
+      "codex_sandbox_diff_inspected",
+      "codex_manual_log_imported",
+      "codex_result_redacted",
+      "codex_result_imported",
+      "manual_review_required",
+      "verifier_input_created",
       "context_initialized",
       "context_packet_created",
       "policy_checked",

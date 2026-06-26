@@ -1,18 +1,28 @@
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import {
   createConservativeCodingApprenticePolicy,
   createDefaultRunBudget,
   InMemoryRunStore,
   type CodexContractRequest,
+  type CorePolicy,
+  type RepositorySandbox,
 } from "@codepawl/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { CodexAdapterFailure, LocalCodexContractAdapter } from "./index";
+import { CodexAdapterFailure, CodexResultImporterFailure, LocalCodexContractAdapter, LocalManualCodexResultImporter } from "./index";
 
 let tempRoot = "";
+const execFileAsync = promisify(execFile);
+
+async function git(args: string[], cwd?: string): Promise<string> {
+  const { stdout } = await execFileAsync("git", args, { cwd });
+  return String(stdout).trim();
+}
 
 function createRun(store: InMemoryRunStore) {
   return store.createRun({
@@ -62,6 +72,71 @@ function createRequest(overrides: Partial<CodexContractRequest> = {}): CodexCont
     budget: createDefaultRunBudget(),
     validationCommands: ["pnpm test:contracts", "pnpm build:desktop"],
     artifactRoot,
+    ...overrides,
+  };
+}
+
+async function createImportFixture() {
+  const repositoryPath = path.join(tempRoot, "repo-import");
+  const sandboxRoot = path.join(tempRoot, "sandboxes");
+  const artifactRoot = path.join(tempRoot, "artifacts", "run-import");
+  await mkdir(path.join(repositoryPath, "packages"), { recursive: true });
+  await mkdir(path.join(repositoryPath, "scripts"), { recursive: true });
+  await git(["init"], repositoryPath);
+  await git(["config", "user.email", "codepawl@example.test"], repositoryPath);
+  await git(["config", "user.name", "CodePawl Test"], repositoryPath);
+  await writeFile(path.join(repositoryPath, "packages", "README.md"), "initial\n");
+  await writeFile(path.join(repositoryPath, "README.md"), "# Fixture\n");
+  await git(["add", "README.md", "packages/README.md"], repositoryPath);
+  await git(["commit", "-m", "initial"], repositoryPath);
+  const baseCommit = await git(["rev-parse", "HEAD"], repositoryPath);
+  const worktreePath = path.join(sandboxRoot, "repo-import-worktree");
+  await mkdir(sandboxRoot, { recursive: true });
+  await git(["worktree", "add", "-b", "codepawl/run-import", worktreePath, "HEAD"], repositoryPath);
+
+  const policy = createConservativeCodingApprenticePolicy(repositoryPath, sandboxRoot);
+  const sandbox: RepositorySandbox = {
+    id: "sandbox-import",
+    runId: "run-import",
+    taskId: "task-import",
+    repositoryPath,
+    gitRoot: repositoryPath,
+    worktreePath,
+    branchName: "codepawl/run-import",
+    baseRef: baseCommit,
+    currentCommit: baseCommit,
+    createdAt: "2026-06-26T00:00:00.000Z",
+  };
+
+  return { repositoryPath, sandboxRoot, artifactRoot, worktreePath, policy, sandbox };
+}
+
+async function writeImportChange(worktreePath: string) {
+  await mkdir(path.join(worktreePath, "packages"), { recursive: true });
+  await writeFile(path.join(worktreePath, "packages", "feature.txt"), "new feature\n");
+  await writeFile(path.join(worktreePath, "packages", "README.md"), "initial\nupdated\n");
+}
+
+function importRequest({
+  artifactRoot,
+  sandbox,
+  policy,
+  overrides = {},
+}: {
+  artifactRoot: string;
+  sandbox: RepositorySandbox;
+  policy: CorePolicy;
+  overrides?: Partial<Parameters<LocalManualCodexResultImporter["importResultBundle"]>[0]>;
+}) {
+  return {
+    runId: sandbox.runId,
+    taskId: sandbox.taskId,
+    sandbox,
+    policy,
+    budget: createDefaultRunBudget(),
+    artifactRoot,
+    userNotes: "Operator reviewed the manual Codex output.",
+    validationCommands: ["pnpm test:contracts"],
     ...overrides,
   };
 }
@@ -176,6 +251,188 @@ describe("LocalCodexContractAdapter", () => {
       "codex_contract_created",
       "codex_manual_next_step",
       "codex_contract_write_failed",
+    ]);
+  });
+});
+
+describe("LocalManualCodexResultImporter", () => {
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-codex-result-import-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it("imports sandbox git diff summary, changed files, notes, and writes a redacted bundle artifact", async () => {
+    const fixture = await createImportFixture();
+    await writeImportChange(fixture.worktreePath);
+    await mkdir(fixture.artifactRoot, { recursive: true });
+    await writeFile(path.join(fixture.artifactRoot, "codex-log.md"), "Implemented feature with apiKey=sk-importsecret123\n");
+
+    const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
+    const bundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+        overrides: { manualLogPath: path.join(fixture.artifactRoot, "codex-log.md") },
+      }),
+    );
+
+    expect(bundle.status).toBe("imported");
+    expect(bundle.patch.changedFiles.map((file) => file.path)).toEqual(["packages/README.md", "packages/feature.txt"]);
+    expect(bundle.patch.allowedFiles).toEqual(["packages/README.md", "packages/feature.txt"]);
+    expect(bundle.manualLog?.content).not.toContain("sk-importsecret123");
+    expect(bundle.redaction.applied).toBe(true);
+    expect(bundle.artifacts.map((artifact) => artifact.kind)).toContain("codex_result_bundle");
+    expect(JSON.parse(await readFile(path.join(fixture.artifactRoot, "codex-result-import.json"), "utf8"))).toMatchObject({
+      runId: fixture.sandbox.runId,
+      status: "imported",
+      patch: { hasChanges: true },
+    });
+  });
+
+  it("supports no-change imports but requires manual review", async () => {
+    const fixture = await createImportFixture();
+    const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
+
+    const bundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+      }),
+    );
+
+    expect(bundle.status).toBe("manual_review_required");
+    expect(bundle.failureReasons).toContain("no_changes");
+    expect(bundle.patch.hasChanges).toBe(false);
+  });
+
+  it("imports an optional validation transcript and creates verifier input without running verification", async () => {
+    const fixture = await createImportFixture();
+    await writeImportChange(fixture.worktreePath);
+    await mkdir(fixture.artifactRoot, { recursive: true });
+    await writeFile(path.join(fixture.artifactRoot, "validation.log"), "pnpm test:contracts\nPASS\n");
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const sandbox = { ...fixture.sandbox, runId: run.id, taskId: run.taskId };
+    const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts"), runStore: store });
+
+    const bundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox,
+        policy: fixture.policy,
+        overrides: { validationTranscriptPath: path.join(fixture.artifactRoot, "validation.log") },
+      }),
+    );
+    const verifierInput = importer.createVerifierInput(bundle);
+
+    expect(bundle.validationTranscript?.content).toContain("PASS");
+    expect(verifierInput).toMatchObject({
+      runId: run.id,
+      taskId: run.taskId,
+      sandbox,
+      artifactRoot: fixture.artifactRoot,
+      config: { requireChangedFiles: true },
+    });
+    expect(store.listEvents(run.id).map((event) => event.type)).toContain("verifier_input_created");
+  });
+
+  it("rejects manual logs outside the managed artifact directory", async () => {
+    const fixture = await createImportFixture();
+    await writeImportChange(fixture.worktreePath);
+    const outside = path.join(tempRoot, "outside.log");
+    await writeFile(outside, "outside\n");
+    const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
+
+    await expect(
+      importer.importResultBundle(
+        importRequest({
+          artifactRoot: fixture.artifactRoot,
+          sandbox: fixture.sandbox,
+          policy: fixture.policy,
+          overrides: { manualLogPath: outside },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "unsafe_path" });
+  });
+
+  it("rejects sandbox paths that are not inside the CodePawl-managed worktree root", async () => {
+    const fixture = await createImportFixture();
+    const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
+
+    await expect(
+      importer.inspectSandboxChanges(
+        importRequest({
+          artifactRoot: fixture.artifactRoot,
+          sandbox: { ...fixture.sandbox, worktreePath: fixture.repositoryPath },
+          policy: fixture.policy,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(CodexResultImporterFailure);
+  });
+
+  it("marks malformed logs for manual review without trusting their content", async () => {
+    const fixture = await createImportFixture();
+    await writeImportChange(fixture.worktreePath);
+    await mkdir(fixture.artifactRoot, { recursive: true });
+    const malformed = path.join(fixture.artifactRoot, "codex-log.bin");
+    await writeFile(malformed, Buffer.from([0, 1, 2, 3]));
+    const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
+
+    const bundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+        overrides: { manualLogPath: malformed },
+      }),
+    );
+
+    expect(bundle.status).toBe("manual_review_required");
+    expect(bundle.failureReasons).toContain("malformed_log");
+    expect(bundle.manualLog?.content).toBe("");
+  });
+
+  it("emits import lifecycle RunEvents including failure events", async () => {
+    const fixture = await createImportFixture();
+    await writeImportChange(fixture.worktreePath);
+    await mkdir(fixture.artifactRoot, { recursive: true });
+    await writeFile(path.join(fixture.artifactRoot, "codex-log.txt"), "Manual Codex fixture log\n");
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const sandbox = { ...fixture.sandbox, runId: run.id, taskId: run.taskId };
+    const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts"), runStore: store });
+
+    await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox,
+        policy: fixture.policy,
+        overrides: { manualLogPath: path.join(fixture.artifactRoot, "codex-log.txt") },
+      }),
+    );
+    await expect(
+      importer.importResultBundle(
+        importRequest({
+          artifactRoot: path.join(tempRoot, "outside-artifacts"),
+          sandbox,
+          policy: fixture.policy,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(CodexResultImporterFailure);
+
+    expect(store.listEvents(run.id).map((event) => event.type)).toEqual([
+      "codex_result_import_requested",
+      "codex_sandbox_diff_inspected",
+      "codex_manual_log_imported",
+      "codex_result_redacted",
+      "codex_result_imported",
+      "codex_result_import_requested",
+      "codex_result_import_failed",
     ]);
   });
 });

@@ -209,58 +209,18 @@ describe("CodePawl landing page", () => {
     expect(motionLayer).toHaveTextContent(/[.:\-+*=#%@]/);
   });
 
-  it("drags the background grid toward pointer movement without re-rendered state", () => {
-    const animationFrames: FrameRequestCallback[] = [];
-    const requestAnimationFrameSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      animationFrames.push(callback);
-      return animationFrames.length;
-    });
-    const cancelAnimationFrameSpy = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
-    const originalMatchMedia = window.matchMedia;
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      writable: true,
-      value: vi.fn().mockReturnValue({
-        matches: false,
-        media: "(prefers-reduced-motion: reduce)",
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      }),
-    });
-    const innerWidthSpy = vi.spyOn(window, "innerWidth", "get").mockReturnValue(1000);
-    const innerHeightSpy = vi.spyOn(window, "innerHeight", "get").mockReturnValue(600);
-
-    const { container, unmount } = render(<App />);
+  it("does not drag the background grid toward pointer movement", () => {
+    const requestAnimationFrameSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
+    const { container } = render(<App />);
     const shell = container.querySelector(".landing-shell") as HTMLElement;
 
     fireEvent.pointerMove(shell, { clientX: 1000, clientY: 600 });
-    expect(requestAnimationFrameSpy).toHaveBeenCalled();
 
-    animationFrames.shift()?.(16);
-
-    expect(shell.style.getPropertyValue("--grid-drag-x")).toMatch(/px$/);
-    expect(shell.style.getPropertyValue("--grid-drag-y")).toMatch(/px$/);
-    expect(shell.style.getPropertyValue("--grid-drag-x")).not.toBe("0px");
-    expect(shell.style.getPropertyValue("--grid-drag-y")).not.toBe("0px");
-
-    fireEvent.pointerLeave(shell);
-    unmount();
-
-    expect(cancelAnimationFrameSpy).toHaveBeenCalled();
+    expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
+    expect(shell.style.getPropertyValue("--grid-drag-x")).toBe("");
+    expect(shell.style.getPropertyValue("--grid-drag-y")).toBe("");
 
     requestAnimationFrameSpy.mockRestore();
-    cancelAnimationFrameSpy.mockRestore();
-    innerWidthSpy.mockRestore();
-    innerHeightSpy.mockRestore();
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      writable: true,
-      value: originalMatchMedia,
-    });
   });
 
   it("renders Lucide SVG icons instead of placeholder icon text", () => {
@@ -281,13 +241,18 @@ describe("CodePawl landing page", () => {
     });
   });
 
-  it("uses the monochromatic landing palette, semantic accents, and ascii gradient assets", () => {
+  it("uses the monochromatic landing palette, semantic accents, and ascii background assets", () => {
     const styles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+    const backgroundStart = styles.indexOf(".landing-shell {");
+    const backgroundEnd = styles.indexOf(".site-header,", backgroundStart);
+    const backgroundStyles = styles.slice(backgroundStart, backgroundEnd);
 
     expect(styles).toContain("../../../assets/fonts/Lato/Lato-Regular.ttf");
     expect(styles).toContain("../../../assets/fonts/Roboto_Slab/RobotoSlab-VariableFont_wght.ttf");
     expect(styles).toContain("--mono-950: #08090a");
-    expect(styles).toContain("--ascii-gradient-glow:");
+    expect(styles).toContain("--ascii-gradient-glow: rgba(241, 241, 241, 0.12)");
+    expect(styles).toContain("--ascii-gradient-dim: rgba(198, 198, 198, 0.09)");
+    expect(styles).toContain("--ascii-gradient-warm: rgba(113, 113, 113, 0.08)");
     expect(styles).toContain("--mono-800: #474747");
     expect(styles).toContain("--mono-650: #717171");
     expect(styles).toContain("--mono-500: #9c9c9c");
@@ -298,14 +263,13 @@ describe("CodePawl landing page", () => {
     expect(styles).toContain("--accent-info:");
     expect(styles).toContain("--accent-alert:");
     expect(styles).toContain("--dither-dot:");
-    expect(styles).toContain("--dither-dot-soft:");
+    expect(styles).toContain("--dither-dot-soft: rgba(198, 198, 198, 0.032)");
     expect(styles).toContain("--dither-shadow:");
     expect(styles).toContain("../../../assets/landing/hero-ascii-glow-teal.svg");
     expect(styles).toContain("../../../assets/landing/trace-ribbon-element.svg");
-    expect(styles).toContain("--grid-drag-x: 0px");
-    expect(styles).toContain("--grid-drag-y: 0px");
-    expect(styles).toContain("var(--grid-drag-x)");
-    expect(styles).toContain("var(--grid-drag-y)");
+    expect(styles).not.toContain("--grid-drag");
+    expect(backgroundStyles).not.toContain("rgba(143, 182, 232");
+    expect(backgroundStyles).not.toContain("rgba(120, 201, 155");
     expect(styles).toContain("radial-gradient(circle at center, var(--dither-dot)");
     expect(styles).toContain("radial-gradient(circle at center, var(--dither-dot-soft)");
     expect(styles).toContain("9px 9px");

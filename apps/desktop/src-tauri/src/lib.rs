@@ -337,6 +337,121 @@ async fn run_create(
         run_event(
             &run_id,
             10,
+            "codex_result_import_requested",
+            "runtime",
+            "tauri-host",
+            "Requested manual Codex result import from the managed sandbox artifact directory",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            11,
+            "codex_sandbox_diff_inspected",
+            "runtime",
+            "tauri-host",
+            "Inspected sandbox diff scope before trusting imported result notes",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            12,
+            "codex_manual_log_imported",
+            "runtime",
+            "tauri-host",
+            "Imported optional manual Codex log from the CodePawl-managed artifact directory",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            13,
+            "codex_result_redacted",
+            "runtime",
+            "tauri-host",
+            "Redacted imported manual result content before persistence",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{run_id}-event-14"),
+            run_id: run_id.clone(),
+            sequence: 14,
+            event_type: "codex_result_imported".into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "runtime", "id": "tauri-host" }),
+            payload: serde_json::json!({
+                "summary": "Imported structured manual Codex result bundle for verifier handoff",
+                "status": "imported",
+                "changedFileCount": 1,
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![
+                serde_json::json!({
+                    "id": "mock-codex-result-import",
+                    "kind": "codex_result_bundle",
+                    "uri": format!("codepawl-artifact://{run_id}/codex-result-import.json"),
+                    "label": "Imported manual Codex result bundle",
+                    "sha256": "mock-codex-result-import-sha256",
+                }),
+            ],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            15,
+            "manual_review_required",
+            "runtime",
+            "tauri-host",
+            "Manual review checkpoint remains required before adopting imported work",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{run_id}-event-16"),
+            run_id: run_id.clone(),
+            sequence: 16,
+            event_type: "verifier_input_created".into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "verifier", "id": "tauri-host" }),
+            payload: serde_json::json!({
+                "summary": "Created verifier input from imported Codex result without running verification",
+                "commands": ["pnpm test:contracts"],
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![
+                serde_json::json!({
+                    "id": "mock-verifier-input",
+                    "kind": "verifier_input",
+                    "uri": format!("codepawl-artifact://{run_id}/verifier-input.json"),
+                    "label": "Verifier input from imported Codex result",
+                    "sha256": "mock-verifier-input-sha256",
+                }),
+            ],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &run_id,
+            17,
             "context_initialized",
             "runtime",
             "tauri-host",
@@ -348,7 +463,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            11,
+            18,
             "budget_initialized",
             "budget",
             "resource-governor",
@@ -360,7 +475,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            12,
+            19,
             "budget_checked",
             "budget",
             "resource-governor",
@@ -372,7 +487,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            13,
+            20,
             "workspace_initialized",
             "runtime",
             "tauri-host",
@@ -384,7 +499,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            14,
+            21,
             "workspace_item_added",
             "runtime",
             "tauri-host",
@@ -396,7 +511,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            15,
+            22,
             "budget_checked",
             "budget",
             "resource-governor",
@@ -408,7 +523,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            16,
+            23,
             "context_packet_created",
             "runtime",
             "tauri-host",
@@ -420,7 +535,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            17,
+            24,
             "verification_planned",
             "verifier",
             "tauri-host",
@@ -432,7 +547,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            18,
+            25,
             "verification_policy_checked",
             "verifier",
             "tauri-host",
@@ -444,7 +559,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            19,
+            26,
             "verification_started",
             "verifier",
             "tauri-host",
@@ -456,7 +571,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            20,
+            27,
             "verification_command_started",
             "verifier",
             "tauri-host",
@@ -468,7 +583,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            21,
+            28,
             "verification_command_finished",
             "verifier",
             "tauri-host",
@@ -480,7 +595,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            22,
+            29,
             "verification_diff_checked",
             "verifier",
             "tauri-host",
@@ -491,9 +606,9 @@ async fn run_create(
     app.emit(
         "run_event",
         RunEvent {
-            id: format!("{run_id}-event-23"),
+            id: format!("{run_id}-event-30"),
             run_id: run_id.clone(),
-            sequence: 23,
+            sequence: 30,
             event_type: "verification_recorded".into(),
             timestamp: now_iso_like(),
             actor: serde_json::json!({ "kind": "verifier", "id": "tauri-host" }),
@@ -518,7 +633,7 @@ async fn run_create(
         "run_event",
         run_event(
             &run_id,
-            24,
+            31,
             "verification_passed",
             "verifier",
             "tauri-host",

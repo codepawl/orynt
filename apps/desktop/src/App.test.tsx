@@ -18,6 +18,10 @@ describe("CodePawl desktop shell", () => {
     expect(within(timeline).getByText("workspace initialized")).toBeInTheDocument();
     expect(within(timeline).getByText("context packet created")).toBeInTheDocument();
     expect(within(timeline).getByText("codex contract created")).toBeInTheDocument();
+    expect(within(timeline).getByText("codex result import requested")).toBeInTheDocument();
+    expect(within(timeline).getByText("codex sandbox diff inspected")).toBeInTheDocument();
+    expect(within(timeline).getByText("codex result imported")).toBeInTheDocument();
+    expect(within(timeline).getByText("verifier input created")).toBeInTheDocument();
     expect(within(timeline).getByText("approval required")).toBeInTheDocument();
     expect(within(timeline).getByText("policy violation")).toBeInTheDocument();
     expect(within(timeline).getByText("verification planned")).toBeInTheDocument();
@@ -26,7 +30,7 @@ describe("CodePawl desktop shell", () => {
     const inspector = screen.getByRole("complementary", { name: "Run inspector" });
     expect(within(inspector).getByText("Safe")).toBeInTheDocument();
     expect(within(inspector).getByText("$0.00 / $1.00")).toBeInTheDocument();
-    expect(within(inspector).getByText("35 events")).toBeInTheDocument();
+    expect(within(inspector).getByText("42 events")).toBeInTheDocument();
     expect(within(inspector).getByText("Latest verdict: pass")).toBeInTheDocument();
   });
 
