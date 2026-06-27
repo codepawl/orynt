@@ -9,6 +9,10 @@ import type {
   MemoryReviewSnapshot,
   RunEvent,
   RunId,
+  SkillDefinition,
+  SkillPromotionDecision,
+  SkillRegistrySnapshot,
+  SkillStatus,
 } from "@codepawl/shared";
 
 type UnlistenFn = () => void;
@@ -22,7 +26,9 @@ type TauriEventApi = {
 };
 
 let mockListeners = new Set<(event: RunEvent) => void>();
-let mockMemoryReview: MemoryReviewSnapshot = createMockRunState().memoryReview;
+const initialMockState = createMockRunState();
+let mockMemoryReview: MemoryReviewSnapshot = initialMockState.memoryReview;
+let mockSkillRegistry: SkillRegistrySnapshot = initialMockState.skillRegistry;
 let mockReviewEventSequence = 20_000;
 
 function isTauriRuntime(): boolean {
@@ -70,6 +76,29 @@ function updateStatusCounts(candidateRules: CandidateRule[]): MemoryReviewSnapsh
   };
 }
 
+function updateSkillStatusCounts(skills: SkillDefinition[]): SkillRegistrySnapshot["summary"]["statusCounts"] {
+  return {
+    candidate: skills.filter((skill) => skill.status === "candidate").length,
+    active: skills.filter((skill) => skill.status === "active").length,
+    rejected: skills.filter((skill) => skill.status === "rejected").length,
+    superseded: skills.filter((skill) => skill.status === "superseded").length,
+    archived: skills.filter((skill) => skill.status === "archived").length,
+  };
+}
+
+function skillEventType(status: Exclude<SkillStatus, "candidate">): RunEvent["type"] {
+  if (status === "active") {
+    return "skill_promoted_manual";
+  }
+  if (status === "rejected") {
+    return "skill_rejected";
+  }
+  if (status === "superseded") {
+    return "skill_superseded";
+  }
+  return "skill_archived";
+}
+
 function emitCandidateRuleReviewEvent(rule: CandidateRule, runId?: string) {
   const eventRunId = runId ?? rule.provenance.runId;
   emitMockRunEvent({
@@ -87,6 +116,53 @@ function emitCandidateRuleReviewEvent(rule: CandidateRule, runId?: string) {
     redaction: { applied: false, redactedPaths: [] },
     artifacts: rule.provenance.artifactRefs.filter((artifact) => artifact.kind === "candidate_rule"),
   });
+}
+
+function emitSkillReviewEvent(skill: SkillDefinition, runId?: string) {
+  const eventRunId = runId ?? skill.provenance.sourceRunIds[0] ?? "run-1";
+  const status = skill.status as Exclude<SkillStatus, "candidate">;
+  emitMockRunEvent({
+    id: `${eventRunId}-event-${status}-${skill.id}`,
+    runId: eventRunId,
+    sequence: mockReviewEventSequence++,
+    type: skillEventType(status),
+    timestamp: new Date().toISOString(),
+    actor: { kind: "ui", id: "skill-registry-panel", displayName: "Skill Registry Panel" },
+    payload: {
+      summary: `Skill ${status}: ${skill.title}`,
+      skillId: skill.id,
+      status: skill.status,
+    },
+    redaction: { applied: false, redactedPaths: [] },
+    artifacts: skill.provenance.artifactRefs.filter((artifact) => artifact.kind === "skill_definition"),
+  });
+}
+
+function applyMockSkillDecision(input: SkillPromotionDecision): SkillDefinition {
+  const skill = mockSkillRegistry.skills.find((item) => item.id === input.skillId);
+  if (!skill) {
+    throw new Error(`skill not found: ${input.skillId}`);
+  }
+  const status: SkillStatus =
+    input.decision === "promote" ? "active" : input.decision === "reject" ? "rejected" : input.decision === "supersede" ? "superseded" : "archived";
+  const updated: SkillDefinition = {
+    ...skill,
+    status,
+    supersededBy: status === "superseded" ? (input.supersededBy ?? "skill-replacement-demo") : skill.supersededBy,
+    updatedAt: input.decidedAt,
+    promotionDecisions: [...skill.promotionDecisions, input],
+  };
+  const skills = mockSkillRegistry.skills.map((item) => (item.id === updated.id ? updated : item));
+  mockSkillRegistry = {
+    ...mockSkillRegistry,
+    skills,
+    summary: {
+      ...mockSkillRegistry.summary,
+      statusCounts: updateSkillStatusCounts(skills),
+    },
+  };
+  queueMicrotask(() => emitSkillReviewEvent(updated, input.runId));
+  return structuredClone(updated);
 }
 
 export const codepawl = {
@@ -195,6 +271,74 @@ export const codepawl = {
     return structuredClone(updated);
   },
 
+  async listSkills(): Promise<SkillDefinition[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillDefinition[]>("skill_list");
+    }
+
+    return structuredClone(mockSkillRegistry.skills);
+  },
+
+  async createCandidateSkill(): Promise<SkillDefinition> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillDefinition>("skill_create_candidate");
+    }
+
+    const skill = mockSkillRegistry.skills[0];
+    queueMicrotask(() => {
+      emitMockRunEvent({
+        id: `${skill.provenance.sourceRunIds[0] ?? "run-1"}-event-skill-candidate-${skill.id}`,
+        runId: skill.provenance.sourceRunIds[0] ?? "run-1",
+        sequence: mockReviewEventSequence++,
+        type: "skill_candidate_created",
+        timestamp: new Date().toISOString(),
+        actor: { kind: "runtime", id: "skill-registry", displayName: "Skill Registry" },
+        payload: { summary: `Candidate skill created: ${skill.title}`, skillId: skill.id, status: skill.status },
+        redaction: { applied: skill.redaction.applied, redactedPaths: skill.redaction.redactedPaths },
+        artifacts: skill.provenance.artifactRefs.filter((artifact) => artifact.kind === "skill_definition"),
+      });
+    });
+    return structuredClone(skill);
+  },
+
+  async promoteSkillManually(input: SkillPromotionDecision): Promise<SkillDefinition> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillDefinition>("skill_promote_manual", { input });
+    }
+
+    return applyMockSkillDecision({ ...input, decision: "promote" });
+  },
+
+  async rejectSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillDefinition>("skill_reject", { input });
+    }
+
+    return applyMockSkillDecision({ ...input, decision: "reject" });
+  },
+
+  async supersedeSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillDefinition>("skill_supersede", { input });
+    }
+
+    return applyMockSkillDecision({ ...input, decision: "supersede" });
+  },
+
+  async archiveSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillDefinition>("skill_archive", { input });
+    }
+
+    return applyMockSkillDecision({ ...input, decision: "archive" });
+  },
+
   async onRunEvent(handler: (event: RunEvent) => void): Promise<UnlistenFn> {
     const tauri = await loadTauriApi();
     if (tauri) {
@@ -208,8 +352,10 @@ export const codepawl = {
   },
 
   resetMockListenersForTest() {
+    const resetState = createMockRunState();
     mockListeners = new Set();
-    mockMemoryReview = createMockRunState().memoryReview;
+    mockMemoryReview = resetState.memoryReview;
+    mockSkillRegistry = resetState.skillRegistry;
     mockReviewEventSequence = 20_000;
   },
 };

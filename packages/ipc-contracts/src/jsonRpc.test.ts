@@ -4,6 +4,7 @@ import {
   CODEPAWL_ERROR_CODES,
   MEMORY_IPC_METHODS,
   RUN_EVENTS,
+  SKILL_IPC_METHODS,
   createRpcEvent,
   isRpcEvent,
   isRpcRequest,
@@ -65,5 +66,33 @@ describe("CodePawl IPC contracts", () => {
 
     expect(isRpcEvent(event)).toBe(true);
     expect(event.payload).toMatchObject({ status: "accepted" });
+  });
+
+  it("declares skill registry IPC methods and manual skill lifecycle events", () => {
+    expect(SKILL_IPC_METHODS).toEqual([
+      "skill.list",
+      "skill.createCandidate",
+      "skill.promoteManual",
+      "skill.reject",
+      "skill.supersede",
+      "skill.archive",
+    ]);
+    expect(RUN_EVENTS).toEqual(
+      expect.arrayContaining([
+        "skill_candidate_created",
+        "skill_promoted_manual",
+        "skill_rejected",
+        "skill_superseded",
+        "skill_archived",
+      ]),
+    );
+
+    const event = createRpcEvent("skill_promoted_manual", {
+      skillId: "skill-package-scope",
+      status: "active",
+    });
+
+    expect(isRpcEvent(event)).toBe(true);
+    expect(event.payload).toMatchObject({ status: "active" });
   });
 });

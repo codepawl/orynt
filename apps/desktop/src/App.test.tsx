@@ -113,11 +113,61 @@ describe("CodePawl desktop shell", () => {
     render(<App />);
 
     expect(screen.queryByText(/sk-memorysecret123/)).not.toBeInTheDocument();
-    expect(await screen.findByText(/\[REDACTED\]/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/\[REDACTED\]/)).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Copy Avoid secret-bearing logs" }));
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("[REDACTED]"));
     expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith(expect.stringContaining("sk-memorysecret123"));
+  });
+
+  it("renders candidate skills with provenance, evidence, validation, and no auto-run controls", async () => {
+    render(<App />);
+
+    const panel = await screen.findByRole("region", { name: "Skill registry" });
+    expect(within(panel).getByRole("heading", { name: "Skill registry" })).toBeInTheDocument();
+    expect(within(panel).getAllByText("Candidate").length).toBeGreaterThan(0);
+    expect(within(panel).getByText("Keep package fixes scoped")).toBeInTheDocument();
+    expect(within(panel).getByText(/candidate-rule-package-scope/)).toBeInTheDocument();
+    expect(within(panel).getByText(/episode-latest-successful-run/)).toBeInTheDocument();
+    expect(within(panel).getAllByText(/pnpm test:contracts/).length).toBeGreaterThan(0);
+    expect(within(panel).getByText(/automatic_execution/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /run skill/i })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /replay/i })).not.toBeInTheDocument();
+  });
+
+  it("promotes, rejects, and archives skills manually with visible timeline events", async () => {
+    const firstRender = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Promote manually Keep package fixes scoped" }));
+    expect(await screen.findByText("Active")).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: skill_promoted_manual/)).toBeInTheDocument();
+
+    firstRender.unmount();
+    const secondRender = render(<App />);
+    const rejectPanel = await screen.findByRole("region", { name: "Skill registry" });
+    fireEvent.click(within(rejectPanel).getByRole("button", { name: "Reject Keep package fixes scoped" }));
+    expect(await screen.findByText("Rejected")).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: skill_rejected/)).toBeInTheDocument();
+
+    secondRender.unmount();
+    render(<App />);
+    const archivePanel = await screen.findByRole("region", { name: "Skill registry" });
+    fireEvent.click(within(archivePanel).getByRole("button", { name: "Archive Keep package fixes scoped" }));
+    expect(await screen.findByText("Archived")).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: skill_archived/)).toBeInTheDocument();
+  });
+
+  it("copies only redacted skill summaries", async () => {
+    render(<App />);
+
+    const panel = await screen.findByRole("region", { name: "Skill registry" });
+    expect(within(panel).queryByText(/sk-skillsecret123/)).not.toBeInTheDocument();
+    expect(within(panel).getAllByText(/\[REDACTED\]/).length).toBeGreaterThan(0);
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Copy skill summary Keep package fixes scoped" }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("[REDACTED]"));
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith(expect.stringContaining("sk-skillsecret123"));
   });
 });

@@ -10,6 +10,7 @@ use thiserror::Error;
 pub struct AppState {
     runs: Mutex<Vec<String>>,
     candidate_rule_statuses: Mutex<HashMap<String, CandidateRuleReviewStatus>>,
+    skill_statuses: Mutex<HashMap<String, SkillLifecycleStatus>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +55,17 @@ pub struct CandidateRuleStatusUpdateInput {
     superseded_by: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillStatusUpdateInput {
+    skill_id: String,
+    decision: SkillDecision,
+    actor: String,
+    reason: String,
+    run_id: Option<String>,
+    superseded_by: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApprovalDecision {
@@ -67,6 +79,48 @@ pub enum CandidateRuleReviewStatus {
     Accepted,
     Rejected,
     Superseded,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillDecision {
+    Promote,
+    Reject,
+    Supersede,
+    Archive,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillLifecycleStatus {
+    Candidate,
+    Active,
+    Rejected,
+    Superseded,
+    Archived,
+}
+
+impl SkillLifecycleStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            SkillLifecycleStatus::Candidate => "candidate",
+            SkillLifecycleStatus::Active => "active",
+            SkillLifecycleStatus::Rejected => "rejected",
+            SkillLifecycleStatus::Superseded => "superseded",
+            SkillLifecycleStatus::Archived => "archived",
+        }
+    }
+}
+
+impl SkillDecision {
+    fn status(&self) -> SkillLifecycleStatus {
+        match self {
+            SkillDecision::Promote => SkillLifecycleStatus::Active,
+            SkillDecision::Reject => SkillLifecycleStatus::Rejected,
+            SkillDecision::Supersede => SkillLifecycleStatus::Superseded,
+            SkillDecision::Archive => SkillLifecycleStatus::Archived,
+        }
+    }
 }
 
 impl CandidateRuleReviewStatus {
@@ -196,11 +250,34 @@ fn validate_candidate_rule_status_update(
     Ok(())
 }
 
+fn validate_skill_status_update(input: &SkillStatusUpdateInput) -> Result<(), AppError> {
+    if input.skill_id.trim().is_empty() {
+        return Err(AppError::Validation("skill id is required".into()));
+    }
+    if input.actor.trim().is_empty() {
+        return Err(AppError::Validation("skill decision actor is required".into()));
+    }
+    if input.reason.trim().is_empty() {
+        return Err(AppError::Validation("skill decision reason is required".into()));
+    }
+
+    Ok(())
+}
+
 fn candidate_rule_review_event_type(status: &CandidateRuleReviewStatus) -> &'static str {
     match status {
         CandidateRuleReviewStatus::Accepted => "candidate_rule_accepted",
         CandidateRuleReviewStatus::Rejected => "candidate_rule_rejected",
         CandidateRuleReviewStatus::Superseded => "candidate_rule_superseded",
+    }
+}
+
+fn skill_decision_event_type(decision: &SkillDecision) -> &'static str {
+    match decision {
+        SkillDecision::Promote => "skill_promoted_manual",
+        SkillDecision::Reject => "skill_rejected",
+        SkillDecision::Supersede => "skill_superseded",
+        SkillDecision::Archive => "skill_archived",
     }
 }
 
@@ -365,6 +442,105 @@ fn mock_candidate_rules(
             },
         ),
     ]
+}
+
+fn mock_skill(
+    status: &SkillLifecycleStatus,
+    run_id: &str,
+    superseded_by: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": "skill-keep-package-fixes-scoped",
+        "namespace": memory_namespace(),
+        "capabilityId": "coding-apprentice.repository-scope",
+        "title": "Keep package fixes scoped",
+        "summary": "Apply package-only source fixes, keep protected files untouched, and validate with pnpm test:contracts. Redacted note: [REDACTED].",
+        "status": status.as_str(),
+        "confidence": 0.86,
+        "preconditions": [
+            {
+                "id": "precondition-accepted-rule",
+                "kind": "memory_rule_status",
+                "summary": "Accepted rule required: candidate-rule-package-scope",
+                "required": true,
+            },
+            {
+                "id": "precondition-successful-verifier",
+                "kind": "verification_available",
+                "summary": "Successful verifier evidence must be present before manual promotion.",
+                "required": true,
+            },
+        ],
+        "steps": [
+            {
+                "id": "step-review-scope",
+                "title": "Review repository scope",
+                "instruction": "Keep edits under packages/** unless a later approved contract expands scope.",
+                "expectedOutcome": "No protected path is touched.",
+                "evidenceRefs": [format!("{run_id}-event-30")],
+            },
+            {
+                "id": "step-validate",
+                "title": "Validate contracts",
+                "instruction": "Use verifier commands as validation expectations only; do not execute automatically.",
+                "expectedOutcome": "Verifier evidence remains passing.",
+            },
+        ],
+        "validation": {
+            "requiresVerifierPass": true,
+            "requiresDiffWithinScope": true,
+            "commands": ["pnpm test:contracts"],
+            "expectedEvidenceKinds": ["command", "diff_scope"],
+        },
+        "safety": {
+            "allowedPaths": ["packages/**"],
+            "protectedPaths": [".env", "pnpm-lock.yaml"],
+            "allowedCommands": ["pnpm test:contracts"],
+            "blockedActions": ["automatic_execution", "codex_auto_run", "browser_automation", "secret_storage"],
+            "requiresManualApproval": true,
+            "rollbackNotes": "Archive or supersede this skill if later verifier evidence invalidates the package-scope rule.",
+            "secretHandling": "Store only redacted summaries and artifact references; never store raw sensitive values.",
+        },
+        "provenance": {
+            "sourceRunIds": [run_id],
+            "sourceTaskIds": ["task-failing-unit-test"],
+            "candidateRuleIds": ["candidate-rule-package-scope"],
+            "episodeIds": ["episode-latest-successful-run"],
+            "verificationResultIds": ["mock-verification-result"],
+            "codexContractIds": ["mock-codex-contract"],
+            "artifactRefs": [
+                {
+                    "id": "mock-skill-definition",
+                    "kind": "skill_definition",
+                    "uri": format!("codepawl-artifact://{run_id}/skills/skill-package-scope.json"),
+                    "label": "Candidate skill definition",
+                    "sha256": "mock-skill-definition-sha256",
+                }
+            ],
+            "sourceEventIds": [format!("{run_id}-event-30"), format!("{run_id}-event-34")],
+        },
+        "redaction": { "applied": true, "redactedPaths": ["summary"], "redactionCount": 1 },
+        "promotionDecisions": [],
+        "createdAt": "2026-06-26T00:00:00.000Z",
+        "updatedAt": "2026-06-26T00:00:00.000Z",
+        "supersededBy": superseded_by,
+    })
+}
+
+fn mock_skills(statuses: &HashMap<String, SkillLifecycleStatus>) -> Vec<serde_json::Value> {
+    let status = statuses
+        .get("skill-keep-package-fixes-scoped")
+        .cloned()
+        .unwrap_or(SkillLifecycleStatus::Candidate);
+    vec![mock_skill(
+        &status,
+        "run-1",
+        if status == SkillLifecycleStatus::Superseded {
+            Some("skill-replacement-demo")
+        } else {
+            None
+        },
+    )]
 }
 
 fn now_iso_like() -> String {
@@ -1019,6 +1195,149 @@ async fn memory_update_candidate_rule_status(
 }
 
 #[tauri::command]
+async fn skill_list(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, AppError> {
+    let statuses = state.skill_statuses.lock().map_err(|_| AppError::StateLock)?;
+    Ok(mock_skills(&statuses))
+}
+
+#[tauri::command]
+async fn skill_create_candidate(app: AppHandle) -> Result<serde_json::Value, AppError> {
+    let run_id = "run-1";
+    let skill = mock_skill(&SkillLifecycleStatus::Candidate, run_id, None);
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{run_id}-event-skill-candidate-created"),
+            run_id: run_id.into(),
+            sequence: 20_000,
+            event_type: "skill_candidate_created".into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "runtime", "id": "skill-registry" }),
+            payload: serde_json::json!({
+                "summary": "Candidate skill created: Keep package fixes scoped",
+                "skillId": "skill-keep-package-fixes-scoped",
+                "status": "candidate",
+            }),
+            redaction: serde_json::json!({ "applied": true, "redactedPaths": ["summary"] }),
+            artifacts: vec![serde_json::json!({
+                "id": "mock-skill-definition",
+                "kind": "skill_definition",
+                "uri": format!("codepawl-artifact://{run_id}/skills/skill-package-scope.json"),
+                "label": "Candidate skill definition",
+                "sha256": "mock-skill-definition-sha256",
+            })],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    Ok(skill)
+}
+
+async fn apply_skill_decision(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mut input: SkillStatusUpdateInput,
+    decision: SkillDecision,
+) -> Result<serde_json::Value, AppError> {
+    input.decision = decision;
+    validate_skill_status_update(&input)?;
+
+    let status = input.decision.status();
+    {
+        let mut statuses = state.skill_statuses.lock().map_err(|_| AppError::StateLock)?;
+        statuses.insert(input.skill_id.clone(), status.clone());
+    }
+
+    let run_id = input.run_id.clone().unwrap_or_else(|| "run-1".into());
+    let event_type = skill_decision_event_type(&input.decision);
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{}-event-{}-{}", run_id, event_type, input.skill_id),
+            run_id: run_id.clone(),
+            sequence: 20_001,
+            event_type: event_type.into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "ui", "id": "skill-registry-panel" }),
+            payload: serde_json::json!({
+                "summary": format!("Skill {}: {}", status.as_str(), input.skill_id),
+                "skillId": input.skill_id,
+                "status": status.as_str(),
+                "actor": input.actor,
+                "reason": input.reason,
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+
+    let statuses = state.skill_statuses.lock().map_err(|_| AppError::StateLock)?;
+    let mut skill = mock_skills(&statuses)
+        .into_iter()
+        .find(|skill| skill.get("id").and_then(serde_json::Value::as_str) == Some(input.skill_id.as_str()))
+        .ok_or_else(|| AppError::Validation("skill not found".into()))?;
+    if status == SkillLifecycleStatus::Superseded {
+        skill["supersededBy"] = serde_json::Value::String(
+            input
+                .superseded_by
+                .clone()
+                .unwrap_or_else(|| "skill-replacement-demo".into()),
+        );
+    }
+    skill["promotionDecisions"] = serde_json::json!([
+        {
+            "skillId": input.skill_id,
+            "decision": input.decision,
+            "actor": input.actor,
+            "reason": input.reason,
+            "runId": run_id,
+            "supersededBy": input.superseded_by,
+            "decidedAt": now_iso_like(),
+        }
+    ]);
+
+    Ok(skill)
+}
+
+#[tauri::command]
+async fn skill_promote_manual(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: SkillStatusUpdateInput,
+) -> Result<serde_json::Value, AppError> {
+    apply_skill_decision(app, state, input, SkillDecision::Promote).await
+}
+
+#[tauri::command]
+async fn skill_reject(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: SkillStatusUpdateInput,
+) -> Result<serde_json::Value, AppError> {
+    apply_skill_decision(app, state, input, SkillDecision::Reject).await
+}
+
+#[tauri::command]
+async fn skill_supersede(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: SkillStatusUpdateInput,
+) -> Result<serde_json::Value, AppError> {
+    apply_skill_decision(app, state, input, SkillDecision::Supersede).await
+}
+
+#[tauri::command]
+async fn skill_archive(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: SkillStatusUpdateInput,
+) -> Result<serde_json::Value, AppError> {
+    apply_skill_decision(app, state, input, SkillDecision::Archive).await
+}
+
+#[tauri::command]
 async fn settings_get() -> Result<SettingsSnapshot, AppError> {
     Ok(SettingsSnapshot {
         workspace_id: "workspace-local-alpha".into(),
@@ -1071,15 +1390,6 @@ async fn trace_export(run_id: String) -> Result<String, AppError> {
     Ok(format!("trace://local-alpha/{run_id}"))
 }
 
-#[tauri::command]
-async fn skill_replay(skill_id: String) -> Result<RunId, AppError> {
-    if skill_id.trim().is_empty() {
-        return Err(AppError::Validation("skillId is required".into()));
-    }
-
-    Ok(RunId { id: now_run_id() })
-}
-
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
@@ -1090,12 +1400,17 @@ pub fn run() {
             memory_list_episodes,
             memory_list_candidate_rules,
             memory_update_candidate_rule_status,
+            skill_list,
+            skill_create_candidate,
+            skill_promote_manual,
+            skill_reject,
+            skill_supersede,
+            skill_archive,
             settings_get,
             settings_update,
             provider_key_save,
             provider_key_test,
-            trace_export,
-            skill_replay
+            trace_export
         ])
         .setup(|app| {
             let _ = app.handle().app_handle();
@@ -1189,5 +1504,38 @@ mod tests {
             candidate_rule_review_event_type(&CandidateRuleReviewStatus::Superseded),
             "candidate_rule_superseded"
         );
+    }
+
+    #[test]
+    fn skill_status_update_requires_explicit_skill_id() {
+        let promote = SkillStatusUpdateInput {
+            skill_id: "skill-package-scope".into(),
+            decision: SkillDecision::Promote,
+            actor: "operator".into(),
+            reason: "Reviewed evidence".into(),
+            run_id: Some("run-1".into()),
+            superseded_by: None,
+        };
+
+        assert!(validate_skill_status_update(&promote).is_ok());
+
+        let missing_id = SkillStatusUpdateInput {
+            skill_id: "".into(),
+            decision: SkillDecision::Reject,
+            actor: "operator".into(),
+            reason: "Too broad".into(),
+            run_id: Some("run-1".into()),
+            superseded_by: None,
+        };
+        let error = validate_skill_status_update(&missing_id).expect_err("skill id is required");
+        assert_eq!(error.to_string(), "skill id is required");
+    }
+
+    #[test]
+    fn skill_decisions_map_to_visible_run_event_types() {
+        assert_eq!(skill_decision_event_type(&SkillDecision::Promote), "skill_promoted_manual");
+        assert_eq!(skill_decision_event_type(&SkillDecision::Reject), "skill_rejected");
+        assert_eq!(skill_decision_event_type(&SkillDecision::Supersede), "skill_superseded");
+        assert_eq!(skill_decision_event_type(&SkillDecision::Archive), "skill_archived");
     }
 }

@@ -5,11 +5,13 @@ export * from "./codexResultImportContracts";
 export * from "./verifierContracts";
 export * from "./contextWorkspace";
 export * from "./memoryContracts";
+export * from "./skillContracts";
 
 import { createMockRunSequence } from "./runSpine";
 import type { PermissionMode } from "./corePolicy";
 import type { ArtifactRef, RunEvent, RunSummary } from "./runSpine";
 import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryProvenance, MemoryReviewSnapshot } from "./memoryContracts";
+import type { SkillDefinition, SkillRegistrySnapshot } from "./skillContracts";
 
 export type SurfaceKind = "repository" | "browser" | "desktop" | "files" | "terminal";
 
@@ -91,6 +93,7 @@ export type MockRunState = {
   runSummary: RunSummary;
   events: RunEvent[];
   memoryReview: MemoryReviewSnapshot;
+  skillRegistry: SkillRegistrySnapshot;
   skillDraft: SkillDraft;
 };
 
@@ -100,6 +103,101 @@ export const MVP_BLOCKED_SURFACES = ["browser", "desktop", "files", "terminal"] 
 
 export function isExecutableMvpSurface(surface: SurfaceKind): boolean {
   return surface === "repository";
+}
+
+function createMockSkillRegistry(runId: string, taskId: string, memoryReview: MemoryReviewSnapshot): SkillRegistrySnapshot {
+  const rule = memoryReview.candidateRules[0];
+  const episode = memoryReview.latestEpisode;
+  const skillArtifact: ArtifactRef = {
+    id: "mock-skill-definition",
+    kind: "skill_definition",
+    uri: `codepawl-artifact://${runId}/skills/skill-package-scope.json`,
+    label: "Candidate skill definition",
+    sha256: "mock-skill-definition-sha256",
+  };
+  const skill: SkillDefinition = {
+    id: "skill-keep-package-fixes-scoped",
+    namespace: memoryReview.namespace,
+    capabilityId: "coding-apprentice.repository-scope",
+    title: "Keep package fixes scoped",
+    summary: "Apply package-only source fixes, keep protected files untouched, and validate with pnpm test:contracts. Redacted note: [REDACTED].",
+    status: "candidate",
+    confidence: 0.86,
+    preconditions: [
+      {
+        id: "precondition-accepted-rule",
+        kind: "memory_rule_status",
+        summary: `Accepted rule required: ${rule?.id ?? "candidate-rule-package-scope"}`,
+        required: true,
+      },
+      {
+        id: "precondition-successful-verifier",
+        kind: "verification_available",
+        summary: "Successful verifier evidence must be present before manual promotion.",
+        required: true,
+      },
+    ],
+    steps: [
+      {
+        id: "step-review-scope",
+        title: "Review repository scope",
+        instruction: "Keep edits under packages/** unless a later approved contract expands scope.",
+        expectedOutcome: "No protected paths are touched.",
+        evidenceRefs: rule?.evidence.flatMap((item) => item.eventIds) ?? [],
+      },
+      {
+        id: "step-validate",
+        title: "Validate contracts",
+        instruction: "Use verifier commands as validation expectations only; do not execute automatically.",
+        expectedOutcome: "Verifier evidence remains passing.",
+      },
+    ],
+    validation: {
+      requiresVerifierPass: true,
+      requiresDiffWithinScope: true,
+      commands: ["pnpm test:contracts"],
+      expectedEvidenceKinds: ["command", "diff_scope"],
+    },
+    safety: {
+      allowedPaths: ["packages/**"],
+      protectedPaths: [".env", "pnpm-lock.yaml"],
+      allowedCommands: ["pnpm test:contracts"],
+      blockedActions: ["automatic_execution", "codex_auto_run", "browser_automation", "secret_storage"],
+      requiresManualApproval: true,
+      rollbackNotes: "Archive or supersede this skill if later verifier evidence invalidates the package-scope rule.",
+      secretHandling: "Store only redacted summaries and artifact references; never store raw sensitive values.",
+    },
+    provenance: {
+      sourceRunIds: [runId],
+      sourceTaskIds: [taskId],
+      candidateRuleIds: rule ? [rule.id] : [],
+      episodeIds: episode ? [episode.id] : [],
+      verificationResultIds: ["mock-verification-result"],
+      codexContractIds: ["mock-codex-contract"],
+      artifactRefs: [skillArtifact, ...(rule?.provenance.artifactRefs ?? [])],
+      sourceEventIds: rule?.provenance.eventIds ?? [],
+    },
+    redaction: { applied: true, redactedPaths: ["summary"], redactionCount: 1 },
+    promotionDecisions: [],
+    createdAt: "2026-06-26T00:00:00.000Z",
+    updatedAt: "2026-06-26T00:00:00.000Z",
+  };
+
+  return {
+    namespace: memoryReview.namespace,
+    skills: [skill],
+    summary: {
+      skillCount: 1,
+      statusCounts: {
+        candidate: 1,
+        active: 0,
+        rejected: 0,
+        superseded: 0,
+        archived: 0,
+      },
+      namespaceCount: 1,
+    },
+  };
 }
 
 function createMockMemoryReview(runId: string, taskId: string): MemoryReviewSnapshot {
@@ -215,6 +313,7 @@ function createMockMemoryReview(runId: string, taskId: string): MemoryReviewSnap
 export function createMockRunState(): MockRunState {
   const mockRun = createMockRunSequence();
   const memoryReview = createMockMemoryReview(mockRun.run.id, mockRun.run.taskId);
+  const skillRegistry = createMockSkillRegistry(mockRun.run.id, mockRun.run.taskId, memoryReview);
   const activeTask: AgentTask = {
     id: mockRun.run.taskId,
     title: mockRun.run.goal,
@@ -299,6 +398,7 @@ export function createMockRunState(): MockRunState {
     runSummary: mockRun.summary,
     events: mockRun.events,
     memoryReview,
+    skillRegistry,
     skillDraft: {
       id: "candidate-memory-failing-test",
       name: "Candidate repository rule from verified correction",

@@ -78,6 +78,11 @@ export const RUN_EVENT_TYPES = [
   "candidate_rule_accepted",
   "candidate_rule_rejected",
   "candidate_rule_superseded",
+  "skill_candidate_created",
+  "skill_promoted_manual",
+  "skill_rejected",
+  "skill_superseded",
+  "skill_archived",
   "memory_redaction_applied",
   "memory_extraction_finished",
   "memory_extraction_failed",
@@ -119,7 +124,8 @@ export type ArtifactRef = {
     | "validation_report"
     | "memory_episode"
     | "candidate_rule"
-    | "memory_summary";
+    | "memory_summary"
+    | "skill_definition";
   uri: string;
   label: string;
   sha256?: string;

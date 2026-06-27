@@ -153,6 +153,7 @@ h3 {
 .composer,
 .event-log,
 .memory-panel,
+.skill-panel,
 .run-inspector section {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -274,7 +275,8 @@ h3 {
   font-size: 18px;
 }
 
-.memory-panel {
+.memory-panel,
+.skill-panel {
   display: grid;
   gap: 14px;
   padding: 18px;
@@ -359,6 +361,30 @@ h3 {
 
 .candidate-rule-superseded {
   border-color: rgba(143, 182, 232, 0.55);
+}
+
+.skill-card-active {
+  border-color: rgba(120, 201, 155, 0.55);
+}
+
+.skill-card-rejected,
+.skill-card-archived {
+  border-color: rgba(223, 114, 114, 0.55);
+}
+
+.skill-card-superseded {
+  border-color: rgba(143, 182, 232, 0.55);
+}
+
+.skill-meta-grid {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(241, 241, 241, 0.025);
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 10px;
 }
 
 .rule-evidence {

@@ -45,6 +45,15 @@ export const MEMORY_IPC_METHODS = [
   "memory.updateCandidateRuleStatus",
 ] as const;
 
+export const SKILL_IPC_METHODS = [
+  "skill.list",
+  "skill.createCandidate",
+  "skill.promoteManual",
+  "skill.reject",
+  "skill.supersede",
+  "skill.archive",
+] as const;
+
 export type RunEvent =
   | "run_started"
   | "goal_received"
@@ -101,6 +110,11 @@ export type RunEvent =
   | "candidate_rule_accepted"
   | "candidate_rule_rejected"
   | "candidate_rule_superseded"
+  | "skill_candidate_created"
+  | "skill_promoted_manual"
+  | "skill_rejected"
+  | "skill_superseded"
+  | "skill_archived"
   | "memory_redaction_applied"
   | "memory_extraction_finished"
   | "memory_extraction_failed"
@@ -163,6 +177,11 @@ export const RUN_EVENTS = [
   "candidate_rule_accepted",
   "candidate_rule_rejected",
   "candidate_rule_superseded",
+  "skill_candidate_created",
+  "skill_promoted_manual",
+  "skill_rejected",
+  "skill_superseded",
+  "skill_archived",
   "memory_redaction_applied",
   "memory_extraction_finished",
   "memory_extraction_failed",

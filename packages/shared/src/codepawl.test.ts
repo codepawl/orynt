@@ -21,6 +21,7 @@ import {
   type CandidateRuleStatusUpdateInput,
   type EpisodicMemoryItem,
   type MemoryReviewSnapshot,
+  type SkillDefinition,
 } from "./index";
 
 describe("CodePawl shared product contracts", () => {
@@ -165,6 +166,69 @@ describe("CodePawl shared product contracts", () => {
     expect(episode.kind).toBe("run_episode");
     expect(rule.status).toBe("candidate");
     expect(memoryArtifact.kind).toBe("memory_episode");
+  });
+
+  it("declares skill registry events and canonical skill definition contracts", () => {
+    expect(RUN_EVENT_TYPES).toEqual(
+      expect.arrayContaining([
+        "skill_candidate_created",
+        "skill_promoted_manual",
+        "skill_rejected",
+        "skill_superseded",
+        "skill_archived",
+      ]),
+    );
+
+    const skillArtifact: ArtifactRef = {
+      id: "skill-definition-artifact",
+      kind: "skill_definition",
+      uri: "codepawl-artifact://run/skills/skill.json",
+      label: "Candidate skill definition",
+    };
+    const skill: SkillDefinition = {
+      id: "skill-package-scope",
+      namespace: { capabilityId: "coding-apprentice", workspaceId: "workspace-1", repositoryPath: "/repo/codepawl" },
+      capabilityId: "coding-apprentice.repository-scope",
+      title: "Keep package fixes scoped",
+      summary: "Apply package-only source fixes and validate with contracts.",
+      status: "candidate",
+      confidence: 0.86,
+      preconditions: [{ id: "precondition-accepted-rule", kind: "memory_rule_status", summary: "Candidate rule was accepted by the user.", required: true }],
+      steps: [{ id: "step-review-scope", title: "Review changed files", instruction: "Keep edits under packages/**.", expectedOutcome: "No protected path is touched." }],
+      validation: {
+        requiresVerifierPass: true,
+        requiresDiffWithinScope: true,
+        commands: ["pnpm test:contracts"],
+        expectedEvidenceKinds: ["command", "diff_scope"],
+      },
+      safety: {
+        allowedPaths: ["packages/**"],
+        protectedPaths: [".env", "pnpm-lock.yaml"],
+        allowedCommands: ["pnpm test:contracts"],
+        blockedActions: ["automatic_execution", "secret_storage"],
+        requiresManualApproval: true,
+        rollbackNotes: "Archive or supersede the skill if future evidence invalidates it.",
+        secretHandling: "Store only redacted summaries and artifact references.",
+      },
+      provenance: {
+        sourceRunIds: ["run-1"],
+        sourceTaskIds: ["task-1"],
+        candidateRuleIds: ["candidate-rule-1"],
+        episodeIds: ["episode-1"],
+        verificationResultIds: ["verification-result-1"],
+        codexContractIds: ["codex-contract-1"],
+        artifactRefs: [skillArtifact],
+        sourceEventIds: ["run-1-event-40"],
+      },
+      redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
+      promotionDecisions: [],
+      createdAt: "2026-06-26T00:00:00.000Z",
+      updatedAt: "2026-06-26T00:00:00.000Z",
+    };
+
+    expect(skill.status).toBe("candidate");
+    expect(skill.safety.blockedActions).toContain("automatic_execution");
+    expect(skillArtifact.kind).toBe("skill_definition");
   });
 
   it("builds a memory review snapshot with candidate-only rules and redacted evidence", () => {

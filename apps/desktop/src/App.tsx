@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createMockRunState, MVP_BLOCKED_SURFACES } from "@codepawl/shared";
 import type { CandidateRule, CandidateRuleStatus, MemoryReviewSnapshot, RunEvent, SurfaceKind } from "@codepawl/shared";
+import type { SkillDefinition, SkillPromotionDecision, SkillRegistrySnapshot } from "@codepawl/shared";
 
 import { codepawl } from "./codepawlClient";
 import "./styles.css";
@@ -24,7 +25,7 @@ function describeRunEvent(event: RunEvent): string {
   return typeof summary === "string" ? summary : event.type.replaceAll("_", " ");
 }
 
-function titleCaseStatus(status: CandidateRuleStatus): string {
+function titleCaseStatus(status: string): string {
   return status[0].toUpperCase() + status.slice(1);
 }
 
@@ -125,12 +126,109 @@ function MemoryPanel({
   );
 }
 
+function SkillRegistryPanel({
+  skillRegistry,
+  onPromoteSkill,
+  onRejectSkill,
+  onArchiveSkill,
+  onCopySkill,
+}: {
+  skillRegistry: SkillRegistrySnapshot;
+  onPromoteSkill: (skill: SkillDefinition) => void;
+  onRejectSkill: (skill: SkillDefinition) => void;
+  onArchiveSkill: (skill: SkillDefinition) => void;
+  onCopySkill: (skill: SkillDefinition) => void;
+}) {
+  const candidateCount = skillRegistry.summary.statusCounts.candidate;
+
+  return (
+    <section className="skill-panel" aria-label="Skill registry">
+      <div className="memory-panel-header">
+        <div>
+          <p className="eyebrow">Manual skills</p>
+          <h2>Skill registry</h2>
+        </div>
+        <strong>{candidateCount > 0 ? "Candidate" : "Reviewed"}</strong>
+      </div>
+
+      <div className="memory-episode">
+        <span>{skillRegistry.namespace.capabilityId} / {skillRegistry.namespace.workspaceId}</span>
+        <p>Candidate skills are inert until manually promoted. No auto-run or replay controls are exposed.</p>
+      </div>
+
+      <div className="candidate-rule-list">
+        {skillRegistry.skills.map((skill) => {
+          const canReview = skill.status === "candidate";
+          const canArchive = skill.status !== "archived";
+          return (
+            <article className={`candidate-rule skill-card skill-card-${skill.status}`} key={skill.id}>
+              <div className="candidate-rule-topline">
+                <h3>{skill.title}</h3>
+                <div className="rule-status">
+                  <span>Status</span>
+                  <strong>{titleCaseStatus(skill.status)}</strong>
+                </div>
+              </div>
+              <p>{skill.summary}</p>
+              <div className="skill-meta-grid">
+                <span>rules: {skill.provenance.candidateRuleIds.join(", ") || "none"}</span>
+                <span>episodes: {skill.provenance.episodeIds.join(", ") || "none"}</span>
+                <span>runs: {skill.provenance.sourceRunIds.join(", ") || "none"}</span>
+                <span>validation: {skill.validation.commands.join(", ") || "manual verifier evidence"}</span>
+                <span>safety: {skill.safety.blockedActions.join(", ")}</span>
+              </div>
+              <div className="rule-evidence">
+                <span>{skill.validation.expectedEvidenceKinds.join(", ")}</span>
+                <strong>{confidenceLabel(skill.confidence)}</strong>
+              </div>
+              {skill.redaction.applied ? <small>redaction applied: {skill.redaction.redactedPaths.join(", ")}</small> : null}
+              <div className="candidate-rule-actions">
+                <button type="button" onClick={() => onPromoteSkill(skill)} disabled={!canReview} aria-label={`Promote manually ${skill.title}`}>
+                  Promote manually
+                </button>
+                <button type="button" onClick={() => onRejectSkill(skill)} disabled={!canReview} aria-label={`Reject ${skill.title}`}>
+                  Reject
+                </button>
+                <button type="button" onClick={() => onArchiveSkill(skill)} disabled={!canArchive} aria-label={`Archive ${skill.title}`}>
+                  Archive
+                </button>
+                <button type="button" onClick={() => onCopySkill(skill)} aria-label={`Copy skill summary ${skill.title}`}>
+                  Copy summary
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function updateSkill(snapshot: SkillRegistrySnapshot, skill: SkillDefinition): SkillRegistrySnapshot {
+  const skills = snapshot.skills.map((item) => (item.id === skill.id ? skill : item));
+  return {
+    ...snapshot,
+    skills,
+    summary: {
+      ...snapshot.summary,
+      statusCounts: {
+        candidate: skills.filter((item) => item.status === "candidate").length,
+        active: skills.filter((item) => item.status === "active").length,
+        rejected: skills.filter((item) => item.status === "rejected").length,
+        superseded: skills.filter((item) => item.status === "superseded").length,
+        archived: skills.filter((item) => item.status === "archived").length,
+      },
+    },
+  };
+}
+
 function App() {
   const runState = useMemo(() => createMockRunState(), []);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [approvalStatus, setApprovalStatus] = useState("Waiting for operator approval");
   const [currentRunId, setCurrentRunId] = useState(runState.traceSummary.runId);
   const [memoryReview, setMemoryReview] = useState<MemoryReviewSnapshot>(runState.memoryReview);
+  const [skillRegistry, setSkillRegistry] = useState<SkillRegistrySnapshot>(runState.skillRegistry);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -157,6 +255,34 @@ function App() {
       mounted = false;
       unlisten?.();
       codepawl.resetMockListenersForTest();
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    codepawl.listSkills().then((skills) => {
+      if (!mounted) {
+        return;
+      }
+      setSkillRegistry((current) => ({
+        ...current,
+        skills,
+        summary: {
+          ...current.summary,
+          skillCount: skills.length,
+          statusCounts: {
+            candidate: skills.filter((skill) => skill.status === "candidate").length,
+            active: skills.filter((skill) => skill.status === "active").length,
+            rejected: skills.filter((skill) => skill.status === "rejected").length,
+            superseded: skills.filter((skill) => skill.status === "superseded").length,
+            archived: skills.filter((skill) => skill.status === "archived").length,
+          },
+        },
+      }));
+    });
+
+    return () => {
+      mounted = false;
     };
   }, []);
 
@@ -216,6 +342,43 @@ function App() {
 
   const handleCopyRule = async (rule: CandidateRule) => {
     await navigator.clipboard?.writeText(rule.rule);
+  };
+
+  const skillDecision = (skill: SkillDefinition, decision: SkillPromotionDecision["decision"], reason: string): SkillPromotionDecision => ({
+    skillId: skill.id,
+    decision,
+    actor: "operator",
+    reason,
+    runId: currentRunId,
+    decidedAt: new Date().toISOString(),
+    supersededBy: decision === "supersede" ? "skill-replacement-demo" : undefined,
+  });
+
+  const handlePromoteSkill = async (skill: SkillDefinition) => {
+    const updated = await codepawl.promoteSkillManually(skillDecision(skill, "promote", "Manual promotion from reviewed skill panel."));
+    setSkillRegistry((current) => updateSkill(current, updated));
+  };
+
+  const handleRejectSkill = async (skill: SkillDefinition) => {
+    const updated = await codepawl.rejectSkill(skillDecision(skill, "reject", "Manual rejection from reviewed skill panel."));
+    setSkillRegistry((current) => updateSkill(current, updated));
+  };
+
+  const handleArchiveSkill = async (skill: SkillDefinition) => {
+    const updated = await codepawl.archiveSkill(skillDecision(skill, "archive", "Manual archive from reviewed skill panel."));
+    setSkillRegistry((current) => updateSkill(current, updated));
+  };
+
+  const handleCopySkill = async (skill: SkillDefinition) => {
+    await navigator.clipboard?.writeText(
+      [
+        `${skill.title} (${skill.status})`,
+        skill.summary,
+        `rules: ${skill.provenance.candidateRuleIds.join(", ")}`,
+        `validation: ${skill.validation.commands.join(", ")}`,
+        `safety: ${skill.safety.blockedActions.join(", ")}`,
+      ].join("\n"),
+    );
   };
 
   const latestEvent = events.at(-1);
@@ -311,6 +474,13 @@ function App() {
         </section>
 
         <MemoryPanel memoryReview={memoryReview} onReviewRule={(rule, status) => void handleReviewRule(rule, status)} onCopyRule={(rule) => void handleCopyRule(rule)} />
+        <SkillRegistryPanel
+          skillRegistry={skillRegistry}
+          onPromoteSkill={(skill) => void handlePromoteSkill(skill)}
+          onRejectSkill={(skill) => void handleRejectSkill(skill)}
+          onArchiveSkill={(skill) => void handleArchiveSkill(skill)}
+          onCopySkill={(skill) => void handleCopySkill(skill)}
+        />
       </section>
 
       <aside className="run-inspector" aria-label="Run inspector">
