@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createMockRunState, MVP_BLOCKED_SURFACES } from "@codepawl/shared";
 import type { CandidateRule, CandidateRuleStatus, MemoryReviewSnapshot, RunEvent, SurfaceKind } from "@codepawl/shared";
-import type { SkillDefinition, SkillPromotionDecision, SkillRegistrySnapshot } from "@codepawl/shared";
+import type { SkillDefinition, SkillPromotionDecision, SkillRegistrySnapshot, SkillReplayPlan } from "@codepawl/shared";
 
 import { codepawl } from "./codepawlClient";
 import "./styles.css";
@@ -26,7 +26,8 @@ function describeRunEvent(event: RunEvent): string {
 }
 
 function titleCaseStatus(status: string): string {
-  return status[0].toUpperCase() + status.slice(1);
+  const normalized = status.replaceAll("_", " ");
+  return normalized[0].toUpperCase() + normalized.slice(1);
 }
 
 function confidenceLabel(value: number): string {
@@ -128,16 +129,20 @@ function MemoryPanel({
 
 function SkillRegistryPanel({
   skillRegistry,
+  replayPlans,
   onPromoteSkill,
   onRejectSkill,
   onArchiveSkill,
   onCopySkill,
+  onPreviewReplayPlan,
 }: {
   skillRegistry: SkillRegistrySnapshot;
+  replayPlans: Record<string, SkillReplayPlan>;
   onPromoteSkill: (skill: SkillDefinition) => void;
   onRejectSkill: (skill: SkillDefinition) => void;
   onArchiveSkill: (skill: SkillDefinition) => void;
   onCopySkill: (skill: SkillDefinition) => void;
+  onPreviewReplayPlan: (skill: SkillDefinition) => void;
 }) {
   const candidateCount = skillRegistry.summary.statusCounts.candidate;
 
@@ -153,13 +158,14 @@ function SkillRegistryPanel({
 
       <div className="memory-episode">
         <span>{skillRegistry.namespace.capabilityId} / {skillRegistry.namespace.workspaceId}</span>
-        <p>Candidate skills are inert until manually promoted. No auto-run or replay controls are exposed.</p>
+        <p>Candidate skills are inert until manually promoted. Replay is preview-only in this slice.</p>
       </div>
 
       <div className="candidate-rule-list">
         {skillRegistry.skills.map((skill) => {
           const canReview = skill.status === "candidate";
           const canArchive = skill.status !== "archived";
+          const replayPlan = replayPlans[skill.id];
           return (
             <article className={`candidate-rule skill-card skill-card-${skill.status}`} key={skill.id}>
               <div className="candidate-rule-topline">
@@ -192,10 +198,45 @@ function SkillRegistryPanel({
                 <button type="button" onClick={() => onArchiveSkill(skill)} disabled={!canArchive} aria-label={`Archive ${skill.title}`}>
                   Archive
                 </button>
+                <button type="button" onClick={() => onPreviewReplayPlan(skill)} aria-label={`Preview dry-run plan ${skill.title}`}>
+                  Preview dry-run plan
+                </button>
                 <button type="button" onClick={() => onCopySkill(skill)} aria-label={`Copy skill summary ${skill.title}`}>
                   Copy summary
                 </button>
               </div>
+              {replayPlan ? (
+                <div className={`skill-replay-plan skill-replay-plan-${replayPlan.readiness}`} aria-label={`Replay plan for ${skill.title}`}>
+                  <div className="skill-replay-topline">
+                    <span>Dry-run only</span>
+                    <strong>{titleCaseStatus(replayPlan.readiness)}</strong>
+                  </div>
+                  <p>{replayPlan.summary}</p>
+                  <div className="skill-replay-grid">
+                    <span>skill status: <strong>{titleCaseStatus(replayPlan.skillStatus)}</strong></span>
+                    <span>mode: <strong>{titleCaseStatus(replayPlan.mode)}</strong></span>
+                    {replayPlan.preconditions.length > 0 ? (
+                      replayPlan.preconditions.map((item) => (
+                        <span key={item.id}>
+                          precondition: <strong>{item.id}</strong> {titleCaseStatus(item.status)}
+                        </span>
+                      ))
+                    ) : (
+                      <span>preconditions: <strong>none</strong></span>
+                    )}
+                    <span>blocked actions: <strong>{replayPlan.blockedActions.join(", ") || "none"}</strong></span>
+                    <span>required approvals: <strong>{replayPlan.requiredApprovals.join(", ") || "none"}</strong></span>
+                    <span>
+                      validation commands: <strong>{replayPlan.validationExpectations.map((item) => item.command).join(", ") || "manual verifier evidence"}</strong>
+                    </span>
+                    <span>
+                      budget: <strong>{replayPlan.budgetEstimate.estimatedSteps} steps / {replayPlan.budgetEstimate.estimatedCommands} commands /{" "}
+                      {replayPlan.budgetEstimate.estimatedModelTokens.toLocaleString()} tokens</strong>
+                    </span>
+                    <span>expected artifacts: <strong>{replayPlan.expectedArtifacts.map((artifact) => artifact.kind).join(", ")}</strong></span>
+                  </div>
+                </div>
+              ) : null}
             </article>
           );
         })}
@@ -229,6 +270,7 @@ function App() {
   const [currentRunId, setCurrentRunId] = useState(runState.traceSummary.runId);
   const [memoryReview, setMemoryReview] = useState<MemoryReviewSnapshot>(runState.memoryReview);
   const [skillRegistry, setSkillRegistry] = useState<SkillRegistrySnapshot>(runState.skillRegistry);
+  const [replayPlans, setReplayPlans] = useState<Record<string, SkillReplayPlan>>({});
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -381,6 +423,11 @@ function App() {
     );
   };
 
+  const handlePreviewReplayPlan = async (skill: SkillDefinition) => {
+    const plan = await codepawl.createSkillReplayPlan(skill.id, currentRunId);
+    setReplayPlans((current) => ({ ...current, [skill.id]: plan }));
+  };
+
   const latestEvent = events.at(-1);
 
   return (
@@ -476,10 +523,12 @@ function App() {
         <MemoryPanel memoryReview={memoryReview} onReviewRule={(rule, status) => void handleReviewRule(rule, status)} onCopyRule={(rule) => void handleCopyRule(rule)} />
         <SkillRegistryPanel
           skillRegistry={skillRegistry}
+          replayPlans={replayPlans}
           onPromoteSkill={(skill) => void handlePromoteSkill(skill)}
           onRejectSkill={(skill) => void handleRejectSkill(skill)}
           onArchiveSkill={(skill) => void handleArchiveSkill(skill)}
           onCopySkill={(skill) => void handleCopySkill(skill)}
+          onPreviewReplayPlan={(skill) => void handlePreviewReplayPlan(skill)}
         />
       </section>
 

@@ -421,6 +421,64 @@ h3 {
   opacity: 0.52;
 }
 
+.skill-replay-plan {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(143, 182, 232, 0.42);
+  border-radius: 8px;
+  background: rgba(143, 182, 232, 0.075);
+  padding: 12px;
+}
+
+.skill-replay-plan p {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 0;
+}
+
+.skill-replay-plan-blocked {
+  border-color: rgba(223, 114, 114, 0.55);
+  background: rgba(223, 114, 114, 0.08);
+}
+
+.skill-replay-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.skill-replay-topline span,
+.skill-replay-topline strong {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(28, 28, 28, 0.46);
+  color: var(--accent-info);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 5px 9px;
+}
+
+.skill-replay-topline strong {
+  color: var(--accent-warning);
+}
+
+.skill-replay-grid {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(28, 28, 28, 0.48);
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 10px;
+}
+
+.skill-replay-grid strong {
+  color: var(--mono-100);
+  font-weight: 800;
+}
+
 .run-inspector {
   display: grid;
   align-content: start;

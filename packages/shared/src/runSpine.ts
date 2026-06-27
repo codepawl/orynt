@@ -83,6 +83,12 @@ export const RUN_EVENT_TYPES = [
   "skill_rejected",
   "skill_superseded",
   "skill_archived",
+  "skill_replay_plan_requested",
+  "skill_replay_preconditions_checked",
+  "skill_replay_policy_checked",
+  "skill_replay_budget_estimated",
+  "skill_replay_plan_created",
+  "skill_replay_plan_blocked",
   "memory_redaction_applied",
   "memory_extraction_finished",
   "memory_extraction_failed",
@@ -125,7 +131,8 @@ export type ArtifactRef = {
     | "memory_episode"
     | "candidate_rule"
     | "memory_summary"
-    | "skill_definition";
+    | "skill_definition"
+    | "skill_replay_plan";
   uri: string;
   label: string;
   sha256?: string;

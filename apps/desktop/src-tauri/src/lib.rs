@@ -66,6 +66,13 @@ pub struct SkillStatusUpdateInput {
     superseded_by: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillReplayPlanInput {
+    skill_id: String,
+    run_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApprovalDecision {
@@ -264,6 +271,14 @@ fn validate_skill_status_update(input: &SkillStatusUpdateInput) -> Result<(), Ap
     Ok(())
 }
 
+fn validate_skill_replay_plan_input(input: &SkillReplayPlanInput) -> Result<(), AppError> {
+    if input.skill_id.trim().is_empty() {
+        return Err(AppError::Validation("skill id is required".into()));
+    }
+
+    Ok(())
+}
+
 fn candidate_rule_review_event_type(status: &CandidateRuleReviewStatus) -> &'static str {
     match status {
         CandidateRuleReviewStatus::Accepted => "candidate_rule_accepted",
@@ -279,6 +294,20 @@ fn skill_decision_event_type(decision: &SkillDecision) -> &'static str {
         SkillDecision::Supersede => "skill_superseded",
         SkillDecision::Archive => "skill_archived",
     }
+}
+
+fn skill_replay_lifecycle_event_types(blocked: bool) -> Vec<&'static str> {
+    vec![
+        "skill_replay_plan_requested",
+        "skill_replay_preconditions_checked",
+        "skill_replay_policy_checked",
+        "skill_replay_budget_estimated",
+        if blocked {
+            "skill_replay_plan_blocked"
+        } else {
+            "skill_replay_plan_created"
+        },
+    ]
 }
 
 fn now_run_id() -> String {
@@ -541,6 +570,134 @@ fn mock_skills(statuses: &HashMap<String, SkillLifecycleStatus>) -> Vec<serde_js
             None
         },
     )]
+}
+
+fn mock_skill_replay_plan(skill: &serde_json::Value, run_id: &str) -> serde_json::Value {
+    let skill_id = skill
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("skill-keep-package-fixes-scoped");
+    let skill_title = skill
+        .get("title")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Keep package fixes scoped");
+    let skill_status = skill
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("candidate");
+    let readiness = match skill_status {
+        "active" => "ready",
+        "candidate" => "preview_only",
+        _ => "blocked",
+    };
+    let stop_reasons = match skill_status {
+        "candidate" => serde_json::json!(["candidate_preview_only"]),
+        "active" => serde_json::json!([]),
+        _ => serde_json::json!(["skill_not_active"]),
+    };
+    let mode = if skill_status == "candidate" {
+        "candidate_preview"
+    } else {
+        "active_dry_run"
+    };
+
+    serde_json::json!({
+        "id": format!("skill-replay-plan-{skill_id}"),
+        "runId": run_id,
+        "taskId": "task-failing-unit-test",
+        "skillId": skill_id,
+        "skillTitle": skill_title,
+        "skillStatus": skill_status,
+        "mode": mode,
+        "dryRunOnly": true,
+        "executable": false,
+        "readiness": readiness,
+        "summary": if skill_status == "candidate" {
+            format!("{skill_title} is available as a dry-run preview only; candidate skills are not executable.")
+        } else if skill_status == "active" {
+            format!("{skill_title} dry-run replay plan is ready for manual review.")
+        } else {
+            format!("{skill_title} replay planning is blocked: skill_not_active.")
+        },
+        "preconditions": [
+            {
+                "id": "precondition-accepted-rule",
+                "kind": "memory_rule_status",
+                "summary": "Accepted rule required: candidate-rule-package-scope",
+                "required": true,
+                "status": "passed",
+            },
+            {
+                "id": "precondition-successful-verifier",
+                "kind": "verification_available",
+                "summary": "Successful verifier evidence must be present before manual promotion.",
+                "required": true,
+                "status": "passed",
+            },
+        ],
+        "steps": [
+            {
+                "id": "replay-step-review-scope",
+                "title": "Review repository scope",
+                "kind": "skill_step",
+                "summary": "Keep edits under packages/** unless a later approved contract expands scope. Expected: No protected path is touched.",
+                "dryRunOnly": true,
+                "status": if readiness == "blocked" { "skipped" } else { "planned" },
+            },
+            {
+                "id": "replay-step-validate",
+                "title": "Validate contracts",
+                "kind": "validation_expectation",
+                "summary": "pnpm test:contracts",
+                "dryRunOnly": true,
+                "status": if readiness == "blocked" { "skipped" } else { "planned" },
+            },
+        ],
+        "risks": if readiness == "blocked" { serde_json::json!(["blocked"]) } else { serde_json::json!(["low"]) },
+        "policyChecks": [
+            {
+                "actionId": "skill-replay-command-1",
+                "summary": "Validate replay expectation: pnpm test:contracts",
+                "decision": "allow",
+                "risk": "low",
+                "approvalRequired": false,
+                "reasons": ["Command is on the conservative allowlist."],
+                "violations": [],
+            }
+        ],
+        "validationExpectations": [
+            {
+                "command": "pnpm test:contracts",
+                "allowed": true,
+                "expectedEvidenceKinds": ["command", "diff_scope"],
+                "requiresVerifierPass": true,
+                "policyDecision": "allow",
+                "reason": "Command is on the conservative allowlist.",
+            }
+        ],
+        "budgetEstimate": {
+            "estimatedSteps": 6,
+            "estimatedCommands": 1,
+            "estimatedArtifacts": 2,
+            "estimatedModelTokens": 2800,
+            "estimatedWallTimeMs": 180000,
+            "decision": "allow",
+            "stopReasons": [],
+        },
+        "blockedActions": ["automatic_execution", "codex_auto_run", "browser_automation", "secret_storage"],
+        "requiredApprovals": ["manual approval required before any future skill execution"],
+        "expectedArtifacts": [
+            {
+                "id": format!("skill-replay-plan-{skill_id}"),
+                "kind": "skill_replay_plan",
+                "uri": format!("codepawl-artifact://{run_id}/skills/{skill_id}-replay-plan.json"),
+                "label": "Skill replay dry-run plan",
+            }
+        ],
+        "stopReasons": stop_reasons,
+        "redaction": { "applied": true, "redactedPaths": ["summary"], "redactionCount": 1 },
+        "createdAt": now_iso_like(),
+    })
 }
 
 fn now_iso_like() -> String {
@@ -1338,6 +1495,61 @@ async fn skill_archive(
 }
 
 #[tauri::command]
+async fn skill_create_replay_plan(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: SkillReplayPlanInput,
+) -> Result<serde_json::Value, AppError> {
+    validate_skill_replay_plan_input(&input)?;
+
+    let run_id = input.run_id.clone().unwrap_or_else(|| "run-1".into());
+    let statuses = state.skill_statuses.lock().map_err(|_| AppError::StateLock)?;
+    let skill = mock_skills(&statuses)
+        .into_iter()
+        .find(|skill| skill.get("id").and_then(serde_json::Value::as_str) == Some(input.skill_id.as_str()))
+        .ok_or_else(|| AppError::Validation("skill not found".into()))?;
+    let plan = mock_skill_replay_plan(&skill, &run_id);
+    let blocked = plan
+        .get("readiness")
+        .and_then(serde_json::Value::as_str)
+        == Some("blocked");
+
+    for (index, event_type) in skill_replay_lifecycle_event_types(blocked).iter().enumerate() {
+        let artifacts = if *event_type == "skill_replay_plan_created" || *event_type == "skill_replay_plan_blocked" {
+            plan.get("expectedArtifacts")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
+        app.emit(
+            "run_event",
+            RunEvent {
+                id: format!("{}-event-{}-{}", run_id, event_type, input.skill_id),
+                run_id: run_id.clone(),
+                sequence: 20_100 + index as u32,
+                event_type: (*event_type).into(),
+                timestamp: now_iso_like(),
+                actor: serde_json::json!({ "kind": "ui", "id": "skill-registry-panel" }),
+                payload: serde_json::json!({
+                    "summary": format!("Skill replay {}: {}", plan.get("readiness").and_then(serde_json::Value::as_str).unwrap_or("unknown"), input.skill_id),
+                    "skillId": input.skill_id,
+                    "replayPlanId": plan.get("id").and_then(serde_json::Value::as_str).unwrap_or("skill-replay-plan"),
+                    "readiness": plan.get("readiness").and_then(serde_json::Value::as_str).unwrap_or("unknown"),
+                }),
+                redaction: serde_json::json!({ "applied": true, "redactedPaths": ["summary"] }),
+                artifacts,
+                safety: None,
+            },
+        )
+        .map_err(|error| AppError::Event(error.to_string()))?;
+    }
+
+    Ok(plan)
+}
+
+#[tauri::command]
 async fn settings_get() -> Result<SettingsSnapshot, AppError> {
     Ok(SettingsSnapshot {
         workspace_id: "workspace-local-alpha".into(),
@@ -1406,6 +1618,7 @@ pub fn run() {
             skill_reject,
             skill_supersede,
             skill_archive,
+            skill_create_replay_plan,
             settings_get,
             settings_update,
             provider_key_save,
@@ -1537,5 +1750,40 @@ mod tests {
         assert_eq!(skill_decision_event_type(&SkillDecision::Reject), "skill_rejected");
         assert_eq!(skill_decision_event_type(&SkillDecision::Supersede), "skill_superseded");
         assert_eq!(skill_decision_event_type(&SkillDecision::Archive), "skill_archived");
+    }
+
+    #[test]
+    fn skill_replay_plan_requires_explicit_skill_id() {
+        let input = SkillReplayPlanInput {
+            skill_id: "skill-package-scope".into(),
+            run_id: Some("run-1".into()),
+        };
+
+        assert!(validate_skill_replay_plan_input(&input).is_ok());
+
+        let missing_id = SkillReplayPlanInput {
+            skill_id: "".into(),
+            run_id: Some("run-1".into()),
+        };
+        let error = validate_skill_replay_plan_input(&missing_id).expect_err("skill id is required");
+        assert_eq!(error.to_string(), "skill id is required");
+    }
+
+    #[test]
+    fn skill_replay_lifecycle_maps_to_visible_run_event_types() {
+        assert_eq!(
+            skill_replay_lifecycle_event_types(false),
+            vec![
+                "skill_replay_plan_requested",
+                "skill_replay_preconditions_checked",
+                "skill_replay_policy_checked",
+                "skill_replay_budget_estimated",
+                "skill_replay_plan_created",
+            ]
+        );
+        assert_eq!(
+            skill_replay_lifecycle_event_types(true).last().copied(),
+            Some("skill_replay_plan_blocked")
+        );
     }
 }

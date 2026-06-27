@@ -133,7 +133,26 @@ describe("CodePawl desktop shell", () => {
     expect(within(panel).getAllByText(/pnpm test:contracts/).length).toBeGreaterThan(0);
     expect(within(panel).getByText(/automatic_execution/)).toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: /run skill/i })).not.toBeInTheDocument();
-    expect(within(panel).queryByRole("button", { name: /replay/i })).not.toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Preview dry-run plan Keep package fixes scoped" })).toBeInTheDocument();
+  });
+
+  it("renders skill replay dry-run previews without exposing execution controls", async () => {
+    render(<App />);
+
+    const panel = await screen.findByRole("region", { name: "Skill registry" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Preview dry-run plan Keep package fixes scoped" }));
+
+    expect(await within(panel).findByText("Dry-run only")).toBeInTheDocument();
+    expect(within(panel).getByText("Preview only")).toBeInTheDocument();
+    expect(within(panel).getByText("precondition-accepted-rule")).toBeInTheDocument();
+    expect(within(panel).getByText("automatic_execution, codex_auto_run, browser_automation, secret_storage")).toBeInTheDocument();
+    expect(within(panel).getByText("manual approval required before any future skill execution")).toBeInTheDocument();
+    expect(within(panel).getAllByText("pnpm test:contracts").length).toBeGreaterThan(0);
+    expect(within(panel).getByText(/steps/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /run skill/i })).not.toBeInTheDocument();
+
+    expect(await screen.findByText(/run_event: skill_replay_plan_requested/)).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: skill_replay_plan_created/)).toBeInTheDocument();
   });
 
   it("promotes, rejects, and archives skills manually with visible timeline events", async () => {

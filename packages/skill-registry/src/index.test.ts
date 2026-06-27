@@ -3,12 +3,17 @@ import { describe, expect, it } from "vitest";
 import type {
   CandidateRule,
   CodexContract,
+  CorePolicy,
   EpisodicMemoryItem,
+  RunEventType,
+  RunStore,
   MemoryNamespace,
+  SkillDefinition,
   VerificationResult,
 } from "@codepawl/shared";
+import { InMemoryRunStore, createConservativeCodingApprenticePolicy, createDefaultRunBudget } from "@codepawl/shared";
 
-import { LocalSkillRegistry, SkillCandidateBuilder, SkillRegistryFailure } from "./index";
+import { LocalSkillRegistry, LocalSkillReplayPlanner, SkillCandidateBuilder, SkillRegistryFailure } from "./index";
 
 const namespace: MemoryNamespace = {
   capabilityId: "coding-apprentice",
@@ -192,6 +197,52 @@ function codexContract(): CodexContract {
   };
 }
 
+function activeSkill(overrides: Partial<SkillDefinition> = {}): SkillDefinition {
+  const candidate = new SkillCandidateBuilder().createCandidateSkill({
+    namespace,
+    acceptedRules: [acceptedRule()],
+    episodes: [episode()],
+    verificationResult: verification(),
+    codexContract: codexContract(),
+    sandbox: { repositoryPath: "/repo/codepawl", worktreePath: "/tmp/codepawl-worktrees/run-1", baseRef: "HEAD" },
+  });
+
+  return {
+    ...candidate.skill,
+    status: "active",
+    promotionDecisions: [
+      {
+        skillId: candidate.skill.id,
+        decision: "promote",
+        actor: "operator",
+        reason: "Reviewed evidence and manually promoted.",
+        runId: "run-1",
+        decidedAt: "2026-06-26T00:00:02.000Z",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function replayPolicy(overrides: Partial<CorePolicy> = {}): CorePolicy {
+  return {
+    ...createConservativeCodingApprenticePolicy("/repo/codepawl", "/tmp/codepawl-worktrees"),
+    ...overrides,
+  };
+}
+
+function replayStore(): { store: RunStore; runId: string } {
+  const store = new InMemoryRunStore();
+  const run = store.createRun({
+    goal: "Preview replay plan",
+    capabilityId: "coding-apprentice",
+    taskId: "task-skill",
+    workspaceId: "workspace-skill",
+    budget: createDefaultRunBudget(),
+  });
+  return { store, runId: run.id };
+}
+
 describe("SkillCandidateBuilder", () => {
   it("creates candidate skills from accepted rules and successful verifier evidence without auto-promotion", () => {
     const candidate = new SkillCandidateBuilder().createCandidateSkill({
@@ -328,5 +379,162 @@ describe("LocalSkillRegistry", () => {
         decidedAt: "2026-06-26T00:00:02.000Z",
       }),
     ).rejects.toBeInstanceOf(SkillRegistryFailure);
+  });
+});
+
+describe("LocalSkillReplayPlanner", () => {
+  it("creates a policy-gated dry-run replay plan for an active skill", () => {
+    const { store, runId } = replayStore();
+    const plan = new LocalSkillReplayPlanner({ runStore: store }).createReplayPlan({
+      skill: activeSkill(),
+      runId,
+      taskId: "task-skill",
+      mode: "active_dry_run",
+      repositoryPath: "/repo/codepawl",
+      baseRef: "HEAD",
+      policy: replayPolicy(),
+    });
+
+    expect(plan.mode).toBe("active_dry_run");
+    expect(plan.dryRunOnly).toBe(true);
+    expect(plan.executable).toBe(false);
+    expect(plan.readiness).toBe("ready");
+    expect(plan.preconditions.every((item) => item.status === "passed")).toBe(true);
+    expect(plan.validationExpectations.map((item) => item.command)).toEqual(["pnpm test:contracts"]);
+    expect(plan.blockedActions).toEqual(["automatic_execution", "codex_auto_run", "browser_automation", "secret_storage"]);
+    expect(plan.requiredApprovals).toContain("manual approval required before any future skill execution");
+    expect(plan.expectedArtifacts.map((artifact) => artifact.kind)).toContain("skill_replay_plan");
+    expect(JSON.stringify(plan)).not.toContain("sk-commandsecret123");
+    expect(store.listEvents(runId).map((event) => event.type)).toEqual([
+      "skill_replay_plan_requested",
+      "skill_replay_preconditions_checked",
+      "skill_replay_policy_checked",
+      "skill_replay_budget_estimated",
+      "skill_replay_plan_created",
+    ] satisfies RunEventType[]);
+  });
+
+  it("allows candidate skills only as non-executable dry-run previews", () => {
+    const skill = activeSkill({ status: "candidate", promotionDecisions: [] });
+    const plan = new LocalSkillReplayPlanner().createReplayPlan({
+      skill,
+      runId: "run-1",
+      taskId: "task-skill",
+      mode: "candidate_preview",
+      repositoryPath: "/repo/codepawl",
+      baseRef: "HEAD",
+      policy: replayPolicy(),
+    });
+
+    expect(plan.readiness).toBe("preview_only");
+    expect(plan.executable).toBe(false);
+    expect(plan.stopReasons).toContain("candidate_preview_only");
+    expect(plan.summary).toContain("dry-run preview only");
+  });
+
+  it("blocks rejected skills from replay planning", () => {
+    const plan = new LocalSkillReplayPlanner().createReplayPlan({
+      skill: activeSkill({ status: "rejected" }),
+      runId: "run-1",
+      taskId: "task-skill",
+      mode: "active_dry_run",
+      repositoryPath: "/repo/codepawl",
+      baseRef: "HEAD",
+      policy: replayPolicy(),
+    });
+
+    expect(plan.readiness).toBe("blocked");
+    expect(plan.stopReasons).toContain("skill_not_active");
+    expect(new LocalSkillReplayPlanner().explainBlockedReplay(plan)).toContain("not active");
+  });
+
+  it("blocks missing required preconditions", () => {
+    const plan = new LocalSkillReplayPlanner().createReplayPlan({
+      skill: activeSkill({ preconditions: [{ id: "missing", kind: "repository_scope", summary: "MISSING repository scope", required: true }] }),
+      runId: "run-1",
+      taskId: "task-skill",
+      mode: "active_dry_run",
+      repositoryPath: "/repo/codepawl",
+      baseRef: "HEAD",
+      policy: replayPolicy(),
+    });
+
+    expect(plan.readiness).toBe("blocked");
+    expect(plan.preconditions[0]).toMatchObject({ id: "missing", status: "failed" });
+    expect(plan.stopReasons).toContain("missing_precondition");
+  });
+
+  it("blocks policy violations in replay validation expectations", () => {
+    const plan = new LocalSkillReplayPlanner().createReplayPlan({
+      skill: activeSkill({
+        validation: {
+          requiresVerifierPass: true,
+          requiresDiffWithinScope: true,
+          commands: ["rm -rf ."],
+          expectedEvidenceKinds: ["command"],
+        },
+        safety: {
+          ...activeSkill().safety,
+          allowedCommands: ["rm -rf ."],
+        },
+      }),
+      runId: "run-1",
+      taskId: "task-skill",
+      mode: "active_dry_run",
+      repositoryPath: "/repo/codepawl",
+      baseRef: "HEAD",
+      policy: replayPolicy(),
+    });
+
+    expect(plan.readiness).toBe("blocked");
+    expect(plan.policyChecks[0]?.decision).toBe("block");
+    expect(plan.stopReasons).toContain("policy_blocked");
+  });
+
+  it("warns or blocks when replay budget estimates exceed policy budget", () => {
+    const policy = replayPolicy({
+      sandbox: {
+        ...replayPolicy().sandbox,
+        budget: { ...replayPolicy().sandbox.budget, maxSteps: 1, maxModelTokens: 10 },
+      },
+    });
+    const plan = new LocalSkillReplayPlanner().createReplayPlan({
+      skill: activeSkill(),
+      runId: "run-1",
+      taskId: "task-skill",
+      mode: "active_dry_run",
+      repositoryPath: "/repo/codepawl",
+      baseRef: "HEAD",
+      policy,
+    });
+
+    expect(plan.budgetEstimate.decision).toBe("stop");
+    expect(plan.stopReasons).toContain("budget_exceeded");
+  });
+
+  it("redacts sensitive replay plan display values", () => {
+    const plan = new LocalSkillReplayPlanner().createReplayPlan({
+      skill: activeSkill({
+        summary: "Use token=sk-replaysecret123 during replay",
+        steps: [
+          {
+            id: "step-secret",
+            title: "Handle secret",
+            instruction: "Do not reveal apiKey=sk-replaysecret123",
+            expectedOutcome: "Secret remains hidden",
+          },
+        ],
+      }),
+      runId: "run-1",
+      taskId: "task-skill",
+      mode: "active_dry_run",
+      repositoryPath: "/repo/codepawl",
+      baseRef: "HEAD",
+      policy: replayPolicy(),
+    });
+
+    expect(plan.redaction.applied).toBe(true);
+    expect(JSON.stringify(plan)).not.toContain("sk-replaysecret123");
+    expect(JSON.stringify(plan)).toContain("[REDACTED]");
   });
 });

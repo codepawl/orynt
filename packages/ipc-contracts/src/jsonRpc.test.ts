@@ -72,6 +72,7 @@ describe("CodePawl IPC contracts", () => {
     expect(SKILL_IPC_METHODS).toEqual([
       "skill.list",
       "skill.createCandidate",
+      "skill.createReplayPlan",
       "skill.promoteManual",
       "skill.reject",
       "skill.supersede",
@@ -84,6 +85,12 @@ describe("CodePawl IPC contracts", () => {
         "skill_rejected",
         "skill_superseded",
         "skill_archived",
+        "skill_replay_plan_requested",
+        "skill_replay_preconditions_checked",
+        "skill_replay_policy_checked",
+        "skill_replay_budget_estimated",
+        "skill_replay_plan_created",
+        "skill_replay_plan_blocked",
       ]),
     );
 

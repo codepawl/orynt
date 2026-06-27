@@ -12,6 +12,8 @@ import type {
   SkillDefinition,
   SkillPromotionDecision,
   SkillRegistrySnapshot,
+  SkillReplayMode,
+  SkillReplayPlan,
   SkillStatus,
 } from "@codepawl/shared";
 
@@ -136,6 +138,113 @@ function emitSkillReviewEvent(skill: SkillDefinition, runId?: string) {
     redaction: { applied: false, redactedPaths: [] },
     artifacts: skill.provenance.artifactRefs.filter((artifact) => artifact.kind === "skill_definition"),
   });
+}
+
+function createMockSkillReplayPlan(skill: SkillDefinition, runId = skill.provenance.sourceRunIds[0] ?? "run-1"): SkillReplayPlan {
+  const mode: SkillReplayMode = skill.status === "candidate" ? "candidate_preview" : "active_dry_run";
+  const blockedStatus = skill.status !== "active" && skill.status !== "candidate";
+  const stopReasons = [
+    ...(skill.status === "candidate" ? (["candidate_preview_only"] as const) : []),
+    ...(blockedStatus ? (["skill_not_active"] as const) : []),
+  ];
+  const readiness = blockedStatus ? "blocked" : skill.status === "candidate" ? "preview_only" : "ready";
+  return {
+    id: `skill-replay-plan-${skill.id}`,
+    runId,
+    taskId: skill.provenance.sourceTaskIds[0] ?? "task-failing-unit-test",
+    skillId: skill.id,
+    skillTitle: skill.title,
+    skillStatus: skill.status,
+    mode,
+    dryRunOnly: true,
+    executable: false,
+    readiness,
+    summary:
+      skill.status === "candidate"
+        ? `${skill.title} is available as a dry-run preview only; candidate skills are not executable.`
+        : `${skill.title} dry-run replay plan is ready for manual review.`,
+    preconditions: skill.preconditions.map((precondition) => ({
+      ...precondition,
+      status: "passed",
+    })),
+    steps: skill.steps.map((step) => ({
+      id: `replay-${step.id}`,
+      title: step.title,
+      kind: "skill_step",
+      summary: `${step.instruction} Expected: ${step.expectedOutcome}`,
+      dryRunOnly: true,
+      status: blockedStatus ? "skipped" : "planned",
+    })),
+    risks: blockedStatus ? ["blocked"] : ["low"],
+    policyChecks: skill.validation.commands.map((command, index) => ({
+      actionId: `skill-replay-command-${index + 1}`,
+      summary: `Validate replay expectation: ${command}`,
+      decision: "allow",
+      risk: "low",
+      approvalRequired: false,
+      reasons: ["Command is on the conservative allowlist."],
+      violations: [],
+    })),
+    validationExpectations: skill.validation.commands.map((command) => ({
+      command,
+      allowed: true,
+      expectedEvidenceKinds: skill.validation.expectedEvidenceKinds,
+      requiresVerifierPass: skill.validation.requiresVerifierPass,
+      policyDecision: "allow",
+      reason: "Command is on the conservative allowlist.",
+    })),
+    budgetEstimate: {
+      estimatedSteps: Math.max(1, skill.steps.length + skill.preconditions.length + skill.validation.commands.length + 1),
+      estimatedCommands: skill.validation.commands.length,
+      estimatedArtifacts: Math.max(1, skill.provenance.artifactRefs.length + 1),
+      estimatedModelTokens: 2_800,
+      estimatedWallTimeMs: 180_000,
+      decision: "allow",
+      stopReasons: [],
+    },
+    blockedActions: skill.safety.blockedActions,
+    requiredApprovals: ["manual approval required before any future skill execution"],
+    expectedArtifacts: [
+      {
+        id: `skill-replay-plan-${skill.id}`,
+        kind: "skill_replay_plan",
+        uri: `codepawl-artifact://${runId}/skills/${skill.id}-replay-plan.json`,
+        label: "Skill replay dry-run plan",
+      },
+    ],
+    stopReasons,
+    redaction: skill.redaction,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function emitSkillReplayEvents(plan: SkillReplayPlan) {
+  const lifecycle = [
+    "skill_replay_plan_requested",
+    "skill_replay_preconditions_checked",
+    "skill_replay_policy_checked",
+    "skill_replay_budget_estimated",
+    plan.readiness === "blocked" ? "skill_replay_plan_blocked" : "skill_replay_plan_created",
+  ] as const;
+
+  for (const type of lifecycle) {
+    emitMockRunEvent({
+      id: `${plan.runId}-event-${type}-${plan.skillId}`,
+      runId: plan.runId,
+      sequence: mockReviewEventSequence++,
+      type,
+      timestamp: new Date().toISOString(),
+      actor: { kind: "ui", id: "skill-registry-panel", displayName: "Skill Registry Panel" },
+      payload: {
+        summary: `Skill replay ${plan.readiness}: ${plan.skillTitle}`,
+        skillId: plan.skillId,
+        replayPlanId: plan.id,
+        readiness: plan.readiness,
+      },
+      redaction: { applied: plan.redaction.applied, redactedPaths: plan.redaction.redactedPaths },
+      artifacts: type === "skill_replay_plan_created" || type === "skill_replay_plan_blocked" ? plan.expectedArtifacts : [],
+    });
+  }
 }
 
 function applyMockSkillDecision(input: SkillPromotionDecision): SkillDefinition {
@@ -337,6 +446,21 @@ export const codepawl = {
     }
 
     return applyMockSkillDecision({ ...input, decision: "archive" });
+  },
+
+  async createSkillReplayPlan(skillId: string, runId?: string): Promise<SkillReplayPlan> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillReplayPlan>("skill_create_replay_plan", { input: { skillId, runId } });
+    }
+
+    const skill = mockSkillRegistry.skills.find((item) => item.id === skillId);
+    if (!skill) {
+      throw new Error(`skill not found: ${skillId}`);
+    }
+    const plan = createMockSkillReplayPlan(skill, runId);
+    queueMicrotask(() => emitSkillReplayEvents(plan));
+    return structuredClone(plan);
   },
 
   async onRunEvent(handler: (event: RunEvent) => void): Promise<UnlistenFn> {

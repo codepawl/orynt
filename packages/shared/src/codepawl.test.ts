@@ -22,6 +22,7 @@ import {
   type EpisodicMemoryItem,
   type MemoryReviewSnapshot,
   type SkillDefinition,
+  type SkillReplayPlan,
 } from "./index";
 
 describe("CodePawl shared product contracts", () => {
@@ -229,6 +230,80 @@ describe("CodePawl shared product contracts", () => {
     expect(skill.status).toBe("candidate");
     expect(skill.safety.blockedActions).toContain("automatic_execution");
     expect(skillArtifact.kind).toBe("skill_definition");
+  });
+
+  it("declares skill replay dry-run events and canonical replay plan contracts", () => {
+    expect(RUN_EVENT_TYPES).toEqual(
+      expect.arrayContaining([
+        "skill_replay_plan_requested",
+        "skill_replay_preconditions_checked",
+        "skill_replay_policy_checked",
+        "skill_replay_budget_estimated",
+        "skill_replay_plan_created",
+        "skill_replay_plan_blocked",
+      ]),
+    );
+
+    const replayPlanArtifact: ArtifactRef = {
+      id: "skill-replay-plan-artifact",
+      kind: "skill_replay_plan",
+      uri: "codepawl-artifact://run/skills/replay-plan.json",
+      label: "Skill replay dry-run plan",
+    };
+    const plan: SkillReplayPlan = {
+      id: "skill-replay-plan-1",
+      runId: "run-1",
+      taskId: "task-1",
+      skillId: "skill-package-scope",
+      skillTitle: "Keep package fixes scoped",
+      skillStatus: "active",
+      mode: "active_dry_run",
+      dryRunOnly: true,
+      executable: false,
+      readiness: "ready",
+      summary: "Dry-run replay plan is ready for manual review.",
+      preconditions: [
+        {
+          id: "precondition-accepted-rule",
+          kind: "memory_rule_status",
+          summary: "Accepted rule is present.",
+          required: true,
+          status: "passed",
+        },
+      ],
+      steps: [
+        {
+          id: "step-review-scope",
+          title: "Review repository scope",
+          kind: "skill_step",
+          summary: "Keep edits under packages/**.",
+          dryRunOnly: true,
+          status: "planned",
+        },
+      ],
+      risks: ["low"],
+      policyChecks: [],
+      validationExpectations: [{ command: "pnpm test:contracts", allowed: true, expectedEvidenceKinds: ["command"], requiresVerifierPass: true }],
+      budgetEstimate: {
+        estimatedSteps: 2,
+        estimatedCommands: 1,
+        estimatedArtifacts: 1,
+        estimatedModelTokens: 1_000,
+        estimatedWallTimeMs: 120_000,
+        decision: "allow",
+        stopReasons: [],
+      },
+      blockedActions: ["automatic_execution"],
+      requiredApprovals: ["manual approval required before any future skill execution"],
+      expectedArtifacts: [replayPlanArtifact],
+      stopReasons: [],
+      redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
+      createdAt: "2026-06-26T00:00:00.000Z",
+    };
+
+    expect(plan.dryRunOnly).toBe(true);
+    expect(plan.executable).toBe(false);
+    expect(replayPlanArtifact.kind).toBe("skill_replay_plan");
   });
 
   it("builds a memory review snapshot with candidate-only rules and redacted evidence", () => {
