@@ -55,6 +55,13 @@ export const SKILL_IPC_METHODS = [
   "skill.archive",
 ] as const;
 
+export const CODEX_EXECUTION_IPC_METHODS = [
+  "codexExecution.plan",
+  "codexExecution.approve",
+  "codexExecution.executeApproved",
+  "codexExecution.cancel",
+] as const;
+
 export type RunEvent =
   | "run_started"
   | "goal_received"
@@ -83,6 +90,16 @@ export type RunEvent =
   | "codex_contract_created"
   | "codex_contract_write_failed"
   | "codex_manual_next_step"
+  | "codex_execution_planned"
+  | "codex_execution_approval_required"
+  | "codex_execution_approved"
+  | "codex_execution_started"
+  | "codex_execution_output_recorded"
+  | "codex_execution_finished"
+  | "codex_execution_failed"
+  | "codex_execution_cancel_requested"
+  | "codex_execution_blocked"
+  | "codex_execution_result_ready"
   | "codex_result_import_requested"
   | "codex_sandbox_diff_inspected"
   | "codex_manual_log_imported"
@@ -156,6 +173,16 @@ export const RUN_EVENTS = [
   "codex_contract_created",
   "codex_contract_write_failed",
   "codex_manual_next_step",
+  "codex_execution_planned",
+  "codex_execution_approval_required",
+  "codex_execution_approved",
+  "codex_execution_started",
+  "codex_execution_output_recorded",
+  "codex_execution_finished",
+  "codex_execution_failed",
+  "codex_execution_cancel_requested",
+  "codex_execution_blocked",
+  "codex_execution_result_ready",
   "codex_result_import_requested",
   "codex_sandbox_diff_inspected",
   "codex_manual_log_imported",

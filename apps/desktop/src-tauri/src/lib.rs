@@ -73,6 +73,13 @@ pub struct SkillReplayPlanInput {
     run_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexExecutionInput {
+    run_id: String,
+    plan_id: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApprovalDecision {
@@ -279,6 +286,16 @@ fn validate_skill_replay_plan_input(input: &SkillReplayPlanInput) -> Result<(), 
     Ok(())
 }
 
+fn validate_codex_execution_input(input: &CodexExecutionInput) -> Result<(), AppError> {
+    if input.run_id.trim().is_empty() || input.plan_id.trim().is_empty() {
+        return Err(AppError::Validation(
+            "runId and planId are required".into(),
+        ));
+    }
+
+    Ok(())
+}
+
 fn candidate_rule_review_event_type(status: &CandidateRuleReviewStatus) -> &'static str {
     match status {
         CandidateRuleReviewStatus::Accepted => "candidate_rule_accepted",
@@ -308,6 +325,28 @@ fn skill_replay_lifecycle_event_types(blocked: bool) -> Vec<&'static str> {
             "skill_replay_plan_created"
         },
     ]
+}
+
+fn mock_codex_execution_preview(
+    run_id: &str,
+    plan_id: &str,
+    status: &str,
+    blocked_reasons: Vec<&str>,
+    summary: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "runId": run_id,
+        "planId": plan_id,
+        "status": status,
+        "command": "codex exec --json --ephemeral --sandbox workspace-write --ask-for-approval never",
+        "contractArtifact": format!("codepawl-artifact://{run_id}/codex-contract.md"),
+        "artifactRoot": format!("codepawl-artifact://{run_id}/execution/"),
+        "blockedReasons": blocked_reasons,
+        "approvalRequired": status == "approval_required",
+        "resultReady": status == "result_ready",
+        "verificationSeparate": true,
+        "summary": summary,
+    })
 }
 
 fn now_run_id() -> String {
@@ -1550,6 +1589,107 @@ async fn skill_create_replay_plan(
 }
 
 #[tauri::command]
+async fn codex_execution_approve(
+    app: AppHandle,
+    input: CodexExecutionInput,
+) -> Result<serde_json::Value, AppError> {
+    validate_codex_execution_input(&input)?;
+    app.emit(
+        "run_event",
+        run_event(
+            &input.run_id,
+            21_000,
+            "codex_execution_approved",
+            "ui",
+            "codex-execution-panel",
+            "Controlled Codex execution approved by operator",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        run_event(
+            &input.run_id,
+            21_001,
+            "codex_execution_started",
+            "runtime",
+            "codex-execution-panel",
+            "Controlled Codex execution started in managed sandbox",
+        ),
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{}-event-codex-execution-result-ready", input.run_id),
+            run_id: input.run_id.clone(),
+            sequence: 21_002,
+            event_type: "codex_execution_result_ready".into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "runtime", "id": "codex-execution-panel" }),
+            payload: serde_json::json!({
+                "summary": "Controlled Codex execution result ready for import",
+                "planId": input.plan_id,
+                "importReady": true,
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![serde_json::json!({
+                "id": format!("{}-result", input.plan_id),
+                "kind": "codex_execution_result",
+                "uri": format!("codepawl-artifact://{}/execution/codex-execution-result.json", input.run_id),
+                "label": "Controlled Codex execution result",
+            })],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+
+    Ok(mock_codex_execution_preview(
+        &input.run_id,
+        &input.plan_id,
+        "result_ready",
+        vec![],
+        "Result ready for import. Verification remains separate.",
+    ))
+}
+
+#[tauri::command]
+async fn codex_execution_blocked_preview(
+    app: AppHandle,
+    input: CodexExecutionInput,
+) -> Result<serde_json::Value, AppError> {
+    validate_codex_execution_input(&input)?;
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{}-event-codex-execution-blocked", input.run_id),
+            run_id: input.run_id.clone(),
+            sequence: 21_010,
+            event_type: "codex_execution_blocked".into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "policy", "id": "codex-execution-panel" }),
+            payload: serde_json::json!({
+                "summary": "Controlled Codex execution blocked: codex_missing",
+                "planId": input.plan_id,
+                "failureReasons": ["codex_missing"],
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+
+    Ok(mock_codex_execution_preview(
+        &input.run_id,
+        &input.plan_id,
+        "blocked",
+        vec!["codex_missing"],
+        "Blocked before execution because Codex is missing from the controlled runtime.",
+    ))
+}
+
+#[tauri::command]
 async fn settings_get() -> Result<SettingsSnapshot, AppError> {
     Ok(SettingsSnapshot {
         workspace_id: "workspace-local-alpha".into(),
@@ -1619,6 +1759,8 @@ pub fn run() {
             skill_supersede,
             skill_archive,
             skill_create_replay_plan,
+            codex_execution_approve,
+            codex_execution_blocked_preview,
             settings_get,
             settings_update,
             provider_key_save,

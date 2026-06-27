@@ -27,6 +27,22 @@ type TauriEventApi = {
   listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<UnlistenFn>;
 };
 
+export type CodexExecutionPreviewStatus = "approval_required" | "running" | "result_ready" | "blocked";
+
+export type CodexExecutionPreview = {
+  runId: string;
+  planId: string;
+  status: CodexExecutionPreviewStatus;
+  command: string;
+  contractArtifact: string;
+  artifactRoot: string;
+  blockedReasons: string[];
+  approvalRequired: boolean;
+  resultReady: boolean;
+  verificationSeparate: boolean;
+  summary: string;
+};
+
 let mockListeners = new Set<(event: RunEvent) => void>();
 const initialMockState = createMockRunState();
 let mockMemoryReview: MemoryReviewSnapshot = initialMockState.memoryReview;
@@ -57,6 +73,24 @@ function emitMockRunEvent(event: RunEvent) {
   for (const listener of mockListeners) {
     listener(event);
   }
+}
+
+function createMockCodexExecutionPreview(runId: string, overrides: Partial<CodexExecutionPreview> = {}): CodexExecutionPreview {
+  const status = overrides.status ?? "approval_required";
+  return {
+    runId,
+    planId: `codex-execution-plan-${runId}`,
+    status,
+    command: "codex exec --json --ephemeral --sandbox workspace-write --ask-for-approval never",
+    contractArtifact: `codepawl-artifact://${runId}/codex-contract.md`,
+    artifactRoot: `codepawl-artifact://${runId}/execution/`,
+    blockedReasons: [],
+    approvalRequired: status === "approval_required",
+    resultReady: status === "result_ready",
+    verificationSeparate: true,
+    summary: "Controlled Codex execution is disabled until this exact plan is approved.",
+    ...overrides,
+  };
 }
 
 function reviewEventType(status: Exclude<CandidateRuleStatus, "candidate">): RunEvent["type"] {
@@ -275,6 +309,111 @@ function applyMockSkillDecision(input: SkillPromotionDecision): SkillDefinition 
 }
 
 export const codepawl = {
+  createCodexExecutionPreview(runId: string): CodexExecutionPreview {
+    return createMockCodexExecutionPreview(runId);
+  },
+
+  async approveCodexExecution(runId: string, planId: string): Promise<CodexExecutionPreview> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CodexExecutionPreview>("codex_execution_approve", { input: { runId, planId } });
+    }
+
+    queueMicrotask(() => {
+      emitMockRunEvent({
+        id: `${runId}-event-codex-execution-approved`,
+        runId,
+        sequence: mockReviewEventSequence++,
+        type: "codex_execution_approved",
+        timestamp: new Date().toISOString(),
+        actor: { kind: "ui", id: "codex-execution-panel", displayName: "Codex Execution Panel" },
+        payload: {
+          summary: "Controlled Codex execution approved by operator",
+          planId,
+        },
+        redaction: { applied: false, redactedPaths: [] },
+        artifacts: [],
+      });
+      emitMockRunEvent({
+        id: `${runId}-event-codex-execution-started`,
+        runId,
+        sequence: mockReviewEventSequence++,
+        type: "codex_execution_started",
+        timestamp: new Date().toISOString(),
+        actor: { kind: "runtime", id: "codex-execution-panel", displayName: "Codex Execution Panel" },
+        payload: {
+          summary: "Controlled Codex execution started in managed sandbox",
+          planId,
+        },
+        redaction: { applied: false, redactedPaths: [] },
+        artifacts: [],
+      });
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    emitMockRunEvent({
+      id: `${runId}-event-codex-execution-result-ready`,
+      runId,
+      sequence: mockReviewEventSequence++,
+      type: "codex_execution_result_ready",
+      timestamp: new Date().toISOString(),
+      actor: { kind: "runtime", id: "codex-execution-panel", displayName: "Codex Execution Panel" },
+      payload: {
+        summary: "Controlled Codex execution result ready for import",
+        planId,
+        importReady: true,
+      },
+      redaction: { applied: false, redactedPaths: [] },
+      artifacts: [
+        {
+          id: `${planId}-result`,
+          kind: "codex_execution_result",
+          uri: `codepawl-artifact://${runId}/execution/codex-execution-result.json`,
+          label: "Controlled Codex execution result",
+        },
+      ],
+    });
+    return createMockCodexExecutionPreview(runId, {
+      planId,
+      status: "result_ready",
+      approvalRequired: false,
+      resultReady: true,
+      summary: "Result ready for import. Verification remains separate.",
+    });
+  },
+
+  async showBlockedCodexExecution(runId: string, planId: string): Promise<CodexExecutionPreview> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CodexExecutionPreview>("codex_execution_blocked_preview", { input: { runId, planId } });
+    }
+
+    queueMicrotask(() => {
+      emitMockRunEvent({
+        id: `${runId}-event-codex-execution-blocked`,
+        runId,
+        sequence: mockReviewEventSequence++,
+        type: "codex_execution_blocked",
+        timestamp: new Date().toISOString(),
+        actor: { kind: "policy", id: "codex-execution-panel", displayName: "Codex Execution Panel" },
+        payload: {
+          summary: "Controlled Codex execution blocked: codex_missing",
+          planId,
+          failureReasons: ["codex_missing"],
+        },
+        redaction: { applied: false, redactedPaths: [] },
+        artifacts: [],
+      });
+    });
+    return createMockCodexExecutionPreview(runId, {
+      planId,
+      status: "blocked",
+      approvalRequired: false,
+      blockedReasons: ["codex_missing"],
+      summary: "Blocked before execution because Codex is missing from the controlled runtime.",
+    });
+  },
+
   async createRun(input: CreateRunInput): Promise<RunId> {
     const tauri = await loadTauriApi();
     if (tauri) {

@@ -153,6 +153,7 @@ h3 {
 .composer,
 .event-log,
 .memory-panel,
+.execution-panel,
 .skill-panel,
 .run-inspector section {
   border: 1px solid var(--border);
@@ -276,6 +277,7 @@ h3 {
 }
 
 .memory-panel,
+.execution-panel,
 .skill-panel {
   display: grid;
   gap: 14px;
@@ -419,6 +421,57 @@ h3 {
 .candidate-rule-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
+}
+
+.execution-panel-approval_required {
+  border-color: rgba(212, 169, 79, 0.5);
+}
+
+.execution-panel-running {
+  border-color: rgba(143, 182, 232, 0.55);
+}
+
+.execution-panel-result_ready {
+  border-color: rgba(120, 201, 155, 0.55);
+}
+
+.execution-panel-blocked {
+  border-color: rgba(223, 114, 114, 0.62);
+}
+
+.execution-plan-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.execution-plan-grid span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.execution-plan-grid strong {
+  overflow-wrap: anywhere;
+  color: var(--mono-100);
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.execution-panel p {
+  margin-bottom: 0;
+}
+
+.execution-panel small {
+  color: var(--text-muted);
+}
+
+.execution-blocked-reasons {
+  color: var(--accent-alert);
+  font-weight: 800;
 }
 
 .skill-replay-plan {

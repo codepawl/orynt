@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CODEPAWL_ERROR_CODES,
+  CODEX_EXECUTION_IPC_METHODS,
   MEMORY_IPC_METHODS,
   RUN_EVENTS,
   SKILL_IPC_METHODS,
@@ -101,5 +102,36 @@ describe("CodePawl IPC contracts", () => {
 
     expect(isRpcEvent(event)).toBe(true);
     expect(event.payload).toMatchObject({ status: "active" });
+  });
+
+  it("declares controlled Codex execution IPC methods and lifecycle events", () => {
+    expect(CODEX_EXECUTION_IPC_METHODS).toEqual([
+      "codexExecution.plan",
+      "codexExecution.approve",
+      "codexExecution.executeApproved",
+      "codexExecution.cancel",
+    ]);
+    expect(RUN_EVENTS).toEqual(
+      expect.arrayContaining([
+        "codex_execution_planned",
+        "codex_execution_approval_required",
+        "codex_execution_approved",
+        "codex_execution_started",
+        "codex_execution_output_recorded",
+        "codex_execution_finished",
+        "codex_execution_failed",
+        "codex_execution_cancel_requested",
+        "codex_execution_blocked",
+        "codex_execution_result_ready",
+      ]),
+    );
+
+    const event = createRpcEvent("codex_execution_result_ready", {
+      planId: "codex-execution-plan-1",
+      importReady: true,
+    });
+
+    expect(isRpcEvent(event)).toBe(true);
+    expect(event.payload).toMatchObject({ importReady: true });
   });
 });

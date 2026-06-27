@@ -111,6 +111,23 @@ describe("CodePawl shared product contracts", () => {
     );
   });
 
+  it("declares controlled Codex execution events as canonical run events", () => {
+    expect(RUN_EVENT_TYPES).toEqual(
+      expect.arrayContaining([
+        "codex_execution_planned",
+        "codex_execution_approval_required",
+        "codex_execution_approved",
+        "codex_execution_started",
+        "codex_execution_output_recorded",
+        "codex_execution_finished",
+        "codex_execution_failed",
+        "codex_execution_cancel_requested",
+        "codex_execution_blocked",
+        "codex_execution_result_ready",
+      ]),
+    );
+  });
+
   it("declares memory extraction events and artifact refs as canonical contracts", () => {
     expect(RUN_EVENT_TYPES).toEqual(
       expect.arrayContaining([

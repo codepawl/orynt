@@ -9,12 +9,14 @@ import {
   createDefaultRunBudget,
   InMemoryRunStore,
   type CodexContractRequest,
+  type CodexExecutionApproval,
   type CorePolicy,
   type RepositorySandbox,
+  type VerificationPlan,
 } from "@codepawl/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { CodexAdapterFailure, CodexResultImporterFailure, LocalCodexContractAdapter, LocalManualCodexResultImporter } from "./index";
+import { CodexAdapterFailure, CodexExecutionFailure, CodexResultImporterFailure, LocalCodexContractAdapter, LocalManualCodexResultImporter } from "./index";
 
 let tempRoot = "";
 const execFileAsync = promisify(execFile);
@@ -141,6 +143,47 @@ function importRequest({
   };
 }
 
+function createVerificationPlan(request: CodexContractRequest): VerificationPlan {
+  return {
+    id: `verification-plan-${request.runId}`,
+    runId: request.runId,
+    taskId: request.taskId,
+    sandbox: request.sandbox,
+    policyId: request.policy.id,
+    commands: [],
+    budget: request.budget,
+    config: {
+      defaultCommands: [],
+      commandTimeoutMs: 30_000,
+      maxOutputBytes: request.policy.sandbox.budget.maxOutputBytes,
+      requireChangedFiles: true,
+      artifactRoot: request.artifactRoot,
+    },
+    createdAt: "2026-06-26T00:00:00.000Z",
+  };
+}
+
+async function createExecutableCodexFixture(scriptBody: string) {
+  const binDir = path.join(tempRoot, "bin");
+  const fakeCodex = path.join(binDir, "codex");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(fakeCodex, scriptBody);
+  await chmod(fakeCodex, 0o755);
+  return { binDir, fakeCodex };
+}
+
+function approved(planId: string, runId = "run-1"): CodexExecutionApproval {
+  return {
+    id: `approval-${planId}`,
+    runId,
+    planId,
+    approvedBy: "operator",
+    status: "approved",
+    reason: "Operator approved controlled Codex execution.",
+    approvedAt: "2026-06-26T00:00:00.000Z",
+  };
+}
+
 describe("LocalCodexContractAdapter", () => {
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-codex-adapter-test-"));
@@ -252,6 +295,226 @@ describe("LocalCodexContractAdapter", () => {
       "codex_manual_next_step",
       "codex_contract_write_failed",
     ]);
+  });
+
+  it("blocks controlled execution until the matching approval is granted", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+console.log("fake codex should not run without approval");
+`);
+    const adapter = new LocalCodexContractAdapter({ managedArtifactRoot: path.join(tempRoot, "artifacts"), runStore: store, pathEnv: binDir });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+    });
+
+    await expect(adapter.executeApprovedContract(plan, { ...approved(plan.id, run.id), status: "pending" })).rejects.toMatchObject({
+      code: "approval_missing",
+    });
+    expect(store.listEvents(run.id).map((event) => event.type)).toContain("codex_execution_blocked");
+  });
+
+  it("blocks controlled execution when Codex is missing", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const adapter = new LocalCodexContractAdapter({ managedArtifactRoot: path.join(tempRoot, "artifacts"), runStore: store, pathEnv: "" });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+    });
+
+    expect(plan.status).toBe("blocked");
+    expect(plan.failureReasons).toContain("codex_missing");
+    expect(store.listEvents(run.id).map((event) => event.type)).toContain("codex_execution_blocked");
+  });
+
+  it("blocks controlled execution when the sandbox is missing", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+console.log("fake codex should not run without sandbox");
+`);
+    const adapter = new LocalCodexContractAdapter({ managedArtifactRoot: path.join(tempRoot, "artifacts"), runStore: store, pathEnv: binDir });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+    });
+
+    expect(plan.status).toBe("blocked");
+    expect(plan.failureReasons).toContain("sandbox_missing");
+  });
+
+  it("blocks controlled execution when CorePolicy blocks the Codex action", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+console.log("fake codex should not run when policy blocks");
+`);
+    const adapter = new LocalCodexContractAdapter({ managedArtifactRoot: path.join(tempRoot, "artifacts"), runStore: store, pathEnv: binDir });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: {
+        ...request.policy,
+        sandbox: {
+          ...request.policy.sandbox,
+          commandPolicy: {
+            ...request.policy.sandbox.commandPolicy,
+            blockedCommands: [...request.policy.sandbox.commandPolicy.blockedCommands, "codex exec"],
+          },
+        },
+      },
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+    });
+
+    expect(plan.status).toBe("blocked");
+    expect(plan.failureReasons).toContain("policy_blocked");
+  });
+
+  it("blocks controlled execution when the execution estimate exceeds the run budget", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id, budget: { ...createDefaultRunBudget(), maxSteps: 2 } });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+console.log("fake codex should not run over budget");
+`);
+    const adapter = new LocalCodexContractAdapter({ managedArtifactRoot: path.join(tempRoot, "artifacts"), runStore: store, pathEnv: binDir });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+      executionPolicy: { maxExecutionSteps: 3 },
+    });
+
+    expect(plan.status).toBe("blocked");
+    expect(plan.failureReasons).toContain("budget_exceeded");
+  });
+
+  it("executes an approved contract with a fake Codex binary, redacts output, and creates an import request", async () => {
+    const fixture = await createImportFixture();
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({
+      runId: run.id,
+      taskId: run.taskId,
+      repository: {
+        repositoryPath: fixture.repositoryPath,
+        gitRoot: fixture.repositoryPath,
+        currentBranch: "main",
+        currentCommit: fixture.sandbox.currentCommit,
+        isDirty: false,
+        hasRemote: false,
+        remotes: [],
+      },
+      sandbox: { ...fixture.sandbox, runId: run.id, taskId: run.taskId },
+      policy: createConservativeCodingApprenticePolicy(fixture.repositoryPath, fixture.sandboxRoot),
+      artifactRoot: path.join(tempRoot, "artifacts", run.id),
+    });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cwd = process.cwd();
+const stdin = fs.readFileSync(0, "utf8");
+const outputIndex = process.argv.indexOf("--output-last-message");
+if (outputIndex >= 0) {
+  fs.writeFileSync(process.argv[outputIndex + 1], "token=sk-fakelastmessagesecret123\\n");
+}
+fs.writeFileSync(path.join(cwd, "packages", "fake-codex.txt"), "changed by fake codex\\n");
+console.log("token=sk-fakecodexsecret123 contract=" + stdin.includes("Codex Work Contract"));
+console.error("authorization=Bearer-fakecodexstderr12345");
+`);
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+      runStore: store,
+      pathEnv: binDir,
+    });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+      executionPolicy: { timeoutMs: 10_000, maxOutputBytes: 20_000, maxExecutionSteps: 4, requireApproval: true },
+    });
+
+    const result = await adapter.executeApprovedContract(plan, approved(plan.id, run.id));
+    const importRequest = adapter.createResultImportRequest(result);
+
+    expect(result.status).toBe("finished");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdoutSummary).not.toContain("sk-fakecodexsecret123");
+    expect(result.stderrSummary).not.toContain("Bearer fakecodexstderr12345");
+    expect(result.redaction.applied).toBe(true);
+    expect(result.artifacts.map((item) => item.kind)).toEqual(expect.arrayContaining(["codex_execution_log", "codex_execution_result"]));
+    expect(await readFile(path.join(request.sandbox.worktreePath, "packages", "fake-codex.txt"), "utf8")).toContain("changed by fake codex");
+    expect(importRequest).toMatchObject({
+      runId: run.id,
+      taskId: run.taskId,
+      sandbox: request.sandbox,
+      artifactRoot: request.artifactRoot,
+      validationCommands: request.validationCommands,
+    });
+    expect(importRequest.manualLogPath).toBe(result.lastMessagePath ?? result.stdoutPath);
+    expect(store.listEvents(run.id).map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "codex_execution_planned",
+        "codex_execution_approval_required",
+        "codex_execution_approved",
+        "codex_execution_started",
+        "codex_execution_output_recorded",
+        "codex_execution_finished",
+        "codex_execution_result_ready",
+      ]),
+    );
   });
 });
 

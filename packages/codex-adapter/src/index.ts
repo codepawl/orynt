@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { delimiter } from "node:path";
@@ -14,7 +14,14 @@ import type {
   CodexContract,
   CodexContractArtifact,
   CodexContractRequest,
+  CodexExecutionApproval,
+  CodexExecutionFailureReason,
+  CodexExecutionPlan,
+  CodexExecutionPolicy,
+  CodexExecutionRequest,
+  CodexExecutionResult,
   CodexExecutionMode,
+  CodexProcessRef,
   CodexResultBundle,
   CodexResultImporter,
   CodexResultImportRequest,
@@ -28,6 +35,7 @@ import type {
   RunStore,
   VerificationPlanRequest,
 } from "@codepawl/shared";
+import { ConservativePolicyEngine, policyDecisionToSafetySnapshot } from "@codepawl/shared";
 
 type LocalCodexContractAdapterOptions = {
   managedArtifactRoot?: string;
@@ -57,6 +65,18 @@ export class CodexAdapterFailure extends Error {
   }
 }
 
+export class CodexExecutionFailure extends Error {
+  readonly code: CodexExecutionFailureReason;
+  readonly evidence: string[];
+
+  constructor(code: CodexExecutionFailureReason, message: string, evidence: string[]) {
+    super(message);
+    this.name = "CodexExecutionFailure";
+    this.code = code;
+    this.evidence = evidence;
+  }
+}
+
 export class CodexResultImporterFailure extends Error {
   readonly code: ImportFailureReason;
   readonly evidence: string[];
@@ -75,12 +95,24 @@ const CONTRACT_PROVIDER: CodexProvider = {
   kind: "contract_generator",
 };
 
+const LOCAL_CLI_PROVIDER: CodexProvider = {
+  id: "codex-local-cli",
+  name: "Local Codex CLI",
+  kind: "codex_cli",
+};
+
 const SENSITIVE_KEY_PATTERN = /\b(password|secret|api[-_\s]?key|token|otp|authorization|cookie|credential)\b/i;
 const KEY_VALUE_SECRET_PATTERN = /\b(password|secret|api[-_\s]?key|token|otp|authorization|cookie|credential)\b\s*[:=]\s*[^\s,;]+/gi;
 const SECRET_VALUE_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9_]{8,}|Bearer\s+[A-Za-z0-9._-]{8,})\b/g;
 const PRIVATE_KEY_PATTERN = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
 const ENV_SECRET_PATTERN = /\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY|OTP|AUTH|COOKIE|CREDENTIAL)[A-Z0-9_]*\s*=\s*[^\s]+/gi;
 const IMPORT_TEXT_EXTENSIONS = new Set([".md", ".txt", ".log"]);
+const DEFAULT_EXECUTION_POLICY: CodexExecutionPolicy = {
+  requireApproval: true,
+  timeoutMs: 10 * 60 * 1000,
+  maxOutputBytes: 200_000,
+  maxExecutionSteps: 8,
+};
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -159,6 +191,34 @@ function redactImportText(value: string): { value: string; redactionCount: numbe
   return { value: next, redactionCount };
 }
 
+function truncateBytes(value: string, maxBytes: number): string {
+  const bytes = Buffer.byteLength(value, "utf8");
+  if (bytes <= maxBytes) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxBytes))}\n[TRUNCATED ${bytes - maxBytes} bytes]`;
+}
+
+function redactExecutionText(value: string, maxBytes: number): { value: string; redactionCount: number } {
+  const redacted = redactImportText(value);
+  return {
+    value: truncateBytes(redacted.value, maxBytes),
+    redactionCount: redacted.redactionCount,
+  };
+}
+
+function safeExecutionEnv(): NodeJS.ProcessEnv {
+  const names = ["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "CODEX_HOME"];
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && !SENSITIVE_KEY_PATTERN.test(name)) {
+      env[name] = value;
+    }
+  }
+  return env;
+}
+
 function bullet(values: string[]): string {
   return values.length > 0 ? values.map((value) => `- ${value}`).join("\n") : "- None declared.";
 }
@@ -208,6 +268,8 @@ export class LocalCodexContractAdapter implements CodexAdapter {
   private readonly defaultRunId?: string;
   private readonly actor: Actor;
   private readonly pathEnv?: string;
+  private readonly policyEngine = new ConservativePolicyEngine();
+  private readonly processes = new Map<string, ChildProcessWithoutNullStreams>();
 
   constructor(options: LocalCodexContractAdapterOptions = {}) {
     this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "codepawl", "codex-artifacts"));
@@ -233,7 +295,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     }
 
     const status: CodexAdapterStatus = {
-      provider: CONTRACT_PROVIDER,
+      provider: executablePath ? LOCAL_CLI_PROVIDER : CONTRACT_PROVIDER,
       available: Boolean(executablePath),
       executionMode: "contract_only",
       executablePath,
@@ -464,6 +526,536 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       return "Codex App Server mode is reserved for the future provider runtime.";
     }
     return "Codex SDK mode is reserved for a future provider integration.";
+  }
+
+  async planExecution(request: CodexExecutionRequest): Promise<CodexExecutionPlan> {
+    const runId = request.contract.runId;
+    const taskId = request.contract.taskId;
+    const executionPolicy: CodexExecutionPolicy = {
+      ...DEFAULT_EXECUTION_POLICY,
+      ...request.executionPolicy,
+    };
+    const safeArtifactRoot = await this.validateArtifactRoot(request.artifactRoot);
+    await mkdir(safeArtifactRoot, { recursive: true });
+    const stdoutPath = path.join(safeArtifactRoot, "codex-execution-stdout.redacted.log");
+    const stderrPath = path.join(safeArtifactRoot, "codex-execution-stderr.redacted.log");
+    const lastMessagePath = path.join(safeArtifactRoot, "codex-execution-last-message.redacted.md");
+    const resultPath = path.join(safeArtifactRoot, "codex-execution-result.json");
+    const planPath = path.join(safeArtifactRoot, "codex-execution-plan.json");
+    const status = await this.detectCodex(runId);
+    const failureReasons: CodexExecutionFailureReason[] = [];
+    const policyDecision = this.policyEngine.evaluateAction(
+      {
+        id: `codex-execution-${slug(runId)}-${slug(taskId)}`,
+        kind: "command",
+        summary: "Run local Codex CLI against generated CodePawl contract",
+        command: "codex exec",
+      },
+      request.policy,
+    );
+
+    if (!status.available || !status.executablePath) {
+      failureReasons.push("codex_missing");
+    }
+    if (policyDecision.decision === "block") {
+      failureReasons.push("policy_blocked");
+    }
+    if (!request.verifierPlan) {
+      failureReasons.push("verifier_plan_missing");
+    }
+    if (executionPolicy.maxExecutionSteps > request.budget.maxSteps) {
+      failureReasons.push("budget_exceeded");
+    }
+
+    try {
+      await this.validateExecutionSandbox(request.sandbox, request.policy);
+    } catch (error) {
+      const code = error instanceof CodexExecutionFailure ? error.code : "sandbox_missing";
+      failureReasons.push(code);
+    }
+
+    try {
+      await this.validateContractFile(request.contractArtifact.markdownPath, safeArtifactRoot);
+    } catch (error) {
+      const code = error instanceof CodexExecutionFailure ? error.code : "contract_missing";
+      failureReasons.push(code);
+    }
+
+    const uniqueFailures = [...new Set(failureReasons)];
+    const approvalRequired = executionPolicy.requireApproval || policyDecision.decision === "require_approval";
+    const plan: CodexExecutionPlan = {
+      id: `codex-execution-plan-${slug(runId)}-${slug(taskId)}-${shortHash(
+        `${request.contract.id}:${request.sandbox.worktreePath}:${request.contractArtifact.markdownSha256}`,
+      )}`,
+      runId,
+      taskId,
+      status: uniqueFailures.length > 0 ? "blocked" : approvalRequired ? "approval_required" : "approved",
+      provider: status.provider,
+      executablePath: status.executablePath,
+      argv: [
+        "exec",
+        "--json",
+        "--ephemeral",
+        "--sandbox",
+        "workspace-write",
+        "--ask-for-approval",
+        "never",
+        "-C",
+        request.sandbox.worktreePath,
+        "--output-last-message",
+        lastMessagePath,
+        "-",
+      ],
+      cwd: request.sandbox.worktreePath,
+      contractPath: request.contractArtifact.markdownPath,
+      artifactRoot: safeArtifactRoot,
+      stdoutPath,
+      stderrPath,
+      lastMessagePath,
+      resultPath,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      executionPolicy,
+      policyDecision,
+      verifierPlanId: request.verifierPlan?.id,
+      validationCommands: request.contract.metadata.validationCommands,
+      approvalRequired,
+      failureReasons: uniqueFailures,
+      artifacts: [
+        {
+          id: `${request.contract.id}-execution-plan`,
+          kind: "codex_execution_plan",
+          uri: `file://${planPath}`,
+          label: "Codex execution plan",
+        },
+      ],
+      createdAt: new Date().toISOString(),
+    };
+    const planJson = `${JSON.stringify(plan, null, 2)}\n`;
+    await writeFile(planPath, planJson, { encoding: "utf8" });
+    plan.artifacts[0] = {
+      ...plan.artifacts[0],
+      sha256: sha256(planJson),
+    };
+    await writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`, { encoding: "utf8" });
+
+    this.runStore?.appendEvent(runId, {
+      type: "codex_execution_planned",
+      actor: this.actor,
+      payload: {
+        summary: uniqueFailures.length > 0 ? "Controlled Codex execution plan is blocked" : "Controlled Codex execution plan created",
+        planId: plan.id,
+        status: plan.status,
+        failureReasons: uniqueFailures,
+      },
+      artifacts: plan.artifacts,
+      safety: policyDecisionToSafetySnapshot(request.policy, policyDecision),
+    });
+
+    if (uniqueFailures.length > 0) {
+      this.runStore?.appendEvent(runId, {
+        type: "codex_execution_blocked",
+        actor: this.actor,
+        payload: {
+          summary: `Controlled Codex execution blocked: ${uniqueFailures.join(", ")}`,
+          planId: plan.id,
+          failureReasons: uniqueFailures,
+        },
+        safety: policyDecisionToSafetySnapshot(request.policy, policyDecision),
+      });
+      return plan;
+    }
+
+    if (approvalRequired) {
+      this.runStore?.appendEvent(runId, {
+        type: "codex_execution_approval_required",
+        actor: this.actor,
+        payload: {
+          summary: "Controlled Codex execution requires explicit operator approval",
+          planId: plan.id,
+          policyDecision,
+        },
+        artifacts: plan.artifacts,
+        safety: {
+          ...policyDecisionToSafetySnapshot(request.policy, policyDecision),
+          approvalRequired: true,
+        },
+      });
+    }
+
+    return plan;
+  }
+
+  requestExecutionApproval(plan: CodexExecutionPlan): CodexExecutionApproval {
+    const approval: CodexExecutionApproval = {
+      id: `approval-${plan.id}`,
+      runId: plan.runId,
+      planId: plan.id,
+      status: "pending",
+      approvedBy: "",
+      reason: "Controlled Codex execution requires explicit operator approval.",
+    };
+    this.runStore?.appendEvent(plan.runId, {
+      type: "codex_execution_approval_required",
+      actor: this.actor,
+      payload: {
+        summary: approval.reason,
+        approval,
+      },
+    });
+    return approval;
+  }
+
+  async executeApprovedContract(plan: CodexExecutionPlan, approval: CodexExecutionApproval): Promise<CodexExecutionResult> {
+    if (plan.status === "blocked" || plan.failureReasons.length > 0) {
+      return this.failExecution(plan, "policy_blocked", `Controlled Codex execution cannot start: ${plan.failureReasons.join(", ")}`);
+    }
+    if (approval.runId !== plan.runId || approval.planId !== plan.id) {
+      return this.failExecution(plan, "approval_mismatch", "Controlled Codex execution approval does not match the execution plan.");
+    }
+    if (approval.status === "denied") {
+      return this.failExecution(plan, "approval_denied", "Controlled Codex execution was denied by the operator.");
+    }
+    if (approval.status !== "approved") {
+      return this.failExecution(plan, "approval_missing", "Controlled Codex execution requires explicit approved status before spawning Codex.");
+    }
+    if (!plan.executablePath) {
+      return this.failExecution(plan, "codex_missing", "Codex executable path is missing from the execution plan.");
+    }
+
+    await this.validateExecutionSandbox(plan.sandbox, plan.policy);
+    const contractPath = await this.validateContractFile(plan.contractPath, plan.artifactRoot);
+    const contractMarkdown = await readFile(contractPath, "utf8");
+    const processRef: CodexProcessRef = {
+      id: `codex-process-${shortHash(`${plan.id}:${Date.now()}`)}`,
+      runId: plan.runId,
+      planId: plan.id,
+      status: "running",
+      startedAt: new Date().toISOString(),
+    };
+
+    this.runStore?.appendEvent(plan.runId, {
+      type: "codex_execution_approved",
+      actor: this.actor,
+      payload: {
+        summary: "Controlled Codex execution approved",
+        approvalId: approval.id,
+        planId: plan.id,
+        approvedBy: approval.approvedBy,
+      },
+    });
+    this.runStore?.appendEvent(plan.runId, {
+      type: "codex_execution_started",
+      actor: this.actor,
+      payload: {
+        summary: "Controlled Codex execution started",
+        planId: plan.id,
+        processRef,
+        argv: plan.argv.map((arg) => (arg === plan.contractPath ? "<contract>" : arg)),
+      },
+    });
+
+    const startedAt = processRef.startedAt ?? new Date().toISOString();
+    const outcome = await this.spawnCodex(plan, contractMarkdown, processRef);
+    const completedAt = new Date().toISOString();
+    processRef.status = outcome.timedOut ? "failed" : outcome.exitCode === 0 ? "finished" : "failed";
+    processRef.finishedAt = completedAt;
+
+    const stdout = redactExecutionText(outcome.stdout, plan.executionPolicy.maxOutputBytes);
+    const stderr = redactExecutionText(outcome.stderr, plan.executionPolicy.maxOutputBytes);
+    const lastMessage = await this.readOptionalLastMessage(plan.lastMessagePath, plan.executionPolicy.maxOutputBytes);
+    const redactedPaths: string[] = [];
+    let redactionCount = 0;
+    if (stdout.redactionCount > 0) {
+      redactedPaths.push("stdout");
+      redactionCount += stdout.redactionCount;
+    }
+    if (stderr.redactionCount > 0) {
+      redactedPaths.push("stderr");
+      redactionCount += stderr.redactionCount;
+    }
+    if (lastMessage.redactionCount > 0) {
+      redactedPaths.push("lastMessage");
+      redactionCount += lastMessage.redactionCount;
+    }
+    const failureReasons: CodexExecutionFailureReason[] = [];
+    if (outcome.timedOut) {
+      failureReasons.push("execution_timeout");
+    } else if (outcome.exitCode !== 0) {
+      failureReasons.push("execution_failed");
+    }
+
+    await writeFile(plan.stdoutPath, stdout.value, { encoding: "utf8" });
+    await writeFile(plan.stderrPath, stderr.value, { encoding: "utf8" });
+    if (lastMessage.path) {
+      await writeFile(plan.lastMessagePath, lastMessage.value, { encoding: "utf8" });
+    }
+
+    const result: CodexExecutionResult = {
+      id: `codex-execution-result-${slug(plan.runId)}-${slug(plan.taskId)}-${shortHash(`${plan.id}:${completedAt}`)}`,
+      planId: plan.id,
+      runId: plan.runId,
+      taskId: plan.taskId,
+      status: processRef.status,
+      provider: plan.provider,
+      process: processRef,
+      sandbox: plan.sandbox,
+      policy: plan.policy,
+      budget: plan.budget,
+      artifactRoot: plan.artifactRoot,
+      stdoutPath: plan.stdoutPath,
+      stderrPath: plan.stderrPath,
+      lastMessagePath: lastMessage.path,
+      resultPath: plan.resultPath,
+      stdoutSummary: stdout.value,
+      stderrSummary: stderr.value,
+      exitCode: outcome.exitCode,
+      timedOut: outcome.timedOut,
+      failureReasons,
+      redaction: {
+        applied: redactionCount > 0,
+        redactedPaths,
+        redactionCount,
+      },
+      validationCommands: plan.validationCommands,
+      artifacts: [],
+      startedAt,
+      completedAt,
+      summary: "",
+    };
+    result.summary = this.summarizeExecution(result);
+    const resultJson = `${JSON.stringify(result, null, 2)}\n`;
+    const artifacts = [
+      {
+        id: `${result.id}-stdout`,
+        kind: "codex_execution_log" as const,
+        uri: `file://${plan.stdoutPath}`,
+        label: "Redacted Codex stdout",
+        sha256: sha256(stdout.value),
+      },
+      {
+        id: `${result.id}-stderr`,
+        kind: "codex_execution_log" as const,
+        uri: `file://${plan.stderrPath}`,
+        label: "Redacted Codex stderr",
+        sha256: sha256(stderr.value),
+      },
+      {
+        id: `${result.id}-json`,
+        kind: "codex_execution_result" as const,
+        uri: `file://${plan.resultPath}`,
+        label: "Controlled Codex execution result",
+        sha256: sha256(resultJson),
+      },
+    ];
+    result.artifacts = artifacts;
+    await writeFile(plan.resultPath, `${JSON.stringify(result, null, 2)}\n`, { encoding: "utf8" });
+
+    this.runStore?.appendEvent(plan.runId, {
+      type: "codex_execution_output_recorded",
+      actor: this.actor,
+      payload: {
+        summary: "Controlled Codex execution output recorded and redacted",
+        planId: plan.id,
+        redaction: result.redaction,
+      },
+      artifacts,
+    });
+
+    this.runStore?.appendEvent(plan.runId, {
+      type: result.status === "finished" ? "codex_execution_finished" : "codex_execution_failed",
+      actor: this.actor,
+      payload: {
+        summary: result.summary,
+        planId: plan.id,
+        exitCode: result.exitCode,
+        failureReasons: result.failureReasons,
+      },
+      artifacts: result.artifacts,
+    });
+    this.runStore?.appendEvent(plan.runId, {
+      type: "codex_execution_result_ready",
+      actor: this.actor,
+      payload: {
+        summary: "Controlled Codex execution result is ready for import; verification remains a separate stage",
+        resultId: result.id,
+        importReady: true,
+      },
+      artifacts: result.artifacts,
+    });
+
+    return result;
+  }
+
+  async cancelExecution(ref: CodexProcessRef): Promise<CodexExecutionResult | CodexProcessRef> {
+    this.runStore?.appendEvent(ref.runId, {
+      type: "codex_execution_cancel_requested",
+      actor: this.actor,
+      payload: {
+        summary: "Controlled Codex execution cancellation requested",
+        processRef: ref,
+      },
+    });
+    const child = this.processes.get(ref.id);
+    if (child && !child.killed) {
+      child.kill("SIGTERM");
+    }
+    const cancelled = {
+      ...ref,
+      status: "cancelled" as const,
+      finishedAt: new Date().toISOString(),
+    };
+    return cancelled;
+  }
+
+  summarizeExecution(result: CodexExecutionResult): string {
+    if (result.status === "finished") {
+      return `Controlled Codex execution finished with exit code ${result.exitCode}.`;
+    }
+    if (result.timedOut) {
+      return "Controlled Codex execution timed out before producing a trusted result.";
+    }
+    return `Controlled Codex execution failed: ${result.failureReasons.join(", ") || "execution_failed"}.`;
+  }
+
+  createResultImportRequest(result: CodexExecutionResult): CodexResultImportRequest {
+    return {
+      runId: result.runId,
+      taskId: result.taskId,
+      sandbox: result.sandbox,
+      policy: result.policy,
+      budget: result.budget,
+      artifactRoot: result.artifactRoot,
+      manualLogPath: result.lastMessagePath ?? result.stdoutPath,
+      validationCommands: result.validationCommands,
+      userNotes: result.summary,
+    };
+  }
+
+  private async failExecution(plan: CodexExecutionPlan, code: CodexExecutionFailureReason, message: string): Promise<never> {
+    this.runStore?.appendEvent(plan.runId, {
+      type: "codex_execution_blocked",
+      actor: this.actor,
+      payload: {
+        summary: message,
+        planId: plan.id,
+        failureReasons: [code],
+      },
+    });
+    throw new CodexExecutionFailure(code, message, [plan.id]);
+  }
+
+  private async spawnCodex(
+    plan: CodexExecutionPlan,
+    contractMarkdown: string,
+    processRef: CodexProcessRef,
+  ): Promise<{ stdout: string; stderr: string; exitCode: number | null; timedOut: boolean }> {
+    return new Promise((resolve) => {
+      const child = spawn(plan.executablePath ?? "codex", plan.argv, {
+        cwd: plan.cwd,
+        env: safeExecutionEnv(),
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      processRef.pid = child.pid;
+      this.processes.set(processRef.id, child);
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGTERM");
+      }, plan.executionPolicy.timeoutMs);
+
+      child.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on("error", (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        this.processes.delete(processRef.id);
+        resolve({ stdout, stderr: `${stderr}${error.message}`, exitCode: 1, timedOut });
+      });
+      child.on("close", (code) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        this.processes.delete(processRef.id);
+        resolve({ stdout, stderr, exitCode: code, timedOut });
+      });
+      child.stdin.end(contractMarkdown);
+    });
+  }
+
+  private async validateExecutionSandbox(sandbox: CodexExecutionPlan["sandbox"], policy: CodexExecutionPlan["policy"]): Promise<string> {
+    let worktree: string;
+    try {
+      worktree = await realpath(path.resolve(sandbox.worktreePath));
+    } catch {
+      throw new CodexExecutionFailure("sandbox_missing", "Controlled Codex execution requires an existing managed sandbox worktree.", [sandbox.worktreePath]);
+    }
+    const managedRoot = path.resolve(policy.sandbox.repository.worktreePath);
+    const sourceRepository = path.resolve(sandbox.repositoryPath);
+    const gitRoot = path.resolve(sandbox.gitRoot);
+    if (!isInsideOrEqual(worktree, managedRoot)) {
+      throw new CodexExecutionFailure("unmanaged_sandbox", "Controlled Codex execution sandbox is outside the CodePawl-managed worktree root.", [
+        worktree,
+        managedRoot,
+      ]);
+    }
+    if (worktree === sourceRepository || worktree === gitRoot) {
+      throw new CodexExecutionFailure("unmanaged_sandbox", "Controlled Codex execution cannot run in the source repository.", [worktree, sourceRepository, gitRoot]);
+    }
+    return worktree;
+  }
+
+  private async validateContractFile(contractPath: string, artifactRoot: string): Promise<string> {
+    const resolvedRoot = await realpath(path.resolve(artifactRoot));
+    const resolvedFile = path.resolve(contractPath);
+    if (!isInsideOrEqual(resolvedFile, resolvedRoot)) {
+      throw new CodexExecutionFailure("artifact_path_unsafe", "Controlled Codex execution contract must be inside the managed artifact root.", [
+        resolvedFile,
+        resolvedRoot,
+      ]);
+    }
+    try {
+      const existing = await realpath(resolvedFile);
+      if (!isInsideOrEqual(existing, resolvedRoot)) {
+        throw new CodexExecutionFailure("artifact_path_unsafe", "Controlled Codex execution contract resolves outside the managed artifact root.", [
+          existing,
+          resolvedRoot,
+        ]);
+      }
+      return existing;
+    } catch (error) {
+      if (error instanceof CodexExecutionFailure) {
+        throw error;
+      }
+      throw new CodexExecutionFailure("contract_missing", "Controlled Codex execution requires the generated contract artifact.", [resolvedFile]);
+    }
+  }
+
+  private async readOptionalLastMessage(filePath: string, maxBytes: number): Promise<{ path?: string; value: string; redactionCount: number }> {
+    try {
+      const content = await readFile(filePath, "utf8");
+      const redacted = redactExecutionText(content, maxBytes);
+      return {
+        path: filePath,
+        value: redacted.value,
+        redactionCount: redacted.redactionCount,
+      };
+    } catch {
+      return { value: "", redactionCount: 0 };
+    }
   }
 
   private async validateArtifactRoot(artifactRoot: string): Promise<string> {

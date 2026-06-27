@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -30,6 +30,28 @@ async function createFixtureRepository(name = "repo") {
   await git(["add", "README.md", "packages/value.txt", "scripts/pass.mjs"], repositoryPath);
   await git(["commit", "-m", "initial"], repositoryPath);
   return repositoryPath;
+}
+
+async function createFakeCodexBinary() {
+  const binDir = path.join(tempRoot, "bin");
+  const fakeCodex = path.join(binDir, "codex");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    fakeCodex,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cwd = process.cwd();
+const outputIndex = process.argv.indexOf("--output-last-message");
+if (outputIndex >= 0) {
+  fs.writeFileSync(process.argv[outputIndex + 1], "Fake Codex completed token=sk-orchestratorsecret123\\n");
+}
+fs.writeFileSync(path.join(cwd, "packages", "value.txt"), "controlled codex pass\\n");
+console.log("fake codex finished");
+`,
+  );
+  await chmod(fakeCodex, 0o755);
+  return binDir;
 }
 
 function demoRequest(repositoryPath: string, overrides: Partial<Parameters<LocalCodingApprenticeDemoOrchestrator["runDemo"]>[0]> = {}) {
@@ -128,6 +150,47 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     expect(result.memoryExtractionResult.episodes.map((episode) => episode.kind)).toContain("run_episode");
     expect(result.events.map((event) => event.type)).toContain("manual_review_required");
     expect(result.events.at(-1)?.verdict?.status).toBe("fail");
+  });
+
+  it("runs an approved controlled Codex execution through import while keeping verification separate", async () => {
+    const repositoryPath = await createFixtureRepository();
+    const codexPathEnv = await createFakeCodexBinary();
+    const result = await new LocalCodingApprenticeDemoOrchestrator().runDemo(
+      demoRequest(repositoryPath, {
+        enableControlledCodexExecution: true,
+        codexPathEnv,
+        createExecutionApproval: ({ plan, run }) => ({
+          id: `approval-${plan.id}`,
+          runId: run.id,
+          planId: plan.id,
+          status: "approved",
+          approvedBy: "operator",
+          reason: "Test approves controlled Codex execution.",
+          approvedAt: "2026-06-26T00:00:00.000Z",
+        }),
+      }),
+    );
+
+    expect(result.codexExecutionPlan?.status).toBe("approval_required");
+    expect(result.codexExecutionResult?.status).toBe("finished");
+    expect(result.importBundle.status).toBe("imported");
+    expect(result.importBundle.manualLog?.content).not.toContain("sk-orchestratorsecret123");
+    expect(result.verificationResult.status).toBe("pass");
+    expect(result.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "verification_planned",
+        "codex_execution_planned",
+        "codex_execution_approval_required",
+        "codex_execution_approved",
+        "codex_execution_started",
+        "codex_execution_output_recorded",
+        "codex_execution_finished",
+        "codex_execution_result_ready",
+        "codex_result_import_requested",
+        "verifier_input_created",
+        "verification_started",
+      ]),
+    );
   });
 
   it("does not execute blocked verification commands", async () => {

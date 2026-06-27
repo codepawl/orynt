@@ -77,6 +77,27 @@ describe("CodePawl desktop shell", () => {
     expect(await screen.findByText("Approval approved for approval-submit-1")).toBeInTheDocument();
   });
 
+  it("renders controlled Codex execution approval, blocked, status, and result-ready states", async () => {
+    render(<App />);
+
+    const panel = screen.getByRole("region", { name: "Controlled Codex execution" });
+    expect(within(panel).getByText("Approval required")).toBeInTheDocument();
+    expect(within(panel).getByText(/codex exec --json --ephemeral/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Verification remains separate/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /autonomous/i })).not.toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Approve Codex execution" }));
+    expect(await within(panel).findByText("Running")).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: codex_execution_started/)).toBeInTheDocument();
+    expect(await within(panel).findByText("Result ready")).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: codex_execution_result_ready/)).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Show blocked reason" }));
+    expect(await within(panel).findByText("Blocked")).toBeInTheDocument();
+    expect(within(panel).getByText(/codex_missing/)).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: codex_execution_blocked/)).toBeInTheDocument();
+  });
+
   it("renders the memory review panel with latest episode, namespace, provenance, and candidate evidence", async () => {
     render(<App />);
 

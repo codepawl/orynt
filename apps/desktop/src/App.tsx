@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createMockRunState, MVP_BLOCKED_SURFACES } from "@codepawl/shared";
 import type { CandidateRule, CandidateRuleStatus, MemoryReviewSnapshot, RunEvent, SurfaceKind } from "@codepawl/shared";
 import type { SkillDefinition, SkillPromotionDecision, SkillRegistrySnapshot, SkillReplayPlan } from "@codepawl/shared";
+import type { CodexExecutionPreview } from "./codepawlClient";
 
 import { codepawl } from "./codepawlClient";
 import "./styles.css";
@@ -245,6 +246,54 @@ function SkillRegistryPanel({
   );
 }
 
+function CodexExecutionPanel({
+  execution,
+  onApprove,
+  onShowBlocked,
+}: {
+  execution: CodexExecutionPreview;
+  onApprove: () => void;
+  onShowBlocked: () => void;
+}) {
+  const statusLabel = execution.status === "result_ready" ? "Result ready" : titleCaseStatus(execution.status);
+  return (
+    <section className={`execution-panel execution-panel-${execution.status}`} aria-label="Controlled Codex execution">
+      <div className="memory-panel-header">
+        <div>
+          <p className="eyebrow">Controlled execution</p>
+          <h2>Codex execution gate</h2>
+        </div>
+        <strong>{statusLabel}</strong>
+      </div>
+      <div className="execution-plan-grid">
+        <span>
+          plan <strong>{execution.planId}</strong>
+        </span>
+        <span>
+          command <strong>{execution.command}</strong>
+        </span>
+        <span>
+          contract <strong>{execution.contractArtifact}</strong>
+        </span>
+        <span>
+          artifacts <strong>{execution.artifactRoot}</strong>
+        </span>
+      </div>
+      <p>{execution.summary}</p>
+      {execution.blockedReasons.length > 0 ? <p className="execution-blocked-reasons">blocked: {execution.blockedReasons.join(", ")}</p> : null}
+      {execution.verificationSeparate ? <small>Verification remains separate after result import.</small> : null}
+      <div className="candidate-rule-actions">
+        <button type="button" onClick={onApprove} disabled={!execution.approvalRequired} aria-label="Approve Codex execution">
+          Approve Codex execution
+        </button>
+        <button type="button" onClick={onShowBlocked} aria-label="Show blocked reason">
+          Show blocked reason
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function updateSkill(snapshot: SkillRegistrySnapshot, skill: SkillDefinition): SkillRegistrySnapshot {
   const skills = snapshot.skills.map((item) => (item.id === skill.id ? skill : item));
   return {
@@ -268,6 +317,7 @@ function App() {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [approvalStatus, setApprovalStatus] = useState("Waiting for operator approval");
   const [currentRunId, setCurrentRunId] = useState(runState.traceSummary.runId);
+  const [codexExecution, setCodexExecution] = useState<CodexExecutionPreview>(() => codepawl.createCodexExecutionPreview(runState.traceSummary.runId));
   const [memoryReview, setMemoryReview] = useState<MemoryReviewSnapshot>(runState.memoryReview);
   const [skillRegistry, setSkillRegistry] = useState<SkillRegistrySnapshot>(runState.skillRegistry);
   const [replayPlans, setReplayPlans] = useState<Record<string, SkillReplayPlan>>({});
@@ -428,6 +478,22 @@ function App() {
     setReplayPlans((current) => ({ ...current, [skill.id]: plan }));
   };
 
+  const handleApproveCodexExecution = async () => {
+    setCodexExecution((current) => ({
+      ...current,
+      status: "running",
+      approvalRequired: false,
+      summary: "Controlled Codex execution is running inside the managed sandbox.",
+    }));
+    const result = await codepawl.approveCodexExecution(currentRunId, codexExecution.planId);
+    setCodexExecution(result);
+  };
+
+  const handleShowBlockedCodexExecution = async () => {
+    const blocked = await codepawl.showBlockedCodexExecution(currentRunId, codexExecution.planId);
+    setCodexExecution(blocked);
+  };
+
   const latestEvent = events.at(-1);
 
   return (
@@ -509,6 +575,12 @@ function App() {
             </button>
           </div>
         </section>
+
+        <CodexExecutionPanel
+          execution={codexExecution}
+          onApprove={() => void handleApproveCodexExecution()}
+          onShowBlocked={() => void handleShowBlockedCodexExecution()}
+        />
 
         <section className="event-log" aria-label="Mock event stream">
           <h2>Event stream</h2>

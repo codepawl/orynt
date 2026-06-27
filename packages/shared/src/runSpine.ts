@@ -50,6 +50,16 @@ export const RUN_EVENT_TYPES = [
   "codex_contract_created",
   "codex_contract_write_failed",
   "codex_manual_next_step",
+  "codex_execution_planned",
+  "codex_execution_approval_required",
+  "codex_execution_approved",
+  "codex_execution_started",
+  "codex_execution_output_recorded",
+  "codex_execution_finished",
+  "codex_execution_failed",
+  "codex_execution_cancel_requested",
+  "codex_execution_blocked",
+  "codex_execution_result_ready",
   "codex_result_import_requested",
   "codex_sandbox_diff_inspected",
   "codex_manual_log_imported",
@@ -125,6 +135,9 @@ export type ArtifactRef = {
     | "sandbox_plan"
     | "codex_contract"
     | "codex_contract_metadata"
+    | "codex_execution_plan"
+    | "codex_execution_log"
+    | "codex_execution_result"
     | "codex_result_bundle"
     | "verifier_input"
     | "validation_report"

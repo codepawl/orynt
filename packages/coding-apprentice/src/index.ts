@@ -13,6 +13,9 @@ import {
   type Actor,
   type ArtifactRef,
   type CodexContractArtifact,
+  type CodexExecutionApproval,
+  type CodexExecutionPlan,
+  type CodexExecutionResult,
   type CodexResultBundle,
   type CorePolicy,
   type CandidateRule,
@@ -59,6 +62,13 @@ export type CodingApprenticeDemoRequest = {
   manualLogPath?: string;
   validationTranscriptPath?: string;
   userNotes?: string;
+  enableControlledCodexExecution?: boolean;
+  codexPathEnv?: string;
+  createExecutionApproval?: (context: {
+    run: Run;
+    plan: CodexExecutionPlan;
+    artifactRoot: string;
+  }) => CodexExecutionApproval | Promise<CodexExecutionApproval>;
   enableMemoryExtraction?: boolean;
   memoryRoot?: string;
   memoryNamespace?: MemoryNamespace;
@@ -71,6 +81,8 @@ export type CodingApprenticeDemoResult = {
   inspection: RepositoryInspection;
   sandbox: RepositorySandbox;
   contractArtifact: CodexContractArtifact;
+  codexExecutionPlan?: CodexExecutionPlan;
+  codexExecutionResult?: CodexExecutionResult;
   importBundle: CodexResultBundle;
   verifierInput: VerificationPlanRequest;
   verifierInputPath: string;
@@ -213,6 +225,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
     const codexAdapter = new LocalCodexContractAdapter({
       managedArtifactRoot,
       runStore: this.runStore,
+      pathEnv: request.codexPathEnv,
     });
     const contract = codexAdapter.createContract({
       runId: run.id,
@@ -230,6 +243,55 @@ export class LocalCodingApprenticeDemoOrchestrator {
     });
     const contractArtifact = await codexAdapter.writeContractArtifact(contract, runArtifactRoot);
 
+    const verifier = new LocalRepositoryVerifier({
+      managedArtifactRoot,
+      runStore: this.runStore,
+    });
+
+    let verificationPlan: VerificationPlan | undefined;
+    let codexExecutionPlan: CodexExecutionPlan | undefined;
+    let codexExecutionResult: CodexExecutionResult | undefined;
+    let manualLogPath = request.manualLogPath;
+    let validationTranscriptPath = request.validationTranscriptPath;
+
+    if (request.enableControlledCodexExecution) {
+      verificationPlan = verifier.createPlan({
+        runId: run.id,
+        taskId: run.taskId,
+        sandbox,
+        policy,
+        budget,
+        commands: request.validationCommands ?? [],
+        artifactRoot: runArtifactRoot,
+        config: {
+          defaultCommands: [],
+          requireChangedFiles: true,
+          artifactRoot: runArtifactRoot,
+        },
+      });
+      codexExecutionPlan = await codexAdapter.planExecution({
+        contract,
+        contractArtifact,
+        sandbox,
+        policy,
+        budget,
+        artifactRoot: runArtifactRoot,
+        verifierPlan: verificationPlan,
+      });
+      const approval = await request.createExecutionApproval?.({
+        run,
+        plan: codexExecutionPlan,
+        artifactRoot: runArtifactRoot,
+      });
+      if (!approval) {
+        throw new Error("Controlled Codex execution requires explicit approval.");
+      }
+      codexExecutionResult = await codexAdapter.executeApprovedContract(codexExecutionPlan, approval);
+      const executionImportRequest = codexAdapter.createResultImportRequest(codexExecutionResult);
+      manualLogPath = executionImportRequest.manualLogPath;
+      validationTranscriptPath = executionImportRequest.validationTranscriptPath;
+    }
+
     const manualChangeResult = await request.applyManualChange?.({
       run,
       inspection,
@@ -237,8 +299,8 @@ export class LocalCodingApprenticeDemoOrchestrator {
       artifactRoot: runArtifactRoot,
       policy,
     });
-    const manualLogPath = manualChangeResult?.manualLogPath ?? request.manualLogPath;
-    const validationTranscriptPath = manualChangeResult?.validationTranscriptPath ?? request.validationTranscriptPath;
+    manualLogPath = manualChangeResult?.manualLogPath ?? manualLogPath;
+    validationTranscriptPath = manualChangeResult?.validationTranscriptPath ?? validationTranscriptPath;
 
     const importer = new LocalManualCodexResultImporter({
       managedArtifactRoot,
@@ -267,11 +329,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
     const verifierInputJson = `${JSON.stringify(verifierInput, null, 2)}\n`;
     await writeFile(verifierInputPath, verifierInputJson, { encoding: "utf8" });
 
-    const verifier = new LocalRepositoryVerifier({
-      managedArtifactRoot,
-      runStore: this.runStore,
-    });
-    const verificationPlan = verifier.createPlan(verifierInput);
+    verificationPlan ??= verifier.createPlan(verifierInput);
     const verificationResult = await verifier.runVerification(verificationPlan, policy);
     const memoryRoot = path.resolve(request.memoryRoot ?? path.join(runArtifactRoot, "memory"));
     const memoryStore = this.memoryStore ?? new LocalJsonMemoryStore({ memoryRoot });
@@ -340,6 +398,8 @@ export class LocalCodingApprenticeDemoOrchestrator {
       inspection,
       sandbox,
       contractArtifact,
+      codexExecutionPlan,
+      codexExecutionResult,
       importBundle,
       verifierInput,
       verifierInputPath,
