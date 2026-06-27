@@ -152,6 +152,7 @@ h3 {
 .approval-card,
 .composer,
 .event-log,
+.memory-panel,
 .run-inspector section {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -271,6 +272,127 @@ h3 {
 
 .event-log h2 {
   font-size: 18px;
+}
+
+.memory-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.memory-panel-header,
+.candidate-rule-topline,
+.rule-evidence {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rule-status {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.memory-panel-header h2,
+.candidate-rule h3 {
+  font-size: 18px;
+  margin-bottom: 0;
+}
+
+.memory-panel-header > strong {
+  color: var(--accent-warning);
+  font-size: 13px;
+}
+
+.memory-episode {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(241, 241, 241, 0.035);
+  padding: 14px;
+}
+
+.memory-episode span,
+.candidate-rule-topline span,
+.rule-evidence span,
+.rule-status span,
+.memory-episode small,
+.candidate-rule small {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.rule-status strong {
+  color: var(--accent-warning);
+  font-size: 13px;
+}
+
+.memory-episode p,
+.candidate-rule p {
+  margin-bottom: 0;
+}
+
+.candidate-rule-list {
+  display: grid;
+  gap: 12px;
+}
+
+.candidate-rule {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(241, 241, 241, 0.03);
+  padding: 14px;
+}
+
+.candidate-rule-accepted {
+  border-color: rgba(120, 201, 155, 0.55);
+}
+
+.candidate-rule-rejected {
+  border-color: rgba(223, 114, 114, 0.55);
+}
+
+.candidate-rule-superseded {
+  border-color: rgba(143, 182, 232, 0.55);
+}
+
+.rule-evidence {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(28, 28, 28, 0.62);
+  padding: 10px 12px;
+}
+
+.rule-evidence strong {
+  color: var(--accent-info);
+  font-size: 13px;
+}
+
+.candidate-rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.candidate-rule-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.candidate-rule-actions button:not(:first-child) {
+  border-color: var(--border);
+  background: rgba(241, 241, 241, 0.03);
+  color: var(--mono-100);
+}
+
+.candidate-rule-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .run-inspector {

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   CODEPAWL_ERROR_CODES,
+  MEMORY_IPC_METHODS,
+  RUN_EVENTS,
   createRpcEvent,
   isRpcEvent,
   isRpcRequest,
@@ -40,5 +42,28 @@ describe("CodePawl IPC contracts", () => {
     expect(CODEPAWL_ERROR_CODES).toContain("SIDECAR_PROTOCOL_MISMATCH");
     expect(CODEPAWL_ERROR_CODES).toContain("REPOSITORY_CONTEXT_FAILED");
     expect(CODEPAWL_ERROR_CODES).not.toContain("SHELL_EXEC_FAILED");
+  });
+
+  it("declares memory review IPC methods and candidate rule review events", () => {
+    expect(MEMORY_IPC_METHODS).toEqual([
+      "memory.listEpisodes",
+      "memory.listCandidateRules",
+      "memory.updateCandidateRuleStatus",
+    ]);
+    expect(RUN_EVENTS).toEqual(
+      expect.arrayContaining([
+        "candidate_rule_accepted",
+        "candidate_rule_rejected",
+        "candidate_rule_superseded",
+      ]),
+    );
+
+    const event = createRpcEvent("candidate_rule_accepted", {
+      candidateRuleId: "candidate-rule-1",
+      status: "accepted",
+    });
+
+    expect(isRpcEvent(event)).toBe(true);
+    expect(event.payload).toMatchObject({ status: "accepted" });
   });
 });

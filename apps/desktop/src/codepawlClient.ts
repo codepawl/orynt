@@ -1,5 +1,15 @@
-import { createMockRunSequence } from "@codepawl/shared";
-import type { ApprovalDecisionInput, CreateRunInput, RunEvent, RunId } from "@codepawl/shared";
+import { createMockRunSequence, createMockRunState } from "@codepawl/shared";
+import type {
+  ApprovalDecisionInput,
+  CandidateRule,
+  CandidateRuleStatus,
+  CandidateRuleStatusUpdateInput,
+  CreateRunInput,
+  EpisodicMemoryItem,
+  MemoryReviewSnapshot,
+  RunEvent,
+  RunId,
+} from "@codepawl/shared";
 
 type UnlistenFn = () => void;
 
@@ -12,6 +22,8 @@ type TauriEventApi = {
 };
 
 let mockListeners = new Set<(event: RunEvent) => void>();
+let mockMemoryReview: MemoryReviewSnapshot = createMockRunState().memoryReview;
+let mockReviewEventSequence = 20_000;
 
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -37,6 +49,44 @@ function emitMockRunEvent(event: RunEvent) {
   for (const listener of mockListeners) {
     listener(event);
   }
+}
+
+function reviewEventType(status: Exclude<CandidateRuleStatus, "candidate">): RunEvent["type"] {
+  if (status === "accepted") {
+    return "candidate_rule_accepted";
+  }
+  if (status === "rejected") {
+    return "candidate_rule_rejected";
+  }
+  return "candidate_rule_superseded";
+}
+
+function updateStatusCounts(candidateRules: CandidateRule[]): MemoryReviewSnapshot["summary"]["candidateRuleStatusCounts"] {
+  return {
+    candidate: candidateRules.filter((rule) => rule.status === "candidate").length,
+    accepted: candidateRules.filter((rule) => rule.status === "accepted").length,
+    rejected: candidateRules.filter((rule) => rule.status === "rejected").length,
+    superseded: candidateRules.filter((rule) => rule.status === "superseded").length,
+  };
+}
+
+function emitCandidateRuleReviewEvent(rule: CandidateRule, runId?: string) {
+  const eventRunId = runId ?? rule.provenance.runId;
+  emitMockRunEvent({
+    id: `${eventRunId}-event-${rule.status}-${rule.id}`,
+    runId: eventRunId,
+    sequence: mockReviewEventSequence++,
+    type: reviewEventType(rule.status as Exclude<CandidateRuleStatus, "candidate">),
+    timestamp: new Date().toISOString(),
+    actor: { kind: "ui", id: "memory-review-panel", displayName: "Memory Review Panel" },
+    payload: {
+      summary: `Candidate rule ${rule.status}: ${rule.title}`,
+      candidateRuleId: rule.id,
+      status: rule.status,
+    },
+    redaction: { applied: false, redactedPaths: [] },
+    artifacts: rule.provenance.artifactRefs.filter((artifact) => artifact.kind === "candidate_rule"),
+  });
 }
 
 export const codepawl = {
@@ -98,6 +148,53 @@ export const codepawl = {
     });
   },
 
+  async listMemoryEpisodes(): Promise<EpisodicMemoryItem[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<EpisodicMemoryItem[]>("memory_list_episodes");
+    }
+
+    return structuredClone(mockMemoryReview.episodes);
+  },
+
+  async listCandidateRules(): Promise<CandidateRule[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CandidateRule[]>("memory_list_candidate_rules");
+    }
+
+    return structuredClone(mockMemoryReview.candidateRules);
+  },
+
+  async updateCandidateRuleStatus(input: CandidateRuleStatusUpdateInput): Promise<CandidateRule> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CandidateRule>("memory_update_candidate_rule_status", { input });
+    }
+
+    const rule = mockMemoryReview.candidateRules.find((item) => item.id === input.id);
+    if (!rule) {
+      throw new Error(`candidate rule not found: ${input.id}`);
+    }
+    const updated: CandidateRule = {
+      ...rule,
+      status: input.status,
+      updatedAt: new Date().toISOString(),
+      supersededBy: input.status === "superseded" ? (input.supersededBy ?? "candidate-rule-replacement-demo") : rule.supersededBy,
+    };
+    const candidateRules = mockMemoryReview.candidateRules.map((item) => (item.id === updated.id ? updated : item));
+    mockMemoryReview = {
+      ...mockMemoryReview,
+      candidateRules,
+      summary: {
+        ...mockMemoryReview.summary,
+        candidateRuleStatusCounts: updateStatusCounts(candidateRules),
+      },
+    };
+    queueMicrotask(() => emitCandidateRuleReviewEvent(updated, input.runId));
+    return structuredClone(updated);
+  },
+
   async onRunEvent(handler: (event: RunEvent) => void): Promise<UnlistenFn> {
     const tauri = await loadTauriApi();
     if (tauri) {
@@ -112,5 +209,7 @@ export const codepawl = {
 
   resetMockListenersForTest() {
     mockListeners = new Set();
+    mockMemoryReview = createMockRunState().memoryReview;
+    mockReviewEventSequence = 20_000;
   },
 };

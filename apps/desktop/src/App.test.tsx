@@ -1,9 +1,17 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 
 describe("CodePawl desktop shell", () => {
+  beforeEach(() => {
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+  });
+
   it("renders the repository run cockpit with core control primitives", () => {
     render(<App />);
 
@@ -67,5 +75,49 @@ describe("CodePawl desktop shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve step" }));
 
     expect(await screen.findByText("Approval approved for approval-submit-1")).toBeInTheDocument();
+  });
+
+  it("renders the memory review panel with latest episode, namespace, provenance, and candidate evidence", async () => {
+    render(<App />);
+
+    const panel = await screen.findByRole("region", { name: "Memory review" });
+    expect(within(panel).getByRole("heading", { name: "Memory review" })).toBeInTheDocument();
+    expect(within(panel).getByText(/latest successful run episode/i)).toBeInTheDocument();
+    expect(within(panel).getByText("coding-apprentice / workspace-local-alpha")).toBeInTheDocument();
+    expect(within(panel).getAllByText(/run-1/).length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText("Candidate").length).toBeGreaterThan(0);
+    expect(within(panel).getByText("allowed_scope_pattern")).toBeInTheDocument();
+    expect(within(panel).getByText("86% confidence")).toBeInTheDocument();
+  });
+
+  it("accepts, rejects, and supersedes candidate rules with visible timeline events", async () => {
+    const firstRender = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Accept Keep package fixes scoped" }));
+    expect(await screen.findByText("Accepted")).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: candidate_rule_accepted/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Promote Keep package fixes scoped" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject Avoid secret-bearing logs" }));
+    expect(await screen.findByText("Rejected")).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: candidate_rule_rejected/)).toBeInTheDocument();
+
+    firstRender.unmount();
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Mark superseded Keep package fixes scoped" }));
+    expect(await screen.findByText("Superseded")).toBeInTheDocument();
+    expect(await screen.findByText(/run_event: candidate_rule_superseded/)).toBeInTheDocument();
+  });
+
+  it("copies only redacted rule text and never renders raw sensitive values", async () => {
+    render(<App />);
+
+    expect(screen.queryByText(/sk-memorysecret123/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/\[REDACTED\]/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy Avoid secret-bearing logs" }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("[REDACTED]"));
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith(expect.stringContaining("sk-memorysecret123"));
   });
 });

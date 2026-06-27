@@ -8,7 +8,8 @@ export * from "./memoryContracts";
 
 import { createMockRunSequence } from "./runSpine";
 import type { PermissionMode } from "./corePolicy";
-import type { RunEvent, RunSummary } from "./runSpine";
+import type { ArtifactRef, RunEvent, RunSummary } from "./runSpine";
+import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryProvenance, MemoryReviewSnapshot } from "./memoryContracts";
 
 export type SurfaceKind = "repository" | "browser" | "desktop" | "files" | "terminal";
 
@@ -89,6 +90,7 @@ export type MockRunState = {
   traceSummary: TraceSummary;
   runSummary: RunSummary;
   events: RunEvent[];
+  memoryReview: MemoryReviewSnapshot;
   skillDraft: SkillDraft;
 };
 
@@ -100,8 +102,119 @@ export function isExecutableMvpSurface(surface: SurfaceKind): boolean {
   return surface === "repository";
 }
 
+function createMockMemoryReview(runId: string, taskId: string): MemoryReviewSnapshot {
+  const namespace: MemoryNamespace = {
+    capabilityId: "coding-apprentice",
+    workspaceId: "workspace-local-alpha",
+    repositoryPath: "/repos/codepawl",
+  };
+  const memoryArtifact: ArtifactRef = {
+    id: "mock-memory-episode",
+    kind: "memory_episode",
+    uri: `codepawl-artifact://${runId}/memory/memory-store.json#episode`,
+    label: "Episodic memory item",
+    sha256: "mock-memory-episode-sha256",
+  };
+  const ruleArtifact: ArtifactRef = {
+    id: "mock-candidate-rule",
+    kind: "candidate_rule",
+    uri: `codepawl-artifact://${runId}/memory/memory-store.json#candidate-rule`,
+    label: "Candidate project rule",
+    sha256: "mock-candidate-rule-sha256",
+  };
+  const provenance: MemoryProvenance = {
+    runId,
+    taskId,
+    eventIds: [`${runId}-event-38`, `${runId}-event-43`],
+    artifactRefs: [memoryArtifact, ruleArtifact],
+    sources: ["verification_result", "import_summary", "run_event"],
+    sourceTimestamps: ["2026-06-26T00:00:00.000Z"],
+    verificationResultId: "mock-verification-result",
+    importBundleId: "mock-codex-result-import",
+  };
+  const latestEpisode: EpisodicMemoryItem = {
+    id: "episode-latest-successful-run",
+    namespace,
+    kind: "run_episode",
+    summary: "Latest successful run episode: verifier passed after a package-only imported correction.",
+    content: {
+      status: "pass",
+      changedFiles: ["packages/shared/src/index.ts"],
+      redactedNote: "[REDACTED]",
+    },
+    provenance,
+    retention: { ttlDays: 30, archiveAfterDays: 90 },
+    redaction: { applied: true, redactedPaths: ["content.redactedNote"], redactionCount: 1 },
+    confidence: 1,
+    createdAt: "2026-06-26T00:00:00.000Z",
+  };
+  const candidateRules: CandidateRule[] = [
+    {
+      id: "candidate-rule-package-scope",
+      namespace,
+      status: "candidate",
+      title: "Keep package fixes scoped",
+      rule: "Keep source-only fixes under packages/** unless the contract says otherwise.",
+      scope: { repositoryPath: "/repos/codepawl", allowedPaths: ["packages/**"], protectedPaths: [".env", "pnpm-lock.yaml"] },
+      evidence: [
+        {
+          kind: "allowed_scope_pattern",
+          summary: "Verifier passed after changed files stayed inside packages/**.",
+          eventIds: [`${runId}-event-38`],
+          artifactRefs: [memoryArtifact],
+          confidence: 0.86,
+        },
+      ],
+      provenance,
+      redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
+      createdAt: "2026-06-26T00:00:00.000Z",
+      updatedAt: "2026-06-26T00:00:00.000Z",
+    },
+    {
+      id: "candidate-rule-redacted-log",
+      namespace,
+      status: "candidate",
+      title: "Avoid secret-bearing logs",
+      rule: "Do not persist imported manual logs containing [REDACTED]; keep only redacted summaries and artifact references.",
+      scope: { repositoryPath: "/repos/codepawl", allowedPaths: ["apps/desktop/**", "packages/**"], protectedPaths: [".env", "*.pem"] },
+      evidence: [
+        {
+          kind: "command_observation",
+          summary: "Manual import evidence contained [REDACTED] and was redacted before display.",
+          eventIds: [`${runId}-event-18`],
+          artifactRefs: [ruleArtifact],
+          confidence: 0.78,
+        },
+      ],
+      provenance,
+      redaction: { applied: true, redactedPaths: ["rule", "evidence[0].summary"], redactionCount: 2 },
+      createdAt: "2026-06-26T00:00:00.000Z",
+      updatedAt: "2026-06-26T00:00:00.000Z",
+    },
+  ];
+
+  return {
+    namespace,
+    latestEpisode,
+    episodes: [latestEpisode],
+    candidateRules,
+    summary: {
+      episodeCount: 1,
+      candidateRuleCount: candidateRules.length,
+      candidateRuleStatusCounts: {
+        candidate: candidateRules.length,
+        accepted: 0,
+        rejected: 0,
+        superseded: 0,
+      },
+      namespaceCount: 1,
+    },
+  };
+}
+
 export function createMockRunState(): MockRunState {
   const mockRun = createMockRunSequence();
+  const memoryReview = createMockMemoryReview(mockRun.run.id, mockRun.run.taskId);
   const activeTask: AgentTask = {
     id: mockRun.run.taskId,
     title: mockRun.run.goal,
@@ -185,6 +298,7 @@ export function createMockRunState(): MockRunState {
     },
     runSummary: mockRun.summary,
     events: mockRun.events,
+    memoryReview,
     skillDraft: {
       id: "candidate-memory-failing-test",
       name: "Candidate repository rule from verified correction",

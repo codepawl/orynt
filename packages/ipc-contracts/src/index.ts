@@ -39,6 +39,12 @@ export type RpcEvent<TPayload = unknown> = {
   payload: TPayload;
 };
 
+export const MEMORY_IPC_METHODS = [
+  "memory.listEpisodes",
+  "memory.listCandidateRules",
+  "memory.updateCandidateRuleStatus",
+] as const;
+
 export type RunEvent =
   | "run_started"
   | "goal_received"
@@ -92,11 +98,77 @@ export type RunEvent =
   | "memory_extraction_started"
   | "memory_episode_written"
   | "candidate_rule_proposed"
+  | "candidate_rule_accepted"
+  | "candidate_rule_rejected"
+  | "candidate_rule_superseded"
   | "memory_redaction_applied"
   | "memory_extraction_finished"
   | "memory_extraction_failed"
   | "budget_recorded"
   | "run_finished";
+
+export const RUN_EVENTS = [
+  "run_started",
+  "goal_received",
+  "budget_initialized",
+  "budget_checked",
+  "budget_warning",
+  "budget_stop_requested",
+  "budget_exceeded",
+  "workspace_initialized",
+  "workspace_item_added",
+  "context_packet_created",
+  "context_initialized",
+  "policy_checked",
+  "sandbox_inspected",
+  "sandbox_create_requested",
+  "sandbox_create_allowed",
+  "sandbox_planned",
+  "sandbox_ready_mock",
+  "sandbox_created",
+  "sandbox_create_failed",
+  "sandbox_cleanup_planned",
+  "sandbox_cleanup_blocked",
+  "codex_detected",
+  "codex_missing",
+  "codex_contract_requested",
+  "codex_contract_created",
+  "codex_contract_write_failed",
+  "codex_manual_next_step",
+  "codex_result_import_requested",
+  "codex_sandbox_diff_inspected",
+  "codex_manual_log_imported",
+  "codex_result_redacted",
+  "codex_result_imported",
+  "codex_result_import_failed",
+  "manual_review_required",
+  "verifier_input_created",
+  "verification_planned",
+  "verification_policy_checked",
+  "verification_started",
+  "verification_command_started",
+  "verification_command_finished",
+  "verification_diff_checked",
+  "action_proposed",
+  "approval_required",
+  "action_blocked",
+  "action_blocked_or_approved",
+  "policy_violation",
+  "verification_recorded",
+  "verification_failed",
+  "verification_passed",
+  "memory_extraction_started",
+  "memory_episode_written",
+  "candidate_rule_proposed",
+  "candidate_rule_accepted",
+  "candidate_rule_rejected",
+  "candidate_rule_superseded",
+  "memory_redaction_applied",
+  "memory_extraction_finished",
+  "memory_extraction_failed",
+  "budget_recorded",
+  "run_finished",
+] as const satisfies readonly RunEvent[];
 
 export type CreateRunInput = {
   goal: string;

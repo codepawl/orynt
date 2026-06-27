@@ -18,7 +18,9 @@ import {
   validateRunEvent,
   type ArtifactRef,
   type CandidateRule,
+  type CandidateRuleStatusUpdateInput,
   type EpisodicMemoryItem,
+  type MemoryReviewSnapshot,
 } from "./index";
 
 describe("CodePawl shared product contracts", () => {
@@ -113,6 +115,9 @@ describe("CodePawl shared product contracts", () => {
         "memory_extraction_started",
         "memory_episode_written",
         "candidate_rule_proposed",
+        "candidate_rule_accepted",
+        "candidate_rule_rejected",
+        "candidate_rule_superseded",
         "memory_redaction_applied",
         "memory_extraction_finished",
         "memory_extraction_failed",
@@ -160,6 +165,32 @@ describe("CodePawl shared product contracts", () => {
     expect(episode.kind).toBe("run_episode");
     expect(rule.status).toBe("candidate");
     expect(memoryArtifact.kind).toBe("memory_episode");
+  });
+
+  it("builds a memory review snapshot with candidate-only rules and redacted evidence", () => {
+    const state = createMockRunState();
+    const snapshot: MemoryReviewSnapshot = state.memoryReview;
+    const updateInput: CandidateRuleStatusUpdateInput = {
+      id: snapshot.candidateRules[0].id,
+      status: "accepted",
+      runId: snapshot.latestEpisode?.provenance.runId,
+    };
+
+    expect(snapshot.namespace).toMatchObject({
+      capabilityId: "coding-apprentice",
+      workspaceId: "workspace-local-alpha",
+    });
+    expect(snapshot.latestEpisode?.summary).toContain("successful run episode");
+    expect(snapshot.latestEpisode?.provenance.runId).toBe(state.traceSummary.runId);
+    expect(snapshot.candidateRules).toHaveLength(2);
+    expect(snapshot.candidateRules.map((rule) => rule.status)).toEqual(["candidate", "candidate"]);
+    expect(snapshot.candidateRules[0].evidence[0]).toMatchObject({
+      kind: "allowed_scope_pattern",
+      confidence: 0.86,
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("sk-memorysecret123");
+    expect(JSON.stringify(snapshot)).toContain("[REDACTED]");
+    expect(updateInput.status).toBe("accepted");
   });
 });
 

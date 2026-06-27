@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createMockRunState, MVP_BLOCKED_SURFACES } from "@codepawl/shared";
-import type { RunEvent, SurfaceKind } from "@codepawl/shared";
+import type { CandidateRule, CandidateRuleStatus, MemoryReviewSnapshot, RunEvent, SurfaceKind } from "@codepawl/shared";
 
 import { codepawl } from "./codepawlClient";
 import "./styles.css";
@@ -24,11 +24,113 @@ function describeRunEvent(event: RunEvent): string {
   return typeof summary === "string" ? summary : event.type.replaceAll("_", " ");
 }
 
+function titleCaseStatus(status: CandidateRuleStatus): string {
+  return status[0].toUpperCase() + status.slice(1);
+}
+
+function confidenceLabel(value: number): string {
+  return `${Math.round(value * 100)}% confidence`;
+}
+
+function updateMemoryRule(snapshot: MemoryReviewSnapshot, rule: CandidateRule): MemoryReviewSnapshot {
+  const candidateRules = snapshot.candidateRules.map((item) => (item.id === rule.id ? rule : item));
+  return {
+    ...snapshot,
+    candidateRules,
+    summary: {
+      ...snapshot.summary,
+      candidateRuleStatusCounts: {
+        candidate: candidateRules.filter((item) => item.status === "candidate").length,
+        accepted: candidateRules.filter((item) => item.status === "accepted").length,
+        rejected: candidateRules.filter((item) => item.status === "rejected").length,
+        superseded: candidateRules.filter((item) => item.status === "superseded").length,
+      },
+    },
+  };
+}
+
+function MemoryPanel({
+  memoryReview,
+  onReviewRule,
+  onCopyRule,
+}: {
+  memoryReview: MemoryReviewSnapshot;
+  onReviewRule: (rule: CandidateRule, status: Exclude<CandidateRuleStatus, "candidate">) => void;
+  onCopyRule: (rule: CandidateRule) => void;
+}) {
+  const latestEpisode = memoryReview.latestEpisode ?? memoryReview.episodes[0];
+  const candidateCount = memoryReview.summary.candidateRuleStatusCounts.candidate;
+
+  return (
+    <section className="memory-panel" aria-label="Memory review">
+      <div className="memory-panel-header">
+        <div>
+          <p className="eyebrow">Local memory</p>
+          <h2>Memory review</h2>
+        </div>
+        <strong>{candidateCount > 0 ? "Candidate" : "Reviewed"}</strong>
+      </div>
+
+      <div className="memory-episode">
+        <span>{memoryReview.namespace.capabilityId} / {memoryReview.namespace.workspaceId}</span>
+        <p>{latestEpisode?.summary ?? "No episode memory recorded yet."}</p>
+        {latestEpisode ? (
+          <small>
+            provenance: {latestEpisode.provenance.runId} / {latestEpisode.provenance.taskId}
+          </small>
+        ) : null}
+      </div>
+
+      <div className="candidate-rule-list">
+        {memoryReview.candidateRules.map((rule) => {
+          const evidence = rule.evidence[0];
+          const canReview = rule.status === "candidate";
+          return (
+            <article className={`candidate-rule candidate-rule-${rule.status}`} key={rule.id}>
+              <div className="candidate-rule-topline">
+                <h3>{rule.title}</h3>
+                <div className="rule-status">
+                  <span>Status</span>
+                  <strong>{titleCaseStatus(rule.status)}</strong>
+                </div>
+              </div>
+              <p>{rule.rule}</p>
+              {evidence ? (
+                <div className="rule-evidence">
+                  <span>{evidence.kind}</span>
+                  <strong>{confidenceLabel(evidence.confidence)}</strong>
+                </div>
+              ) : null}
+              <small>provenance: {rule.provenance.runId}</small>
+              {rule.redaction.applied ? <small>redaction applied: {rule.redaction.redactedPaths.join(", ")}</small> : null}
+              <div className="candidate-rule-actions">
+                <button type="button" onClick={() => onReviewRule(rule, "accepted")} disabled={!canReview} aria-label={`Accept ${rule.title}`}>
+                  Accept
+                </button>
+                <button type="button" onClick={() => onReviewRule(rule, "rejected")} disabled={!canReview} aria-label={`Reject ${rule.title}`}>
+                  Reject
+                </button>
+                <button type="button" onClick={() => onReviewRule(rule, "superseded")} disabled={!canReview} aria-label={`Mark superseded ${rule.title}`}>
+                  Supersede
+                </button>
+                <button type="button" onClick={() => onCopyRule(rule)} aria-label={`Copy ${rule.title}`}>
+                  Copy
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const runState = useMemo(() => createMockRunState(), []);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [approvalStatus, setApprovalStatus] = useState("Waiting for operator approval");
   const [currentRunId, setCurrentRunId] = useState(runState.traceSummary.runId);
+  const [memoryReview, setMemoryReview] = useState<MemoryReviewSnapshot>(runState.memoryReview);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -58,6 +160,25 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([codepawl.listMemoryEpisodes(), codepawl.listCandidateRules()]).then(([episodes, candidateRules]) => {
+      if (!mounted) {
+        return;
+      }
+      setMemoryReview((current) => ({
+        ...current,
+        latestEpisode: episodes[0],
+        episodes,
+        candidateRules,
+      }));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const handleRunTask = async () => {
     const run = await codepawl.createRun({
       goal: runState.activeTask.title,
@@ -81,6 +202,20 @@ function App() {
       approvalId: "approval-submit-1",
       decision,
     });
+  };
+
+  const handleReviewRule = async (rule: CandidateRule, status: Exclude<CandidateRuleStatus, "candidate">) => {
+    const updated = await codepawl.updateCandidateRuleStatus({
+      id: rule.id,
+      status,
+      runId: currentRunId,
+      supersededBy: status === "superseded" ? "candidate-rule-replacement-demo" : undefined,
+    });
+    setMemoryReview((current) => updateMemoryRule(current, updated));
+  };
+
+  const handleCopyRule = async (rule: CandidateRule) => {
+    await navigator.clipboard?.writeText(rule.rule);
   };
 
   const latestEvent = events.at(-1);
@@ -174,6 +309,8 @@ function App() {
             </span>
           ))}
         </section>
+
+        <MemoryPanel memoryReview={memoryReview} onReviewRule={(rule, status) => void handleReviewRule(rule, status)} onCopyRule={(rule) => void handleCopyRule(rule)} />
       </section>
 
       <aside className="run-inspector" aria-label="Run inspector">

@@ -127,6 +127,21 @@ export type CandidateRuleStatusUpdateOptions = {
   supersededBy?: string;
 };
 
+export type CandidateRuleStatusUpdateInput = {
+  id: string;
+  status: Exclude<CandidateRuleStatus, "candidate">;
+  runId?: string;
+  supersededBy?: string;
+};
+
+export type MemoryReviewSnapshot = {
+  namespace: MemoryNamespace;
+  latestEpisode?: EpisodicMemoryItem;
+  episodes: EpisodicMemoryItem[];
+  candidateRules: CandidateRule[];
+  summary: MemorySummary;
+};
+
 export type EpisodeWriteInput = Omit<EpisodicMemoryItem, "id" | "redaction" | "createdAt" | "expiresAt"> & {
   id?: string;
   createdAt?: string;

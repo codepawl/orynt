@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -8,6 +9,7 @@ use thiserror::Error;
 #[derive(Debug, Default)]
 pub struct AppState {
     runs: Mutex<Vec<String>>,
+    candidate_rule_statuses: Mutex<HashMap<String, CandidateRuleReviewStatus>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,11 +45,38 @@ pub struct ApprovalDecisionInput {
     decision: ApprovalDecision,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateRuleStatusUpdateInput {
+    id: String,
+    status: CandidateRuleReviewStatus,
+    run_id: Option<String>,
+    superseded_by: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApprovalDecision {
     Approved,
     Denied,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CandidateRuleReviewStatus {
+    Accepted,
+    Rejected,
+    Superseded,
+}
+
+impl CandidateRuleReviewStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            CandidateRuleReviewStatus::Accepted => "accepted",
+            CandidateRuleReviewStatus::Rejected => "rejected",
+            CandidateRuleReviewStatus::Superseded => "superseded",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,7 +158,9 @@ fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
     }
 
     if input.budget.max_steps == 0 {
-        return Err(AppError::Validation("maxSteps must be greater than zero".into()));
+        return Err(AppError::Validation(
+            "maxSteps must be greater than zero".into(),
+        ));
     }
 
     if input.budget.max_wall_time_ms == 0 || input.budget.max_model_tokens == 0 {
@@ -140,7 +171,9 @@ fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
 
     if let Some(max_usd) = input.budget.max_usd {
         if !max_usd.is_finite() || max_usd <= 0.0 {
-            return Err(AppError::Validation("maxUsd must be greater than zero".into()));
+            return Err(AppError::Validation(
+                "maxUsd must be greater than zero".into(),
+            ));
         }
     }
 
@@ -153,12 +186,185 @@ fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
     Ok(())
 }
 
+fn validate_candidate_rule_status_update(
+    input: &CandidateRuleStatusUpdateInput,
+) -> Result<(), AppError> {
+    if input.id.trim().is_empty() {
+        return Err(AppError::Validation("candidate rule id is required".into()));
+    }
+
+    Ok(())
+}
+
+fn candidate_rule_review_event_type(status: &CandidateRuleReviewStatus) -> &'static str {
+    match status {
+        CandidateRuleReviewStatus::Accepted => "candidate_rule_accepted",
+        CandidateRuleReviewStatus::Rejected => "candidate_rule_rejected",
+        CandidateRuleReviewStatus::Superseded => "candidate_rule_superseded",
+    }
+}
+
 fn now_run_id() -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
     format!("run-{millis}")
+}
+
+fn memory_namespace() -> serde_json::Value {
+    serde_json::json!({
+        "capabilityId": "coding-apprentice",
+        "workspaceId": "workspace-local-alpha",
+        "repositoryPath": "/repos/codepawl",
+    })
+}
+
+fn memory_provenance(run_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "runId": run_id,
+        "taskId": "task-failing-unit-test",
+        "eventIds": [format!("{run_id}-event-30"), format!("{run_id}-event-34")],
+        "artifactRefs": [
+            {
+                "id": "mock-memory-episode",
+                "kind": "memory_episode",
+                "uri": format!("codepawl-artifact://{run_id}/memory/memory-store.json#episode"),
+                "label": "Episodic memory item",
+                "sha256": "mock-memory-episode-sha256",
+            },
+            {
+                "id": "mock-candidate-rule",
+                "kind": "candidate_rule",
+                "uri": format!("codepawl-artifact://{run_id}/memory/memory-store.json#candidate-rule"),
+                "label": "Candidate project rule",
+                "sha256": "mock-candidate-rule-sha256",
+            },
+        ],
+        "sources": ["verification_result", "import_summary", "run_event"],
+        "sourceTimestamps": ["2026-06-26T00:00:00.000Z"],
+        "verificationResultId": "mock-verification-result",
+        "importBundleId": "mock-codex-result-import",
+    })
+}
+
+fn mock_memory_episode(run_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": "episode-latest-successful-run",
+        "namespace": memory_namespace(),
+        "kind": "run_episode",
+        "summary": "Latest successful run episode: verifier passed after a package-only imported correction.",
+        "content": {
+            "status": "pass",
+            "changedFiles": ["packages/shared/src/index.ts"],
+            "redactedNote": "[REDACTED]",
+        },
+        "provenance": memory_provenance(run_id),
+        "retention": { "ttlDays": 30, "archiveAfterDays": 90 },
+        "redaction": { "applied": true, "redactedPaths": ["content.redactedNote"], "redactionCount": 1 },
+        "confidence": 1,
+        "createdAt": "2026-06-26T00:00:00.000Z",
+    })
+}
+
+fn mock_candidate_rule(
+    id: &str,
+    title: &str,
+    rule: &str,
+    evidence_kind: &str,
+    evidence_summary: &str,
+    confidence: f64,
+    status: &str,
+    run_id: &str,
+    redacted: bool,
+    superseded_by: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "namespace": memory_namespace(),
+        "status": status,
+        "title": title,
+        "rule": rule,
+        "scope": {
+            "repositoryPath": "/repos/codepawl",
+            "allowedPaths": ["apps/desktop/**", "packages/**"],
+            "protectedPaths": [".env", "pnpm-lock.yaml"],
+        },
+        "evidence": [
+            {
+                "kind": evidence_kind,
+                "summary": evidence_summary,
+                "eventIds": [format!("{run_id}-event-30")],
+                "artifactRefs": [
+                    {
+                        "id": "mock-candidate-rule",
+                        "kind": "candidate_rule",
+                        "uri": format!("codepawl-artifact://{run_id}/memory/memory-store.json#candidate-rule"),
+                        "label": "Candidate project rule",
+                        "sha256": "mock-candidate-rule-sha256",
+                    }
+                ],
+                "confidence": confidence,
+            }
+        ],
+        "provenance": memory_provenance(run_id),
+        "redaction": {
+            "applied": redacted,
+            "redactedPaths": if redacted { vec!["rule", "evidence[0].summary"] } else { vec![] },
+            "redactionCount": if redacted { 2 } else { 0 },
+        },
+        "createdAt": "2026-06-26T00:00:00.000Z",
+        "updatedAt": "2026-06-26T00:00:00.000Z",
+        "supersededBy": superseded_by,
+    })
+}
+
+fn mock_candidate_rules(
+    statuses: &HashMap<String, CandidateRuleReviewStatus>,
+) -> Vec<serde_json::Value> {
+    let run_id = "run-1";
+    let package_status = statuses
+        .get("candidate-rule-package-scope")
+        .map(CandidateRuleReviewStatus::as_str)
+        .unwrap_or("candidate");
+    let redacted_status = statuses
+        .get("candidate-rule-redacted-log")
+        .map(CandidateRuleReviewStatus::as_str)
+        .unwrap_or("candidate");
+    vec![
+        mock_candidate_rule(
+            "candidate-rule-package-scope",
+            "Keep package fixes scoped",
+            "Keep source-only fixes under packages/** unless the contract says otherwise.",
+            "allowed_scope_pattern",
+            "Verifier passed after changed files stayed inside packages/**.",
+            0.86,
+            package_status,
+            run_id,
+            false,
+            if package_status == "superseded" {
+                Some("candidate-rule-replacement-demo")
+            } else {
+                None
+            },
+        ),
+        mock_candidate_rule(
+            "candidate-rule-redacted-log",
+            "Avoid secret-bearing logs",
+            "Do not persist imported manual logs containing [REDACTED]; keep only redacted summaries and artifact references.",
+            "command_observation",
+            "Manual import evidence contained [REDACTED] and was redacted before display.",
+            0.78,
+            redacted_status,
+            run_id,
+            true,
+            if redacted_status == "superseded" {
+                Some("candidate-rule-replacement-demo")
+            } else {
+                None
+            },
+        ),
+    ]
 }
 
 fn now_iso_like() -> String {
@@ -216,14 +422,7 @@ async fn run_create(
     .map_err(|error| AppError::Event(error.to_string()))?;
     app.emit(
         "run_event",
-        run_event(
-            &run_id,
-            2,
-            "goal_received",
-            "user",
-            "operator",
-            &input.goal,
-        ),
+        run_event(&run_id, 2, "goal_received", "user", "operator", &input.goal),
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
     app.emit(
@@ -395,15 +594,13 @@ async fn run_create(
                 "changedFileCount": 1,
             }),
             redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
-            artifacts: vec![
-                serde_json::json!({
-                    "id": "mock-codex-result-import",
-                    "kind": "codex_result_bundle",
-                    "uri": format!("codepawl-artifact://{run_id}/codex-result-import.json"),
-                    "label": "Imported manual Codex result bundle",
-                    "sha256": "mock-codex-result-import-sha256",
-                }),
-            ],
+            artifacts: vec![serde_json::json!({
+                "id": "mock-codex-result-import",
+                "kind": "codex_result_bundle",
+                "uri": format!("codepawl-artifact://{run_id}/codex-result-import.json"),
+                "label": "Imported manual Codex result bundle",
+                "sha256": "mock-codex-result-import-sha256",
+            })],
             safety: None,
         },
     )
@@ -616,15 +813,13 @@ async fn run_create(
                 "summary": "Recorded deterministic validation evidence for the repository run",
             }),
             redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
-            artifacts: vec![
-                serde_json::json!({
-                    "id": "mock-verification-result",
-                    "kind": "validation_report",
-                    "uri": format!("codepawl-artifact://{run_id}/verification-result.json"),
-                    "label": "Verification result",
-                    "sha256": "mock-verification-result-sha256",
-                }),
-            ],
+            artifacts: vec![serde_json::json!({
+                "id": "mock-verification-result",
+                "kind": "validation_report",
+                "uri": format!("codepawl-artifact://{run_id}/verification-result.json"),
+                "label": "Verification result",
+                "sha256": "mock-verification-result-sha256",
+            })],
             safety: None,
         },
     )
@@ -748,6 +943,82 @@ async fn approval_respond(app: AppHandle, input: ApprovalDecisionInput) -> Resul
 }
 
 #[tauri::command]
+async fn memory_list_episodes() -> Result<Vec<serde_json::Value>, AppError> {
+    Ok(vec![mock_memory_episode("run-1")])
+}
+
+#[tauri::command]
+async fn memory_list_candidate_rules(
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, AppError> {
+    let statuses = state
+        .candidate_rule_statuses
+        .lock()
+        .map_err(|_| AppError::StateLock)?;
+
+    Ok(mock_candidate_rules(&statuses))
+}
+
+#[tauri::command]
+async fn memory_update_candidate_rule_status(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: CandidateRuleStatusUpdateInput,
+) -> Result<serde_json::Value, AppError> {
+    validate_candidate_rule_status_update(&input)?;
+
+    {
+        let mut statuses = state
+            .candidate_rule_statuses
+            .lock()
+            .map_err(|_| AppError::StateLock)?;
+        statuses.insert(input.id.clone(), input.status.clone());
+    }
+
+    let run_id = input.run_id.clone().unwrap_or_else(|| "run-1".into());
+    let event_type = candidate_rule_review_event_type(&input.status);
+    app.emit(
+        "run_event",
+        RunEvent {
+            id: format!("{}-event-{}-{}", run_id, event_type, input.id),
+            run_id: run_id.clone(),
+            sequence: 20_000,
+            event_type: event_type.into(),
+            timestamp: now_iso_like(),
+            actor: serde_json::json!({ "kind": "ui", "id": "memory-review-panel" }),
+            payload: serde_json::json!({
+                "summary": format!("Candidate rule {}: {}", input.status.as_str(), input.id),
+                "candidateRuleId": input.id,
+                "status": input.status.as_str(),
+            }),
+            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
+            artifacts: vec![],
+            safety: None,
+        },
+    )
+    .map_err(|error| AppError::Event(error.to_string()))?;
+
+    let statuses = state
+        .candidate_rule_statuses
+        .lock()
+        .map_err(|_| AppError::StateLock)?;
+    let rule = mock_candidate_rules(&statuses)
+        .into_iter()
+        .find(|rule| rule.get("id").and_then(serde_json::Value::as_str) == Some(input.id.as_str()))
+        .ok_or_else(|| AppError::Validation("candidate rule not found".into()))?;
+    let mut updated = rule;
+    if input.status == CandidateRuleReviewStatus::Superseded {
+        updated["supersededBy"] = serde_json::Value::String(
+            input
+                .superseded_by
+                .unwrap_or_else(|| "candidate-rule-replacement-demo".into()),
+        );
+    }
+
+    Ok(updated)
+}
+
+#[tauri::command]
 async fn settings_get() -> Result<SettingsSnapshot, AppError> {
     Ok(SettingsSnapshot {
         workspace_id: "workspace-local-alpha".into(),
@@ -775,7 +1046,9 @@ async fn settings_update(input: SettingsUpdateInput) -> Result<SettingsSnapshot,
 #[tauri::command]
 async fn provider_key_save(input: ProviderKeySaveInput) -> Result<SecretReference, AppError> {
     if input.provider_id.trim().is_empty() || input.label.trim().is_empty() {
-        return Err(AppError::Validation("providerId and label are required".into()));
+        return Err(AppError::Validation(
+            "providerId and label are required".into(),
+        ));
     }
 
     Ok(SecretReference {
@@ -814,6 +1087,9 @@ pub fn run() {
             run_create,
             run_cancel,
             approval_respond,
+            memory_list_episodes,
+            memory_list_candidate_rules,
+            memory_update_candidate_rule_status,
             settings_get,
             settings_update,
             provider_key_save,
@@ -875,6 +1151,43 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "stopOnBudgetExceeded must be enabled for the MVP"
+        );
+    }
+
+    #[test]
+    fn candidate_rule_status_update_requires_explicit_valid_status() {
+        let accepted = CandidateRuleStatusUpdateInput {
+            id: "candidate-rule-1".into(),
+            status: CandidateRuleReviewStatus::Accepted,
+            run_id: Some("run-1".into()),
+            superseded_by: None,
+        };
+
+        assert!(validate_candidate_rule_status_update(&accepted).is_ok());
+
+        let missing_id = CandidateRuleStatusUpdateInput {
+            id: "".into(),
+            status: CandidateRuleReviewStatus::Rejected,
+            run_id: Some("run-1".into()),
+            superseded_by: None,
+        };
+        let error = validate_candidate_rule_status_update(&missing_id).expect_err("id is required");
+        assert_eq!(error.to_string(), "candidate rule id is required");
+    }
+
+    #[test]
+    fn candidate_rule_review_status_maps_to_visible_run_event_type() {
+        assert_eq!(
+            candidate_rule_review_event_type(&CandidateRuleReviewStatus::Accepted),
+            "candidate_rule_accepted"
+        );
+        assert_eq!(
+            candidate_rule_review_event_type(&CandidateRuleReviewStatus::Rejected),
+            "candidate_rule_rejected"
+        );
+        assert_eq!(
+            candidate_rule_review_event_type(&CandidateRuleReviewStatus::Superseded),
+            "candidate_rule_superseded"
         );
     }
 }
