@@ -13,6 +13,7 @@
     "test:contracts": "pnpm --filter @codepawl/shared test && pnpm --filter @codepawl/ipc-contracts test",
     "test:desktop": "pnpm --filter @codepawl/desktop test",
     "test:tauri": "node scripts/test-tauri.mjs",
+    "walkthrough:smoke": "pnpm --filter @codepawl/coding-apprentice build && pnpm --filter @codepawl/skill-registry build && node --import ./scripts/register-extensionless-esm-loader.mjs scripts/mvp-walkthrough-smoke.mjs",
     "preview:marketing": "pnpm --filter @codepawl/marketing-site preview"
   }
 }

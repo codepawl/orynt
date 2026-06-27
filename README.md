@@ -31,11 +31,16 @@ pnpm --filter @codepawl/marketing-site build
 pnpm test:contracts
 pnpm test:desktop
 pnpm test:tauri
+pnpm walkthrough:smoke
 pnpm build:desktop
 pnpm --filter @codepawl/desktop exec tauri dev
 ```
 
 On Linux/Fedora, `pnpm test:tauri` forces Cargo to use system `pkg-config` when `/usr/bin/pkg-config` is available. This avoids Homebrew `pkg-config` shadowing Fedora's native Tauri `.pc` files; the wrapper also clears `PKG_CONFIG_LIBDIR` and `PKG_CONFIG_SYSROOT_DIR` and adds `/usr/lib64/pkgconfig:/usr/share/pkgconfig` to `PKG_CONFIG_PATH`.
+
+## Local MVP Walkthrough
+
+The default local Coding Apprentice walkthrough uses a disposable fixture repository and a fake Codex binary, so it requires no model credentials and keeps controlled execution approval-gated. See [`docs/mvp/local-coding-apprentice-walkthrough.md`](docs/mvp/local-coding-apprentice-walkthrough.md).
 
 ## MVP Sequence
 
