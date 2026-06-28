@@ -1,13 +1,52 @@
 import { useEffect, useMemo, useState } from "react";
 import { createMockRunState, MVP_BLOCKED_SURFACES } from "@codepawl/shared";
-import type { CandidateRule, CandidateRuleStatus, MemoryReviewSnapshot, RunEvent, SurfaceKind } from "@codepawl/shared";
+import { Archive, Brain, CircleCheck, Code2, Info, LayoutDashboard, Megaphone, MessageSquare, Plus, Search, Send, Settings as SettingsIcon, ShieldCheck, Sparkles } from "lucide-react";
+import type { CandidateRule, CandidateRuleStatus, MemoryReviewSnapshot, MockRunState, RunEvent, SurfaceKind } from "@codepawl/shared";
 import type { SkillDefinition, SkillPromotionDecision, SkillRegistrySnapshot, SkillReplayPlan } from "@codepawl/shared";
+import type { FormEvent, ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import type { CodexExecutionPreview } from "./codepawlClient";
 
 import { codepawl } from "./codepawlClient";
+import darkThemeLogo from "../../../assets/pictures/dark-theme-logo.svg";
 import "./styles.css";
 
-const navItems = ["Run", "Tasks", "Dashboard", "Permissions", "Skills", "Usage", "Settings"];
+const topbarItems = [
+  { href: "/app/cockpit", icon: "cockpit", label: "Cockpit" },
+  { href: "#dashboard", icon: "dashboard", label: "Dashboard" },
+] as const;
+
+type TopbarView = "cockpit" | "dashboard";
+
+const topbarIconMap = {
+  cockpit: MessageSquare,
+  dashboard: LayoutDashboard,
+} satisfies Record<(typeof topbarItems)[number]["icon"], LucideIcon>;
+
+type PurposeSpace = {
+  id: string;
+  label: string;
+  purpose: string;
+  badge: string;
+  icon: LucideIcon;
+};
+
+const initialPurposeSpaces = [
+  { id: "code", icon: Code2, label: "Code", purpose: "Repository fixes, tests, and implementation runs.", badge: "46" },
+  { id: "marketing", icon: Megaphone, label: "Marketing", purpose: "Launch copy, positioning, and product narrative.", badge: "0" },
+  { id: "research", icon: Search, label: "Research", purpose: "Evidence gathering, comparisons, and notes.", badge: "0" },
+] satisfies PurposeSpace[];
+
+const cockpitTabs = [
+  { id: "chat", icon: MessageSquare, label: "Chat", summary: "Run the active workspace conversation.", badge: "live" },
+  { id: "approvals", icon: ShieldCheck, label: "Approvals", summary: "Review protected actions before anything mutates the repository.", badge: "1" },
+  { id: "memory", icon: Brain, label: "Memory", summary: "Inspect candidate rules before they become reusable behavior.", badge: "2" },
+  { id: "skills", icon: Sparkles, label: "Skills", summary: "Promote, reject, archive, and preview manual skill replay plans.", badge: "1" },
+  { id: "archive", icon: Archive, label: "Archive", summary: "Keep finished local runs out of the active conversation.", badge: "0" },
+] as const;
+
+type CockpitTabId = (typeof cockpitTabs)[number]["id"];
+type CockpitTab = (typeof cockpitTabs)[number];
 
 const surfaceLabels: Record<SurfaceKind, string> = {
   repository: "Repository",
@@ -16,6 +55,15 @@ const surfaceLabels: Record<SurfaceKind, string> = {
   files: "Files",
   terminal: "Terminal",
 };
+
+const permissionModeOptions = [
+  { value: "safe", label: "Safe", helper: "Ask before protected paths, destructive commands, network access, and secret access." },
+  { value: "ask-first", label: "Ask first", helper: "Pause before every repository-affecting action in this workspace." },
+  { value: "locked", label: "Locked", helper: "Keep the cockpit read-only until the operator re-enables controlled actions." },
+] as const;
+
+type PermissionModeOption = (typeof permissionModeOptions)[number]["value"];
+type SurfaceToggleState = Record<SurfaceKind, boolean>;
 
 function formatUsd(value: number) {
   return `$${value.toFixed(2)}`;
@@ -52,6 +100,72 @@ function updateMemoryRule(snapshot: MemoryReviewSnapshot, rule: CandidateRule): 
   };
 }
 
+function EmptyState({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="empty-state">
+      <strong>{title}</strong>
+      <p>{children}</p>
+    </div>
+  );
+}
+
+function NoRunSelected() {
+  return (
+    <section className="empty-state empty-state-run" aria-label="No run selected">
+      <strong>No run selected</strong>
+      <p>Select a local repository task or start the fake Codex walkthrough to inspect a controlled run.</p>
+      <span>No Codex process runs until an execution plan is approved, and verification remains a separate stage after result import.</span>
+    </section>
+  );
+}
+
+function EventStreamPanel({ events, latestEvent }: { events: RunEvent[]; latestEvent: RunEvent | undefined }) {
+  return (
+    <section className="event-stream-panel" aria-label="Mock event stream">
+      <h2>Event stream</h2>
+      <p>{latestEvent ? `${describeRunEvent(latestEvent)} (${latestEvent.type})` : "Waiting for mock events"}</p>
+      <div>
+        {events.map((event, index) => (
+          <span key={`${event.type}-${index}`}>
+            {describeRunEvent(event)} - run_event: {event.type}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function VerifierEvidencePanel({ runState }: { runState: MockRunState }) {
+  return (
+    <section className="verifier-evidence-panel" aria-label="Verifier evidence">
+      <div className="memory-panel-header">
+        <div>
+          <h2>Verifier evidence</h2>
+          <span>{runState.skillDraft.name}</span>
+        </div>
+        <strong>{runState.traceSummary.latestVerdict}</strong>
+      </div>
+      <div className="verifier-evidence-grid">
+        <span>
+          verdict <strong>{runState.traceSummary.latestVerdict}</strong>
+        </span>
+        <span>
+          trace <strong>{runState.traceSummary.eventCount} events</strong>
+        </span>
+        <span>
+          artifacts <strong>{runState.traceSummary.artifactCount} captured</strong>
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function MemoryPanel({
   memoryReview,
   onReviewRule,
@@ -76,7 +190,7 @@ function MemoryPanel({
 
       <div className="memory-episode">
         <span>{memoryReview.namespace.capabilityId} / {memoryReview.namespace.workspaceId}</span>
-        <p>{latestEpisode?.summary ?? "No episode memory recorded yet."}</p>
+        <p>{latestEpisode?.summary ?? "No memory yet."}</p>
         {latestEpisode ? (
           <small>
             provenance: {latestEpisode.provenance.runId} / {latestEpisode.provenance.taskId}
@@ -85,6 +199,9 @@ function MemoryPanel({
       </div>
 
       <div className="candidate-rule-list">
+        {memoryReview.candidateRules.length === 0 ? (
+          <EmptyState title="No memory yet">Verified runs will create local episodes and candidate rules here after import and verifier evidence is available.</EmptyState>
+        ) : null}
         {memoryReview.candidateRules.map((rule) => {
           const evidence = rule.evidence[0];
           const canReview = rule.status === "candidate";
@@ -159,10 +276,16 @@ function SkillRegistryPanel({
 
       <div className="memory-episode">
         <span>{skillRegistry.namespace.capabilityId} / {skillRegistry.namespace.workspaceId}</span>
-        <p>Candidate skills are inert until manually promoted. Replay is preview-only in this slice.</p>
+        <p>Candidate skills are inert until manually promoted. Replay is review-only until the operator promotes them.</p>
       </div>
 
       <div className="candidate-rule-list">
+        {skillRegistry.skills.length === 0 ? (
+          <>
+            <EmptyState title="No skills yet">Promote reviewed candidate rules manually before any skill appears here.</EmptyState>
+            <EmptyState title="No replay plan yet">Dry-run replay plans appear after a reviewed skill is available for preview.</EmptyState>
+          </>
+        ) : null}
         {skillRegistry.skills.map((skill) => {
           const canReview = skill.status === "candidate";
           const canArchive = skill.status !== "archived";
@@ -237,7 +360,9 @@ function SkillRegistryPanel({
                     <span>expected artifacts: <strong>{replayPlan.expectedArtifacts.map((artifact) => artifact.kind).join(", ")}</strong></span>
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <EmptyState title="No replay plan yet">Preview dry-run plan to inspect steps, policy checks, approvals, and expected artifacts without execution.</EmptyState>
+              )}
             </article>
           );
         })}
@@ -257,20 +382,17 @@ function CodexExecutionPanel({
 }) {
   const statusLabel = execution.status === "result_ready" ? "Result ready" : titleCaseStatus(execution.status);
   return (
-    <section className={`execution-panel execution-panel-${execution.status}`} aria-label="Controlled Codex execution">
+    <section className={`execution-control execution-control-${execution.status}`} aria-label="Controlled Codex execution">
       <div className="memory-panel-header">
         <div>
-          <p className="eyebrow">Controlled execution</p>
-          <h2>Codex execution gate</h2>
+          <h2>Controlled execution</h2>
+          <span>{execution.summary}</span>
         </div>
         <strong>{statusLabel}</strong>
       </div>
-      <div className="execution-plan-grid">
+      <div className="execution-control-grid">
         <span>
           plan <strong>{execution.planId}</strong>
-        </span>
-        <span>
-          command <strong>{execution.command}</strong>
         </span>
         <span>
           contract <strong>{execution.contractArtifact}</strong>
@@ -279,7 +401,6 @@ function CodexExecutionPanel({
           artifacts <strong>{execution.artifactRoot}</strong>
         </span>
       </div>
-      <p>{execution.summary}</p>
       {execution.blockedReasons.length > 0 ? <p className="execution-blocked-reasons">blocked: {execution.blockedReasons.join(", ")}</p> : null}
       {execution.verificationSeparate ? <small>Verification remains separate after result import.</small> : null}
       <div className="candidate-rule-actions">
@@ -312,15 +433,43 @@ function updateSkill(snapshot: SkillRegistrySnapshot, skill: SkillDefinition): S
   };
 }
 
-function App() {
-  const runState = useMemo(() => createMockRunState(), []);
+function App({
+  initialRunState,
+  initialSelectedRunId,
+}: {
+  initialRunState?: MockRunState;
+  initialSelectedRunId?: string | null;
+} = {}) {
+  const runState = useMemo(() => initialRunState ?? createMockRunState(), [initialRunState]);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [approvalStatus, setApprovalStatus] = useState("Waiting for operator approval");
-  const [currentRunId, setCurrentRunId] = useState(runState.traceSummary.runId);
+  const [currentRunId, setCurrentRunId] = useState<string | null>(initialSelectedRunId === undefined ? runState.traceSummary.runId : initialSelectedRunId);
   const [codexExecution, setCodexExecution] = useState<CodexExecutionPreview>(() => codepawl.createCodexExecutionPreview(runState.traceSummary.runId));
   const [memoryReview, setMemoryReview] = useState<MemoryReviewSnapshot>(runState.memoryReview);
   const [skillRegistry, setSkillRegistry] = useState<SkillRegistrySnapshot>(runState.skillRegistry);
   const [replayPlans, setReplayPlans] = useState<Record<string, SkillReplayPlan>>({});
+  const [composerValue, setComposerValue] = useState("");
+  const [operatorMessages, setOperatorMessages] = useState<string[]>(() => [runState.activeTask.title]);
+  const [purposeSpaces, setPurposeSpaces] = useState<PurposeSpace[]>(() => [...initialPurposeSpaces]);
+  const [activePurposeSpaceId, setActivePurposeSpaceId] = useState("code");
+  const [activeCockpitTab, setActiveCockpitTab] = useState<CockpitTabId>("chat");
+  const [activeTopbarView, setActiveTopbarView] = useState<TopbarView>("cockpit");
+  const [showRunInfo, setShowRunInfo] = useState(false);
+  const [showSettingsSidebar, setShowSettingsSidebar] = useState(false);
+  const [permissionMode, setPermissionMode] = useState<PermissionModeOption>(() => {
+    const currentMode = runState.permissionPolicy.mode;
+    return permissionModeOptions.some((option) => option.value === currentMode) ? (currentMode as PermissionModeOption) : "safe";
+  });
+  const [surfaceToggles, setSurfaceToggles] = useState<SurfaceToggleState>(() => ({
+    repository: true,
+    browser: !MVP_BLOCKED_SURFACES.includes("browser"),
+    desktop: !MVP_BLOCKED_SURFACES.includes("desktop"),
+    files: !MVP_BLOCKED_SURFACES.includes("files"),
+    terminal: !MVP_BLOCKED_SURFACES.includes("terminal"),
+  }));
+  const shouldHydrateClientState = initialRunState === undefined;
+  const permissionModeCopy = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
+  const orderedSurfaces = Object.keys(surfaceLabels) as SurfaceKind[];
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -351,6 +500,9 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!shouldHydrateClientState) {
+      return;
+    }
     let mounted = true;
     codepawl.listSkills().then((skills) => {
       if (!mounted) {
@@ -376,9 +528,12 @@ function App() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [shouldHydrateClientState]);
 
   useEffect(() => {
+    if (!shouldHydrateClientState) {
+      return;
+    }
     let mounted = true;
     Promise.all([codepawl.listMemoryEpisodes(), codepawl.listCandidateRules()]).then(([episodes, candidateRules]) => {
       if (!mounted) {
@@ -395,11 +550,17 @@ function App() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [shouldHydrateClientState]);
 
-  const handleRunTask = async () => {
+  const handleTaskSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const goal = composerValue.trim();
+    if (!goal) {
+      return;
+    }
+
     const run = await codepawl.createRun({
-      goal: runState.activeTask.title,
+      goal,
       capabilityId: "coding-apprentice",
       taskId: runState.activeTask.id,
       workspaceId: runState.workspace.id,
@@ -412,9 +573,14 @@ function App() {
       },
     });
     setCurrentRunId(run.id);
+    setOperatorMessages((current) => [...current, goal]);
+    setComposerValue("");
   };
 
   const handleApproval = async (decision: "approved" | "denied") => {
+    if (!currentRunId) {
+      return;
+    }
     await codepawl.approve({
       runId: currentRunId,
       approvalId: "approval-submit-1",
@@ -423,6 +589,9 @@ function App() {
   };
 
   const handleReviewRule = async (rule: CandidateRule, status: Exclude<CandidateRuleStatus, "candidate">) => {
+    if (!currentRunId) {
+      return;
+    }
     const updated = await codepawl.updateCandidateRuleStatus({
       id: rule.id,
       status,
@@ -441,7 +610,7 @@ function App() {
     decision,
     actor: "operator",
     reason,
-    runId: currentRunId,
+    runId: currentRunId ?? undefined,
     decidedAt: new Date().toISOString(),
     supersededBy: decision === "supersede" ? "skill-replacement-demo" : undefined,
   });
@@ -474,11 +643,14 @@ function App() {
   };
 
   const handlePreviewReplayPlan = async (skill: SkillDefinition) => {
-    const plan = await codepawl.createSkillReplayPlan(skill.id, currentRunId);
+    const plan = await codepawl.createSkillReplayPlan(skill.id, currentRunId ?? undefined);
     setReplayPlans((current) => ({ ...current, [skill.id]: plan }));
   };
 
   const handleApproveCodexExecution = async () => {
+    if (!currentRunId) {
+      return;
+    }
     setCodexExecution((current) => ({
       ...current,
       status: "running",
@@ -490,163 +662,514 @@ function App() {
   };
 
   const handleShowBlockedCodexExecution = async () => {
+    if (!currentRunId) {
+      return;
+    }
     const blocked = await codepawl.showBlockedCodexExecution(currentRunId, codexExecution.planId);
     setCodexExecution(blocked);
   };
 
   const latestEvent = events.at(-1);
+  const hasSelectedRun = currentRunId !== null;
+  const isDashboardView = activeTopbarView === "dashboard";
+  const activePurposeSpace = purposeSpaces.find((space) => space.id === activePurposeSpaceId) ?? purposeSpaces[0];
+  const activeCockpitTabConfig = cockpitTabs.find((tab) => tab.id === activeCockpitTab) ?? cockpitTabs[0];
+  const shellClassName = [
+    "app-shell",
+    isDashboardView ? "app-shell-dashboard" : "app-shell-cockpit",
+    showSettingsSidebar ? "app-shell-settings-open" : "app-shell-settings-closed",
+  ].join(" ");
 
-  return (
-    <main className="app-shell">
-      <aside className="app-rail">
-        <div className="brand-mark" aria-label="CodePawl">
-          CP
-        </div>
-        <nav aria-label="Primary app navigation">
-          {navItems.map((item) => (
-            <a aria-current={item === "Run" ? "page" : undefined} href={item === "Run" ? "/app/run" : "#"} key={item}>
-              {item}
-            </a>
-          ))}
-        </nav>
-      </aside>
+  const handleSelectPurposeSpace = (spaceId: string) => {
+    setActivePurposeSpaceId(spaceId);
+    setActiveCockpitTab("chat");
+    setActiveTopbarView("cockpit");
+  };
 
-      <aside className="task-sidebar" aria-label="Task sidebar">
-        <div>
-          <p className="eyebrow">Workspace</p>
-          <h2>{runState.workspace.name}</h2>
-          <span>{runState.workspace.trialRunsRemaining} trial runs left</span>
-        </div>
-        <button type="button" onClick={handleRunTask}>
-          Run task
+  const handleCreatePurposeSpace = () => {
+    const nextIndex = purposeSpaces.length + 1;
+    const newSpace: PurposeSpace = {
+      id: `workspace-${nextIndex}`,
+      icon: MessageSquare,
+      label: `Workspace ${nextIndex}`,
+      purpose: "Custom cockpit purpose space.",
+      badge: "new",
+    };
+    setPurposeSpaces((current) => [...current, newSpace]);
+    setActivePurposeSpaceId(newSpace.id);
+    setActiveCockpitTab("chat");
+    setActiveTopbarView("cockpit");
+  };
+
+  const renderApprovalBubble = () => (
+    <article className="chat-bubble chat-bubble-action" aria-label="Approval request">
+      <span>Approval center</span>
+      <h3>Approve protected repository action?</h3>
+      <p>{approvalStatus}</p>
+      <div className="approval-actions">
+        <button type="button" onClick={() => void handleApproval("approved")}>
+          Approve step
         </button>
-        <section aria-label="Active tasks">
-          {runState.tasks.map((task) => (
-            <article className="task-row" key={task.id}>
-              <strong>{task.title}</strong>
-              <span>{task.status.replace("_", " ")}</span>
-            </article>
-          ))}
-        </section>
-      </aside>
+        <button type="button" onClick={() => void handleApproval("denied")}>
+          Deny step
+        </button>
+      </div>
+    </article>
+  );
 
-      <section className="run-surface">
-        <header className="run-header">
-          <div>
-            <p className="eyebrow">Repository workspace</p>
-            <h1>Run cockpit</h1>
-          </div>
-          <div className="run-status">
-            <span>{runState.activeTask.status.replace("_", " ")}</span>
-            <strong>{formatUsd(runState.activeTask.costUsd)}</strong>
-          </div>
-        </header>
+  const renderRunInfoPanel = () => {
+    if (!showRunInfo || !hasSelectedRun) {
+      return null;
+    }
 
-        <section className="composer" aria-label="Task prompt">
-          <p>{runState.activeTask.title}</p>
-          <span>Mock runtime only. Codex execution and browser automation are intentionally not connected in this slice.</span>
-        </section>
-
-        <section className="timeline" aria-label="Run timeline">
-          {runState.steps.map((step) => (
-            <article className={`step-card step-card-${step.status}`} key={step.id}>
-              <span>{String(step.index).padStart(2, "0")}</span>
-              <div>
-                <h3>{step.title}</h3>
-                <p>{step.detail}</p>
-              </div>
-              <strong>{step.type}</strong>
-            </article>
-          ))}
-        </section>
-
-        <section className="approval-card" aria-label="Approval request">
-          <div>
-            <p className="eyebrow">Approval center</p>
-            <h2>Approve protected repository action?</h2>
-            <p>{approvalStatus}</p>
-          </div>
-          <div className="approval-actions">
-            <button type="button" onClick={() => void handleApproval("approved")}>
-              Approve step
-            </button>
-            <button type="button" onClick={() => void handleApproval("denied")}>
-              Deny step
-            </button>
-          </div>
-        </section>
-
+    return (
+      <aside className="run-info-panel" id="run-info-panel" aria-label="Run info">
         <CodexExecutionPanel
           execution={codexExecution}
           onApprove={() => void handleApproveCodexExecution()}
           onShowBlocked={() => void handleShowBlockedCodexExecution()}
         />
+        <VerifierEvidencePanel runState={runState} />
+        <EventStreamPanel events={events} latestEvent={latestEvent} />
+      </aside>
+    );
+  };
 
-        <section className="event-log" aria-label="Mock event stream">
-          <h2>Event stream</h2>
-          <p>{latestEvent ? `${describeRunEvent(latestEvent)} (${latestEvent.type})` : "Waiting for mock events"}</p>
-          {events.map((event, index) => (
-            <span key={`${event.type}-${index}`}>
-              {describeRunEvent(event)} - run_event: {event.type}
-            </span>
-          ))}
+  const renderDashboardPage = () => (
+    <section className="chat-surface dashboard-surface" aria-label="Dashboard overview">
+      <header className="run-header dashboard-chat-header">
+        <div className="run-header-title">
+          <h1>
+            <LayoutDashboard className="channel-surface-icon" aria-hidden="true" strokeWidth={2} />
+            <span>Dashboard</span>
+          </h1>
+          <span>Workspace health across active runs, approvals, memory, and verifier state.</span>
+        </div>
+        <div className="run-status" aria-label="Dashboard status">
+          <strong className="run-status-chip">Local preview</strong>
+        </div>
+      </header>
+
+      <div className="chat-thread dashboard-thread">
+        <article className="chat-bubble chat-bubble-system dashboard-intro-bubble">
+          <span>Overview</span>
+          <h3>Dashboard is the compact cockpit overview.</h3>
+          <p>Use it to scan the active run, budget, queues, and surface policy without opening Cockpit tabs.</p>
+        </article>
+
+        <section className="dashboard-metrics dashboard-metrics-chat" aria-label="Dashboard metrics">
+          <article className="chat-bubble dashboard-metric">
+            <span>Active run</span>
+            <strong>{titleCaseStatus(runState.activeTask.status)}</strong>
+            <small>{runState.activeTask.title}</small>
+          </article>
+          <article className="chat-bubble dashboard-metric">
+            <span>Run spend</span>
+            <strong>
+              {formatUsd(runState.activeTask.costUsd)} / {formatUsd(runState.usageBudget.runLimitUsd)}
+            </strong>
+            <small>{runState.traceSummary.modelTokens.toLocaleString()} model tokens</small>
+          </article>
+          <article className="chat-bubble dashboard-metric">
+            <span>Trace</span>
+            <strong>{runState.traceSummary.eventCount} events</strong>
+            <small>{runState.traceSummary.artifactCount} artifacts captured</small>
+          </article>
+          <article className="chat-bubble dashboard-metric">
+            <span>Verifier</span>
+            <strong>{runState.traceSummary.latestVerdict}</strong>
+            <small>{runState.skillDraft.name}</small>
+          </article>
         </section>
 
-        <MemoryPanel memoryReview={memoryReview} onReviewRule={(rule, status) => void handleReviewRule(rule, status)} onCopyRule={(rule) => void handleCopyRule(rule)} />
-        <SkillRegistryPanel
-          skillRegistry={skillRegistry}
-          replayPlans={replayPlans}
-          onPromoteSkill={(skill) => void handlePromoteSkill(skill)}
-          onRejectSkill={(skill) => void handleRejectSkill(skill)}
-          onArchiveSkill={(skill) => void handleArchiveSkill(skill)}
-          onCopySkill={(skill) => void handleCopySkill(skill)}
-          onPreviewReplayPlan={(skill) => void handlePreviewReplayPlan(skill)}
-        />
+        <section className="dashboard-grid" aria-label="Dashboard work queues">
+          <article className="chat-bubble dashboard-panel">
+            <div className="dashboard-panel-header">
+              <h2>Queues</h2>
+              <span>Product status</span>
+            </div>
+            <div className="dashboard-row">
+              <span>Approvals</span>
+              <strong>1 pending</strong>
+            </div>
+            <div className="dashboard-row">
+              <span>Memory rules</span>
+              <strong>{memoryReview.summary.candidateRuleCount} reviewable</strong>
+            </div>
+            <div className="dashboard-row">
+              <span>Skills</span>
+              <strong>{skillRegistry.summary.skillCount} registered</strong>
+            </div>
+          </article>
+
+          <article className="chat-bubble dashboard-panel">
+            <div className="dashboard-panel-header">
+              <h2>Allowed surfaces</h2>
+              <span>Current toggles</span>
+            </div>
+            {orderedSurfaces.map((surface) => (
+              <div className="dashboard-row" key={surface}>
+                <span>{surfaceLabels[surface]}</span>
+                <strong>{surfaceToggles[surface] ? "enabled" : "blocked"}</strong>
+              </div>
+            ))}
+          </article>
+        </section>
+      </div>
+    </section>
+  );
+
+  const renderCockpitTabs = () => (
+    <nav className="cockpit-tabs" aria-label="Cockpit sections">
+      {cockpitTabs.map((tab) => {
+        const TabIcon = tab.icon;
+        return (
+          <button
+            className="cockpit-tab"
+            type="button"
+            aria-pressed={activeCockpitTab === tab.id}
+            onClick={() => setActiveCockpitTab(tab.id)}
+            key={tab.id}
+          >
+            <TabIcon className="channel-icon" aria-hidden="true" strokeWidth={2} />
+            <span>{tab.label}</span>
+            <strong>{tab.badge}</strong>
+          </button>
+        );
+      })}
+    </nav>
+  );
+
+  const renderCockpitSurface = ({
+    label,
+    summary,
+    children,
+    showComposer = false,
+  }: {
+    label: string;
+    summary: string;
+    children: ReactNode;
+    showComposer?: boolean;
+  }) => (
+    <section className="chat-surface" aria-label={label === "Chat" ? "Cockpit conversation" : `${label} tab`}>
+      <header className="run-header">
+        <div className="run-header-title">
+          <h1>Cockpit</h1>
+          <span>{activePurposeSpace.label} workspace / {label}</span>
+          <small>{summary}</small>
+        </div>
+        <div className="run-header-actions">
+          <div className="run-status" aria-label="Run status">
+            <span className="run-status-chip run-status-chip-info">Active run</span>
+            <span className="run-status-chip run-status-chip-warning">{titleCaseStatus(runState.activeTask.status)}</span>
+            <span className="run-status-chip run-status-chip-success">
+              <CircleCheck className="status-icon" aria-hidden="true" strokeWidth={2} />
+              Verifier: {runState.traceSummary.latestVerdict}
+            </span>
+            <strong className="run-status-chip">{formatUsd(runState.activeTask.costUsd)}</strong>
+          </div>
+          <button
+            className="run-info-toggle"
+            type="button"
+            aria-controls="run-info-panel"
+            aria-expanded={showRunInfo}
+            aria-label={showRunInfo ? "Close run info" : "Open run info"}
+            onClick={() => setShowRunInfo((current) => !current)}
+          >
+            <Info className="run-info-icon" aria-hidden="true" strokeWidth={2} />
+            <span>Info</span>
+          </button>
+        </div>
+      </header>
+      {renderCockpitTabs()}
+      <div className={`chat-thread ${showComposer ? "" : "channel-chat-thread"}`}>{children}</div>
+      {showComposer ? (
+        <form className="chat-composer" aria-label="Cockpit composer" onSubmit={(event) => void handleTaskSubmit(event)}>
+          <input
+            aria-label="Repository task message"
+            placeholder={`Describe the next ${activePurposeSpace.label} task...`}
+            type="text"
+            value={composerValue}
+            onChange={(event) => setComposerValue(event.target.value)}
+          />
+          <button type="submit" disabled={composerValue.trim().length === 0}>
+            <Send className="send-icon" aria-hidden="true" strokeWidth={2} />
+            <span>Send task</span>
+          </button>
+        </form>
+      ) : null}
+    </section>
+  );
+
+  const renderCockpitContent = () => {
+    if (!hasSelectedRun) {
+      return <NoRunSelected />;
+    }
+
+    if (activeCockpitTab === "memory") {
+      return renderCockpitSurface({
+        label: activeCockpitTabConfig.label,
+        summary: activeCockpitTabConfig.summary,
+        children: (
+          <>
+          <article className="chat-bubble chat-bubble-system">
+            <span>Memory</span>
+            <h3>Candidate rules stay local and review-only.</h3>
+            <p>Use this tab to inspect verified corrections before they become reusable behavior. Nothing is accepted until the operator chooses a review action.</p>
+          </article>
+          <article className="chat-bubble channel-workbench-bubble">
+            <MemoryPanel memoryReview={memoryReview} onReviewRule={(rule, status) => void handleReviewRule(rule, status)} onCopyRule={(rule) => void handleCopyRule(rule)} />
+          </article>
+          </>
+        ),
+      });
+    }
+
+    if (activeCockpitTab === "skills") {
+      return renderCockpitSurface({
+        label: activeCockpitTabConfig.label,
+        summary: activeCockpitTabConfig.summary,
+        children: (
+          <>
+          <article className="chat-bubble chat-bubble-system">
+            <span>Skills</span>
+            <h3>Skills are promoted manually, then previewed as dry runs.</h3>
+            <p>Use this tab to decide which reviewed rules deserve a reusable skill. Replay remains inspectable and non-executing in this preview.</p>
+          </article>
+          <article className="chat-bubble channel-workbench-bubble">
+            <SkillRegistryPanel
+              skillRegistry={skillRegistry}
+              replayPlans={replayPlans}
+              onPromoteSkill={(skill) => void handlePromoteSkill(skill)}
+              onRejectSkill={(skill) => void handleRejectSkill(skill)}
+              onArchiveSkill={(skill) => void handleArchiveSkill(skill)}
+              onCopySkill={(skill) => void handleCopySkill(skill)}
+              onPreviewReplayPlan={(skill) => void handlePreviewReplayPlan(skill)}
+            />
+          </article>
+          </>
+        ),
+      });
+    }
+
+    if (activeCockpitTab === "approvals") {
+      return renderCockpitSurface({
+        label: activeCockpitTabConfig.label,
+        summary: activeCockpitTabConfig.summary,
+        children: (
+          <>
+          <article className="chat-bubble chat-bubble-system">
+            <span>Approvals</span>
+            <h3>Protected actions pause here before anything can mutate the repository.</h3>
+            <p>Review the request, then approve or deny the step. The run stays blocked until a decision is recorded.</p>
+          </article>
+          {renderApprovalBubble()}
+          </>
+        ),
+      });
+    }
+
+    if (activeCockpitTab === "archive") {
+      return renderCockpitSurface({
+        label: activeCockpitTabConfig.label,
+        summary: activeCockpitTabConfig.summary,
+        children: (
+          <>
+          <article className="chat-bubble chat-bubble-system">
+            <span>Archive</span>
+            <h3>Finished local runs will move here after completion.</h3>
+            <p>Archive keeps old run context out of active tabs while preserving the path back to evidence, approvals, verifier output, and memory decisions.</p>
+          </article>
+          <article className="chat-bubble channel-empty-row">
+            <span>Empty history</span>
+            <h3>No archived repository runs yet.</h3>
+            <p>The active run remains available in Chat until the workflow has a finished local result to file away.</p>
+          </article>
+          </>
+        ),
+      });
+    }
+
+    return renderCockpitSurface({
+      label: activeCockpitTabConfig.label,
+      summary: activeCockpitTabConfig.summary,
+      showComposer: true,
+      children: (
+        <>
+          {operatorMessages.map((message, index) => (
+            <article className="chat-bubble chat-bubble-user" key={`${message}-${index}`}>
+              <span>Operator</span>
+              <p>{message}</p>
+            </article>
+          ))}
+          <article className="chat-bubble chat-bubble-system">
+            <span>CodePawl</span>
+            <p>Controlled runtime only. Codex execution and browser automation require an approved connector before they run.</p>
+          </article>
+          <article className="chat-bubble chat-bubble-system">
+            <span>CodePawl</span>
+            <p>Verifier evidence stays separate from result import. Open run info for execution state and event stream details.</p>
+          </article>
+          <article className="chat-bubble chat-bubble-verifier" aria-label="Verifier evidence summary">
+            <span>Verifier</span>
+            <h3>{runState.traceSummary.latestVerdict}</h3>
+            <p>{runState.skillDraft.name}</p>
+            <small>
+              {runState.traceSummary.artifactCount} artifacts attached to {runState.traceSummary.eventCount} trace events.
+            </small>
+          </article>
+          {renderApprovalBubble()}
+        </>
+      ),
+    });
+  };
+
+  return (
+    <main className={shellClassName}>
+      <header className="topbar" aria-label="Primary app top bar">
+        <button className="topbar-brand" type="button" aria-label="Open Cockpit" onClick={() => setActiveTopbarView("cockpit")}>
+          <img src={darkThemeLogo} alt="" width="40" height="40" />
+          <span>CodePawl</span>
+        </button>
+        <nav aria-label="Primary app navigation">
+          {topbarItems.map((item) => (
+            (() => {
+              const TopbarItemIcon = topbarIconMap[item.icon];
+              return (
+                <a
+                  aria-current={(item.label === "Cockpit" && activeTopbarView === "cockpit") || (item.label === "Dashboard" && activeTopbarView === "dashboard") ? "page" : undefined}
+                  href={item.href}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setActiveTopbarView(item.label === "Dashboard" ? "dashboard" : "cockpit");
+                  }}
+                  key={item.label}
+                >
+                  <TopbarItemIcon className="nav-icon" aria-hidden="true" strokeWidth={2} />
+                  <span>{item.label}</span>
+                </a>
+              );
+            })()
+          ))}
+        </nav>
+        <div className="topbar-actions">
+          <button
+            className="topbar-icon-button"
+            type="button"
+            aria-controls="settings-sidebar"
+            aria-expanded={showSettingsSidebar}
+            aria-label="Toggle settings"
+            title="Settings"
+            onClick={() => setShowSettingsSidebar((current) => !current)}
+          >
+            <SettingsIcon className="nav-icon" aria-hidden="true" strokeWidth={2} />
+          </button>
+        </div>
+      </header>
+
+      {!isDashboardView ? (
+        <aside className="channel-sidebar purpose-sidebar">
+          <div className="purpose-sidebar-header">
+            <div>
+              <span>Purpose spaces</span>
+              <strong>{runState.workspace.name}</strong>
+            </div>
+            <button className="purpose-add-button" type="button" aria-label="Create purpose space" title="Create purpose space" onClick={handleCreatePurposeSpace}>
+              <Plus className="channel-icon" aria-hidden="true" strokeWidth={2} />
+            </button>
+          </div>
+          <nav aria-label="Purpose spaces">
+            {purposeSpaces.map((space) => {
+              const SpaceIcon = space.icon;
+              return (
+                <button
+                  className="purpose-space-button"
+                  type="button"
+                  aria-pressed={activePurposeSpace.id === space.id}
+                  onClick={() => handleSelectPurposeSpace(space.id)}
+                  key={space.id}
+                >
+                  <SpaceIcon className="channel-icon" aria-hidden="true" strokeWidth={2} />
+                  <span>{space.label}</span>
+                  <small>{space.purpose}</small>
+                  <strong>{space.badge}</strong>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+      ) : null}
+
+      <section className={`run-surface ${isDashboardView ? "run-surface-dashboard" : "run-surface-cockpit"}`}>
+        {isDashboardView ? (
+          renderDashboardPage()
+        ) : (
+          <>
+            {renderRunInfoPanel()}
+            {renderCockpitContent()}
+          </>
+        )}
       </section>
 
-      <aside className="run-inspector" aria-label="Run inspector">
-        <section>
-          <p className="eyebrow">Permission mode</p>
-          <h2>{runState.permissionPolicy.mode[0].toUpperCase() + runState.permissionPolicy.mode.slice(1)}</h2>
-          <span>Ask before: {runState.permissionPolicy.askBefore.join(", ")}</span>
-        </section>
+      {showSettingsSidebar ? (
+        <aside className="settings-sidebar" id="settings-sidebar" aria-label="Settings">
+          <div className="settings-header">
+            <div>
+              <strong>Settings</strong>
+              <span>Workspace controls</span>
+            </div>
+          </div>
 
-        <section>
-          <p className="eyebrow">Budget</p>
-          <h2>
-            {formatUsd(runState.activeTask.costUsd)} / {formatUsd(runState.usageBudget.runLimitUsd)}
-          </h2>
-          <span>{runState.traceSummary.modelTokens.toLocaleString()} model tokens</span>
-        </section>
+          <section className="settings-control" aria-label="Permission mode">
+            <label htmlFor="permission-mode">Permission mode</label>
+            <select id="permission-mode" value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as PermissionModeOption)}>
+              {permissionModeOptions.map((option) => (
+                <option value={option.value} key={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <span>{permissionModeCopy.helper}</span>
+          </section>
 
-        <section aria-label="Allowed surfaces">
-          <p className="eyebrow">Allowed surfaces</p>
-          <ul className="surface-list">
-            <li>
-              <span>Repository</span>
-              <strong>enabled</strong>
-            </li>
-            {MVP_BLOCKED_SURFACES.map((surface) => (
-              <li key={surface}>
+          <section className="settings-metric" aria-label="Run limits">
+            <span>Run limits</span>
+            <strong>
+              {formatUsd(runState.activeTask.costUsd)} / {formatUsd(runState.usageBudget.runLimitUsd)}
+            </strong>
+            <small>{runState.traceSummary.modelTokens.toLocaleString()} model tokens</small>
+          </section>
+
+          <section className="surface-switcher" aria-label="Allowed surfaces">
+            <h2>Allowed surfaces</h2>
+            {orderedSurfaces.map((surface) => (
+              <button
+                className="surface-switch"
+                type="button"
+                role="switch"
+                aria-checked={surfaceToggles[surface]}
+                onClick={() => setSurfaceToggles((current) => ({ ...current, [surface]: !current[surface] }))}
+                key={surface}
+              >
                 <span>{surfaceLabels[surface]}</span>
-                <strong>blocked</strong>
-              </li>
+                <strong>{surfaceToggles[surface] ? "enabled" : "blocked"}</strong>
+              </button>
             ))}
-          </ul>
-        </section>
+          </section>
 
-        <section>
-          <p className="eyebrow">Trace</p>
-          <h2>{runState.traceSummary.eventCount} events</h2>
-          <span>{runState.traceSummary.artifactCount} artifacts</span>
-        </section>
+          <section className="settings-metric" aria-label="Trace">
+            <span>Trace</span>
+            <strong>{runState.traceSummary.eventCount} events</strong>
+            <small>{runState.traceSummary.artifactCount} artifacts</small>
+          </section>
 
-        <section>
-          <p className="eyebrow">Verifier</p>
-          <h2>{runState.skillDraft.name}</h2>
-          <span>Latest verdict: {runState.traceSummary.latestVerdict}</span>
-        </section>
-      </aside>
+          <section className="settings-metric" aria-label="Verifier">
+            <span>Verifier</span>
+            <strong>{runState.skillDraft.name}</strong>
+            <small>Latest verdict: {runState.traceSummary.latestVerdict}</small>
+          </section>
+        </aside>
+      ) : null}
     </main>
   );
 }
