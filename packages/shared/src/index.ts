@@ -6,12 +6,17 @@ export * from "./verifierContracts";
 export * from "./contextWorkspace";
 export * from "./memoryContracts";
 export * from "./skillContracts";
+export * from "./agentLedger";
+export * from "./productPlans";
 
 import { createMockRunSequence } from "./runSpine";
+import { getCodePawlPlan, summarizePlanQuota } from "./productPlans";
 import type { PermissionMode } from "./corePolicy";
+import type { MonthlyUsageSummary } from "./agentLedger";
 import type { ArtifactRef, RunEvent, RunSummary } from "./runSpine";
 import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryProvenance, MemoryReviewSnapshot } from "./memoryContracts";
 import type { SkillDefinition, SkillRegistrySnapshot } from "./skillContracts";
+import type { CodePawlPlanConfig, PlanQuotaSummary } from "./productPlans";
 
 export type SurfaceKind = "repository" | "browser" | "desktop" | "files" | "terminal";
 
@@ -89,6 +94,9 @@ export type MockRunState = {
   steps: AgentStep[];
   permissionPolicy: PermissionPolicy;
   usageBudget: UsageBudget;
+  usageSummary: MonthlyUsageSummary;
+  productPlan: CodePawlPlanConfig;
+  quotaSummary: PlanQuotaSummary;
   traceSummary: TraceSummary;
   runSummary: RunSummary;
   events: RunEvent[];
@@ -314,6 +322,14 @@ export function createMockRunState(): MockRunState {
   const mockRun = createMockRunSequence();
   const memoryReview = createMockMemoryReview(mockRun.run.id, mockRun.run.taskId);
   const skillRegistry = createMockSkillRegistry(mockRun.run.id, mockRun.run.taskId, memoryReview);
+  const productPlan = getCodePawlPlan("managed-ai");
+  const quotaSummary = summarizePlanQuota({
+    planId: productPlan.id,
+    billingCadence: "monthly",
+    creditsConsumed: 0,
+    runsThisMonth: 1,
+    gatewayActionsThisMonth: 1,
+  });
   const activeTask: AgentTask = {
     id: mockRun.run.taskId,
     title: mockRun.run.goal,
@@ -388,6 +404,23 @@ export function createMockRunState(): MockRunState {
       screenshotLimitPerRun: 3,
       warnAtPercent: 80,
     },
+    usageSummary: {
+      workspaceId: "workspace-local-alpha",
+      userId: "local-operator",
+      month: "2026-07",
+      runCount: 1,
+      completedRunCount: 1,
+      failedRunCount: 0,
+      modelCallCount: 0,
+      gatewayActionCount: 1,
+      permissionDecisionCounts: {
+        approved: 1,
+      },
+      artifactCount: mockRun.summary.artifactCount,
+      creditsConsumed: 0.01,
+    },
+    productPlan,
+    quotaSummary,
     traceSummary: {
       runId: mockRun.run.id,
       eventCount: mockRun.summary.eventCount,

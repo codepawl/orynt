@@ -12,14 +12,17 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && pnpm --filter @codepawl/memory build && tsc -p tsconfig.json",
-    "test": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && pnpm --filter @codepawl/memory build && vitest run"
+    "build": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && pnpm --filter @codepawl/memory build && pnpm --filter @codepawl/skill-registry build && pnpm --filter @codepawl/cognitive-kernel build && pnpm --filter @codepawl/gateway build && tsc -p tsconfig.json",
+    "test": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && pnpm --filter @codepawl/memory build && pnpm --filter @codepawl/skill-registry build && pnpm --filter @codepawl/cognitive-kernel build && pnpm --filter @codepawl/gateway build && vitest run"
   },
   "dependencies": {
+    "@codepawl/cognitive-kernel": "workspace:*",
     "@codepawl/codex-adapter": "workspace:*",
+    "@codepawl/gateway": "workspace:*",
     "@codepawl/memory": "workspace:*",
     "@codepawl/repository-sandbox": "workspace:*",
     "@codepawl/shared": "workspace:*",
+    "@codepawl/skill-registry": "workspace:*",
     "@codepawl/verifier": "workspace:*"
   },
   "devDependencies": {

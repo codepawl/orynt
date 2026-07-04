@@ -24,6 +24,11 @@ import type {
   MemoryQuery,
   MemoryRedactionResult,
   MemoryRetentionPolicy,
+  SemanticMemoryEditInput,
+  SemanticMemoryItem,
+  SemanticMemoryQuery,
+  SemanticMemoryStatusUpdateInput,
+  SemanticMemoryWriteInput,
   MemoryStore,
   MemorySummary,
   RunEvent,
@@ -35,6 +40,7 @@ import type {
 type MemoryDatabase = {
   episodes: EpisodicMemoryItem[];
   candidateRules: CandidateRule[];
+  semanticMemory: SemanticMemoryItem[];
 };
 
 type LocalJsonMemoryStoreOptions = {
@@ -50,7 +56,7 @@ type LocalMemoryExtractorOptions = {
 };
 
 export class MemoryStoreFailure extends Error {
-  readonly code: "unsafe_path" | "episode_not_found" | "candidate_rule_not_found" | "invalid_status_transition";
+  readonly code: "unsafe_path" | "episode_not_found" | "candidate_rule_not_found" | "semantic_memory_not_found" | "invalid_status_transition";
 
   constructor(code: MemoryStoreFailure["code"], message: string) {
     super(message);
@@ -214,6 +220,28 @@ function redactRuleInput(input: CandidateRuleWriteInput): { rule: CandidateRuleW
   };
 }
 
+function redactSemanticMemoryInput(input: SemanticMemoryWriteInput | SemanticMemoryEditInput): {
+  memory: SemanticMemoryWriteInput | SemanticMemoryEditInput;
+  redaction: MemoryRedactionResult;
+} {
+  const redactedPaths: string[] = [];
+  const memory = clone(input);
+  if ("summary" in memory && memory.summary !== undefined) {
+    memory.summary = redactString(memory.summary, "summary", redactedPaths);
+  }
+  if ("content" in memory && memory.content !== undefined) {
+    memory.content = redactUnknown(memory.content, "content", redactedPaths) as Record<string, unknown>;
+  }
+  return {
+    memory,
+    redaction: {
+      applied: redactedPaths.length > 0,
+      redactedPaths: [...new Set(redactedPaths)],
+      redactionCount: redactedPaths.length,
+    },
+  };
+}
+
 function expiresAt(createdAt: string, retention: MemoryRetentionPolicy): string | undefined {
   if (retention.retainUntil) {
     return retention.retainUntil;
@@ -354,6 +382,75 @@ export class LocalJsonMemoryStore implements MemoryStore {
     return clone(updated);
   }
 
+  async writeSemanticMemory(input: SemanticMemoryWriteInput): Promise<SemanticMemoryItem> {
+    const database = await this.readDatabase();
+    const { memory: redactedInput, redaction } = redactSemanticMemoryInput(input) as {
+      memory: SemanticMemoryWriteInput;
+      redaction: MemoryRedactionResult;
+    };
+    const createdAt = redactedInput.createdAt ?? now();
+    const item: SemanticMemoryItem = {
+      id: redactedInput.id ?? id("semantic-memory", `${redactedInput.provenance.runId}:${redactedInput.summary}:${database.semanticMemory.length}`),
+      namespace: clone(redactedInput.namespace),
+      status: redactedInput.status,
+      summary: redactedInput.summary,
+      content: clone(redactedInput.content),
+      sensitivity: redactedInput.sensitivity,
+      confidence: redactedInput.confidence,
+      provenance: clone(redactedInput.provenance),
+      redaction: mergeRedactions(redaction, redactedInput.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 }),
+      reviewDecisions: clone(redactedInput.reviewDecisions ?? []),
+      createdAt,
+      updatedAt: redactedInput.updatedAt ?? createdAt,
+    };
+    database.semanticMemory.push(item);
+    await this.writeDatabase(database);
+    return clone(item);
+  }
+
+  async listSemanticMemory(query: SemanticMemoryQuery = {}): Promise<SemanticMemoryItem[]> {
+    const database = await this.readDatabase();
+    return limit(
+      database.semanticMemory.filter(
+        (item) =>
+          namespaceMatches(item.namespace, query.namespace) &&
+          (query.includeDeleted === true || item.status !== "deleted") &&
+          (query.statuses === undefined || query.statuses.includes(item.status)) &&
+          textMatches(item, query.text),
+      ),
+      query.limit,
+    ).map(clone);
+  }
+
+  async updateSemanticMemoryStatus(input: SemanticMemoryStatusUpdateInput): Promise<SemanticMemoryItem> {
+    return this.updateSemanticMemory(input, { status: input.status });
+  }
+
+  async editSemanticMemory(input: SemanticMemoryEditInput): Promise<SemanticMemoryItem> {
+    const { memory: redactedInput, redaction } = redactSemanticMemoryInput(input) as {
+      memory: SemanticMemoryEditInput;
+      redaction: MemoryRedactionResult;
+    };
+    const patch: Partial<SemanticMemoryItem> & { redaction?: MemoryRedactionResult } = { redaction };
+    if (redactedInput.summary !== undefined) {
+      patch.summary = redactedInput.summary;
+    }
+    if (redactedInput.content !== undefined) {
+      patch.content = redactedInput.content;
+    }
+    if (redactedInput.sensitivity !== undefined) {
+      patch.sensitivity = redactedInput.sensitivity;
+    }
+    if (redactedInput.confidence !== undefined) {
+      patch.confidence = redactedInput.confidence;
+    }
+    return this.updateSemanticMemory(redactedInput, patch);
+  }
+
+  async deleteSemanticMemory(input: Omit<SemanticMemoryStatusUpdateInput, "status">): Promise<SemanticMemoryItem> {
+    return this.updateSemanticMemory({ ...input, status: "deleted" }, { status: "deleted", deletedAt: input.decidedAt ?? now() });
+  }
+
   async summarizeMemory(namespace?: Partial<MemoryNamespace>): Promise<MemorySummary> {
     const [episodes, candidateRules] = await Promise.all([this.queryEpisodes({ namespace }), this.listCandidateRules({ namespace })]);
     const namespaceKeys = new Set([...episodes.map((episode) => namespaceKey(episode.namespace)), ...candidateRules.map((rule) => namespaceKey(rule.namespace))]);
@@ -397,10 +494,11 @@ export class LocalJsonMemoryStore implements MemoryStore {
       return {
         episodes: Array.isArray(parsed.episodes) ? parsed.episodes : [],
         candidateRules: Array.isArray(parsed.candidateRules) ? parsed.candidateRules : [],
+        semanticMemory: Array.isArray(parsed.semanticMemory) ? parsed.semanticMemory : [],
       };
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-        return { episodes: [], candidateRules: [] };
+        return { episodes: [], candidateRules: [], semanticMemory: [] };
       }
       throw error;
     }
@@ -410,6 +508,42 @@ export class LocalJsonMemoryStore implements MemoryStore {
     const safeStorePath = this.validateStorePath(storePath);
     await mkdir(path.dirname(safeStorePath), { recursive: true });
     await writeFile(safeStorePath, `${JSON.stringify(database, null, 2)}\n`, "utf8");
+  }
+
+  private async updateSemanticMemory(
+    input: SemanticMemoryStatusUpdateInput | SemanticMemoryEditInput,
+    patch: Partial<SemanticMemoryItem> & { redaction?: MemoryRedactionResult } = {},
+  ): Promise<SemanticMemoryItem> {
+    const database = await this.readDatabase();
+    const index = database.semanticMemory.findIndex((item) => item.id === input.id);
+    if (index < 0) {
+      throw new MemoryStoreFailure("semantic_memory_not_found", `semantic memory not found: ${input.id}`);
+    }
+    const current = database.semanticMemory[index];
+    const updatedAt = "decidedAt" in input && input.decidedAt ? input.decidedAt : now();
+    const reviewStatus = "status" in input ? input.status : undefined;
+    const reviewDecisions = reviewStatus
+      ? [
+          ...current.reviewDecisions,
+          {
+            status: reviewStatus,
+            actor: input.actor,
+            reason: input.reason,
+            runId: "runId" in input ? input.runId : undefined,
+            decidedAt: updatedAt,
+          },
+        ]
+      : current.reviewDecisions;
+    const updated: SemanticMemoryItem = {
+      ...current,
+      ...patch,
+      redaction: mergeRedactions(current.redaction, patch.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 }),
+      reviewDecisions,
+      updatedAt,
+    };
+    database.semanticMemory[index] = updated;
+    await this.writeDatabase(database);
+    return clone(updated);
   }
 }
 

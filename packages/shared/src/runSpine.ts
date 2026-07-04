@@ -267,6 +267,7 @@ export type CreateRunInput = {
   capabilityId: string;
   taskId: string;
   workspaceId: string;
+  repositoryPath: string;
   budget: RunBudget;
 };
 
@@ -544,6 +545,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     capabilityId: "coding-apprentice",
     taskId: "task-failing-unit-test",
     workspaceId: "workspace-local-alpha",
+    repositoryPath: "/repos/codepawl",
     budget: createDefaultRunBudget(),
   });
 

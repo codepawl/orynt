@@ -380,6 +380,80 @@ describe("LocalSkillRegistry", () => {
       }),
     ).rejects.toBeInstanceOf(SkillRegistryFailure);
   });
+
+  it("plans later invocation only for active skills and falls back for candidate, rejected, or archived skills", async () => {
+    const registry = new LocalSkillRegistry([
+      activeSkill({
+        id: "skill-active-package-scope",
+        title: "Keep package fixes scoped",
+        status: "active",
+      }),
+      activeSkill({
+        id: "skill-candidate-package-scope",
+        title: "Candidate package scope",
+        status: "candidate",
+        promotionDecisions: [],
+      }),
+      activeSkill({
+        id: "skill-rejected-package-scope",
+        title: "Rejected package scope",
+        status: "rejected",
+      }),
+      activeSkill({
+        id: "skill-archived-package-scope",
+        title: "Archived package scope",
+        status: "archived",
+      }),
+    ]);
+
+    const activeInvocation = await registry.planSkillInvocation({
+      namespace,
+      runId: "run-later-1",
+      taskId: "task-later",
+      text: "Keep package fixes scoped",
+    });
+    expect(activeInvocation.status).toBe("planned");
+    expect(activeInvocation.skillId).toBe("skill-active-package-scope");
+    expect(activeInvocation.executable).toBe(false);
+    expect(activeInvocation.requiredApprovals).toContain("operator approval required before invoking an approved skill");
+    expect(activeInvocation.plannedSteps.map((step) => step.skillStepId)).toEqual(["step-apply-rule-scope", "step-validate"]);
+
+    const candidateFallback = await registry.planSkillInvocation({
+      namespace,
+      runId: "run-later-2",
+      taskId: "task-later",
+      text: "Candidate package scope",
+    });
+    expect(candidateFallback).toMatchObject({
+      status: "fallback",
+      fallbackReason: "skill_not_active",
+      selectedSkillStatus: "candidate",
+    });
+
+    const rejectedFallback = await registry.planSkillInvocation({
+      namespace,
+      runId: "run-later-3",
+      taskId: "task-later",
+      text: "Rejected package scope",
+    });
+    expect(rejectedFallback).toMatchObject({
+      status: "fallback",
+      fallbackReason: "skill_rejected",
+      selectedSkillStatus: "rejected",
+    });
+
+    const archivedFallback = await registry.planSkillInvocation({
+      namespace,
+      runId: "run-later-4",
+      taskId: "task-later",
+      text: "Archived package scope",
+    });
+    expect(archivedFallback).toMatchObject({
+      status: "fallback",
+      fallbackReason: "skill_archived",
+      selectedSkillStatus: "archived",
+    });
+  });
 });
 
 describe("LocalSkillReplayPlanner", () => {

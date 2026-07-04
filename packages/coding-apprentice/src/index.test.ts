@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { LocalCodingApprenticeDemoOrchestrator } from "./index";
+import { LocalCodingApprenticeDemoOrchestrator, runDesktopRepositoryBeta } from "./index";
 
 const execFileAsync = promisify(execFile);
 
@@ -139,6 +139,42 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     );
   });
 
+  it("runs the desktop repository sidecar and writes the beta artifact manifest", async () => {
+    const repositoryPath = await createFixtureRepository("desktop-repo");
+    const result = await runDesktopRepositoryBeta({
+      goal: "Run the desktop beta repository smoke",
+      taskId: "task-desktop-repository-smoke",
+      workspaceId: "workspace-desktop",
+      repositoryPath,
+      sandboxRoot: path.join(tempRoot, "desktop-sandboxes"),
+      artifactRoot: path.join(tempRoot, "desktop-artifacts"),
+      memoryRoot: path.join(tempRoot, "desktop-memory"),
+    });
+
+    const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
+      runId: string;
+      repositoryPath: string;
+      artifacts: Record<string, string | null>;
+      eventTypes: string[];
+    };
+
+    expect(result.status).toBe("pass");
+    expect(result.eventCount).toBeGreaterThan(0);
+    expect(manifest).toMatchObject({
+      runId: result.runId,
+      repositoryPath,
+      artifacts: {
+        contract: expect.stringContaining("codex-contract.md"),
+        eventLog: expect.stringContaining("run-events.json"),
+        verifierInput: expect.stringContaining("verifier-input.json"),
+        verificationResult: expect.stringContaining("verification-result.json"),
+        redactedLog: expect.stringContaining("manual-result.redacted.log"),
+        memoryStore: expect.stringContaining("memory-store.json"),
+      },
+    });
+    expect(manifest.eventTypes).toContain("run_finished");
+  });
+
   it("returns a verifier no-change failure when imported result has no changed files", async () => {
     const repositoryPath = await createFixtureRepository();
     const result = await new LocalCodingApprenticeDemoOrchestrator().runDemo(demoRequest(repositoryPath));
@@ -191,6 +227,103 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
         "verification_started",
       ]),
     );
+  });
+
+  it("records controlled run usage in the canonical agent ledger", async () => {
+    const repositoryPath = await createFixtureRepository();
+    const codexPathEnv = await createFakeCodexBinary();
+    const result = await new LocalCodingApprenticeDemoOrchestrator().runDemo(
+      demoRequest(repositoryPath, {
+        userId: "user-ledger",
+        planId: "managed-ai",
+        enableControlledCodexExecution: true,
+        codexPathEnv,
+        createExecutionApproval: ({ plan, run }) => ({
+          id: `approval-${plan.id}`,
+          runId: run.id,
+          planId: plan.id,
+          status: "approved",
+          approvedBy: "operator",
+          reason: "Test approves controlled Codex execution.",
+          approvedAt: "2026-07-04T01:00:00.000Z",
+        }),
+      }),
+    );
+
+    expect(result.ledgerRun.id).toBe(result.run.id);
+    expect(result.ledgerRun.status).toBe("completed");
+    expect(result.ledgerRun.userId).toBe("user-ledger");
+    expect(result.ledgerRun.planId).toBe("managed-ai");
+    expect(result.ledgerRun.approvalCount).toBe(1);
+    expect(result.ledgerRun.estimatedCostUsd).toBeGreaterThan(0);
+    expect(result.usageSummary.userId).toBe("user-ledger");
+    expect(result.usageSummary.runCount).toBe(1);
+    expect(result.usageSummary.gatewayActionCount).toBeGreaterThanOrEqual(1);
+    expect(result.artifacts.map((artifact) => artifact.id)).toContain(`${result.importBundle.id}-verifier-input`);
+    expect(result.usageSummary.artifactCount).toBe(result.artifacts.length);
+    expect(result.usageSummary.permissionDecisionCounts.approved).toBe(1);
+    expect(result.usageSummary.estimatedCostUsd).toBeUndefined();
+    expect(result.adminUsageSummary.artifactCount).toBe(result.artifacts.length);
+    expect(result.adminUsageSummary.estimatedCostUsd).toBeCloseTo(result.ledgerRun.estimatedCostUsd, 8);
+  });
+
+  it("attaches a deterministic cognitive kernel trace to the supervised run", async () => {
+    const repositoryPath = await createFixtureRepository();
+    const orchestrator = new LocalCodingApprenticeDemoOrchestrator();
+
+    const result = await orchestrator.runDemo(
+      demoRequest(repositoryPath, {
+        applyManualChange: async ({ sandbox }) => {
+          await writeFile(path.join(sandbox.worktreePath, "packages", "value.txt"), "manual pass\n");
+        },
+      }),
+    );
+
+    expect(result.cognitiveKernelResult.status).toBe("completed");
+    expect(result.cognitiveKernelResult.phases).toEqual(["observe", "retrieve", "plan", "gate", "execute", "verify", "learn", "summarize"]);
+    expect(result.cognitiveKernelResult.memoryHits.map((hit) => hit.kind)).toEqual(expect.arrayContaining(["episodic"]));
+    expect(result.cognitiveKernelResult.actionDecisions[0]).toMatchObject({ decision: "allow" });
+    expect(result.cognitiveKernelResult.gatewayResults[0]).toMatchObject({
+      observation: "verification pass",
+    });
+    expect(result.cognitiveGatewayResult).toMatchObject({
+      status: "executed",
+      permission: {
+        tier: "safe",
+        decision: "auto_allowed",
+      },
+    });
+    expect(result.cognitiveGatewayResult.evidence.map((item) => item.artifactType)).toContain("trace");
+    expect(result.cognitiveKernelResult.verifications[0]).toMatchObject({
+      status: "pass",
+      expectedObservation: "verification pass",
+      actualObservation: "verification pass",
+    });
+  });
+
+  it("captures user feedback as candidate semantic memory and falls back when no approved skill is available", async () => {
+    const repositoryPath = await createFixtureRepository();
+    const result = await new LocalCodingApprenticeDemoOrchestrator().runDemo(
+      demoRequest(repositoryPath, {
+        userNotes: "Correction: run node scripts/pass.mjs before claiming completion token=sk-feedbacksecret123",
+        applyManualChange: async ({ sandbox }) => {
+          await writeFile(path.join(sandbox.worktreePath, "packages", "value.txt"), "manual pass\n");
+        },
+      }),
+    );
+
+    expect(result.feedbackMemory).toMatchObject({
+      status: "candidate",
+      sensitivity: "internal",
+      confidence: 0.7,
+    });
+    expect(result.feedbackMemory?.summary).not.toContain("sk-feedbacksecret123");
+    expect(result.skillInvocationPlan).toMatchObject({
+      status: "fallback",
+      fallbackReason: "no_matching_skill",
+      executable: false,
+    });
+    expect(result.skillInvocationPlan.requiredApprovals).toContain("operator review required before creating or promoting a reusable skill");
   });
 
   it("does not execute blocked verification commands", async () => {

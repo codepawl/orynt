@@ -181,6 +181,14 @@ Before trying real Codex:
 codex --version
 ```
 
+Run the opt-in real Codex walkthrough only when the local CLI is authenticated and you are ready to spend model/network budget:
+
+```bash
+CODEPAWL_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex
+```
+
+This script creates a disposable fixture repository under `/tmp`, routes execution through CodePawl's controlled Codex adapter, records the approval and execution lifecycle events, imports the result, and runs `node scripts/pass.mjs` as a separate verifier stage.
+
 Keep secrets out of the repository, fixture files, command output, and contract content. Do not place API keys, passwords, OTPs, private keys, cookies, or raw sensitive values in the fixture repo or walkthrough notes. Verification must still run as a separate stage after result import.
 
 ## Troubleshooting

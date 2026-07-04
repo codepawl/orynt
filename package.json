@@ -5,15 +5,21 @@
   "packageManager": "pnpm@10.34.4",
   "scripts": {
     "build": "pnpm --filter @codepawl/marketing-site build",
-    "build:desktop": "pnpm --filter @codepawl/desktop build",
+    "build:desktop": "pnpm --filter @codepawl/coding-apprentice build && pnpm --filter @codepawl/desktop build",
     "dev": "pnpm --filter @codepawl/marketing-site dev",
     "dev:desktop": "pnpm --filter @codepawl/desktop dev",
     "dev:marketing": "pnpm --filter @codepawl/marketing-site dev",
     "test": "pnpm --filter @codepawl/marketing-site test",
     "test:contracts": "pnpm --filter @codepawl/shared test && pnpm --filter @codepawl/ipc-contracts test",
     "test:desktop": "pnpm --filter @codepawl/desktop test",
+    "test:eval": "pnpm --filter @codepawl/eval-harness test",
     "test:tauri": "node scripts/test-tauri.mjs",
     "walkthrough:smoke": "pnpm --filter @codepawl/coding-apprentice build && pnpm --filter @codepawl/skill-registry build && node --import ./scripts/register-extensionless-esm-loader.mjs scripts/mvp-walkthrough-smoke.mjs",
+    "walkthrough:real-codex": "pnpm --filter @codepawl/coding-apprentice build && node --import ./scripts/register-extensionless-esm-loader.mjs scripts/real-codex-walkthrough.mjs",
     "preview:marketing": "pnpm --filter @codepawl/marketing-site preview"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.0.1"
   }
 }

@@ -254,6 +254,43 @@ export type SkillQuery = {
   limit?: number;
 };
 
+export type SkillInvocationPlanStatus = "planned" | "fallback";
+
+export type SkillInvocationFallbackReason = "no_matching_skill" | "skill_not_active" | "skill_rejected" | "skill_archived" | "skill_superseded";
+
+export type SkillInvocationPlannedStep = {
+  id: string;
+  skillStepId: string;
+  title: string;
+  instruction: string;
+  expectedOutcome: string;
+  status: "planned" | "skipped";
+};
+
+export type SkillInvocationPlan = {
+  id: string;
+  runId: string;
+  taskId: string;
+  namespace: MemoryNamespace;
+  status: SkillInvocationPlanStatus;
+  skillId?: string;
+  skillTitle?: string;
+  selectedSkillStatus?: SkillStatus;
+  executable: false;
+  summary: string;
+  plannedSteps: SkillInvocationPlannedStep[];
+  requiredApprovals: string[];
+  fallbackReason?: SkillInvocationFallbackReason;
+  createdAt: string;
+};
+
+export type SkillInvocationPlanInput = {
+  namespace: MemoryNamespace;
+  runId: string;
+  taskId: string;
+  text?: string;
+};
+
 export interface SkillRegistry {
   createCandidateSkill(input: SkillExtractionCandidate): Promise<SkillDefinition>;
   listSkills(query?: SkillQuery): Promise<SkillDefinition[]>;
@@ -261,5 +298,6 @@ export interface SkillRegistry {
   updateSkillStatus(decision: SkillPromotionDecision): Promise<SkillDefinition>;
   rejectSkill(decision: SkillPromotionDecision): Promise<SkillDefinition>;
   promoteSkillManually(decision: SkillPromotionDecision): Promise<SkillDefinition>;
+  planSkillInvocation(input: SkillInvocationPlanInput): Promise<SkillInvocationPlan>;
   summarizeSkills(namespace?: Partial<MemoryNamespace>): Promise<SkillSummary>;
 }

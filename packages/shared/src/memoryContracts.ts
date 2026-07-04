@@ -16,7 +16,13 @@ export type MemoryItemKind =
   | "allowed_scope_pattern"
   | "command_observation";
 
-export type MemorySourceKind = "run_event" | "verification_result" | "import_summary" | "policy_decision" | "artifact_metadata";
+export type MemorySourceKind =
+  | "run_event"
+  | "verification_result"
+  | "import_summary"
+  | "policy_decision"
+  | "artifact_metadata"
+  | "user_feedback";
 
 export type MemoryProvenance = {
   runId: string;
@@ -94,6 +100,34 @@ export type CandidateRule = {
   supersededBy?: string;
 };
 
+export type SemanticMemoryStatus = "candidate" | "approved" | "rejected" | "deleted";
+
+export type SemanticMemorySensitivity = "public" | "internal" | "sensitive";
+
+export type SemanticMemoryReviewDecision = {
+  status: Exclude<SemanticMemoryStatus, "candidate">;
+  actor: string;
+  reason: string;
+  runId?: string;
+  decidedAt: string;
+};
+
+export type SemanticMemoryItem = {
+  id: string;
+  namespace: MemoryNamespace;
+  status: SemanticMemoryStatus;
+  summary: string;
+  content: Record<string, unknown>;
+  sensitivity: SemanticMemorySensitivity;
+  confidence: number;
+  provenance: MemoryProvenance;
+  redaction: MemoryRedactionResult;
+  reviewDecisions: SemanticMemoryReviewDecision[];
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+};
+
 export type MemoryExtractionResult = {
   id: string;
   runId: string;
@@ -121,6 +155,41 @@ export type CandidateRuleQuery = {
   statuses?: CandidateRuleStatus[];
   text?: string;
   limit?: number;
+};
+
+export type SemanticMemoryQuery = {
+  namespace?: Partial<MemoryNamespace>;
+  statuses?: SemanticMemoryStatus[];
+  text?: string;
+  includeDeleted?: boolean;
+  limit?: number;
+};
+
+export type SemanticMemoryWriteInput = Omit<SemanticMemoryItem, "id" | "redaction" | "reviewDecisions" | "createdAt" | "updatedAt" | "deletedAt"> & {
+  id?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  redaction?: MemoryRedactionResult;
+  reviewDecisions?: SemanticMemoryReviewDecision[];
+};
+
+export type SemanticMemoryStatusUpdateInput = {
+  id: string;
+  status: Exclude<SemanticMemoryStatus, "candidate">;
+  actor: string;
+  reason: string;
+  runId?: string;
+  decidedAt?: string;
+};
+
+export type SemanticMemoryEditInput = {
+  id: string;
+  summary?: string;
+  content?: Record<string, unknown>;
+  sensitivity?: SemanticMemorySensitivity;
+  confidence?: number;
+  actor: string;
+  reason: string;
 };
 
 export type CandidateRuleStatusUpdateOptions = {
@@ -172,6 +241,11 @@ export interface MemoryStore {
   writeCandidateRule(input: CandidateRuleWriteInput): Promise<CandidateRule>;
   listCandidateRules(query?: CandidateRuleQuery): Promise<CandidateRule[]>;
   updateCandidateRuleStatus(id: string, status: CandidateRuleStatus, options?: CandidateRuleStatusUpdateOptions): Promise<CandidateRule>;
+  writeSemanticMemory(input: SemanticMemoryWriteInput): Promise<SemanticMemoryItem>;
+  listSemanticMemory(query?: SemanticMemoryQuery): Promise<SemanticMemoryItem[]>;
+  updateSemanticMemoryStatus(input: SemanticMemoryStatusUpdateInput): Promise<SemanticMemoryItem>;
+  editSemanticMemory(input: SemanticMemoryEditInput): Promise<SemanticMemoryItem>;
+  deleteSemanticMemory(input: Omit<SemanticMemoryStatusUpdateInput, "status">): Promise<SemanticMemoryItem>;
   summarizeMemory(namespace?: Partial<MemoryNamespace>): Promise<MemorySummary>;
 }
 

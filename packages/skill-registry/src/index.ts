@@ -9,6 +9,9 @@ import type {
   RunStore,
   SkillDefinition,
   SkillExtractionCandidate,
+  SkillInvocationFallbackReason,
+  SkillInvocationPlan,
+  SkillInvocationPlanInput,
   SkillReplayBudgetEstimate,
   SkillReplayPlan,
   SkillReplayPlanner,
@@ -363,6 +366,64 @@ export class LocalSkillRegistry implements SkillRegistry {
     return skill ? clone(skill) : undefined;
   }
 
+  async planSkillInvocation(input: SkillInvocationPlanInput): Promise<SkillInvocationPlan> {
+    const matching = this.skills.filter((skill) => namespaceMatches(skill.namespace, input.namespace) && textMatches(skill, input.text));
+    const active = matching.find((skill) => skill.status === "active");
+    if (active) {
+      return {
+        id: `skill-invocation-${slug(active.id)}-${slug(input.runId)}`,
+        runId: input.runId,
+        taskId: input.taskId,
+        namespace: clone(input.namespace),
+        status: "planned",
+        skillId: active.id,
+        skillTitle: active.title,
+        selectedSkillStatus: active.status,
+        executable: false,
+        summary: `Approved skill ${active.title} is available for supervised invocation.`,
+        plannedSteps: active.steps.map((step) => ({
+          id: `invoke-${step.id}`,
+          skillStepId: step.id,
+          title: step.title,
+          instruction: step.instruction,
+          expectedOutcome: step.expectedOutcome,
+          status: "planned",
+        })),
+        requiredApprovals: ["operator approval required before invoking an approved skill"],
+        createdAt: now(),
+      };
+    }
+
+    const selected = matching[0];
+    const fallbackReason = this.fallbackReasonFor(selected);
+    return {
+      id: `skill-invocation-fallback-${slug(input.runId)}`,
+      runId: input.runId,
+      taskId: input.taskId,
+      namespace: clone(input.namespace),
+      status: "fallback",
+      skillId: selected?.id,
+      skillTitle: selected?.title,
+      selectedSkillStatus: selected?.status,
+      executable: false,
+      summary: selected
+        ? `Skill ${selected.title} is ${selected.status}; using manual fallback planning.`
+        : "No matching approved skill is available; using manual fallback planning.",
+      plannedSteps:
+        selected?.steps.map((step) => ({
+          id: `fallback-${step.id}`,
+          skillStepId: step.id,
+          title: step.title,
+          instruction: step.instruction,
+          expectedOutcome: step.expectedOutcome,
+          status: "skipped" as const,
+        })) ?? [],
+      requiredApprovals: ["operator review required before creating or promoting a reusable skill"],
+      fallbackReason,
+      createdAt: now(),
+    };
+  }
+
   async updateSkillStatus(decision: SkillPromotionDecision): Promise<SkillDefinition> {
     const skill = this.skills.find((item) => item.id === decision.skillId);
     if (!skill) {
@@ -407,6 +468,22 @@ export class LocalSkillRegistry implements SkillRegistry {
       statusCounts,
       namespaceCount: namespaces.size,
     };
+  }
+
+  private fallbackReasonFor(skill?: SkillDefinition): SkillInvocationFallbackReason {
+    if (!skill) {
+      return "no_matching_skill";
+    }
+    if (skill.status === "rejected") {
+      return "skill_rejected";
+    }
+    if (skill.status === "archived") {
+      return "skill_archived";
+    }
+    if (skill.status === "superseded") {
+      return "skill_superseded";
+    }
+    return "skill_not_active";
   }
 }
 

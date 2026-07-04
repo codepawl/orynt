@@ -598,8 +598,6 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         "--ephemeral",
         "--sandbox",
         "workspace-write",
-        "--ask-for-approval",
-        "never",
         "-C",
         request.sandbox.worktreePath,
         "--output-last-message",

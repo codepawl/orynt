@@ -246,6 +246,98 @@ describe("LocalJsonMemoryStore", () => {
     });
   });
 
+  it("captures user feedback as reviewable semantic memory and excludes deleted items from normal queries", async () => {
+    const store = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
+    const feedback = await store.writeSemanticMemory({
+      namespace,
+      status: "candidate",
+      summary: "User correction: prefer pnpm test:contracts for contract package changes token=sk-feedbacksecret123",
+      content: {
+        correction: "Use pnpm test:contracts before declaring shared contract changes complete.",
+        rawValue: "sk-feedbacksecret123",
+      },
+      sensitivity: "internal",
+      confidence: 0.72,
+      provenance: {
+        runId: "run-feedback-1",
+        taskId: "task-memory",
+        eventIds: ["run-feedback-1-event-8"],
+        artifactRefs: [],
+        sources: ["user_feedback"],
+        sourceTimestamps: ["2026-07-04T00:00:00.000Z"],
+      },
+    });
+
+    expect(feedback.status).toBe("candidate");
+    expect(feedback.summary).not.toContain("sk-feedbacksecret123");
+    expect(feedback.redaction.applied).toBe(true);
+    expect(await store.listSemanticMemory({ namespace, statuses: ["candidate"], text: "pnpm test:contracts" })).toHaveLength(1);
+
+    const approved = await store.updateSemanticMemoryStatus({
+      id: feedback.id,
+      status: "approved",
+      actor: "operator",
+      reason: "Correction matches the repository validation contract.",
+      runId: "run-feedback-1",
+    });
+    expect(approved.status).toBe("approved");
+    expect(approved.reviewDecisions.at(-1)).toMatchObject({ status: "approved", actor: "operator" });
+
+    const edited = await store.editSemanticMemory({
+      id: feedback.id,
+      summary: "Use pnpm test:contracts before declaring shared contract changes complete.",
+      content: { correction: "Run the contract test gate for shared package contract changes." },
+      actor: "operator",
+      reason: "Remove noisy wording before reuse.",
+    });
+    expect(edited.status).toBe("approved");
+    expect(edited.summary).toContain("shared contract changes");
+
+    const deleted = await store.deleteSemanticMemory({
+      id: feedback.id,
+      actor: "operator",
+      reason: "Operator requested removal from active memory.",
+      runId: "run-feedback-2",
+    });
+    expect(deleted.status).toBe("deleted");
+    expect(await store.listSemanticMemory({ namespace, text: "shared contract" })).toHaveLength(0);
+    expect(await store.listSemanticMemory({ namespace, statuses: ["deleted"], text: "shared contract", includeDeleted: true })).toHaveLength(1);
+  });
+
+  it("preserves semantic memory fields that are omitted from partial edits", async () => {
+    const store = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
+    const feedback = await store.writeSemanticMemory({
+      namespace,
+      status: "approved",
+      summary: "Use pnpm test:contracts before declaring shared contract changes complete.",
+      content: { correction: "Run the contract test gate for shared package contract changes." },
+      sensitivity: "internal",
+      confidence: 0.7,
+      provenance: {
+        runId: "run-feedback-1",
+        taskId: "task-memory",
+        eventIds: ["run-feedback-1-event-8"],
+        artifactRefs: [],
+        sources: ["user_feedback"],
+      },
+    });
+
+    const edited = await store.editSemanticMemory({
+      id: feedback.id,
+      confidence: 0.91,
+      actor: "operator",
+      reason: "Increase confidence after repeated successful reuse.",
+    });
+
+    expect(edited).toMatchObject({
+      summary: feedback.summary,
+      content: feedback.content,
+      sensitivity: feedback.sensitivity,
+      confidence: 0.91,
+    });
+    expect(await store.listSemanticMemory({ namespace, text: "shared contract" })).toHaveLength(1);
+  });
+
   it("rejects JSON store paths outside the managed memory root", async () => {
     const store = new LocalJsonMemoryStore({ memoryRoot: path.join(tempRoot, "managed") });
 
