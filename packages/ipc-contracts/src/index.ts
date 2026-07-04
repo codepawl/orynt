@@ -234,6 +234,7 @@ export type CreateRunInput = {
   capabilityId: string;
   taskId: string;
   workspaceId: string;
+  repositoryPath: string;
   budget: {
     maxSteps: number;
     maxWallTimeMs: number;
