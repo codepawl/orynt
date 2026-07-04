@@ -37,7 +37,7 @@
   <rect width="1920" height="1080" fill="url(#shell)"/>
   <ellipse cx="1340" cy="520" rx="720" ry="520" fill="url(#tealGlow)" filter="url(#mist)"/>
   <ellipse cx="1050" cy="690" rx="470" ry="260" fill="#5ff2d6" opacity="0.17" filter="url(#mist)"/>
-  <g mask="url(#copySpace)" filter="url(#softGlow)" font-family="'Roboto Slab', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="42" letter-spacing="10" fill="url(#glyphFade)">
+  <g mask="url(#copySpace)" filter="url(#softGlow)" font-family="'Lora', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="42" letter-spacing="10" fill="url(#glyphFade)">
     <text x="610" y="95">---===++xxxXX  X8880000  08888XXX++</text>
     <text x="760" y="155">==++  +XXXX8  8x8888X  XXXXXXxx  x +++</text>
     <text x="910" y="215">=++xx    00000   00  0 0 888X xXXxx+</text>

@@ -27,7 +27,7 @@
     <ellipse cx="620" cy="360" rx="360" ry="170"/>
     <path d="M155 350 C300 210 460 160 655 185 C875 215 1035 330 1080 475"/>
   </g>
-  <g font-family="'Roboto Slab', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" letter-spacing="8" fill="url(#orbitGlyph)" filter="url(#orbitBloom)">
+  <g font-family="'Lora', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" letter-spacing="8" fill="url(#orbitGlyph)" filter="url(#orbitBloom)">
     <text x="175" y="175">---===++xx X8880</text>
     <text x="330" y="235">++XXX8 00SS ##@@@</text>
     <text x="455" y="295">X880S# @@@@@ @@@</text>
