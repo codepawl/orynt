@@ -45,6 +45,20 @@ export const MEMORY_IPC_METHODS = [
   "memory.updateCandidateRuleStatus",
 ] as const;
 
+export const RUN_IPC_METHODS = [
+  "run.create",
+  "run.list",
+  "run.open",
+  "run.cancel",
+] as const;
+
+export const SETTINGS_IPC_METHODS = [
+  "settings.get",
+  "settings.update",
+  "providerKey.save",
+  "providerKey.test",
+] as const;
+
 export const SKILL_IPC_METHODS = [
   "skill.list",
   "skill.createCandidate",

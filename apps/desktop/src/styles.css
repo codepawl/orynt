@@ -1824,7 +1824,7 @@ h3 {
   align-items: center;
   border: 1px solid rgba(241, 241, 241, 0.16);
   border-radius: 8px;
-  background: #252525;
+  background: var(--thread-surface);
   padding: var(--space-micro);
   box-shadow: 0 4px 8px rgba(28, 28, 28, 0.42);
 }
@@ -1907,7 +1907,7 @@ h3 {
   z-index: 14;
   border: 1px solid rgba(241, 241, 241, 0.16);
   border-radius: 8px;
-  background: #252525;
+  background: var(--thread-surface);
 }
 
 .agent-response-more-menu {
@@ -1947,7 +1947,7 @@ h3 {
   height: 100%;
   min-height: 0;
   border: 1px solid rgba(241, 241, 241, 0.16);
-  background: #252525;
+  background: var(--thread-surface);
   margin: 0;
   overflow: hidden;
   padding: var(--space-content);
@@ -2238,7 +2238,7 @@ h3 {
   width: min(252px, calc(100vw - 48px));
   border: 1px solid rgba(241, 241, 241, 0.16);
   border-radius: 8px;
-  background: #252525;
+  background: var(--thread-surface);
   box-shadow: 0 4px 8px rgba(28, 28, 28, 0.42);
   padding: var(--space-micro);
 }
@@ -2351,7 +2351,7 @@ h3 {
   width: min(260px, calc(100vw - 48px));
   border: 1px solid rgba(241, 241, 241, 0.16);
   border-radius: 8px;
-  background: #252525;
+  background: var(--thread-surface);
   box-shadow: 0 4px 8px rgba(28, 28, 28, 0.42);
   padding: var(--space-micro);
 }

@@ -43,6 +43,66 @@ export type CodexExecutionPreview = {
   summary: string;
 };
 
+export type RetentionPolicySnapshot = {
+  runHistoryDays: number;
+  artifactRetentionDays: number;
+  cleanupEnabled: boolean;
+  summary: string;
+};
+
+export type SettingsSnapshot = {
+  workspaceId: string;
+  permissionMode: "safe" | "balanced" | "manual";
+  executableSurfaces: string[];
+  blockedSurfaces: string[];
+  providerRefs: SecretReference[];
+  retentionPolicy: RetentionPolicySnapshot;
+};
+
+export type SettingsUpdateInput = {
+  permissionMode: "safe" | "balanced" | "manual";
+};
+
+export type SecretReference = {
+  providerId: string;
+  keyRef: string;
+};
+
+export type PersistedRunSummary = {
+  runId: string;
+  taskId: string;
+  workspaceId: string;
+  goal: string;
+  repositoryPath: string;
+  status: string;
+  artifactManifestPath: string;
+  eventCount: number;
+  artifactCount: number;
+  memoryCandidateCount: number;
+  skillCount: number;
+  updatedAt: string;
+};
+
+export type PersistedRunRecord = {
+  runId: string;
+  taskId: string;
+  workspaceId: string;
+  goal: string;
+  repositoryPath: string;
+  status: string;
+  artifactRoot: string;
+  artifactManifestPath: string;
+  events: RunEvent[];
+  artifacts: Array<{ id: string; kind: string; uri: string; label: string; sha256?: string }>;
+  usageSummary: Record<string, unknown>;
+  memoryCandidates: Array<Record<string, unknown>>;
+  skills: Array<Record<string, unknown>>;
+  skillReplayPlan?: Record<string, unknown> | null;
+  providerRefs: SecretReference[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 let mockListeners = new Set<(event: RunEvent) => void>();
 const initialMockState = createMockRunState();
 let mockMemoryReview: MemoryReviewSnapshot = initialMockState.memoryReview;
@@ -429,6 +489,57 @@ export const codepawl = {
     });
 
     return { id: runId };
+  },
+
+  async listPersistedRuns(): Promise<PersistedRunSummary[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<PersistedRunSummary[]>("run_list");
+    }
+
+    return [];
+  },
+
+  async openPersistedRun(runId: string): Promise<PersistedRunRecord> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<PersistedRunRecord>("run_open", { runId });
+    }
+
+    throw new Error(`persisted run not found: ${runId}`);
+  },
+
+  async getSettings(): Promise<SettingsSnapshot> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SettingsSnapshot>("settings_get");
+    }
+
+    return {
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      providerRefs: [],
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    };
+  },
+
+  async updateSettings(input: SettingsUpdateInput): Promise<SettingsSnapshot> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SettingsSnapshot>("settings_update", { input });
+    }
+
+    return {
+      ...(await this.getSettings()),
+      permissionMode: input.permissionMode,
+    };
   },
 
   async cancelRun(runId: string): Promise<void> {

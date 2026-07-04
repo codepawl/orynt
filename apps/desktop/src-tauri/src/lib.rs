@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -173,6 +174,17 @@ pub struct SettingsSnapshot {
     permission_mode: String,
     executable_surfaces: Vec<String>,
     blocked_surfaces: Vec<String>,
+    provider_refs: Vec<SecretReference>,
+    retention_policy: RetentionPolicySnapshot,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionPolicySnapshot {
+    run_history_days: u32,
+    artifact_retention_days: u32,
+    cleanup_enabled: bool,
+    summary: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,7 +200,7 @@ pub struct ProviderKeySaveInput {
     label: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretReference {
     provider_id: String,
@@ -218,6 +230,45 @@ struct DesktopRepositoryRunRequest {
     memory_root: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedRunRecord {
+    run_id: String,
+    task_id: String,
+    workspace_id: String,
+    goal: String,
+    repository_path: String,
+    status: String,
+    artifact_root: String,
+    artifact_manifest_path: String,
+    events: Vec<serde_json::Value>,
+    artifacts: Vec<serde_json::Value>,
+    usage_summary: serde_json::Value,
+    memory_candidates: Vec<serde_json::Value>,
+    skills: Vec<serde_json::Value>,
+    skill_replay_plan: Option<serde_json::Value>,
+    provider_refs: Vec<SecretReference>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedRunSummary {
+    run_id: String,
+    task_id: String,
+    workspace_id: String,
+    goal: String,
+    repository_path: String,
+    status: String,
+    artifact_manifest_path: String,
+    event_count: usize,
+    artifact_count: usize,
+    memory_candidate_count: usize,
+    skill_count: usize,
+    updated_at: String,
+}
+
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("{0}")]
@@ -228,6 +279,8 @@ pub enum AppError {
     Event(String),
     #[error("repository run failed: {0}")]
     RepositoryRun(String),
+    #[error("{0}")]
+    Persistence(String),
 }
 
 impl serde::Serialize for AppError {
@@ -236,6 +289,199 @@ impl serde::Serialize for AppError {
         S: serde::Serializer,
     {
         serializer.serialize_str(&self.to_string())
+    }
+}
+
+pub struct LocalPersistenceStore {
+    root: PathBuf,
+}
+
+impl LocalPersistenceStore {
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
+    pub fn settings_path(&self) -> PathBuf {
+        self.root.join("settings.json")
+    }
+
+    fn runs_dir(&self) -> PathBuf {
+        self.root.join("runs")
+    }
+
+    fn run_path(&self, run_id: &str) -> PathBuf {
+        self.runs_dir().join(format!("{run_id}.json"))
+    }
+
+    fn run_index_path(&self) -> PathBuf {
+        self.root.join("runs-index.json")
+    }
+
+    fn ensure_dirs(&self) -> Result<(), AppError> {
+        fs::create_dir_all(self.runs_dir()).map_err(|error| {
+            AppError::Persistence(format!("could not create app data store: {error}"))
+        })?;
+        Ok(())
+    }
+
+    pub fn save_run(&self, run: &PersistedRunRecord) -> Result<(), AppError> {
+        self.ensure_dirs()?;
+        self.validate_artifact_manifest_path(&run.artifact_manifest_path)?;
+        let run_json = serde_json::to_string_pretty(run).map_err(|error| {
+            AppError::Persistence(format!("could not encode run snapshot: {error}"))
+        })?;
+        fs::write(self.run_path(&run.run_id), format!("{run_json}\n")).map_err(|error| {
+            AppError::Persistence(format!("could not write run snapshot: {error}"))
+        })?;
+
+        let mut summaries = self.list_runs().unwrap_or_default();
+        summaries.retain(|summary| summary.run_id != run.run_id);
+        summaries.push(run.summary());
+        summaries.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+        let summary_json = serde_json::to_string_pretty(&summaries).map_err(|error| {
+            AppError::Persistence(format!("could not encode run index: {error}"))
+        })?;
+        fs::write(self.run_index_path(), format!("{summary_json}\n")).map_err(|error| {
+            AppError::Persistence(format!("could not write run index: {error}"))
+        })?;
+        Ok(())
+    }
+
+    pub fn list_runs(&self) -> Result<Vec<PersistedRunSummary>, AppError> {
+        if !self.run_index_path().exists() {
+            return Ok(vec![]);
+        }
+        let raw = fs::read_to_string(self.run_index_path())
+            .map_err(|error| AppError::Persistence(format!("could not read run index: {error}")))?;
+        serde_json::from_str(&raw)
+            .map_err(|error| AppError::Persistence(format!("could not parse run index: {error}")))
+    }
+
+    pub fn open_run(&self, run_id: &str) -> Result<PersistedRunRecord, AppError> {
+        if run_id.trim().is_empty() {
+            return Err(AppError::Validation("runId is required".into()));
+        }
+        let raw = fs::read_to_string(self.run_path(run_id))
+            .map_err(|_| AppError::Persistence(format!("run snapshot not found: {run_id}")))?;
+        let run: PersistedRunRecord = serde_json::from_str(&raw).map_err(|error| {
+            AppError::Persistence(format!("could not parse run snapshot: {error}"))
+        })?;
+        self.read_artifact_manifest(&run).map_err(|_| {
+            AppError::Persistence(format!(
+                "artifact manifest is missing or corrupted for run {run_id}"
+            ))
+        })?;
+        Ok(run)
+    }
+
+    pub fn save_settings(&self, settings: &SettingsSnapshot) -> Result<(), AppError> {
+        self.ensure_dirs()?;
+        let settings_json = serde_json::to_string_pretty(settings).map_err(|error| {
+            AppError::Persistence(format!("could not encode settings: {error}"))
+        })?;
+        fs::write(self.settings_path(), format!("{settings_json}\n"))
+            .map_err(|error| AppError::Persistence(format!("could not write settings: {error}")))?;
+        Ok(())
+    }
+
+    pub fn load_settings(&self) -> Result<SettingsSnapshot, AppError> {
+        if !self.settings_path().exists() {
+            return Ok(default_settings_snapshot());
+        }
+        let raw = fs::read_to_string(self.settings_path())
+            .map_err(|error| AppError::Persistence(format!("could not read settings: {error}")))?;
+        serde_json::from_str(&raw)
+            .map_err(|error| AppError::Persistence(format!("could not parse settings: {error}")))
+    }
+
+    fn validate_artifact_manifest_path(
+        &self,
+        artifact_manifest_path: &str,
+    ) -> Result<(), AppError> {
+        let root = self.canonical_root()?;
+        let manifest = PathBuf::from(artifact_manifest_path);
+        let manifest_parent = manifest.parent().ok_or_else(|| {
+            AppError::Validation(
+                "artifact manifest must stay inside the CodePawl app data directory".into(),
+            )
+        })?;
+        let canonical_parent = manifest_parent.canonicalize().map_err(|_| {
+            AppError::Validation(
+                "artifact manifest must stay inside the CodePawl app data directory".into(),
+            )
+        })?;
+        if !canonical_parent.starts_with(&root) {
+            return Err(AppError::Validation(
+                "artifact manifest must stay inside the CodePawl app data directory".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn read_artifact_manifest(
+        &self,
+        run: &PersistedRunRecord,
+    ) -> Result<serde_json::Value, AppError> {
+        self.validate_artifact_manifest_path(&run.artifact_manifest_path)?;
+        let raw = fs::read_to_string(&run.artifact_manifest_path).map_err(|error| {
+            AppError::Persistence(format!("could not read artifact manifest: {error}"))
+        })?;
+        serde_json::from_str(&raw).map_err(|error| {
+            AppError::Persistence(format!("could not parse artifact manifest: {error}"))
+        })
+    }
+
+    fn canonical_root(&self) -> Result<PathBuf, AppError> {
+        fs::create_dir_all(&self.root).map_err(|error| {
+            AppError::Persistence(format!("could not create app data root: {error}"))
+        })?;
+        self.root.canonicalize().map_err(|error| {
+            AppError::Persistence(format!("could not resolve app data root: {error}"))
+        })
+    }
+}
+
+impl PersistedRunRecord {
+    fn summary(&self) -> PersistedRunSummary {
+        PersistedRunSummary {
+            run_id: self.run_id.clone(),
+            task_id: self.task_id.clone(),
+            workspace_id: self.workspace_id.clone(),
+            goal: self.goal.clone(),
+            repository_path: self.repository_path.clone(),
+            status: self.status.clone(),
+            artifact_manifest_path: self.artifact_manifest_path.clone(),
+            event_count: self.events.len(),
+            artifact_count: self.artifacts.len(),
+            memory_candidate_count: self.memory_candidates.len(),
+            skill_count: self.skills.len(),
+            updated_at: self.updated_at.clone(),
+        }
+    }
+}
+
+fn default_retention_policy() -> RetentionPolicySnapshot {
+    RetentionPolicySnapshot {
+        run_history_days: 30,
+        artifact_retention_days: 30,
+        cleanup_enabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.".into(),
+    }
+}
+
+fn default_settings_snapshot() -> SettingsSnapshot {
+    SettingsSnapshot {
+        workspace_id: "workspace-local-alpha".into(),
+        permission_mode: "safe".into(),
+        executable_surfaces: vec!["repository".into()],
+        blocked_surfaces: vec![
+            "browser".into(),
+            "desktop".into(),
+            "files".into(),
+            "terminal".into(),
+        ],
+        provider_refs: vec![],
+        retention_policy: default_retention_policy(),
     }
 }
 
@@ -296,10 +542,7 @@ fn validate_repository_path(repository_path: Option<&str>) -> Result<PathBuf, Ap
     let canonical = Path::new(repository_path).canonicalize().map_err(|_| {
         AppError::Validation("repositoryPath must point to a selected local git repository".into())
     })?;
-    if !canonical.is_dir()
-        || canonical.parent().is_none()
-        || !canonical.join(".git").exists()
-    {
+    if !canonical.is_dir() || canonical.parent().is_none() || !canonical.join(".git").exists() {
         return Err(AppError::Validation(
             "repositoryPath must point to a selected local git repository".into(),
         ));
@@ -315,7 +558,10 @@ fn find_repository_root(start: &Path) -> Option<PathBuf> {
         start.to_path_buf()
     };
     loop {
-        if current.join("scripts").join("desktop-repository-run.mjs").is_file()
+        if current
+            .join("scripts")
+            .join("desktop-repository-run.mjs")
+            .is_file()
             && current.join("package.json").is_file()
         {
             return Some(current);
@@ -343,7 +589,10 @@ fn resolve_desktop_repository_runner() -> Result<(PathBuf, PathBuf), AppError> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for start in [&current_dir, &manifest_dir] {
         if let Some(root) = find_repository_root(start) {
-            return Ok((root.clone(), root.join("scripts").join("desktop-repository-run.mjs")));
+            return Ok((
+                root.clone(),
+                root.join("scripts").join("desktop-repository-run.mjs"),
+            ));
         }
     }
 
@@ -356,6 +605,128 @@ fn run_data_root(app: &AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("codepawl-desktop"))
+}
+
+fn persistence_store(app: &AppHandle) -> LocalPersistenceStore {
+    LocalPersistenceStore::new(run_data_root(app))
+}
+
+fn read_json_file(path: &str) -> Option<serde_json::Value> {
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn manifest_artifact_path(manifest: &serde_json::Value, key: &str) -> Option<String> {
+    manifest
+        .get("artifacts")
+        .and_then(|artifacts| artifacts.get(key))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+fn manifest_artifact_refs(
+    manifest: &serde_json::Value,
+    events: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    if let Some(refs) = manifest
+        .get("artifactRefs")
+        .and_then(serde_json::Value::as_array)
+    {
+        return refs.clone();
+    }
+    events
+        .iter()
+        .flat_map(|event| {
+            event
+                .get("artifacts")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+fn manifest_memory_candidates(manifest: &serde_json::Value) -> Vec<serde_json::Value> {
+    manifest_artifact_path(manifest, "memoryStore")
+        .as_deref()
+        .and_then(read_json_file)
+        .and_then(|memory| {
+            memory
+                .get("candidateRules")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+        })
+        .unwrap_or_default()
+}
+
+fn manifest_skill_plan(manifest: &serde_json::Value) -> Option<serde_json::Value> {
+    manifest_artifact_path(manifest, "replayPlan")
+        .as_deref()
+        .and_then(read_json_file)
+}
+
+fn manifest_skills(skill_plan: &Option<serde_json::Value>) -> Vec<serde_json::Value> {
+    let Some(plan) = skill_plan else {
+        return vec![];
+    };
+    let skill_id = plan
+        .get("skillId")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| plan.get("id").and_then(serde_json::Value::as_str))
+        .unwrap_or("skill-invocation-plan");
+    vec![serde_json::json!({
+        "id": skill_id,
+        "title": plan.get("skillTitle").and_then(serde_json::Value::as_str).unwrap_or("Repository skill invocation plan"),
+        "status": plan.get("selectedSkillStatus").and_then(serde_json::Value::as_str).or_else(|| plan.get("status").and_then(serde_json::Value::as_str)).unwrap_or("candidate"),
+        "fallbackReason": plan.get("fallbackReason").cloned(),
+        "source": "skill_invocation_plan",
+    })]
+}
+
+fn persisted_run_from_output(
+    app: &AppHandle,
+    input: &CreateRunInput,
+    repository_path: &Path,
+    output: &DesktopRepositoryRunOutput,
+) -> Result<PersistedRunRecord, AppError> {
+    let store = persistence_store(app);
+    let manifest_path = output.artifact_manifest_path.clone();
+    store.validate_artifact_manifest_path(&manifest_path)?;
+    let manifest_raw = fs::read_to_string(&manifest_path).map_err(|error| {
+        AppError::Persistence(format!("could not read artifact manifest: {error}"))
+    })?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).map_err(|error| {
+        AppError::Persistence(format!("could not parse artifact manifest: {error}"))
+    })?;
+    let skill_replay_plan = manifest_skill_plan(&manifest);
+    let settings = store
+        .load_settings()
+        .unwrap_or_else(|_| default_settings_snapshot());
+    let events = output.events.clone();
+    let artifacts = manifest_artifact_refs(&manifest, &events);
+    let now = now_iso_like();
+
+    Ok(PersistedRunRecord {
+        run_id: output.run_id.clone(),
+        task_id: input.task_id.clone(),
+        workspace_id: input.workspace_id.clone(),
+        goal: input.goal.clone(),
+        repository_path: repository_path.to_string_lossy().to_string(),
+        status: output.status.clone(),
+        artifact_root: output.artifact_root.clone(),
+        artifact_manifest_path: manifest_path,
+        events,
+        artifacts,
+        usage_summary: manifest.get("usageSummary").cloned().unwrap_or_else(
+            || serde_json::json!({ "runCount": 1, "artifactCount": 0, "gatewayActionCount": 0 }),
+        ),
+        memory_candidates: manifest_memory_candidates(&manifest),
+        skills: manifest_skills(&skill_replay_plan),
+        skill_replay_plan,
+        provider_refs: settings.provider_refs,
+        created_at: now.clone(),
+        updated_at: now,
+    })
 }
 
 fn run_desktop_repository_sidecar(
@@ -377,8 +748,9 @@ fn run_desktop_repository_sidecar(
         artifact_root: data_root.join("artifacts").to_string_lossy().to_string(),
         memory_root: data_root.join("memory").to_string_lossy().to_string(),
     };
-    let request_json = serde_json::to_string(&request)
-        .map_err(|error| AppError::RepositoryRun(format!("could not encode run request: {error}")))?;
+    let request_json = serde_json::to_string(&request).map_err(|error| {
+        AppError::RepositoryRun(format!("could not encode run request: {error}"))
+    })?;
     let mut child = Command::new("node")
         .arg("--import")
         .arg(&loader_path)
@@ -388,24 +760,28 @@ fn run_desktop_repository_sidecar(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| AppError::RepositoryRun(format!("could not start repository runner: {error}")))?;
+        .map_err(|error| {
+            AppError::RepositoryRun(format!("could not start repository runner: {error}"))
+        })?;
 
     if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(request_json.as_bytes())
-            .map_err(|error| AppError::RepositoryRun(format!("could not write runner request: {error}")))?;
+        stdin.write_all(request_json.as_bytes()).map_err(|error| {
+            AppError::RepositoryRun(format!("could not write runner request: {error}"))
+        })?;
     }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|error| AppError::RepositoryRun(format!("repository runner did not finish: {error}")))?;
+    let output = child.wait_with_output().map_err(|error| {
+        AppError::RepositoryRun(format!("repository runner did not finish: {error}"))
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(AppError::RepositoryRun(stderr.trim().to_string()));
     }
 
-    let output: DesktopRepositoryRunOutput = serde_json::from_slice(&output.stdout)
-        .map_err(|error| AppError::RepositoryRun(format!("could not parse repository runner output: {error}")))?;
+    let output: DesktopRepositoryRunOutput =
+        serde_json::from_slice(&output.stdout).map_err(|error| {
+            AppError::RepositoryRun(format!("could not parse repository runner output: {error}"))
+        })?;
     if output.event_count != output.events.len()
         || output.status.trim().is_empty()
         || output.artifact_root.trim().is_empty()
@@ -434,10 +810,14 @@ fn validate_skill_status_update(input: &SkillStatusUpdateInput) -> Result<(), Ap
         return Err(AppError::Validation("skill id is required".into()));
     }
     if input.actor.trim().is_empty() {
-        return Err(AppError::Validation("skill decision actor is required".into()));
+        return Err(AppError::Validation(
+            "skill decision actor is required".into(),
+        ));
     }
     if input.reason.trim().is_empty() {
-        return Err(AppError::Validation("skill decision reason is required".into()));
+        return Err(AppError::Validation(
+            "skill decision reason is required".into(),
+        ));
     }
 
     Ok(())
@@ -453,9 +833,7 @@ fn validate_skill_replay_plan_input(input: &SkillReplayPlanInput) -> Result<(), 
 
 fn validate_codex_execution_input(input: &CodexExecutionInput) -> Result<(), AppError> {
     if input.run_id.trim().is_empty() || input.plan_id.trim().is_empty() {
-        return Err(AppError::Validation(
-            "runId and planId are required".into(),
-        ));
+        return Err(AppError::Validation("runId and planId are required".into()));
     }
 
     Ok(())
@@ -931,6 +1309,8 @@ async fn run_create(
     validate_create_run(&input)?;
     let repository_path = validate_repository_path(input.repository_path.as_deref())?;
     let output = run_desktop_repository_sidecar(&app, &input, &repository_path)?;
+    let persisted_run = persisted_run_from_output(&app, &input, &repository_path, &output)?;
+    persistence_store(&app).save_run(&persisted_run)?;
 
     state
         .runs
@@ -944,6 +1324,16 @@ async fn run_create(
     }
 
     Ok(RunId { id: output.run_id })
+}
+
+#[tauri::command]
+async fn run_list(app: AppHandle) -> Result<Vec<PersistedRunSummary>, AppError> {
+    persistence_store(&app).list_runs()
+}
+
+#[tauri::command]
+async fn run_open(app: AppHandle, run_id: String) -> Result<PersistedRunRecord, AppError> {
+    persistence_store(&app).open_run(&run_id)
 }
 
 #[tauri::command]
@@ -1078,7 +1468,10 @@ async fn memory_update_candidate_rule_status(
 
 #[tauri::command]
 async fn skill_list(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, AppError> {
-    let statuses = state.skill_statuses.lock().map_err(|_| AppError::StateLock)?;
+    let statuses = state
+        .skill_statuses
+        .lock()
+        .map_err(|_| AppError::StateLock)?;
     Ok(mock_skills(&statuses))
 }
 
@@ -1126,7 +1519,10 @@ async fn apply_skill_decision(
 
     let status = input.decision.status();
     {
-        let mut statuses = state.skill_statuses.lock().map_err(|_| AppError::StateLock)?;
+        let mut statuses = state
+            .skill_statuses
+            .lock()
+            .map_err(|_| AppError::StateLock)?;
         statuses.insert(input.skill_id.clone(), status.clone());
     }
 
@@ -1155,10 +1551,15 @@ async fn apply_skill_decision(
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
 
-    let statuses = state.skill_statuses.lock().map_err(|_| AppError::StateLock)?;
+    let statuses = state
+        .skill_statuses
+        .lock()
+        .map_err(|_| AppError::StateLock)?;
     let mut skill = mock_skills(&statuses)
         .into_iter()
-        .find(|skill| skill.get("id").and_then(serde_json::Value::as_str) == Some(input.skill_id.as_str()))
+        .find(|skill| {
+            skill.get("id").and_then(serde_json::Value::as_str) == Some(input.skill_id.as_str())
+        })
         .ok_or_else(|| AppError::Validation("skill not found".into()))?;
     if status == SkillLifecycleStatus::Superseded {
         skill["supersededBy"] = serde_json::Value::String(
@@ -1228,19 +1629,26 @@ async fn skill_create_replay_plan(
     validate_skill_replay_plan_input(&input)?;
 
     let run_id = input.run_id.clone().unwrap_or_else(|| "run-1".into());
-    let statuses = state.skill_statuses.lock().map_err(|_| AppError::StateLock)?;
+    let statuses = state
+        .skill_statuses
+        .lock()
+        .map_err(|_| AppError::StateLock)?;
     let skill = mock_skills(&statuses)
         .into_iter()
-        .find(|skill| skill.get("id").and_then(serde_json::Value::as_str) == Some(input.skill_id.as_str()))
+        .find(|skill| {
+            skill.get("id").and_then(serde_json::Value::as_str) == Some(input.skill_id.as_str())
+        })
         .ok_or_else(|| AppError::Validation("skill not found".into()))?;
     let plan = mock_skill_replay_plan(&skill, &run_id);
-    let blocked = plan
-        .get("readiness")
-        .and_then(serde_json::Value::as_str)
-        == Some("blocked");
+    let blocked = plan.get("readiness").and_then(serde_json::Value::as_str) == Some("blocked");
 
-    for (index, event_type) in skill_replay_lifecycle_event_types(blocked).iter().enumerate() {
-        let artifacts = if *event_type == "skill_replay_plan_created" || *event_type == "skill_replay_plan_blocked" {
+    for (index, event_type) in skill_replay_lifecycle_event_types(blocked)
+        .iter()
+        .enumerate()
+    {
+        let artifacts = if *event_type == "skill_replay_plan_created"
+            || *event_type == "skill_replay_plan_blocked"
+        {
             plan.get("expectedArtifacts")
                 .and_then(serde_json::Value::as_array)
                 .cloned()
@@ -1376,24 +1784,22 @@ async fn codex_execution_blocked_preview(
 }
 
 #[tauri::command]
-async fn settings_get() -> Result<SettingsSnapshot, AppError> {
-    Ok(SettingsSnapshot {
-        workspace_id: "workspace-local-alpha".into(),
-        permission_mode: "safe".into(),
-        executable_surfaces: vec!["repository".into()],
-        blocked_surfaces: vec![
-            "browser".into(),
-            "desktop".into(),
-            "files".into(),
-            "terminal".into(),
-        ],
-    })
+async fn settings_get(app: AppHandle) -> Result<SettingsSnapshot, AppError> {
+    persistence_store(&app).load_settings()
 }
 
 #[tauri::command]
-async fn settings_update(input: SettingsUpdateInput) -> Result<SettingsSnapshot, AppError> {
+async fn settings_update(
+    app: AppHandle,
+    input: SettingsUpdateInput,
+) -> Result<SettingsSnapshot, AppError> {
     match input.permission_mode.as_str() {
-        "safe" | "balanced" | "manual" => settings_get().await,
+        "safe" | "balanced" | "manual" => {
+            let mut settings = persistence_store(&app).load_settings()?;
+            settings.permission_mode = input.permission_mode;
+            persistence_store(&app).save_settings(&settings)?;
+            Ok(settings)
+        }
         _ => Err(AppError::Validation(
             "permissionMode must be safe, balanced, or manual".into(),
         )),
@@ -1401,17 +1807,39 @@ async fn settings_update(input: SettingsUpdateInput) -> Result<SettingsSnapshot,
 }
 
 #[tauri::command]
-async fn provider_key_save(input: ProviderKeySaveInput) -> Result<SecretReference, AppError> {
+async fn provider_key_save(
+    app: AppHandle,
+    input: ProviderKeySaveInput,
+) -> Result<SecretReference, AppError> {
     if input.provider_id.trim().is_empty() || input.label.trim().is_empty() {
         return Err(AppError::Validation(
             "providerId and label are required".into(),
         ));
     }
 
-    Ok(SecretReference {
-        provider_id: input.provider_id,
-        key_ref: "keychain://codepawl/local-alpha/provider".into(),
-    })
+    let provider_id = input.provider_id.trim().to_string();
+    let key_ref_suffix = provider_id
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let reference = SecretReference {
+        provider_id,
+        key_ref: format!("keychain://codepawl/local-beta/{key_ref_suffix}"),
+    };
+    let mut settings = persistence_store(&app).load_settings()?;
+    settings
+        .provider_refs
+        .retain(|existing| existing.provider_id != reference.provider_id);
+    settings.provider_refs.push(reference.clone());
+    persistence_store(&app).save_settings(&settings)?;
+
+    Ok(reference)
 }
 
 #[tauri::command]
@@ -1433,6 +1861,8 @@ pub fn run() {
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             run_create,
+            run_list,
+            run_open,
             run_cancel,
             approval_respond,
             memory_list_episodes,
@@ -1639,10 +2069,22 @@ mod tests {
 
     #[test]
     fn skill_decisions_map_to_visible_run_event_types() {
-        assert_eq!(skill_decision_event_type(&SkillDecision::Promote), "skill_promoted_manual");
-        assert_eq!(skill_decision_event_type(&SkillDecision::Reject), "skill_rejected");
-        assert_eq!(skill_decision_event_type(&SkillDecision::Supersede), "skill_superseded");
-        assert_eq!(skill_decision_event_type(&SkillDecision::Archive), "skill_archived");
+        assert_eq!(
+            skill_decision_event_type(&SkillDecision::Promote),
+            "skill_promoted_manual"
+        );
+        assert_eq!(
+            skill_decision_event_type(&SkillDecision::Reject),
+            "skill_rejected"
+        );
+        assert_eq!(
+            skill_decision_event_type(&SkillDecision::Supersede),
+            "skill_superseded"
+        );
+        assert_eq!(
+            skill_decision_event_type(&SkillDecision::Archive),
+            "skill_archived"
+        );
     }
 
     #[test]
@@ -1658,7 +2100,8 @@ mod tests {
             skill_id: "".into(),
             run_id: Some("run-1".into()),
         };
-        let error = validate_skill_replay_plan_input(&missing_id).expect_err("skill id is required");
+        let error =
+            validate_skill_replay_plan_input(&missing_id).expect_err("skill id is required");
         assert_eq!(error.to_string(), "skill id is required");
     }
 
@@ -1677,6 +2120,204 @@ mod tests {
         assert_eq!(
             skill_replay_lifecycle_event_types(true).last().copied(),
             Some("skill_replay_plan_blocked")
+        );
+    }
+
+    fn temp_store_root(label: &str) -> PathBuf {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "codepawl-persistence-test-{label}-{}",
+            unique_suffix()
+        ));
+        root
+    }
+
+    fn write_manifest(root: &Path, run_id: &str) -> String {
+        let manifest_path = root
+            .join("artifacts")
+            .join(run_id)
+            .join("artifact-manifest.json");
+        std::fs::create_dir_all(manifest_path.parent().expect("manifest parent"))
+            .expect("create manifest parent");
+        std::fs::write(
+            &manifest_path,
+            serde_json::json!({
+                "runId": run_id,
+                "repositoryPath": "/repo/codepawl",
+                "artifacts": {
+                    "contract": format!("{}/artifacts/{}/codex-contract.md", root.display(), run_id),
+                    "eventLog": format!("{}/artifacts/{}/run-events.json", root.display(), run_id),
+                    "verifierInput": format!("{}/artifacts/{}/verifier-input.json", root.display(), run_id),
+                    "verificationResult": format!("{}/artifacts/{}/verification-result.json", root.display(), run_id),
+                    "redactedLog": format!("{}/artifacts/{}/manual-result.redacted.log", root.display(), run_id),
+                    "memoryStore": format!("{}/memory/memory-store.json", root.display())
+                },
+                "eventTypes": ["run_started", "run_finished"]
+            })
+            .to_string(),
+        )
+        .expect("write manifest");
+        manifest_path.to_string_lossy().to_string()
+    }
+
+    fn persisted_run(root: &Path, run_id: &str) -> PersistedRunRecord {
+        PersistedRunRecord {
+            run_id: run_id.into(),
+            task_id: "task-1".into(),
+            workspace_id: "workspace-1".into(),
+            goal: "Persist this run".into(),
+            repository_path: "/repo/codepawl".into(),
+            status: "pass".into(),
+            artifact_root: root
+                .join("artifacts")
+                .join(run_id)
+                .to_string_lossy()
+                .to_string(),
+            artifact_manifest_path: write_manifest(root, run_id),
+            events: vec![serde_json::json!({
+                "id": format!("{run_id}-event-1"),
+                "runId": run_id,
+                "sequence": 1,
+                "type": "run_started",
+                "payload": { "summary": "run started" },
+                "artifacts": []
+            })],
+            artifacts: vec![serde_json::json!({
+                "id": "contract",
+                "kind": "codex_contract",
+                "uri": format!("file://{}/artifacts/{}/codex-contract.md", root.display(), run_id),
+                "label": "Codex contract"
+            })],
+            usage_summary: serde_json::json!({ "runCount": 1, "artifactCount": 1, "gatewayActionCount": 1 }),
+            memory_candidates: vec![
+                serde_json::json!({ "id": "candidate-rule-1", "status": "candidate" }),
+            ],
+            skills: vec![serde_json::json!({ "id": "skill-1", "status": "candidate" })],
+            skill_replay_plan: Some(
+                serde_json::json!({ "id": "skill-replay-plan-1", "dryRunOnly": true }),
+            ),
+            provider_refs: vec![SecretReference {
+                provider_id: "openai".into(),
+                key_ref: "keychain://codepawl/local-beta/openai".into(),
+            }],
+            created_at: "2026-07-04T00:00:00.000Z".into(),
+            updated_at: "2026-07-04T00:00:00.000Z".into(),
+        }
+    }
+
+    #[test]
+    fn local_persistence_writes_and_reads_repository_run_snapshot() {
+        let root = temp_store_root("write-read");
+        let store = LocalPersistenceStore::new(root.clone());
+        let run = persisted_run(&root, "run-persisted-1");
+
+        store.save_run(&run).expect("save run");
+        let reopened = store.open_run("run-persisted-1").expect("open run");
+
+        assert_eq!(reopened.run_id, "run-persisted-1");
+        assert_eq!(reopened.events.len(), 1);
+        assert_eq!(reopened.artifacts.len(), 1);
+        assert_eq!(reopened.memory_candidates.len(), 1);
+        assert_eq!(reopened.skills.len(), 1);
+        assert!(reopened.skill_replay_plan.is_some());
+        assert_eq!(reopened.usage_summary["artifactCount"], 1);
+        assert_eq!(
+            reopened.provider_refs[0].key_ref,
+            "keychain://codepawl/local-beta/openai"
+        );
+    }
+
+    #[test]
+    fn local_persistence_reloads_run_index_after_restart() {
+        let root = temp_store_root("restart");
+        let store = LocalPersistenceStore::new(root.clone());
+        store
+            .save_run(&persisted_run(&root, "run-restart-1"))
+            .expect("save run before restart");
+
+        let fresh_store = LocalPersistenceStore::new(root);
+        let runs = fresh_store.list_runs().expect("list runs after restart");
+
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].run_id, "run-restart-1");
+        assert_eq!(runs[0].status, "pass");
+        assert_eq!(runs[0].artifact_count, 1);
+    }
+
+    #[test]
+    fn local_persistence_persists_settings_and_provider_references_without_raw_secrets() {
+        let root = temp_store_root("settings");
+        let store = LocalPersistenceStore::new(root.clone());
+        let settings = SettingsSnapshot {
+            workspace_id: "workspace-local-alpha".into(),
+            permission_mode: "manual".into(),
+            executable_surfaces: vec!["repository".into()],
+            blocked_surfaces: vec![
+                "browser".into(),
+                "desktop".into(),
+                "files".into(),
+                "terminal".into(),
+            ],
+            provider_refs: vec![SecretReference {
+                provider_id: "openai".into(),
+                key_ref: "keychain://codepawl/local-beta/openai".into(),
+            }],
+            retention_policy: RetentionPolicySnapshot {
+                run_history_days: 30,
+                artifact_retention_days: 30,
+                cleanup_enabled: false,
+                summary: "Cleanup is manual for private beta; automatic retention is planned."
+                    .into(),
+            },
+        };
+
+        store.save_settings(&settings).expect("save settings");
+        let reloaded = LocalPersistenceStore::new(root)
+            .load_settings()
+            .expect("load settings");
+        let raw_settings = std::fs::read_to_string(store.settings_path()).expect("read settings");
+
+        assert_eq!(reloaded.permission_mode, "manual");
+        assert_eq!(
+            reloaded.provider_refs[0].key_ref,
+            "keychain://codepawl/local-beta/openai"
+        );
+        assert!(!raw_settings.contains("sk-"));
+        assert!(!raw_settings.contains("rawApiKey"));
+    }
+
+    #[test]
+    fn local_persistence_rejects_artifact_manifest_outside_app_data_root() {
+        let root = temp_store_root("unsafe");
+        let store = LocalPersistenceStore::new(root.clone());
+        let mut run = persisted_run(&root, "run-unsafe-1");
+        run.artifact_manifest_path = "/tmp/outside-codepawl-artifact-manifest.json".into();
+
+        let error = store
+            .save_run(&run)
+            .expect_err("outside manifest path is unsafe");
+
+        assert_eq!(
+            error.to_string(),
+            "artifact manifest must stay inside the CodePawl app data directory"
+        );
+    }
+
+    #[test]
+    fn local_persistence_reports_missing_or_corrupted_artifact_manifest_on_reopen() {
+        let root = temp_store_root("corrupt");
+        let store = LocalPersistenceStore::new(root.clone());
+        let run = persisted_run(&root, "run-corrupt-1");
+        store.save_run(&run).expect("save run");
+        std::fs::write(&run.artifact_manifest_path, "{not-json").expect("corrupt manifest");
+
+        let error = store
+            .open_run("run-corrupt-1")
+            .expect_err("corrupted manifest is rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "artifact manifest is missing or corrupted for run run-corrupt-1"
         );
     }
 }

@@ -4,7 +4,9 @@ import {
   CODEPAWL_ERROR_CODES,
   CODEX_EXECUTION_IPC_METHODS,
   MEMORY_IPC_METHODS,
+  RUN_IPC_METHODS,
   RUN_EVENTS,
+  SETTINGS_IPC_METHODS,
   SKILL_IPC_METHODS,
   createRpcEvent,
   isRpcEvent,
@@ -44,6 +46,11 @@ describe("CodePawl IPC contracts", () => {
     expect(CODEPAWL_ERROR_CODES).toContain("SIDECAR_PROTOCOL_MISMATCH");
     expect(CODEPAWL_ERROR_CODES).toContain("REPOSITORY_CONTEXT_FAILED");
     expect(CODEPAWL_ERROR_CODES).not.toContain("SHELL_EXEC_FAILED");
+  });
+
+  it("declares durable repository run and settings IPC methods", () => {
+    expect(RUN_IPC_METHODS).toEqual(["run.create", "run.list", "run.open", "run.cancel"]);
+    expect(SETTINGS_IPC_METHODS).toEqual(["settings.get", "settings.update", "providerKey.save", "providerKey.test"]);
   });
 
   it("declares memory review IPC methods and candidate rule review events", () => {

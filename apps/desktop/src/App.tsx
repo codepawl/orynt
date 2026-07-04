@@ -52,6 +52,7 @@ import type { LucideIcon } from "lucide-react";
 import type { FocusEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
 
 import { codepawl } from "./codepawlClient";
+import type { PersistedRunRecord, PersistedRunSummary, SettingsSnapshot } from "./codepawlClient";
 import "./styles.css";
 
 type Workspace = {
@@ -123,6 +124,20 @@ const permissionModeOptions = [
   { value: "ask-first", label: "Ask first", helper: "Pause before every repository-affecting action in this workspace." },
   { value: "locked", label: "Locked", helper: "Keep the cockpit read-only until the operator re-enables controlled actions." },
 ] as const;
+
+function toUiPermissionMode(mode: SettingsSnapshot["permissionMode"]): PermissionModeOption {
+  if (mode === "manual") {
+    return "ask-first";
+  }
+  return "safe";
+}
+
+function toSettingsPermissionMode(mode: PermissionModeOption): SettingsSnapshot["permissionMode"] {
+  if (mode === "ask-first" || mode === "locked") {
+    return "manual";
+  }
+  return "safe";
+}
 
 const composerAttachmentOptionGroups = [
   [
@@ -486,6 +501,9 @@ function App({
   const [memoryReview, setMemoryReview] = useState<MemoryReviewSnapshot>(runState.memoryReview);
   const [skillRegistry, setSkillRegistry] = useState<SkillRegistrySnapshot>(runState.skillRegistry);
   const [selectedSkillReplayPlan, setSelectedSkillReplayPlan] = useState<SkillReplayPlan | null>(null);
+  const [persistedRuns, setPersistedRuns] = useState<PersistedRunSummary[]>([]);
+  const [openedPersistedRun, setOpenedPersistedRun] = useState<PersistedRunRecord | null>(null);
+  const [settingsSnapshot, setSettingsSnapshot] = useState<SettingsSnapshot | null>(null);
   const [copiedAgentResponseId, setCopiedAgentResponseId] = useState<string | null>(null);
   const [sharedAgentResponseId, setSharedAgentResponseId] = useState<string | null>(null);
   const [agentResponseRatings, setAgentResponseRatings] = useState<Record<string, AgentResponseRating>>({});
@@ -565,6 +583,11 @@ function App({
   const activeSettingsSectionLabel = settingsSections.find((section) => section.id === activeSettingsSection)?.label ?? "General";
   const landingUrl = getLandingUrl();
 
+  const refreshPersistedRuns = async () => {
+    const runs = await codepawl.listPersistedRuns();
+    setPersistedRuns(runs);
+  };
+
   useEffect(() => {
     activeWorkspaceIdRef.current = activeWorkspaceId;
   }, [activeWorkspaceId]);
@@ -637,6 +660,25 @@ function App({
           statusCounts: summarizeSkillStatuses(skills),
         },
       }));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [shouldHydrateClientState]);
+
+  useEffect(() => {
+    if (!shouldHydrateClientState) {
+      return;
+    }
+    let mounted = true;
+    Promise.all([codepawl.listPersistedRuns(), codepawl.getSettings()]).then(([runs, settings]) => {
+      if (!mounted) {
+        return;
+      }
+      setPersistedRuns(runs);
+      setSettingsSnapshot(settings);
+      setPermissionMode(toUiPermissionMode(settings.permissionMode));
     });
 
     return () => {
@@ -814,6 +856,7 @@ function App({
       },
     });
     setCurrentRunId(run.id);
+    await refreshPersistedRuns();
   };
 
   const handleTaskSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -892,6 +935,18 @@ function App({
   const handlePreviewSkillReplay = async (skill: SkillDefinition) => {
     const replayPlan = await codepawl.createSkillReplayPlan(skill.id, currentRunId ?? runState.traceSummary.runId);
     setSelectedSkillReplayPlan(replayPlan);
+  };
+
+  const handleOpenPersistedRun = async (runId: string) => {
+    const run = await codepawl.openPersistedRun(runId);
+    setOpenedPersistedRun(run);
+    setCurrentRunId(run.runId);
+  };
+
+  const handlePermissionModeChange = async (mode: PermissionModeOption) => {
+    setPermissionMode(mode);
+    const settings = await codepawl.updateSettings({ permissionMode: toSettingsPermissionMode(mode) });
+    setSettingsSnapshot(settings);
   };
 
   const hasSelectedRun = currentRunId !== null;
@@ -1768,7 +1823,7 @@ function App({
                   className="input-focus-standalone"
                   id="permission-mode"
                   value={permissionMode}
-                  onChange={(event) => setPermissionMode(event.target.value as PermissionModeOption)}
+                  onChange={(event) => void handlePermissionModeChange(event.target.value as PermissionModeOption)}
                 >
                   {permissionModeOptions.map((option) => (
                     <option value={option.value} key={option.value}>
@@ -1816,6 +1871,84 @@ function App({
                 <strong>{runState.skillDraft.name}</strong>
                 <small>Latest verdict: {runState.traceSummary.latestVerdict}</small>
               </section>
+              <section className="settings-review-list" aria-label="Repository run history">
+                <h3>Repository run history</h3>
+                {persistedRuns.length > 0 ? (
+                  persistedRuns.map((run) => (
+                    <article className="settings-review-card" key={run.runId}>
+                      <div className="settings-review-card-header">
+                        <div>
+                          <h3>{run.goal}</h3>
+                          <span>{run.repositoryPath}</span>
+                        </div>
+                        <strong>{run.status}</strong>
+                      </div>
+                      <p>
+                        {pluralize(run.eventCount, "event")} / {pluralize(run.artifactCount, "artifact")} / {pluralize(run.memoryCandidateCount, "memory candidate")} /{" "}
+                        {pluralize(run.skillCount, "skill")}
+                      </p>
+                      <div className="settings-review-actions">
+                        <button type="button" onClick={() => void handleOpenPersistedRun(run.runId)} aria-label={`Open persisted run ${run.goal}`}>
+                          Open run
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <p>No persisted repository runs</p>
+                )}
+              </section>
+              {openedPersistedRun ? (
+                <section className="settings-review-list" aria-label="Opened run evidence">
+                  <h3>Opened run evidence</h3>
+                  <section className="settings-queue" aria-label="Opened run summary">
+                    <div className="settings-queue-row">
+                      <span>Memory</span>
+                      <strong>{pluralize(openedPersistedRun.memoryCandidates.length, "memory candidate")}</strong>
+                    </div>
+                    <div className="settings-queue-row">
+                      <span>Skills</span>
+                      <strong>{pluralize(openedPersistedRun.skills.length, "skill")}</strong>
+                    </div>
+                    <div className="settings-queue-row">
+                      <span>Manifest</span>
+                      <strong>{openedPersistedRun.artifactManifestPath}</strong>
+                    </div>
+                  </section>
+                  {openedPersistedRun.events.map((event) => {
+                    const summary = (event.payload as { summary?: unknown }).summary;
+                    return (
+                      <article className="settings-review-card" key={event.id}>
+                        <div className="settings-review-card-header">
+                          <div>
+                            <h3>{event.type}</h3>
+                            <span>{typeof summary === "string" ? summary : event.type.replaceAll("_", " ")}</span>
+                          </div>
+                          <strong>#{event.sequence}</strong>
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {openedPersistedRun.artifacts.map((artifact) => (
+                    <article className="settings-review-card" key={artifact.id}>
+                      <div className="settings-review-card-header">
+                        <div>
+                          <h3>{artifact.label}</h3>
+                          <span>{artifact.uri}</span>
+                        </div>
+                        <strong>{artifact.kind}</strong>
+                      </div>
+                    </article>
+                  ))}
+                </section>
+              ) : null}
+              {settingsSnapshot ? (
+                <section className="settings-metric" aria-label="Retention policy">
+                  <span>Retention</span>
+                  <strong>{settingsSnapshot.retentionPolicy.cleanupEnabled ? "Automatic cleanup" : "Manual cleanup"}</strong>
+                  <small>{settingsSnapshot.retentionPolicy.summary}</small>
+                </section>
+              ) : null}
             </section>
           );
         case "skills":

@@ -775,7 +775,7 @@ describe("CodePawl desktop shell", () => {
     expect(chatBubbleAgentStyles).toContain("background: transparent;");
     expect(chatBubbleAgentStyles).not.toContain("isolation: isolate;");
     expect(chatBubbleAgentStyles).not.toContain("background: var(--message-bubble-agent);");
-    expect(chatBubbleAgentStyles).not.toContain("background: #242424;");
+    expect(chatBubbleAgentStyles).not.toMatch(/background:\s*#[0-9a-f]{3,6};/i);
     expect(chatBubbleAgentStyles).not.toContain("linear-gradient");
     expect(chatBubbleAgentStyles).not.toContain("academic-ascii-glitch-background");
     expect(styles).not.toContain("background: rgba(120, 201, 155, 0.08);");
@@ -1225,6 +1225,90 @@ describe("CodePawl desktop shell", () => {
         workspaceId: runState.workspace.id,
       }),
     );
+  });
+
+  it("lists persisted repository runs after restart and reopens one with events and artifacts", async () => {
+    vi.spyOn(codepawl, "listPersistedRuns").mockResolvedValue([
+      {
+        runId: "run-persisted-1",
+        taskId: "task-persisted",
+        workspaceId: "workspace-local-alpha",
+        goal: "Reload durable repository run",
+        repositoryPath: "/home/operator/project",
+        status: "pass",
+        artifactManifestPath: "/app-data/artifacts/run-persisted-1/artifact-manifest.json",
+        eventCount: 2,
+        artifactCount: 1,
+        memoryCandidateCount: 1,
+        skillCount: 1,
+        updatedAt: "2026-07-04T00:00:00.000Z",
+      },
+    ]);
+    vi.spyOn(codepawl, "openPersistedRun").mockResolvedValue({
+      runId: "run-persisted-1",
+      taskId: "task-persisted",
+      workspaceId: "workspace-local-alpha",
+      goal: "Reload durable repository run",
+      repositoryPath: "/home/operator/project",
+      status: "pass",
+      artifactRoot: "/app-data/artifacts/run-persisted-1",
+      artifactManifestPath: "/app-data/artifacts/run-persisted-1/artifact-manifest.json",
+      events: [
+        {
+          id: "run-persisted-1-event-1",
+          runId: "run-persisted-1",
+          sequence: 1,
+          type: "run_started",
+          timestamp: "2026-07-04T00:00:00.000Z",
+          actor: { kind: "runtime", id: "tauri-host" },
+          payload: { summary: "Persisted run started" },
+          redaction: { applied: false, redactedPaths: [] },
+          artifacts: [],
+        },
+        {
+          id: "run-persisted-1-event-2",
+          runId: "run-persisted-1",
+          sequence: 2,
+          type: "run_finished",
+          timestamp: "2026-07-04T00:00:01.000Z",
+          actor: { kind: "runtime", id: "tauri-host" },
+          payload: { summary: "Persisted run finished" },
+          redaction: { applied: false, redactedPaths: [] },
+          artifacts: [],
+        },
+      ],
+      artifacts: [
+        {
+          id: "contract",
+          kind: "codex_contract",
+          uri: "file:///app-data/artifacts/run-persisted-1/codex-contract.md",
+          label: "Codex contract",
+        },
+      ],
+      usageSummary: { runCount: 1, artifactCount: 1, gatewayActionCount: 1 },
+      memoryCandidates: [{ id: "candidate-rule-1", status: "candidate" }],
+      skills: [{ id: "skill-1", status: "candidate" }],
+      skillReplayPlan: { id: "skill-replay-plan-1", dryRunOnly: true },
+      providerRefs: [{ providerId: "openai", keyRef: "keychain://codepawl/local-beta/openai" }],
+      createdAt: "2026-07-04T00:00:00.000Z",
+      updatedAt: "2026-07-04T00:00:01.000Z",
+    });
+
+    render(<App />);
+    const settings = openSettings();
+    const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
+    fireEvent.click(within(settingsNav).getByRole("button", { name: "CodePawl Code" }));
+
+    expect(await within(settings).findByRole("region", { name: "Repository run history" })).toBeInTheDocument();
+    expect(within(settings).getByText("Reload durable repository run")).toBeInTheDocument();
+    expect(within(settings).getByText("/home/operator/project")).toBeInTheDocument();
+    fireEvent.click(within(settings).getByRole("button", { name: "Open persisted run Reload durable repository run" }));
+
+    expect(await within(settings).findByText("Persisted run started")).toBeInTheDocument();
+    expect(within(settings).getByText("Persisted run finished")).toBeInTheDocument();
+    expect(within(settings).getByText("Codex contract")).toBeInTheDocument();
+    expect(within(settings).getByText("1 memory candidate")).toBeInTheDocument();
+    expect(within(settings).getByText("1 skill")).toBeInTheDocument();
   });
 
   it("does not reuse deleted thread ids or overwrite an existing thread conversation", async () => {
