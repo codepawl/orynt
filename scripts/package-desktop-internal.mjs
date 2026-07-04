@@ -115,7 +115,6 @@ for (const packageName of runnerPackages) {
 for (const doc of [
   "docs/productization/private-beta-release-notes.md",
   "docs/productization/private-beta-release-smoke.md",
-  "docs/private_beta_release_readiness.md",
 ]) {
   if (existsSync(join(root, doc))) {
     await cp(join(root, doc), join(stagingRoot, "docs", doc.split("/").at(-1)));
