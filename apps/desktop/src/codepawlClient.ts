@@ -122,6 +122,42 @@ export type PersistedRunRecord = {
   updatedAt: string;
 };
 
+export type ArtifactEvidenceStatus = "verified" | "unavailable" | "corrupted";
+
+export type ArtifactEvidenceKind =
+  | "artifact_manifest"
+  | "contract"
+  | "contract_metadata"
+  | "event_log"
+  | "verifier_input"
+  | "verification_result"
+  | "redacted_log"
+  | "memory_candidates"
+  | "memory_store"
+  | "usage_summary"
+  | "replay_plan";
+
+export type ArtifactEvidenceSummary = {
+  artifactId: string;
+  label: string;
+  kind: ArtifactEvidenceKind;
+  status: ArtifactEvidenceStatus;
+  uri?: string | null;
+  byteSize?: number | null;
+  contentType?: string | null;
+  reason?: string | null;
+};
+
+export type ArtifactEvidenceContent = {
+  artifactId: string;
+  label: string;
+  kind: ArtifactEvidenceKind;
+  status: ArtifactEvidenceStatus;
+  contentType: string;
+  byteSize: number;
+  content: string;
+};
+
 let mockListeners = new Set<(event: RunEvent) => void>();
 const initialMockState = createMockRunState();
 const mockProviderReference: ProviderReference = {
@@ -541,6 +577,41 @@ export const codepawl = {
     }
 
     throw new Error(`persisted run not found: ${runId}`);
+  },
+
+  async listArtifactEvidence(runId: string): Promise<ArtifactEvidenceSummary[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<ArtifactEvidenceSummary[]>("artifact_list", { runId });
+    }
+
+    return [
+      {
+        artifactId: "artifactManifest",
+        label: "Artifact manifest",
+        kind: "artifact_manifest",
+        status: "verified",
+        byteSize: 128,
+        contentType: "application/json",
+      },
+    ];
+  },
+
+  async readArtifactEvidence(runId: string, artifactId: string): Promise<ArtifactEvidenceContent> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<ArtifactEvidenceContent>("artifact_read", { input: { runId, artifactId } });
+    }
+
+    return {
+      artifactId,
+      label: artifactId === "artifactManifest" ? "Artifact manifest" : artifactId,
+      kind: artifactId === "artifactManifest" ? "artifact_manifest" : "contract",
+      status: "verified",
+      contentType: "application/json",
+      byteSize: 128,
+      content: JSON.stringify({ runId, artifactId, mode: "mock-demo" }, null, 2),
+    };
   },
 
   async getSettings(): Promise<SettingsSnapshot> {

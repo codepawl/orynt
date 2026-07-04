@@ -247,6 +247,64 @@ pub struct SecretReference {
     last_preflight: Option<ProviderPreflightResult>,
 }
 
+const MAX_ARTIFACT_EVIDENCE_BYTES: usize = 256 * 1024;
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactEvidenceKind {
+    ArtifactManifest,
+    Contract,
+    ContractMetadata,
+    EventLog,
+    VerifierInput,
+    VerificationResult,
+    RedactedLog,
+    MemoryCandidates,
+    MemoryStore,
+    UsageSummary,
+    ReplayPlan,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ArtifactEvidenceStatus {
+    Verified,
+    Unavailable,
+    Corrupted,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactEvidenceSummary {
+    artifact_id: String,
+    label: String,
+    kind: ArtifactEvidenceKind,
+    status: ArtifactEvidenceStatus,
+    uri: Option<String>,
+    byte_size: Option<u64>,
+    content_type: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactReadInput {
+    run_id: String,
+    artifact_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactEvidenceContent {
+    artifact_id: String,
+    label: String,
+    kind: ArtifactEvidenceKind,
+    status: ArtifactEvidenceStatus,
+    content_type: String,
+    byte_size: u64,
+    content: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopRepositoryRunOutput {
@@ -514,6 +572,216 @@ impl LocalPersistenceStore {
         })
     }
 
+    pub fn list_artifact_evidence(
+        &self,
+        run_id: &str,
+    ) -> Result<Vec<ArtifactEvidenceSummary>, AppError> {
+        let run = self.open_run(run_id)?;
+        let manifest = self.read_artifact_manifest(&run).map_err(|_| {
+            AppError::Persistence(format!(
+                "artifact manifest is missing or corrupted for run {run_id}"
+            ))
+        })?;
+        Ok(artifact_evidence_specs(&run, &manifest)
+            .into_iter()
+            .map(|spec| self.summarize_artifact_evidence(&run, spec))
+            .collect())
+    }
+
+    pub fn read_artifact_evidence(
+        &self,
+        input: ArtifactReadInput,
+    ) -> Result<ArtifactEvidenceContent, AppError> {
+        if input.run_id.trim().is_empty() || input.artifact_id.trim().is_empty() {
+            return Err(AppError::Validation(
+                "runId and artifactId are required".into(),
+            ));
+        }
+        let run = self.open_run(&input.run_id)?;
+        let manifest = self.read_artifact_manifest(&run).map_err(|_| {
+            AppError::Persistence(format!(
+                "artifact manifest is missing or corrupted for run {}",
+                input.run_id
+            ))
+        })?;
+        let spec = artifact_evidence_specs(&run, &manifest)
+            .into_iter()
+            .find(|spec| spec.artifact_id == input.artifact_id)
+            .ok_or_else(|| {
+                AppError::Validation(
+                    "artifact is not referenced by the persisted run manifest".into(),
+                )
+            })?;
+
+        if let Some(content) = spec.virtual_content {
+            let redacted = redact_secret_like_strings(&content);
+            return Ok(ArtifactEvidenceContent {
+                artifact_id: spec.artifact_id,
+                label: spec.label,
+                kind: spec.kind,
+                status: ArtifactEvidenceStatus::Verified,
+                content_type: spec.content_type,
+                byte_size: redacted.len() as u64,
+                content: redacted,
+            });
+        }
+
+        let uri = spec
+            .uri
+            .as_deref()
+            .ok_or_else(|| AppError::Persistence("artifact file is missing".into()))?;
+        let path = self.resolve_artifact_path(&run, uri, &spec.kind)?;
+        let metadata = fs::metadata(&path)
+            .map_err(|_| AppError::Persistence("artifact file is missing".into()))?;
+        if metadata.len() > MAX_ARTIFACT_EVIDENCE_BYTES as u64 {
+            return Err(AppError::Validation("artifact is too large to open".into()));
+        }
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| AppError::Persistence(format!("could not read artifact: {error}")))?;
+        Ok(ArtifactEvidenceContent {
+            artifact_id: spec.artifact_id,
+            label: spec.label,
+            kind: spec.kind.clone(),
+            status: ArtifactEvidenceStatus::Verified,
+            content_type: spec.content_type,
+            byte_size: metadata.len(),
+            content: redact_secret_like_strings(&raw),
+        })
+    }
+
+    fn summarize_artifact_evidence(
+        &self,
+        run: &PersistedRunRecord,
+        spec: ArtifactEvidenceSpec,
+    ) -> ArtifactEvidenceSummary {
+        let mut summary = ArtifactEvidenceSummary {
+            artifact_id: spec.artifact_id,
+            label: spec.label,
+            kind: spec.kind.clone(),
+            status: ArtifactEvidenceStatus::Verified,
+            uri: spec.uri.clone(),
+            byte_size: None,
+            content_type: Some(spec.content_type),
+            reason: None,
+        };
+
+        if let Some(content) = spec.virtual_content {
+            summary.byte_size = Some(content.len() as u64);
+            return summary;
+        }
+
+        let Some(uri) = spec.uri.as_deref() else {
+            summary.status = ArtifactEvidenceStatus::Unavailable;
+            summary.reason = Some("artifact file is missing".into());
+            return summary;
+        };
+
+        let path = match self.resolve_artifact_path(run, uri, &spec.kind) {
+            Ok(path) => path,
+            Err(error) => {
+                if error.to_string() == "artifact file is missing" {
+                    summary.status = ArtifactEvidenceStatus::Unavailable;
+                    summary.reason = Some("artifact file is missing".into());
+                } else {
+                    summary.status = ArtifactEvidenceStatus::Corrupted;
+                    summary.reason = Some(error.to_string());
+                }
+                return summary;
+            }
+        };
+
+        let metadata = match fs::metadata(path) {
+            Ok(metadata) => metadata,
+            Err(_) => {
+                summary.status = ArtifactEvidenceStatus::Unavailable;
+                summary.reason = Some("artifact file is missing".into());
+                return summary;
+            }
+        };
+        summary.byte_size = Some(metadata.len());
+        if metadata.len() > MAX_ARTIFACT_EVIDENCE_BYTES as u64 {
+            summary.status = ArtifactEvidenceStatus::Corrupted;
+            summary.reason = Some("artifact is too large to open".into());
+        }
+        summary
+    }
+
+    fn resolve_artifact_path(
+        &self,
+        run: &PersistedRunRecord,
+        artifact_uri: &str,
+        kind: &ArtifactEvidenceKind,
+    ) -> Result<PathBuf, AppError> {
+        let artifact_root = PathBuf::from(&run.artifact_root);
+        let canonical_artifact_root = artifact_root
+            .canonicalize()
+            .map_err(|_| AppError::Persistence("artifact directory is missing".into()))?;
+        let app_artifact_root = self.canonical_root()?.join("artifacts");
+        let canonical_app_artifact_root = app_artifact_root.canonicalize().map_err(|_| {
+            AppError::Validation(
+                "artifact path must stay inside the CodePawl app artifact directory".into(),
+            )
+        })?;
+        if !canonical_artifact_root.starts_with(&canonical_app_artifact_root) {
+            return Err(AppError::Validation(
+                "artifact path must stay inside the persisted run artifact directory".into(),
+            ));
+        }
+        let mut allowed_roots = vec![canonical_artifact_root];
+        if matches!(kind, ArtifactEvidenceKind::MemoryStore) {
+            let memory_root = self.canonical_root()?.join("memory");
+            if let Ok(canonical_memory_root) = memory_root.canonicalize() {
+                allowed_roots.push(canonical_memory_root);
+            } else {
+                allowed_roots.push(memory_root);
+            }
+        }
+
+        if artifact_uri.contains("../") || artifact_uri.contains("..\\") {
+            return Err(AppError::Validation(
+                "artifact path must stay inside the persisted run artifact directory".into(),
+            ));
+        }
+        let candidate = artifact_path_from_uri(run, artifact_uri)?;
+        if candidate
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(AppError::Validation(
+                "artifact path must stay inside the persisted run artifact directory".into(),
+            ));
+        }
+        let candidate_parent = candidate.parent().ok_or_else(|| {
+            AppError::Validation(
+                "artifact path must stay inside the persisted run artifact directory".into(),
+            )
+        })?;
+        let canonical_candidate_parent = candidate_parent
+            .canonicalize()
+            .map_err(|_| AppError::Persistence("artifact file is missing".into()))?;
+        if !allowed_roots
+            .iter()
+            .any(|allowed_root| canonical_candidate_parent.starts_with(allowed_root))
+        {
+            return Err(AppError::Validation(
+                "artifact path must stay inside the persisted run artifact directory".into(),
+            ));
+        }
+
+        let canonical_candidate = candidate
+            .canonicalize()
+            .map_err(|_| AppError::Persistence("artifact file is missing".into()))?;
+        if !allowed_roots
+            .iter()
+            .any(|allowed_root| canonical_candidate.starts_with(allowed_root))
+        {
+            return Err(AppError::Validation(
+                "artifact path must stay inside the persisted run artifact directory".into(),
+            ));
+        }
+        Ok(canonical_candidate)
+    }
+
     fn canonical_root(&self) -> Result<PathBuf, AppError> {
         fs::create_dir_all(&self.root).map_err(|error| {
             AppError::Persistence(format!("could not create app data root: {error}"))
@@ -566,6 +834,184 @@ fn default_settings_snapshot() -> SettingsSnapshot {
         provider_refs: vec![],
         retention_policy: default_retention_policy(),
     }
+}
+
+struct ArtifactEvidenceSpec {
+    artifact_id: String,
+    label: String,
+    kind: ArtifactEvidenceKind,
+    uri: Option<String>,
+    virtual_content: Option<String>,
+    content_type: String,
+}
+
+fn artifact_evidence_specs(
+    run: &PersistedRunRecord,
+    manifest: &serde_json::Value,
+) -> Vec<ArtifactEvidenceSpec> {
+    let mut specs = vec![ArtifactEvidenceSpec {
+        artifact_id: "artifactManifest".into(),
+        label: "Artifact manifest".into(),
+        kind: ArtifactEvidenceKind::ArtifactManifest,
+        uri: Some(run.artifact_manifest_path.clone()),
+        virtual_content: None,
+        content_type: "application/json".into(),
+    }];
+
+    for (artifact_id, label, kind, content_type) in [
+        (
+            "contract",
+            "Contract",
+            ArtifactEvidenceKind::Contract,
+            "text/markdown",
+        ),
+        (
+            "contractMetadata",
+            "Contract metadata",
+            ArtifactEvidenceKind::ContractMetadata,
+            "application/json",
+        ),
+        (
+            "eventLog",
+            "Event log",
+            ArtifactEvidenceKind::EventLog,
+            "application/json",
+        ),
+        (
+            "verifierInput",
+            "Verifier input",
+            ArtifactEvidenceKind::VerifierInput,
+            "application/json",
+        ),
+        (
+            "verificationResult",
+            "Verification result",
+            ArtifactEvidenceKind::VerificationResult,
+            "application/json",
+        ),
+        (
+            "redactedLog",
+            "Redacted log",
+            ArtifactEvidenceKind::RedactedLog,
+            "text/plain",
+        ),
+        (
+            "memoryStore",
+            "Memory store",
+            ArtifactEvidenceKind::MemoryStore,
+            "application/json",
+        ),
+        (
+            "replayPlan",
+            "Replay plan",
+            ArtifactEvidenceKind::ReplayPlan,
+            "application/json",
+        ),
+    ] {
+        let uri = manifest
+            .get("artifacts")
+            .and_then(|artifacts| artifacts.get(artifact_id))
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string);
+        specs.push(ArtifactEvidenceSpec {
+            artifact_id: artifact_id.into(),
+            label: label.into(),
+            kind,
+            uri,
+            virtual_content: None,
+            content_type: content_type.into(),
+        });
+    }
+
+    specs.push(ArtifactEvidenceSpec {
+        artifact_id: "usageSummary".into(),
+        label: "Usage summary".into(),
+        kind: ArtifactEvidenceKind::UsageSummary,
+        uri: None,
+        virtual_content: Some(pretty_json(
+            manifest
+                .get("usageSummary")
+                .cloned()
+                .unwrap_or_else(|| run.usage_summary.clone()),
+        )),
+        content_type: "application/json".into(),
+    });
+    specs.push(ArtifactEvidenceSpec {
+        artifact_id: "memoryCandidates".into(),
+        label: "Memory candidates".into(),
+        kind: ArtifactEvidenceKind::MemoryCandidates,
+        uri: None,
+        virtual_content: Some(pretty_json(serde_json::Value::Array(
+            run.memory_candidates.clone(),
+        ))),
+        content_type: "application/json".into(),
+    });
+    specs
+}
+
+fn pretty_json(value: serde_json::Value) -> String {
+    serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".into())
+}
+
+fn artifact_path_from_uri(
+    run: &PersistedRunRecord,
+    artifact_uri: &str,
+) -> Result<PathBuf, AppError> {
+    let trimmed = artifact_uri.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Persistence("artifact file is missing".into()));
+    }
+    if let Some(path) = trimmed.strip_prefix("file://") {
+        return Ok(PathBuf::from(path));
+    }
+    if let Some(rest) = trimmed.strip_prefix("codepawl-artifact://") {
+        let (run_id, relative_path) = rest
+            .split_once('/')
+            .ok_or_else(|| AppError::Validation("artifact URI scheme is not allowed".into()))?;
+        if run_id != run.run_id {
+            return Err(AppError::Validation(
+                "artifact is not referenced by the persisted run manifest".into(),
+            ));
+        }
+        return Ok(PathBuf::from(&run.artifact_root).join(relative_path));
+    }
+    if trimmed.contains("://") {
+        return Err(AppError::Validation(
+            "artifact URI scheme is not allowed".into(),
+        ));
+    }
+    let path = PathBuf::from(trimmed);
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Ok(PathBuf::from(&run.artifact_root).join(path))
+    }
+}
+
+fn redact_secret_like_strings(input: &str) -> String {
+    let mut redacted = String::with_capacity(input.len());
+    let mut index = 0;
+    while let Some(relative_start) = input[index..].find("sk-") {
+        let start = index + relative_start;
+        redacted.push_str(&input[index..start]);
+        let mut end = start + 3;
+        for character in input[end..].chars() {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                end += character.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if end - start >= 10 {
+            redacted.push_str("[REDACTED_SECRET]");
+        } else {
+            redacted.push_str(&input[start..end]);
+        }
+        index = end;
+    }
+    redacted.push_str(&input[index..]);
+    redacted
 }
 
 fn validate_provider_setup_input(input: &ProviderSetupInput) -> Result<(), AppError> {
@@ -1522,6 +1968,22 @@ async fn run_open(app: AppHandle, run_id: String) -> Result<PersistedRunRecord, 
 }
 
 #[tauri::command]
+async fn artifact_list(
+    app: AppHandle,
+    run_id: String,
+) -> Result<Vec<ArtifactEvidenceSummary>, AppError> {
+    persistence_store(&app).list_artifact_evidence(&run_id)
+}
+
+#[tauri::command]
+async fn artifact_read(
+    app: AppHandle,
+    input: ArtifactReadInput,
+) -> Result<ArtifactEvidenceContent, AppError> {
+    persistence_store(&app).read_artifact_evidence(input)
+}
+
+#[tauri::command]
 async fn run_cancel(run_id: String) -> Result<(), AppError> {
     if run_id.trim().is_empty() {
         return Err(AppError::Validation("runId is required".into()));
@@ -2051,6 +2513,8 @@ pub fn run() {
             run_create,
             run_list,
             run_open,
+            artifact_list,
+            artifact_read,
             run_cancel,
             approval_respond,
             memory_list_episodes,
@@ -2664,5 +3128,378 @@ mod tests {
         assert!(raw_run.contains("codex-cli"));
         assert!(raw_run.contains("ready"));
         assert!(!raw_run.contains("sk-privatebeta-secret-456"));
+    }
+
+    #[test]
+    fn artifact_evidence_lists_and_reads_manifest_owned_artifacts_with_secret_redaction() {
+        let root = temp_store_root("artifact-read");
+        let store = LocalPersistenceStore::new(root.clone());
+        let run = persisted_run(&root, "run-artifact-read");
+        let artifact_root = PathBuf::from(&run.artifact_root);
+        std::fs::create_dir_all(&artifact_root).expect("create artifact root");
+        std::fs::write(
+            artifact_root.join("codex-contract.md"),
+            "Contract body\napi_key = sk-privatebeta-secret-789\n",
+        )
+        .expect("write contract");
+        std::fs::write(artifact_root.join("run-events.json"), "[]\n").expect("write events");
+        std::fs::write(artifact_root.join("verifier-input.json"), "{}\n")
+            .expect("write verifier input");
+        std::fs::write(artifact_root.join("verification-result.json"), "{}\n")
+            .expect("write verification result");
+        std::fs::write(
+            artifact_root.join("manual-result.redacted.log"),
+            "redacted\n",
+        )
+        .expect("write redacted log");
+        let memory_root = root.join("memory");
+        std::fs::create_dir_all(&memory_root).expect("create memory root");
+        std::fs::write(
+            memory_root.join("memory-store.json"),
+            r#"{"candidateRules":[]}"#,
+        )
+        .expect("write memory store");
+        store.save_run(&run).expect("save run");
+
+        let artifacts = store
+            .list_artifact_evidence("run-artifact-read")
+            .expect("list artifact evidence");
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.artifact_id == "artifactManifest"
+                && artifact.status == ArtifactEvidenceStatus::Verified));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.artifact_id == "contract"
+                && artifact.label == "Contract"
+                && artifact.status == ArtifactEvidenceStatus::Verified));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.artifact_id == "usageSummary"
+                && artifact.kind == ArtifactEvidenceKind::UsageSummary));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact.artifact_id == "memoryStore"
+                && artifact.kind == ArtifactEvidenceKind::MemoryStore
+                && artifact.status == ArtifactEvidenceStatus::Verified));
+
+        let contract = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-artifact-read".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect("read contract artifact");
+
+        assert_eq!(contract.status, ArtifactEvidenceStatus::Verified);
+        assert!(contract.content.contains("Contract body"));
+        assert!(!contract.content.contains("sk-privatebeta-secret-789"));
+        assert!(contract.content.contains("[REDACTED_SECRET]"));
+
+        let memory_store = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-artifact-read".into(),
+                artifact_id: "memoryStore".into(),
+            })
+            .expect("read app memory store artifact");
+        assert_eq!(memory_store.status, ArtifactEvidenceStatus::Verified);
+        assert!(memory_store.content.contains("candidateRules"));
+
+        let unknown_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-artifact-read".into(),
+                artifact_id: "unknownArtifact".into(),
+            })
+            .expect_err("unknown artifacts are not manifest members");
+        assert_eq!(
+            unknown_error.to_string(),
+            "artifact is not referenced by the persisted run manifest"
+        );
+    }
+
+    #[test]
+    fn artifact_evidence_rejects_traversal_external_paths_unknown_schemes_missing_corrupt_and_oversized_artifacts(
+    ) {
+        let root = temp_store_root("artifact-reject");
+        let store = LocalPersistenceStore::new(root.clone());
+
+        let traversal_path = root
+            .join("artifacts")
+            .join("run-traversal")
+            .join("artifact-manifest.json");
+        std::fs::create_dir_all(traversal_path.parent().expect("traversal parent"))
+            .expect("create traversal parent");
+        let mut traversal_run = persisted_run(&root, "run-traversal");
+        traversal_run.artifact_root = root
+            .join("artifacts")
+            .join("run-traversal")
+            .to_string_lossy()
+            .to_string();
+        traversal_run.artifact_manifest_path = traversal_path.to_string_lossy().to_string();
+        std::fs::write(
+            &traversal_path,
+            serde_json::json!({
+                "runId": "run-traversal",
+                "artifacts": {
+                    "contract": format!("{}/artifacts/run-traversal/../outside.md", root.display())
+                }
+            })
+            .to_string(),
+        )
+        .expect("write traversal manifest");
+        store.save_run(&traversal_run).expect("save traversal run");
+        let traversal_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-traversal".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect_err("traversal artifact is unsafe");
+        assert_eq!(
+            traversal_error.to_string(),
+            "artifact path must stay inside the persisted run artifact directory"
+        );
+
+        let external_path = root
+            .join("artifacts")
+            .join("run-external")
+            .join("artifact-manifest.json");
+        std::fs::create_dir_all(external_path.parent().expect("external parent"))
+            .expect("create external parent");
+        let mut external_run = persisted_run(&root, "run-external");
+        external_run.artifact_root = root
+            .join("artifacts")
+            .join("run-external")
+            .to_string_lossy()
+            .to_string();
+        external_run.artifact_manifest_path = external_path.to_string_lossy().to_string();
+        std::fs::write(
+            &external_path,
+            serde_json::json!({
+                "runId": "run-external",
+                "artifacts": { "contract": "/tmp/codepawl-external-contract.md" }
+            })
+            .to_string(),
+        )
+        .expect("write external manifest");
+        store.save_run(&external_run).expect("save external run");
+        let external_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-external".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect_err("external path is unsafe");
+        assert_eq!(
+            external_error.to_string(),
+            "artifact path must stay inside the persisted run artifact directory"
+        );
+
+        let memory_root = root.join("memory");
+        std::fs::create_dir_all(&memory_root).expect("create memory root");
+        std::fs::write(memory_root.join("not-a-contract.md"), "wrong root")
+            .expect("write non-memory artifact in memory root");
+        let non_memory_path = root
+            .join("artifacts")
+            .join("run-non-memory-root")
+            .join("artifact-manifest.json");
+        std::fs::create_dir_all(non_memory_path.parent().expect("non-memory parent"))
+            .expect("create non-memory parent");
+        let mut non_memory_run = persisted_run(&root, "run-non-memory-root");
+        non_memory_run.artifact_root = root
+            .join("artifacts")
+            .join("run-non-memory-root")
+            .to_string_lossy()
+            .to_string();
+        non_memory_run.artifact_manifest_path = non_memory_path.to_string_lossy().to_string();
+        std::fs::write(
+            &non_memory_path,
+            serde_json::json!({
+                "runId": "run-non-memory-root",
+                "artifacts": { "contract": memory_root.join("not-a-contract.md").to_string_lossy() }
+            })
+            .to_string(),
+        )
+        .expect("write non-memory-root manifest");
+        store
+            .save_run(&non_memory_run)
+            .expect("save non-memory-root run");
+        let non_memory_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-non-memory-root".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect_err("non-memory artifacts cannot use memory root");
+        assert_eq!(
+            non_memory_error.to_string(),
+            "artifact path must stay inside the persisted run artifact directory"
+        );
+
+        let scheme_path = root
+            .join("artifacts")
+            .join("run-scheme")
+            .join("artifact-manifest.json");
+        std::fs::create_dir_all(scheme_path.parent().expect("scheme parent"))
+            .expect("create scheme parent");
+        let mut scheme_run = persisted_run(&root, "run-scheme");
+        scheme_run.artifact_root = root
+            .join("artifacts")
+            .join("run-scheme")
+            .to_string_lossy()
+            .to_string();
+        scheme_run.artifact_manifest_path = scheme_path.to_string_lossy().to_string();
+        std::fs::write(
+            &scheme_path,
+            serde_json::json!({
+                "runId": "run-scheme",
+                "artifacts": { "contract": "https://example.com/contract.md" }
+            })
+            .to_string(),
+        )
+        .expect("write scheme manifest");
+        store.save_run(&scheme_run).expect("save scheme run");
+        let scheme_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-scheme".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect_err("unknown scheme is unsafe");
+        assert_eq!(
+            scheme_error.to_string(),
+            "artifact URI scheme is not allowed"
+        );
+
+        #[cfg(unix)]
+        {
+            let symlink_path = root
+                .join("artifacts")
+                .join("run-symlink")
+                .join("artifact-manifest.json");
+            std::fs::create_dir_all(symlink_path.parent().expect("symlink parent"))
+                .expect("create symlink parent");
+            let outside_symlink_target = std::env::temp_dir()
+                .join(format!("codepawl-symlink-target-{}.md", unique_suffix()));
+            std::fs::write(&outside_symlink_target, "outside secret")
+                .expect("write outside symlink target");
+            let mut symlink_run = persisted_run(&root, "run-symlink");
+            let symlink_artifact_root = root.join("artifacts").join("run-symlink");
+            symlink_run.artifact_root = symlink_artifact_root.to_string_lossy().to_string();
+            symlink_run.artifact_manifest_path = symlink_path.to_string_lossy().to_string();
+            std::os::unix::fs::symlink(
+                &outside_symlink_target,
+                symlink_artifact_root.join("codex-contract.md"),
+            )
+            .expect("create artifact symlink");
+            store.save_run(&symlink_run).expect("save symlink run");
+            let symlink_error = store
+                .read_artifact_evidence(ArtifactReadInput {
+                    run_id: "run-symlink".into(),
+                    artifact_id: "contract".into(),
+                })
+                .expect_err("symlink target outside app data is unsafe");
+            assert_eq!(
+                symlink_error.to_string(),
+                "artifact path must stay inside the persisted run artifact directory"
+            );
+        }
+
+        let outside_memory_path = root
+            .join("artifacts")
+            .join("run-outside-memory")
+            .join("artifact-manifest.json");
+        std::fs::create_dir_all(outside_memory_path.parent().expect("outside memory parent"))
+            .expect("create outside memory parent");
+        let outside_memory_file =
+            std::env::temp_dir().join(format!("codepawl-outside-memory-{}.json", unique_suffix()));
+        std::fs::write(&outside_memory_file, "{}").expect("write outside memory file");
+        let mut outside_memory_run = persisted_run(&root, "run-outside-memory");
+        outside_memory_run.artifact_root = root
+            .join("artifacts")
+            .join("run-outside-memory")
+            .to_string_lossy()
+            .to_string();
+        outside_memory_run.artifact_manifest_path =
+            outside_memory_path.to_string_lossy().to_string();
+        std::fs::write(
+            &outside_memory_path,
+            serde_json::json!({
+                "runId": "run-outside-memory",
+                "artifacts": { "memoryStore": outside_memory_file.to_string_lossy() }
+            })
+            .to_string(),
+        )
+        .expect("write outside memory manifest");
+        store
+            .save_run(&outside_memory_run)
+            .expect("save outside memory run");
+        let outside_memory_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-outside-memory".into(),
+                artifact_id: "memoryStore".into(),
+            })
+            .expect_err("memory store outside app data is unsafe");
+        assert_eq!(
+            outside_memory_error.to_string(),
+            "artifact path must stay inside the persisted run artifact directory"
+        );
+
+        let missing_file_run = persisted_run(&root, "run-missing-file");
+        std::fs::create_dir_all(&missing_file_run.artifact_root)
+            .expect("create missing file artifact root");
+        store
+            .save_run(&missing_file_run)
+            .expect("save missing file run");
+        let missing_artifacts = store
+            .list_artifact_evidence("run-missing-file")
+            .expect("list missing file evidence");
+        let missing_contract = missing_artifacts
+            .iter()
+            .find(|artifact| artifact.artifact_id == "contract")
+            .expect("contract evidence exists");
+        assert_eq!(missing_contract.status, ArtifactEvidenceStatus::Unavailable);
+        assert_eq!(
+            missing_contract.reason.as_deref(),
+            Some("artifact file is missing")
+        );
+        let missing_file_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-missing-file".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect_err("missing artifact file is rejected");
+        assert_eq!(missing_file_error.to_string(), "artifact file is missing");
+
+        let missing_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-artifact-read-missing".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect_err("missing run rejected");
+        assert!(missing_error.to_string().contains("run snapshot not found"));
+
+        let corrupt_run = persisted_run(&root, "run-corrupt-artifact-manifest");
+        store.save_run(&corrupt_run).expect("save corrupt run");
+        std::fs::write(&corrupt_run.artifact_manifest_path, "{not-json").expect("corrupt manifest");
+        let corrupt_error = store
+            .list_artifact_evidence("run-corrupt-artifact-manifest")
+            .expect_err("corrupt manifest rejected");
+        assert_eq!(
+            corrupt_error.to_string(),
+            "artifact manifest is missing or corrupted for run run-corrupt-artifact-manifest"
+        );
+
+        let oversized_run = persisted_run(&root, "run-oversized");
+        let oversized_root = PathBuf::from(&oversized_run.artifact_root);
+        std::fs::create_dir_all(&oversized_root).expect("create oversized root");
+        std::fs::write(
+            oversized_root.join("codex-contract.md"),
+            "x".repeat(MAX_ARTIFACT_EVIDENCE_BYTES + 1),
+        )
+        .expect("write oversized contract");
+        store.save_run(&oversized_run).expect("save oversized run");
+        let oversized_error = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-oversized".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect_err("oversized artifact rejected");
+        assert_eq!(oversized_error.to_string(), "artifact is too large to open");
     }
 }

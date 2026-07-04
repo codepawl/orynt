@@ -2831,6 +2831,35 @@ h3 {
   gap: var(--space-control);
 }
 
+.artifact-evidence-viewer,
+.artifact-evidence-grid {
+  display: grid;
+  gap: var(--space-control);
+}
+
+.artifact-evidence-card p,
+.artifact-evidence-message {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.artifact-evidence-content pre {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--mono-100);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.artifact-evidence-content pre span {
+  display: block;
+}
+
 .surface-switch {
   position: relative;
   display: grid;

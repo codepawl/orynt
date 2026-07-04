@@ -49,7 +49,14 @@ describe("CodePawl IPC contracts", () => {
   });
 
   it("declares durable repository run and settings IPC methods", () => {
-    expect(RUN_IPC_METHODS).toEqual(["run.create", "run.list", "run.open", "run.cancel"]);
+    expect(RUN_IPC_METHODS).toEqual([
+      "run.create",
+      "run.list",
+      "run.open",
+      "artifact.list",
+      "artifact.read",
+      "run.cancel",
+    ]);
     expect(SETTINGS_IPC_METHODS).toEqual([
       "settings.get",
       "settings.update",

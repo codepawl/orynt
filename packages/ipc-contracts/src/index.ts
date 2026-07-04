@@ -49,6 +49,8 @@ export const RUN_IPC_METHODS = [
   "run.create",
   "run.list",
   "run.open",
+  "artifact.list",
+  "artifact.read",
   "run.cancel",
 ] as const;
 

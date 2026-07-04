@@ -52,7 +52,16 @@ import type { LucideIcon } from "lucide-react";
 import type { FocusEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
 
 import { codepawl } from "./codepawlClient";
-import type { PersistedRunRecord, PersistedRunSummary, ProviderPreflightResult, ProviderReference, SettingsSnapshot } from "./codepawlClient";
+import type {
+  ArtifactEvidenceContent,
+  ArtifactEvidenceStatus,
+  ArtifactEvidenceSummary,
+  PersistedRunRecord,
+  PersistedRunSummary,
+  ProviderPreflightResult,
+  ProviderReference,
+  SettingsSnapshot,
+} from "./codepawlClient";
 import "./styles.css";
 
 type Workspace = {
@@ -161,6 +170,17 @@ function providerStatusMessage(reference: ProviderReference | undefined): string
     return "Provider setup is required before real repository runs.";
   }
   return reference.lastPreflight?.reasons[0] ?? "Run provider preflight before real repository runs.";
+}
+
+function artifactStatusLabel(status: ArtifactEvidenceStatus): string {
+  switch (status) {
+    case "verified":
+      return "Verified";
+    case "unavailable":
+      return "Unavailable";
+    case "corrupted":
+      return "Corrupted";
+  }
 }
 
 const composerAttachmentOptionGroups = [
@@ -527,6 +547,9 @@ function App({
   const [selectedSkillReplayPlan, setSelectedSkillReplayPlan] = useState<SkillReplayPlan | null>(null);
   const [persistedRuns, setPersistedRuns] = useState<PersistedRunSummary[]>([]);
   const [openedPersistedRun, setOpenedPersistedRun] = useState<PersistedRunRecord | null>(null);
+  const [artifactEvidence, setArtifactEvidence] = useState<ArtifactEvidenceSummary[]>([]);
+  const [selectedArtifactEvidence, setSelectedArtifactEvidence] = useState<ArtifactEvidenceContent | null>(null);
+  const [artifactEvidenceMessage, setArtifactEvidenceMessage] = useState("");
   const [settingsSnapshot, setSettingsSnapshot] = useState<SettingsSnapshot | null>(null);
   const [providerSetupMessage, setProviderSetupMessage] = useState("");
   const [copiedAgentResponseId, setCopiedAgentResponseId] = useState<string | null>(null);
@@ -982,6 +1005,29 @@ function App({
     const run = await codepawl.openPersistedRun(runId);
     setOpenedPersistedRun(run);
     setCurrentRunId(run.runId);
+    setSelectedArtifactEvidence(null);
+    setArtifactEvidenceMessage("");
+    try {
+      const evidence = await codepawl.listArtifactEvidence(runId);
+      setArtifactEvidence(evidence);
+    } catch (error) {
+      setArtifactEvidence([]);
+      setArtifactEvidenceMessage(error instanceof Error ? error.message : "Artifact evidence could not be loaded.");
+    }
+  };
+
+  const handleViewArtifactEvidence = async (artifactId: string) => {
+    if (!openedPersistedRun) {
+      return;
+    }
+    setArtifactEvidenceMessage("");
+    try {
+      const evidence = await codepawl.readArtifactEvidence(openedPersistedRun.runId, artifactId);
+      setSelectedArtifactEvidence(evidence);
+    } catch (error) {
+      setSelectedArtifactEvidence(null);
+      setArtifactEvidenceMessage(error instanceof Error ? error.message : "Artifact evidence could not be opened.");
+    }
   };
 
   const handlePermissionModeChange = async (mode: PermissionModeOption) => {
@@ -2009,17 +2055,64 @@ function App({
                       </article>
                     );
                   })}
-                  {openedPersistedRun.artifacts.map((artifact) => (
-                    <article className="settings-review-card" key={artifact.id}>
-                      <div className="settings-review-card-header">
-                        <div>
-                          <h3>{artifact.label}</h3>
-                          <span>{artifact.uri}</span>
-                        </div>
-                        <strong>{artifact.kind}</strong>
+                  <section className="artifact-evidence-viewer" aria-label="Artifact evidence viewer">
+                    <div className="settings-review-card-header">
+                      <div>
+                        <h3>Artifact evidence viewer</h3>
+                        <span>Validated by Tauri against the persisted run manifest</span>
                       </div>
-                    </article>
-                  ))}
+                      <strong>{pluralize(artifactEvidence.length, "artifact")}</strong>
+                    </div>
+                    {artifactEvidenceMessage ? (
+                      <p className="artifact-evidence-message" role="status">
+                        {artifactEvidenceMessage}
+                      </p>
+                    ) : null}
+                    <div className="artifact-evidence-grid">
+                      {artifactEvidence.map((artifact) => (
+                        <article className="settings-review-card artifact-evidence-card" key={artifact.artifactId}>
+                          <div className="settings-review-card-header">
+                            <div>
+                              <h3>{artifact.label}</h3>
+                              <span>{artifact.reason ?? artifact.contentType ?? artifact.kind.replaceAll("_", " ")}</span>
+                            </div>
+                            <strong>{artifactStatusLabel(artifact.status)}</strong>
+                          </div>
+                          <p>
+                            {artifact.byteSize ? `${artifact.byteSize} bytes` : "No readable file"} / {artifact.kind.replaceAll("_", " ")}
+                          </p>
+                          <div className="settings-review-actions">
+                            <button
+                              type="button"
+                              onClick={() => void handleViewArtifactEvidence(artifact.artifactId)}
+                              disabled={artifact.status !== "verified"}
+                              aria-label={`View artifact ${artifact.label}`}
+                            >
+                              View
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                    {selectedArtifactEvidence ? (
+                      <article className="settings-review-card artifact-evidence-content" aria-label="Selected artifact evidence">
+                        <div className="settings-review-card-header">
+                          <div>
+                            <h3>{selectedArtifactEvidence.label}</h3>
+                            <span>
+                              {selectedArtifactEvidence.contentType} / {selectedArtifactEvidence.byteSize} bytes
+                            </span>
+                          </div>
+                          <strong>{artifactStatusLabel(selectedArtifactEvidence.status)}</strong>
+                        </div>
+                        <pre>
+                          {selectedArtifactEvidence.content.split("\n").map((line, index) => (
+                            <span key={`${selectedArtifactEvidence.artifactId}-line-${index}`}>{line || " "}</span>
+                          ))}
+                        </pre>
+                      </article>
+                    ) : null}
+                  </section>
                 </section>
               ) : null}
               {settingsSnapshot ? (

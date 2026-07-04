@@ -1300,6 +1300,16 @@ describe("CodePawl desktop shell", () => {
       createdAt: "2026-07-04T00:00:00.000Z",
       updatedAt: "2026-07-04T00:00:01.000Z",
     });
+    vi.spyOn(codepawl, "listArtifactEvidence").mockResolvedValue([
+      {
+        artifactId: "contract",
+        label: "Codex contract",
+        kind: "contract",
+        status: "verified",
+        byteSize: 512,
+        contentType: "text/markdown",
+      },
+    ]);
 
     render(<App />);
     const settings = openSettings();
@@ -1316,6 +1326,104 @@ describe("CodePawl desktop shell", () => {
     expect(within(settings).getByText("Codex contract")).toBeInTheDocument();
     expect(within(settings).getByText("1 memory candidate")).toBeInTheDocument();
     expect(within(settings).getByText("1 skill")).toBeInTheDocument();
+  });
+
+  it("opens persisted run artifacts through the hardened evidence viewer", async () => {
+    vi.spyOn(codepawl, "listPersistedRuns").mockResolvedValue([
+      {
+        runId: "run-persisted-evidence",
+        taskId: "task-persisted",
+        workspaceId: "workspace-local-alpha",
+        goal: "Inspect durable evidence",
+        repositoryPath: "/repo/codepawl",
+        status: "pass",
+        artifactManifestPath: "/app-data/artifacts/run-persisted-evidence/artifact-manifest.json",
+        eventCount: 1,
+        artifactCount: 4,
+        memoryCandidateCount: 1,
+        skillCount: 1,
+        updatedAt: "2026-07-04T00:00:01.000Z",
+      },
+    ]);
+    vi.spyOn(codepawl, "openPersistedRun").mockResolvedValue({
+      runId: "run-persisted-evidence",
+      taskId: "task-persisted",
+      workspaceId: "workspace-local-alpha",
+      goal: "Inspect durable evidence",
+      repositoryPath: "/repo/codepawl",
+      status: "pass",
+      artifactRoot: "/app-data/artifacts/run-persisted-evidence",
+      artifactManifestPath: "/app-data/artifacts/run-persisted-evidence/artifact-manifest.json",
+      events: [],
+      artifacts: [],
+      usageSummary: { runCount: 1, artifactCount: 4, gatewayActionCount: 1 },
+      memoryCandidates: [{ id: "candidate-rule-1", status: "candidate" }],
+      skills: [{ id: "skill-1", status: "candidate" }],
+      skillReplayPlan: { id: "skill-replay-plan-1", dryRunOnly: true },
+      providerRefs: [],
+      createdAt: "2026-07-04T00:00:00.000Z",
+      updatedAt: "2026-07-04T00:00:01.000Z",
+    });
+    vi.spyOn(codepawl, "listArtifactEvidence").mockResolvedValue([
+      {
+        artifactId: "artifactManifest",
+        label: "Artifact manifest",
+        kind: "artifact_manifest",
+        status: "verified",
+        byteSize: 280,
+        contentType: "application/json",
+      },
+      {
+        artifactId: "contract",
+        label: "Contract",
+        kind: "contract",
+        status: "verified",
+        byteSize: 640,
+        contentType: "text/markdown",
+      },
+      {
+        artifactId: "verifierInput",
+        label: "Verifier input",
+        kind: "verifier_input",
+        status: "unavailable",
+        reason: "artifact file is missing",
+      },
+      {
+        artifactId: "replayPlan",
+        label: "Replay plan",
+        kind: "replay_plan",
+        status: "corrupted",
+        reason: "artifact manifest entry is unsafe",
+      },
+    ]);
+    vi.spyOn(codepawl, "readArtifactEvidence").mockResolvedValue({
+      artifactId: "contract",
+      label: "Contract",
+      kind: "contract",
+      status: "verified",
+      contentType: "text/markdown",
+      byteSize: 640,
+      content: "Repository contract\n[REDACTED_SECRET]\n",
+    });
+
+    render(<App />);
+    const settings = openSettings();
+    const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
+    fireEvent.click(within(settingsNav).getByRole("button", { name: "CodePawl Code" }));
+    fireEvent.click(await within(settings).findByRole("button", { name: "Open persisted run Inspect durable evidence" }));
+
+    const evidenceViewer = await within(settings).findByRole("region", { name: "Artifact evidence viewer" });
+    expect(within(evidenceViewer).getByText("Artifact manifest")).toBeInTheDocument();
+    expect(within(evidenceViewer).getAllByText("Verified")).toHaveLength(2);
+    expect(within(evidenceViewer).getByText("Unavailable")).toBeInTheDocument();
+    expect(within(evidenceViewer).getByText("artifact file is missing")).toBeInTheDocument();
+    expect(within(evidenceViewer).getByText("Corrupted")).toBeInTheDocument();
+    expect(within(evidenceViewer).getByText("artifact manifest entry is unsafe")).toBeInTheDocument();
+
+    fireEvent.click(within(evidenceViewer).getByRole("button", { name: "View artifact Contract" }));
+
+    expect(await within(evidenceViewer).findByText("Repository contract")).toBeInTheDocument();
+    expect(within(evidenceViewer).getByText("[REDACTED_SECRET]")).toBeInTheDocument();
   });
 
   it("configures and preflights a private-beta local Codex provider reference", async () => {
