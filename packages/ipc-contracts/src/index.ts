@@ -56,7 +56,9 @@ export const SETTINGS_IPC_METHODS = [
   "settings.get",
   "settings.update",
   "providerKey.save",
+  "providerKey.list",
   "providerKey.test",
+  "providerKey.delete",
 ] as const;
 
 export const SKILL_IPC_METHODS = [

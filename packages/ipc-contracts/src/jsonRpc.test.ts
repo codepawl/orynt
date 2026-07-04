@@ -50,7 +50,14 @@ describe("CodePawl IPC contracts", () => {
 
   it("declares durable repository run and settings IPC methods", () => {
     expect(RUN_IPC_METHODS).toEqual(["run.create", "run.list", "run.open", "run.cancel"]);
-    expect(SETTINGS_IPC_METHODS).toEqual(["settings.get", "settings.update", "providerKey.save", "providerKey.test"]);
+    expect(SETTINGS_IPC_METHODS).toEqual([
+      "settings.get",
+      "settings.update",
+      "providerKey.save",
+      "providerKey.list",
+      "providerKey.test",
+      "providerKey.delete",
+    ]);
   });
 
   it("declares memory review IPC methods and candidate rule review events", () => {

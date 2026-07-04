@@ -52,7 +52,7 @@ import type { LucideIcon } from "lucide-react";
 import type { FocusEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
 
 import { codepawl } from "./codepawlClient";
-import type { PersistedRunRecord, PersistedRunSummary, SettingsSnapshot } from "./codepawlClient";
+import type { PersistedRunRecord, PersistedRunSummary, ProviderPreflightResult, ProviderReference, SettingsSnapshot } from "./codepawlClient";
 import "./styles.css";
 
 type Workspace = {
@@ -137,6 +137,30 @@ function toSettingsPermissionMode(mode: PermissionModeOption): SettingsSnapshot[
     return "manual";
   }
   return "safe";
+}
+
+function providerIsReady(settings: SettingsSnapshot | null): boolean {
+  return settings?.providerRefs.some((reference) => reference.status === "ready") ?? true;
+}
+
+function providerStatusLabel(reference: ProviderReference | undefined): string {
+  if (!reference) {
+    return "Provider setup required";
+  }
+  if (reference.status === "ready") {
+    return "Ready";
+  }
+  if (reference.status === "failed") {
+    return "Preflight failed";
+  }
+  return "Preflight required";
+}
+
+function providerStatusMessage(reference: ProviderReference | undefined): string {
+  if (!reference) {
+    return "Provider setup is required before real repository runs.";
+  }
+  return reference.lastPreflight?.reasons[0] ?? "Run provider preflight before real repository runs.";
 }
 
 const composerAttachmentOptionGroups = [
@@ -504,6 +528,7 @@ function App({
   const [persistedRuns, setPersistedRuns] = useState<PersistedRunSummary[]>([]);
   const [openedPersistedRun, setOpenedPersistedRun] = useState<PersistedRunRecord | null>(null);
   const [settingsSnapshot, setSettingsSnapshot] = useState<SettingsSnapshot | null>(null);
+  const [providerSetupMessage, setProviderSetupMessage] = useState("");
   const [copiedAgentResponseId, setCopiedAgentResponseId] = useState<string | null>(null);
   const [sharedAgentResponseId, setSharedAgentResponseId] = useState<string | null>(null);
   const [agentResponseRatings, setAgentResponseRatings] = useState<Record<string, AgentResponseRating>>({});
@@ -582,10 +607,19 @@ function App({
   });
   const activeSettingsSectionLabel = settingsSections.find((section) => section.id === activeSettingsSection)?.label ?? "General";
   const landingUrl = getLandingUrl();
+  const primaryProviderRef = settingsSnapshot?.providerRefs[0];
+  const isProviderReady = providerIsReady(settingsSnapshot);
 
   const refreshPersistedRuns = async () => {
     const runs = await codepawl.listPersistedRuns();
     setPersistedRuns(runs);
+  };
+
+  const refreshSettingsSnapshot = async () => {
+    const settings = await codepawl.getSettings();
+    setSettingsSnapshot(settings);
+    setPermissionMode(toUiPermissionMode(settings.permissionMode));
+    return settings;
   };
 
   useEffect(() => {
@@ -679,6 +713,7 @@ function App({
       setPersistedRuns(runs);
       setSettingsSnapshot(settings);
       setPermissionMode(toUiPermissionMode(settings.permissionMode));
+      setProviderSetupMessage(providerStatusMessage(settings.providerRefs[0]));
     });
 
     return () => {
@@ -841,6 +876,12 @@ function App({
     });
     setComposerValue("");
 
+    const currentSettings = settingsSnapshot ?? (await refreshSettingsSnapshot());
+    if (!providerIsReady(currentSettings)) {
+      setProviderSetupMessage(providerStatusMessage(currentSettings.providerRefs[0]));
+      return;
+    }
+
     const run = await codepawl.createRun({
       goal,
       capabilityId: "coding-apprentice",
@@ -947,6 +988,45 @@ function App({
     setPermissionMode(mode);
     const settings = await codepawl.updateSettings({ permissionMode: toSettingsPermissionMode(mode) });
     setSettingsSnapshot(settings);
+  };
+
+  const handleUseLocalCodexProvider = async () => {
+    const reference = await codepawl.saveProviderReference({
+      providerId: "codex-cli",
+      label: "Local Codex CLI",
+    });
+    const settings = await refreshSettingsSnapshot();
+    const providerRefs = [reference, ...settings.providerRefs.filter((item) => item.providerId !== reference.providerId)];
+    setSettingsSnapshot({ ...settings, providerRefs });
+    setProviderSetupMessage(providerStatusMessage(reference));
+  };
+
+  const handleRunProviderPreflight = async () => {
+    const providerId = primaryProviderRef?.providerId ?? "codex-cli";
+    const result: ProviderPreflightResult = await codepawl.testProviderReference(providerId);
+    const settings = await refreshSettingsSnapshot();
+    const currentProviderRefs = settings.providerRefs.length > 0 ? settings.providerRefs : primaryProviderRef ? [primaryProviderRef] : [];
+    const providerRefs = currentProviderRefs.map((reference) =>
+      reference.providerId === result.checkedProviderId
+        ? {
+            ...reference,
+            status: result.status,
+            lastPreflight: result,
+          }
+        : reference,
+    );
+    setSettingsSnapshot({ ...settings, providerRefs });
+    setProviderSetupMessage(result.reasons[0] ?? providerStatusLabel(providerRefs[0]));
+  };
+
+  const handleDeleteProviderReference = async () => {
+    if (!primaryProviderRef) {
+      return;
+    }
+    await codepawl.deleteProviderReference(primaryProviderRef.providerId);
+    const settings = await refreshSettingsSnapshot();
+    setSettingsSnapshot(settings);
+    setProviderSetupMessage(providerStatusMessage(settings.providerRefs[0]));
   };
 
   const hasSelectedRun = currentRunId !== null;
@@ -2060,6 +2140,30 @@ function App({
           return (
             <section className="settings-section" aria-labelledby="settings-connectors-title">
               <h2 id="settings-connectors-title">Connectors</h2>
+              <section className="settings-review-list" aria-label="Provider setup">
+                <h3>Provider setup</h3>
+                <article className="settings-review-card">
+                  <div className="settings-review-card-header">
+                    <div>
+                      <h3>{primaryProviderRef?.label ?? "Local Codex CLI"}</h3>
+                      <span>{primaryProviderRef?.keyRef ?? "No provider reference configured"}</span>
+                    </div>
+                    <strong>{providerStatusLabel(primaryProviderRef)}</strong>
+                  </div>
+                  <p>{providerSetupMessage || providerStatusMessage(primaryProviderRef)}</p>
+                  <div className="candidate-rule-actions">
+                    <button type="button" onClick={() => void handleUseLocalCodexProvider()} aria-label="Use local Codex CLI">
+                      Use local Codex CLI
+                    </button>
+                    <button type="button" onClick={() => void handleRunProviderPreflight()} disabled={!primaryProviderRef} aria-label="Run provider preflight">
+                      Run provider preflight
+                    </button>
+                    <button type="button" onClick={() => void handleDeleteProviderReference()} disabled={!primaryProviderRef} aria-label="Delete provider reference">
+                      Delete provider
+                    </button>
+                  </div>
+                </article>
+              </section>
               <div className="settings-row">
                 <span>Browser connector</span>
                 <strong>{surfaceToggles.browser ? "Enabled locally" : "Blocked"}</strong>
@@ -2223,6 +2327,11 @@ function App({
             <span key={surface}>{surface} unavailable</span>
           ))}
         </div>
+        {providerSetupMessage && !isProviderReady ? (
+          <p className="composer-provider-status" role="status">
+            {providerSetupMessage}
+          </p>
+        ) : null}
         <div className="composer-toolbar">
           <div className="composer-attachment">
             <button

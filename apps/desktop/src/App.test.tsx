@@ -1289,7 +1289,14 @@ describe("CodePawl desktop shell", () => {
       memoryCandidates: [{ id: "candidate-rule-1", status: "candidate" }],
       skills: [{ id: "skill-1", status: "candidate" }],
       skillReplayPlan: { id: "skill-replay-plan-1", dryRunOnly: true },
-      providerRefs: [{ providerId: "openai", keyRef: "keychain://codepawl/local-beta/openai" }],
+      providerRefs: [
+        {
+          providerId: "openai",
+          label: "OpenAI",
+          keyRef: "keychain://codepawl/local-beta/openai",
+          status: "ready",
+        },
+      ],
       createdAt: "2026-07-04T00:00:00.000Z",
       updatedAt: "2026-07-04T00:00:01.000Z",
     });
@@ -1309,6 +1316,90 @@ describe("CodePawl desktop shell", () => {
     expect(within(settings).getByText("Codex contract")).toBeInTheDocument();
     expect(within(settings).getByText("1 memory candidate")).toBeInTheDocument();
     expect(within(settings).getByText("1 skill")).toBeInTheDocument();
+  });
+
+  it("configures and preflights a private-beta local Codex provider reference", async () => {
+    const readyReference = {
+      providerId: "codex-cli",
+      label: "Local Codex CLI",
+      keyRef: "local-safe-keychain://codepawl/private-beta/codex-cli",
+      status: "ready" as const,
+      lastPreflight: {
+        checkedProviderId: "codex-cli",
+        status: "ready" as const,
+        ready: true,
+        checkedAt: "2026-07-04T00:00:00.000Z",
+        executablePath: "/usr/local/bin/codex",
+        reasons: ["Codex CLI executable is available."],
+      },
+    };
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      providerRefs: [],
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    });
+    const saveProviderSpy = vi.spyOn(codepawl, "saveProviderReference").mockResolvedValue({
+      ...readyReference,
+      status: "untested",
+      lastPreflight: null,
+    });
+    vi.spyOn(codepawl, "testProviderReference").mockResolvedValue(readyReference.lastPreflight);
+
+    render(<App />);
+    const settings = openSettings();
+    const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
+    fireEvent.click(within(settingsNav).getByRole("button", { name: "Connectors" }));
+
+    expect(await within(settings).findByRole("region", { name: "Provider setup" })).toBeInTheDocument();
+    expect(within(settings).getByText("Provider setup is required before real repository runs.")).toBeInTheDocument();
+    fireEvent.click(within(settings).getByRole("button", { name: "Use local Codex CLI" }));
+
+    expect(saveProviderSpy).toHaveBeenCalledWith({
+      providerId: "codex-cli",
+      label: "Local Codex CLI",
+    });
+    expect(await within(settings).findByText("Preflight required")).toBeInTheDocument();
+    fireEvent.click(within(settings).getByRole("button", { name: "Run provider preflight" }));
+
+    expect(await within(settings).findByText("Codex CLI executable is available.")).toBeInTheDocument();
+    expect(within(settings).getByText("Ready")).toBeInTheDocument();
+  });
+
+  it("blocks real repository submission when provider setup is missing", async () => {
+    const createRunSpy = vi.spyOn(codepawl, "createRun");
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      providerRefs: [],
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    });
+
+    render(<App />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+      target: { value: "/home/operator/project" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
+      target: { value: "Run without provider" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+
+    expect(await screen.findByText("Provider setup is required before real repository runs.")).toBeInTheDocument();
+    expect(createRunSpy).not.toHaveBeenCalled();
   });
 
   it("does not reuse deleted thread ids or overwrite an existing thread conversation", async () => {

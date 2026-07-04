@@ -198,13 +198,53 @@ pub struct SettingsUpdateInput {
 pub struct ProviderKeySaveInput {
     provider_id: String,
     label: String,
+    raw_secret: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSetupInput {
+    provider_id: String,
+    label: String,
+    raw_secret: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderReadinessStatus {
+    Untested,
+    Ready,
+    Failed,
+}
+
+impl Default for ProviderReadinessStatus {
+    fn default() -> Self {
+        Self::Untested
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderPreflightResult {
+    checked_provider_id: String,
+    status: ProviderReadinessStatus,
+    ready: bool,
+    checked_at: String,
+    executable_path: Option<String>,
+    reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretReference {
     provider_id: String,
+    #[serde(default)]
+    label: String,
     key_ref: String,
+    #[serde(default)]
+    status: ProviderReadinessStatus,
+    #[serde(default)]
+    last_preflight: Option<ProviderPreflightResult>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -394,6 +434,49 @@ impl LocalPersistenceStore {
             .map_err(|error| AppError::Persistence(format!("could not parse settings: {error}")))
     }
 
+    pub fn save_provider_reference(
+        &self,
+        input: ProviderSetupInput,
+    ) -> Result<SecretReference, AppError> {
+        validate_provider_setup_input(&input)?;
+        let reference = SecretReference {
+            provider_id: input.provider_id.trim().to_string(),
+            label: input.label.trim().to_string(),
+            key_ref: provider_key_ref(input.provider_id.trim()),
+            status: ProviderReadinessStatus::Untested,
+            last_preflight: None,
+        };
+        self.save_provider_reference_record(reference.clone())?;
+        Ok(reference)
+    }
+
+    pub fn save_provider_reference_record(
+        &self,
+        reference: SecretReference,
+    ) -> Result<(), AppError> {
+        let mut settings = self.load_settings()?;
+        settings
+            .provider_refs
+            .retain(|existing| existing.provider_id != reference.provider_id);
+        settings.provider_refs.push(reference);
+        self.save_settings(&settings)
+    }
+
+    pub fn list_provider_references(&self) -> Result<Vec<SecretReference>, AppError> {
+        Ok(self.load_settings()?.provider_refs)
+    }
+
+    pub fn delete_provider_reference(&self, provider_id: &str) -> Result<(), AppError> {
+        if provider_id.trim().is_empty() {
+            return Err(AppError::Validation("providerId is required".into()));
+        }
+        let mut settings = self.load_settings()?;
+        settings
+            .provider_refs
+            .retain(|existing| existing.provider_id != provider_id.trim());
+        self.save_settings(&settings)
+    }
+
     fn validate_artifact_manifest_path(
         &self,
         artifact_manifest_path: &str,
@@ -483,6 +566,106 @@ fn default_settings_snapshot() -> SettingsSnapshot {
         provider_refs: vec![],
         retention_policy: default_retention_policy(),
     }
+}
+
+fn validate_provider_setup_input(input: &ProviderSetupInput) -> Result<(), AppError> {
+    if input.provider_id.trim().is_empty() || input.label.trim().is_empty() {
+        return Err(AppError::Validation(
+            "providerId and label are required".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn provider_key_ref(provider_id: &str) -> String {
+    let suffix = provider_id
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    format!("local-safe-keychain://codepawl/private-beta/{suffix}")
+}
+
+fn executable_path_on_path(path_env: &str, executable_name: &str) -> Option<PathBuf> {
+    for entry in std::env::split_paths(path_env) {
+        let candidate = entry.join(executable_name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        #[cfg(windows)]
+        {
+            let exe_candidate = entry.join(format!("{executable_name}.exe"));
+            if exe_candidate.is_file() {
+                return Some(exe_candidate);
+            }
+        }
+    }
+    None
+}
+
+fn preflight_provider_reference(
+    reference: &SecretReference,
+    path_env: &str,
+) -> ProviderPreflightResult {
+    let checked_at = now_iso_like();
+    if reference.provider_id != "codex-cli" {
+        return ProviderPreflightResult {
+            checked_provider_id: reference.provider_id.clone(),
+            status: ProviderReadinessStatus::Failed,
+            ready: false,
+            checked_at,
+            executable_path: None,
+            reasons: vec![format!(
+                "Provider {} is not supported in the private beta repository runner.",
+                reference.provider_id
+            )],
+        };
+    }
+
+    if let Some(executable_path) = executable_path_on_path(path_env, "codex") {
+        return ProviderPreflightResult {
+            checked_provider_id: reference.provider_id.clone(),
+            status: ProviderReadinessStatus::Ready,
+            ready: true,
+            checked_at,
+            executable_path: Some(executable_path.to_string_lossy().to_string()),
+            reasons: vec!["Codex CLI executable is available.".into()],
+        };
+    }
+
+    ProviderPreflightResult {
+        checked_provider_id: reference.provider_id.clone(),
+        status: ProviderReadinessStatus::Failed,
+        ready: false,
+        checked_at,
+        executable_path: None,
+        reasons: vec!["Codex CLI was not found on PATH.".into()],
+    }
+}
+
+fn ensure_provider_ready_for_run(
+    store: &LocalPersistenceStore,
+) -> Result<SecretReference, AppError> {
+    let provider_refs = store.list_provider_references()?;
+    if provider_refs.is_empty() {
+        return Err(AppError::Validation(
+            "Provider setup is required before running a real repository task".into(),
+        ));
+    }
+    provider_refs
+        .into_iter()
+        .find(|reference| reference.status == ProviderReadinessStatus::Ready)
+        .ok_or_else(|| {
+            AppError::Validation(
+                "Provider preflight must pass before running a real repository task".into(),
+            )
+        })
 }
 
 fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
@@ -1308,9 +1491,11 @@ async fn run_create(
 ) -> Result<RunId, AppError> {
     validate_create_run(&input)?;
     let repository_path = validate_repository_path(input.repository_path.as_deref())?;
+    let store = persistence_store(&app);
+    let _provider_reference = ensure_provider_ready_for_run(&store)?;
     let output = run_desktop_repository_sidecar(&app, &input, &repository_path)?;
     let persisted_run = persisted_run_from_output(&app, &input, &repository_path, &output)?;
-    persistence_store(&app).save_run(&persisted_run)?;
+    store.save_run(&persisted_run)?;
 
     state
         .runs
@@ -1811,40 +1996,43 @@ async fn provider_key_save(
     app: AppHandle,
     input: ProviderKeySaveInput,
 ) -> Result<SecretReference, AppError> {
-    if input.provider_id.trim().is_empty() || input.label.trim().is_empty() {
-        return Err(AppError::Validation(
-            "providerId and label are required".into(),
-        ));
-    }
-
-    let provider_id = input.provider_id.trim().to_string();
-    let key_ref_suffix = provider_id
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>();
-    let reference = SecretReference {
-        provider_id,
-        key_ref: format!("keychain://codepawl/local-beta/{key_ref_suffix}"),
-    };
-    let mut settings = persistence_store(&app).load_settings()?;
-    settings
-        .provider_refs
-        .retain(|existing| existing.provider_id != reference.provider_id);
-    settings.provider_refs.push(reference.clone());
-    persistence_store(&app).save_settings(&settings)?;
-
-    Ok(reference)
+    persistence_store(&app).save_provider_reference(ProviderSetupInput {
+        provider_id: input.provider_id,
+        label: input.label,
+        raw_secret: input.raw_secret,
+    })
 }
 
 #[tauri::command]
-async fn provider_key_test(provider_id: String) -> Result<bool, AppError> {
-    Ok(!provider_id.trim().is_empty())
+async fn provider_key_list(app: AppHandle) -> Result<Vec<SecretReference>, AppError> {
+    persistence_store(&app).list_provider_references()
+}
+
+#[tauri::command]
+async fn provider_key_test(
+    app: AppHandle,
+    provider_id: String,
+) -> Result<ProviderPreflightResult, AppError> {
+    if provider_id.trim().is_empty() {
+        return Err(AppError::Validation("providerId is required".into()));
+    }
+    let store = persistence_store(&app);
+    let mut reference = store
+        .list_provider_references()?
+        .into_iter()
+        .find(|reference| reference.provider_id == provider_id.trim())
+        .ok_or_else(|| AppError::Validation("provider reference not found".into()))?;
+    let result =
+        preflight_provider_reference(&reference, &(std::env::var("PATH").unwrap_or_default()));
+    reference.status = result.status.clone();
+    reference.last_preflight = Some(result.clone());
+    store.save_provider_reference_record(reference)?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn provider_key_delete(app: AppHandle, provider_id: String) -> Result<(), AppError> {
+    persistence_store(&app).delete_provider_reference(&provider_id)
 }
 
 #[tauri::command]
@@ -1880,7 +2068,9 @@ pub fn run() {
             settings_get,
             settings_update,
             provider_key_save,
+            provider_key_list,
             provider_key_test,
+            provider_key_delete,
             trace_export
         ])
         .setup(|app| {
@@ -2198,7 +2388,10 @@ mod tests {
             ),
             provider_refs: vec![SecretReference {
                 provider_id: "openai".into(),
+                label: "OpenAI".into(),
                 key_ref: "keychain://codepawl/local-beta/openai".into(),
+                status: ProviderReadinessStatus::Untested,
+                last_preflight: None,
             }],
             created_at: "2026-07-04T00:00:00.000Z".into(),
             updated_at: "2026-07-04T00:00:00.000Z".into(),
@@ -2260,7 +2453,10 @@ mod tests {
             ],
             provider_refs: vec![SecretReference {
                 provider_id: "openai".into(),
+                label: "OpenAI".into(),
                 key_ref: "keychain://codepawl/local-beta/openai".into(),
+                status: ProviderReadinessStatus::Untested,
+                last_preflight: None,
             }],
             retention_policy: RetentionPolicySnapshot {
                 run_history_days: 30,
@@ -2319,5 +2515,154 @@ mod tests {
             error.to_string(),
             "artifact manifest is missing or corrupted for run run-corrupt-1"
         );
+    }
+
+    #[test]
+    fn provider_reference_save_load_and_delete_never_persists_raw_secret() {
+        let root = temp_store_root("provider-ref");
+        let store = LocalPersistenceStore::new(root.clone());
+
+        let reference = store
+            .save_provider_reference(ProviderSetupInput {
+                provider_id: "codex-cli".into(),
+                label: "Local Codex CLI".into(),
+                raw_secret: Some("sk-privatebeta-secret-123".into()),
+            })
+            .expect("save provider reference");
+        let loaded = store
+            .list_provider_references()
+            .expect("load provider references");
+        let raw_settings = std::fs::read_to_string(store.settings_path()).expect("read settings");
+
+        assert_eq!(reference.provider_id, "codex-cli");
+        assert_eq!(reference.status, ProviderReadinessStatus::Untested);
+        assert_eq!(loaded.len(), 1);
+        assert!(reference
+            .key_ref
+            .starts_with("local-safe-keychain://codepawl/private-beta/"));
+        assert!(!raw_settings.contains("sk-privatebeta-secret-123"));
+
+        store
+            .delete_provider_reference("codex-cli")
+            .expect("delete provider reference");
+        assert!(store
+            .list_provider_references()
+            .expect("reload after delete")
+            .is_empty());
+    }
+
+    #[test]
+    fn provider_preflight_reports_failed_and_ready_states() {
+        let root = temp_store_root("provider-preflight");
+        let store = LocalPersistenceStore::new(root.clone());
+        let mut reference = store
+            .save_provider_reference(ProviderSetupInput {
+                provider_id: "codex-cli".into(),
+                label: "Local Codex CLI".into(),
+                raw_secret: None,
+            })
+            .expect("save provider reference");
+
+        let failed = preflight_provider_reference(&reference, "");
+        assert!(!failed.ready);
+        assert_eq!(failed.status, ProviderReadinessStatus::Failed);
+        assert!(failed
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("Codex CLI was not found")));
+
+        let bin_dir = root.join("bin");
+        let codex_path = bin_dir.join("codex");
+        std::fs::create_dir_all(&bin_dir).expect("create fake bin dir");
+        std::fs::write(
+            &codex_path,
+            "#!/usr/bin/env node\nconsole.log('codex fake')\n",
+        )
+        .expect("write fake codex");
+        let mut permissions = std::fs::metadata(&codex_path)
+            .expect("codex metadata")
+            .permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            permissions.set_mode(0o755);
+        }
+        std::fs::set_permissions(&codex_path, permissions).expect("chmod fake codex");
+
+        let ready = preflight_provider_reference(&reference, &bin_dir.to_string_lossy());
+        assert!(ready.ready);
+        assert_eq!(ready.status, ProviderReadinessStatus::Ready);
+        assert_eq!(ready.checked_provider_id, "codex-cli");
+
+        reference.last_preflight = Some(ready);
+        reference.status = ProviderReadinessStatus::Ready;
+        store
+            .save_provider_reference_record(reference)
+            .expect("persist ready provider");
+        assert!(ensure_provider_ready_for_run(&store).is_ok());
+    }
+
+    #[test]
+    fn repository_runs_are_blocked_without_ready_provider() {
+        let root = temp_store_root("provider-block");
+        let store = LocalPersistenceStore::new(root.clone());
+
+        let missing_error =
+            ensure_provider_ready_for_run(&store).expect_err("missing provider blocks run");
+        assert_eq!(
+            missing_error.to_string(),
+            "Provider setup is required before running a real repository task"
+        );
+
+        store
+            .save_provider_reference(ProviderSetupInput {
+                provider_id: "codex-cli".into(),
+                label: "Local Codex CLI".into(),
+                raw_secret: None,
+            })
+            .expect("save untested provider");
+        let failed_error =
+            ensure_provider_ready_for_run(&store).expect_err("untested provider blocks run");
+        assert_eq!(
+            failed_error.to_string(),
+            "Provider preflight must pass before running a real repository task"
+        );
+    }
+
+    #[test]
+    fn persisted_repository_run_records_provider_status_without_raw_secret() {
+        let root = temp_store_root("provider-run");
+        let store = LocalPersistenceStore::new(root.clone());
+        let mut provider = store
+            .save_provider_reference(ProviderSetupInput {
+                provider_id: "codex-cli".into(),
+                label: "Local Codex CLI".into(),
+                raw_secret: Some("sk-privatebeta-secret-456".into()),
+            })
+            .expect("save provider");
+        provider.status = ProviderReadinessStatus::Ready;
+        provider.last_preflight = Some(ProviderPreflightResult {
+            checked_provider_id: "codex-cli".into(),
+            status: ProviderReadinessStatus::Ready,
+            ready: true,
+            checked_at: "2026-07-04T00:00:00.000Z".into(),
+            executable_path: Some("/usr/local/bin/codex".into()),
+            reasons: vec!["Codex CLI executable is available.".into()],
+        });
+        store
+            .save_provider_reference_record(provider)
+            .expect("save ready provider");
+
+        let mut run = persisted_run(&root, "run-provider-ready");
+        run.provider_refs = store
+            .list_provider_references()
+            .expect("load provider refs for run");
+        store.save_run(&run).expect("save run");
+
+        let raw_run =
+            std::fs::read_to_string(store.run_path("run-provider-ready")).expect("read run");
+        assert!(raw_run.contains("codex-cli"));
+        assert!(raw_run.contains("ready"));
+        assert!(!raw_run.contains("sk-privatebeta-secret-456"));
     }
 }

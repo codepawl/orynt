@@ -55,7 +55,7 @@ export type SettingsSnapshot = {
   permissionMode: "safe" | "balanced" | "manual";
   executableSurfaces: string[];
   blockedSurfaces: string[];
-  providerRefs: SecretReference[];
+  providerRefs: ProviderReference[];
   retentionPolicy: RetentionPolicySnapshot;
 };
 
@@ -63,9 +63,28 @@ export type SettingsUpdateInput = {
   permissionMode: "safe" | "balanced" | "manual";
 };
 
-export type SecretReference = {
+export type ProviderReadinessStatus = "untested" | "ready" | "failed";
+
+export type ProviderPreflightResult = {
+  checkedProviderId: string;
+  status: ProviderReadinessStatus;
+  ready: boolean;
+  checkedAt: string;
+  executablePath?: string | null;
+  reasons: string[];
+};
+
+export type ProviderReference = {
   providerId: string;
+  label: string;
   keyRef: string;
+  status: ProviderReadinessStatus;
+  lastPreflight?: ProviderPreflightResult | null;
+};
+
+export type ProviderSetupInput = {
+  providerId: string;
+  label: string;
 };
 
 export type PersistedRunSummary = {
@@ -98,15 +117,30 @@ export type PersistedRunRecord = {
   memoryCandidates: Array<Record<string, unknown>>;
   skills: Array<Record<string, unknown>>;
   skillReplayPlan?: Record<string, unknown> | null;
-  providerRefs: SecretReference[];
+  providerRefs: ProviderReference[];
   createdAt: string;
   updatedAt: string;
 };
 
 let mockListeners = new Set<(event: RunEvent) => void>();
 const initialMockState = createMockRunState();
+const mockProviderReference: ProviderReference = {
+  providerId: "mock-provider",
+  label: "Mock provider",
+  keyRef: "mock-provider://codepawl/local-alpha",
+  status: "ready",
+  lastPreflight: {
+    checkedProviderId: "mock-provider",
+    status: "ready",
+    ready: true,
+    checkedAt: "2026-07-04T00:00:00.000Z",
+    executablePath: null,
+    reasons: ["Mock provider is ready for the browser demo."],
+  },
+};
 let mockMemoryReview: MemoryReviewSnapshot = initialMockState.memoryReview;
 let mockSkillRegistry: SkillRegistrySnapshot = initialMockState.skillRegistry;
+let mockProviderRefs: ProviderReference[] = [mockProviderReference];
 let mockReviewEventSequence = 20_000;
 
 function isTauriRuntime(): boolean {
@@ -520,7 +554,7 @@ export const codepawl = {
       permissionMode: "safe",
       executableSurfaces: ["repository"],
       blockedSurfaces: ["browser", "desktop", "files", "terminal"],
-      providerRefs: [],
+      providerRefs: structuredClone(mockProviderRefs),
       retentionPolicy: {
         runHistoryDays: 30,
         artifactRetentionDays: 30,
@@ -540,6 +574,68 @@ export const codepawl = {
       ...(await this.getSettings()),
       permissionMode: input.permissionMode,
     };
+  },
+
+  async saveProviderReference(input: ProviderSetupInput): Promise<ProviderReference> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<ProviderReference>("provider_key_save", { input });
+    }
+
+    const reference: ProviderReference = {
+      providerId: input.providerId,
+      label: input.label,
+      keyRef: `mock-provider://codepawl/${input.providerId}`,
+      status: "untested",
+      lastPreflight: null,
+    };
+    mockProviderRefs = [reference, ...mockProviderRefs.filter((item) => item.providerId !== input.providerId)];
+    return structuredClone(reference);
+  },
+
+  async listProviderReferences(): Promise<ProviderReference[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<ProviderReference[]>("provider_key_list");
+    }
+
+    return structuredClone(mockProviderRefs);
+  },
+
+  async testProviderReference(providerId: string): Promise<ProviderPreflightResult> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<ProviderPreflightResult>("provider_key_test", { providerId });
+    }
+
+    const result: ProviderPreflightResult = {
+      checkedProviderId: providerId,
+      status: "ready",
+      ready: true,
+      checkedAt: new Date().toISOString(),
+      executablePath: null,
+      reasons: ["Mock provider is ready for the browser demo."],
+    };
+    mockProviderRefs = mockProviderRefs.map((reference) =>
+      reference.providerId === providerId
+        ? {
+            ...reference,
+            status: result.status,
+            lastPreflight: result,
+          }
+        : reference,
+    );
+    return result;
+  },
+
+  async deleteProviderReference(providerId: string): Promise<void> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      await tauri.core.invoke<void>("provider_key_delete", { providerId });
+      return;
+    }
+
+    mockProviderRefs = mockProviderRefs.filter((reference) => reference.providerId !== providerId);
   },
 
   async cancelRun(runId: string): Promise<void> {
@@ -730,6 +826,7 @@ export const codepawl = {
     mockListeners = new Set();
     mockMemoryReview = resetState.memoryReview;
     mockSkillRegistry = resetState.skillRegistry;
+    mockProviderRefs = [mockProviderReference];
     mockReviewEventSequence = 20_000;
   },
 };
