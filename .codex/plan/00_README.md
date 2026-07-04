@@ -46,6 +46,6 @@ A user can open CodePawl, select a local repository, describe a small coding tas
 The current planning source of truth is this repository-local structure:
 
 - `.codex/plan/` for product planning, setup, roadmap, requirements, and launch plans.
-- `.codex/ui/` for UI/UX direction, routes, screen specs, wireframes, and mockups.
+- `.codex/ui/` for UI/UX direction, routes, screen specs, and component guidance.
 - `.codex/technical/` for implementation architecture, Tauri process model, contracts, and work sequences.
 - `.codex/skills/` for CodePawl-specific Codex skills only.

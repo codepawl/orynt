@@ -72,7 +72,8 @@ unlimited local UI usage
 
 ## Pricing display principles
 
-- Keep pricing page simple: 3 plan cards maximum.
+- Keep pricing simple. If commercial packaging is in scope, summarize at most
+  three plans and avoid a large plan-card grid.
 - Show that model/API spend is separate unless included credits exist.
 - Position token economy as value: “avoid runaway agent bills.”
 - Trial CTA should be visible in top bar and onboarding.

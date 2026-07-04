@@ -7,7 +7,7 @@ Use this as route contract for the first UI implementation.
 /app/run
 /app/run/:threadId
 /app/tasks
-/app/dashboard
+/app/overview
 /app/permissions
 /app/skills
 /app/usage
@@ -31,7 +31,7 @@ P0:
 
 P1:
 
-- `/app/dashboard`
+- `/app/overview`
 - `/app/skills`
 - `/app/settings/models`
 - `/app/settings/security`
@@ -45,4 +45,10 @@ P2:
 
 ## P0 navigation behavior
 
-The rail is persistent. The task sidebar is visible on Run and Tasks. The right inspector is visible on Run and Permissions. Dashboard and Usage can use full-width analytic cards.
+The rail is persistent. The task sidebar is visible on Run and Tasks. The right
+inspector is visible on Run and Permissions. Overview and Usage should summarize
+health, budget, approvals, and verifier state with compact sections or rows
+before reaching for full-width analytic cards.
+
+Route note: for the current desktop product direction, prefer Overview unless a
+future analytics surface is explicitly scoped.

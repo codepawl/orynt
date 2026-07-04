@@ -32,6 +32,7 @@ pnpm test:contracts
 pnpm test:desktop
 pnpm test:tauri
 pnpm walkthrough:smoke
+CODEPAWL_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex
 pnpm build:desktop
 pnpm --filter @codepawl/desktop exec tauri dev
 ```
@@ -40,7 +41,7 @@ On Linux/Fedora, `pnpm test:tauri` forces Cargo to use system `pkg-config` when 
 
 ## Local MVP Walkthrough
 
-The default local Coding Apprentice walkthrough uses a disposable fixture repository and a fake Codex binary, so it requires no model credentials and keeps controlled execution approval-gated. See [`docs/mvp/local-coding-apprentice-walkthrough.md`](docs/mvp/local-coding-apprentice-walkthrough.md).
+The default local Coding Apprentice walkthrough uses a disposable fixture repository and a fake Codex binary, so it requires no model credentials and keeps controlled execution approval-gated. An opt-in real Codex walkthrough is also available for local authenticated CLI testing. See [`docs/mvp/local-coding-apprentice-walkthrough.md`](docs/mvp/local-coding-apprentice-walkthrough.md).
 
 ## MVP Sequence
 

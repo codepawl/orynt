@@ -31,14 +31,14 @@ Permission state must appear in:
 
 - top bar,
 - run inspector,
-- approval cards,
+- approval checkpoints,
 - task detail,
 - global permissions page.
 
-## Approval card fields
+## Approval checkpoint fields
 
 ```ts
-type ApprovalCard = {
+type ApprovalCheckpoint = {
   id: string;
   risk: 'low' | 'medium' | 'high' | 'blocked';
   action: string;
@@ -52,6 +52,10 @@ type ApprovalCard = {
   deny: boolean;
 };
 ```
+
+Render approval checkpoints as prominent, accessible decision surfaces. They
+may use a card-like frame, but the frame exists to focus one human decision, not
+to establish a repeated card-grid pattern.
 
 ## Default blocked actions for MVP
 

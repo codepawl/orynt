@@ -64,6 +64,11 @@ export interface UsageBudget {
 
 - Build responsive but optimize for desktop width first.
 - Keep advanced panels collapsed by default.
+- Keep the Run cockpit as the primary surface; supporting panels must not
+  overwhelm the active run, approval checkpoint, sandbox, budget, or verifier
+  state.
+- Use cards sparingly. Prefer panels, rows, inline status, tabs, drawers, and
+  disclosure controls for supporting information.
 - Use accessible buttons, labels, focus states, and keyboard navigation.
 - Keep animation subtle.
 - No hard-coded real billing provider in UI mock stage.

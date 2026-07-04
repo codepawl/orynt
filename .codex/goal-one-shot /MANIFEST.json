@@ -1,0 +1,127 @@
+[
+  {
+    "path": "00_ONE_SHOT_GOAL.md",
+    "sha256": "7757ecc166bff6bce91b0b361594a9f671a8d708463ab737190b8fdbca7d24c9",
+    "bytes": 2699
+  },
+  {
+    "path": "01_MASTER_TIMELINE.md",
+    "sha256": "ffc20ac367aa684d003d9353be2d482e38a8f23be482ef507de510180f76f7d3",
+    "bytes": 8969
+  },
+  {
+    "path": "02_RESEARCH_TO_PRODUCT_MAP.md",
+    "sha256": "210cc11c5d4791a1eb5d30bea37f80b19a152943810f7ecd2c045b2e92147210",
+    "bytes": 4835
+  },
+  {
+    "path": "03_ARCHITECTURE_SPEC.md",
+    "sha256": "2882d589915d27489112b7ca725f059e4c0e475f3a74029c4e0cd7c1a9d62bac",
+    "bytes": 6172
+  },
+  {
+    "path": "04_VALIDATION_AND_METRICS.md",
+    "sha256": "b73aef6a0bd6bd61c8ac542476397ef988bc6da387dea35602ef84e89e15670e",
+    "bytes": 3894
+  },
+  {
+    "path": "05_PRODUCT_POSITIONING_AND_PRICING.md",
+    "sha256": "aeb632967a1d47ff91f1fd84f5bd416bf9aea73857b05da9fb18c97fd4d7e05c",
+    "bytes": 4145
+  },
+  {
+    "path": "06_RISKS_AND_GUARDRAILS.md",
+    "sha256": "3d4adc46ca59d686d66ed15d187d11fdbc225c4b6734508b3e21424e8cf7c112",
+    "bytes": 2159
+  },
+  {
+    "path": "README.md",
+    "sha256": "efb22c8c11b1a4f81246ef70fd8029e7c1d8453bab22699bd600fad98c4cc64e",
+    "bytes": 2546
+  },
+  {
+    "path": "codex/phase_0_discovery.prompt.md",
+    "sha256": "56f86cfa64d7ee43a3bfabd867b003b7e556868d0a8f32ccc369d75867254de3",
+    "bytes": 1020
+  },
+  {
+    "path": "codex/phase_1_foundation.prompt.md",
+    "sha256": "0c53ffd2169c1cd6d9bd47d5abf43f52db55c48aad6b3485062d93bf58dc7c2d",
+    "bytes": 887
+  },
+  {
+    "path": "codex/phase_2_cognitive_kernel.prompt.md",
+    "sha256": "836e3cf425d07eb9996cd097787230b6f7877a0903add89397ebc604619945f1",
+    "bytes": 956
+  },
+  {
+    "path": "codex/phase_3_computer_use_gateway.prompt.md",
+    "sha256": "0a8542ce62456403453c143b7fb79afaa26aa1b40b70e05c99dc29749f05d68c",
+    "bytes": 909
+  },
+  {
+    "path": "codex/phase_4_teach_adjust_memory.prompt.md",
+    "sha256": "6b5b20f98c05c17673130e8a3359a39903352b5facf160f6b2e9f3da16ecec0b",
+    "bytes": 909
+  },
+  {
+    "path": "codex/phase_5_eval_safety.prompt.md",
+    "sha256": "82ae60bd65a53615aad4cd1f107f587842449aba559df579a7b610a5d6a809aa",
+    "bytes": 908
+  },
+  {
+    "path": "codex/phase_6_productization.prompt.md",
+    "sha256": "3f0855182c617fc4e0ab90cd8991fce59d919ea8a274fcd96c4e255145804571",
+    "bytes": 811
+  },
+  {
+    "path": "plans/backlog_by_phase.md",
+    "sha256": "07e5e8e11ca551c5bf69383ac4b75851eb1de703e5c183a9b142adc92014c1e8",
+    "bytes": 2282
+  },
+  {
+    "path": "plans/permission_policy.md",
+    "sha256": "62c698944fa3e43ac6eb28792a69c9be064f1b1fb6618a1696c4a21c6ce53a94",
+    "bytes": 2494
+  },
+  {
+    "path": "plans/pilot_research_plan.md",
+    "sha256": "b9507d1b3befea47ec8d255ebcc1663076f50dc3362905f0f4ef79c98b26fa56",
+    "bytes": 1780
+  },
+  {
+    "path": "plans/schema_contract.md",
+    "sha256": "d5f54a77d8c27080d828883ddcb9188e1fd3357ac409775033211b75c0c59fde",
+    "bytes": 3382
+  },
+  {
+    "path": "plans/skill_learning_contract.md",
+    "sha256": "dd46961c42d5f07c777a7b7ab56678093921152e4bbf7553fafea9c9ac6574ab",
+    "bytes": 1636
+  },
+  {
+    "path": "product/customer_discovery_questions.md",
+    "sha256": "ef2dbc3221e7df9188212aea232c22026f2ae7e71cde242bf4011ce2c43a6e09",
+    "bytes": 1477
+  },
+  {
+    "path": "product/landing_page_copy.md",
+    "sha256": "f90291b0fb11be6907ff4b73df8225552798c98aea528a04165decec2c320ee7",
+    "bytes": 1594
+  },
+  {
+    "path": "product/paddle_product_copy.md",
+    "sha256": "73c123b7ea9b4a88d7c3141aee036b8e6db4b408217192914f9f96cf49860811",
+    "bytes": 1725
+  },
+  {
+    "path": "research/evidence_levels.md",
+    "sha256": "827a8a59141e69f339710e63bba9673ed7b642e370828a2bd4a594466489a9d4",
+    "bytes": 1528
+  },
+  {
+    "path": "research/sources.md",
+    "sha256": "0e4ffaff6e256e7abcbb7d9bcf4ca2f6af0b5cbe03aafc17f55523758b50cd7d",
+    "bytes": 2859
+  }
+]

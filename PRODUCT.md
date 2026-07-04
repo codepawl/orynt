@@ -17,28 +17,29 @@ dashboards, and indie builders who need local automation without enterprise RPA
 overhead.
 
 The marketing surface should meet these users in an evaluation mindset: they
-want to understand whether CodePawl gives them more control, lower cost, better
-debuggability, and a believable path from supervised coding work to broader
-computer control.
+want to understand whether CodePawl gives agents a more reliable operating
+loop: memory, skills, verification, measurable feedback, safe tool use, and a
+believable path from supervised coding work to broader computer workflows.
 
 ## Product Purpose
 
-CodePawl is the control cockpit for computer agents, starting with a supervised
-Coding Apprentice. It exists to make agent work inspectable, replayable,
-permissioned, and economically controllable.
+CodePawl is a brain-like operating system for adaptive AI agents. It gives AI
+agents a working brain: structured memory, reusable skills, verification,
+self-improvement loops, and safe tool use.
 
-The product turns repository state and run evidence into structured action
-context, shows each step of an agent run, gates risky actions with human
-approval, tracks token and cost usage, and turns verified corrections into
-candidate memory and skills.
+The product is built around a brain-like loop: perceive, remember, plan, act,
+verify, and improve. It helps an agent understand goals, act through tools,
+verify results, learn from experience, and turn successful work into reusable
+skills.
 
 Success for the brand surface means a technical visitor quickly understands that
 CodePawl is not a black-box autonomy pitch. It is a closed-source operating
-layer for safer, cheaper, more observable computer-use agents.
+layer for safer, cheaper, more observable adaptive agents, starting with
+supervised repository and computer-based workflows.
 
 ## Brand Personality
 
-Calm, technical, controlled.
+Calm, adaptive, technical, controlled.
 
 The voice should feel premium and precise without becoming sterile. It should
 show competence through visible systems, concrete workflow evidence, and clear
@@ -60,16 +61,24 @@ Do not make CodePawl look or sound like:
 
 ## Design Principles
 
-1. Show control before power. The visitor should always see how approvals,
-   budgets, traces, and run state keep the agent bounded.
+1. Show the loop before autonomy. The visitor should see how memory, planning,
+   action, verification, and improvement stay bounded by approvals, budgets,
+   traces, and run state.
 2. Make the invisible runtime visible. UI semantics, action ledgers, context
    packets, model routing, and replay should become tangible product evidence.
 3. Stay closed-source and operator-led. The brand should reinforce that
    sensitive workflows stay bounded by the user's decisions.
 4. Be technical without costume. Use real product mechanics, not generic hacker
    aesthetics, to earn credibility with builders and QA users.
-5. Promise the wedge, not the whole future at once. Coding Apprentice is the
-   MVP; browser and full-system control are the direction, not the launch claim.
+5. Promise the wedge, not the whole future at once. Supervised repository work
+   is the MVP; browser and full-system control are the direction, not the launch
+   claim.
+6. Simplify the user's supervision loop. A first customer should understand the
+   selected repo, sandbox state, approval requirement, current run milestone,
+   verifier result, and next human decision without reading an analytics
+   dashboard or raw internal log stream.
+7. Use cards sparingly. Cards are for bounded decisions and summaries, not the
+   default way to lay out every setting, metric, task, or capability.
 
 ## Accessibility & Inclusion
 
@@ -77,7 +86,7 @@ Aim for WCAG 2.2 AA quality on public and product surfaces.
 
 The interface should remain keyboard navigable, expose visible focus states,
 preserve strong contrast in dark and translucent UI, use semantic buttons,
-links, tabs, dialogs, and forms, and make approval cards understandable to
+links, tabs, dialogs, and forms, and make approval checkpoints understandable to
 screen readers.
 
 Motion should respect reduced-motion preferences. Risk, pause, stop, current

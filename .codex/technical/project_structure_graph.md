@@ -22,20 +22,11 @@ flowchart TD
   Plan --> Stack["13_technology_stack.md<br/>Preferred stack decisions"]
   Plan --> Backlog["42_implementation_backlog.md<br/>Implementation checklist"]
 
-  UI --> Wireframes["wireframes/<br/>Information architecture and screen flows"]
-  UI --> Mockups["mockups/<br/>HTML mockups, tokens, screen specs, prompts"]
-
-  Wireframes --> Shell["01_app_shell_wireframe.md"]
-  Wireframes --> Cockpit["02_run_cockpit_wireframe.md"]
-  Wireframes --> Tasks["03_tasks_wireframe.md"]
-  Wireframes --> Dashboard["04_dashboard_wireframe.md"]
-  Wireframes --> Permissions["05_permissions_wireframe.md"]
-  Wireframes --> Billing["06_trial_billing_wireframe.md"]
-
-  Mockups --> MockIndex["index.html<br/>Mockup browser entry"]
-  Mockups --> Screens["screens/<br/>Screen-level HTML mockups"]
-  Mockups --> Pngs["png/<br/>Rendered mockup screenshots"]
-  Mockups --> Styles["styles.css<br/>Mockup CSS"]
+  UI --> UIDirection["02_ui_direction.md<br/>Current UI direction"]
+  UI --> IA["03_information_architecture.md<br/>Desktop IA"]
+  UI --> Routes["04_mvp_routes.md<br/>Route guidance"]
+  UI --> Screens["05_screen_specs.md<br/>Screen requirements"]
+  UI --> Components["09_component_inventory.md<br/>Component guidance"]
 
   Technical --> TechReadme["README.md<br/>Technical folder purpose"]
   Technical --> FutureADR["Future ADRs<br/>Shell, storage, model adapters, policy, packaging"]
@@ -44,7 +35,7 @@ flowchart TD
   Skills --> SkillsReadme["README.md<br/>CodePawl-specific skill rules"]
   Skills --> FutureSkills["Future app skills<br/>Only workflows unique to CodePawl"]
 
-  Repo -. future implementation .-> Apps["apps/desktop<br/>Tauri v2 app shell"]
+  Repo --> Apps["apps/desktop<br/>Tauri v2 app shell"]
   Repo -. future implementation .-> Packages["packages/<br/>shared, ipc-contracts, runtime-sidecar, surface-core"]
   Repo -. optional future .-> Crates["crates/<br/>Optional Rust/Tauri/system crates"]
   Repo -. future support .-> Docs["docs/<br/>Public docs and ADRs after code exists"]

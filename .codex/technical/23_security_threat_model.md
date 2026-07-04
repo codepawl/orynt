@@ -32,7 +32,7 @@ Keys live in OS keychain through Rust. Logs and traces are redacted.
 
 ### Tool misuse
 
-All risky actions go through permission policy and approval cards.
+All risky actions go through permission policy and approval checkpoints.
 
 ### Skill poisoning
 

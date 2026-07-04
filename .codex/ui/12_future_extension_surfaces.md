@@ -9,7 +9,7 @@ The MVP is browser-first, but the UI should leave room for full-system control.
 - Playwright/CDP controlled browser.
 - Semantic DOM/accessibility graph.
 - Screenshot fallback.
-- Approval cards for submit/send/upload/download.
+- Approval checkpoints for submit/send/upload/download.
 
 ### Files — post-MVP
 
@@ -34,4 +34,6 @@ The MVP is browser-first, but the UI should leave room for full-system control.
 
 ## UI rule
 
-Each future surface appears as a disabled card with a concise explanation and waitlist/coming soon state. Do not hide the long-term ambition, but do not make the MVP look unfinished.
+Each future surface appears as a compact disabled row or small panel with a
+concise explanation and waitlist/coming soon state. Do not hide the long-term
+ambition, but do not make the MVP look unfinished or card-grid heavy.

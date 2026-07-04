@@ -7,7 +7,7 @@ Goal: get user from install to first controlled browser run.
 Required sections:
 
 - Welcome: “Run computer agents without losing control.”
-- Trial card: days/runs/credits.
+- Trial status: days/runs/credits when commercial packaging is in scope.
 - Provider setup: bring your own key or use included trial credits if available.
 - Permission preset: Safe, Balanced, Manual.
 - First task prompt.
@@ -19,8 +19,11 @@ Goal: start and supervise one task.
 Required regions:
 
 - Task sidebar: active, scheduled, saved, failed.
-- Main chat: prompt composer, messages, agent progress cards, approval cards.
-- Inspector: live browser preview, permission mode, budget meter, current surface, current step.
+- Main workspace: run brief, prompt composer, messages when useful, readable
+  milestones, approval checkpoint, and result import state.
+- Inspector: sandbox boundary, permission mode, budget meter, verifier state,
+  current surface, current step, memory review, skill promotion, and replay
+  preview.
 
 ## 3. Tasks
 
@@ -36,18 +39,22 @@ Required columns:
 - approvals,
 - skill saved yes/no.
 
-## 4. Dashboard
+## 4. Overview
 
 Goal: answer “Is CodePawl useful and under control?”
 
-Required cards:
+Required information:
 
 - success rate,
 - average cost per successful task,
-- screenshots avoided,
-- most common failure modes,
-- top saved skills,
-- weak-model savings.
+- current budget posture,
+- approvals waiting or recently resolved,
+- verifier result,
+- most common failure modes when enough data exists,
+- top saved skills when enough data exists.
+
+Use compact rows, sections, and disclosure controls first. Do not make this a
+large analytics dashboard for P0.
 
 ## 5. Permissions
 
@@ -63,6 +70,9 @@ Required sections:
 - secrets handling,
 - destructive action rules.
 
+These can use grouped lists and rule tables. Do not turn every permission rule
+into a separate card.
+
 ## 6. Usage
 
 Goal: prevent token-cost shock.
@@ -77,6 +87,9 @@ Required sections:
 - cache hit estimate,
 - budget alerts.
 
+Show summary first and defer detailed ledgers behind disclosure or route-level
+drilldown.
+
 ## 7. Billing / trial
 
 Goal: make commercial packaging obvious.
@@ -84,8 +97,11 @@ Goal: make commercial packaging obvious.
 Required sections:
 
 - trial status,
-- plan cards,
+- plan summary when commercial packaging is in scope,
 - included features,
 - BYOK vs included credits,
 - upgrade button,
 - invoice/account placeholder.
+
+Do not add billing backend, real payment flow, or a plan-card grid unless that
+work is explicitly scoped.

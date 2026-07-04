@@ -13,13 +13,17 @@
 
 - `CommandComposer`
 - `MessageThread`
-- `AgentStepCard`
-- `ApprovalCard`
-- `BrowserPreviewCard`
-- `PermissionStatusCard`
-- `BudgetMeterCard`
+- `RunTimeline`
+- `RunMilestone`
+- `ApprovalPanel`
+- `SandboxStatus`
+- `VerifierStatus`
+- `BudgetMeter`
 - `SurfaceStatusPill`
-- `RunSummaryCard`
+- `RunSummary`
+- `MemoryReviewPanel`
+- `SkillRegistryPanel`
+- `ReplayPreviewPanel`
 
 ## Tasks
 
@@ -28,12 +32,12 @@
 - `TaskFilterBar`
 - `TaskDetailDrawer`
 
-## Dashboard
+## Overview
 
-- `MetricCard`
+- `HealthSummary`
 - `FailureModeList`
-- `CostTrendCard`
-- `SkillReplayStatsCard`
+- `CostSummary`
+- `SkillReplaySummary`
 
 ## Permissions
 
@@ -41,20 +45,20 @@
 - `SurfacePermissionMatrix`
 - `RiskRuleList`
 - `DomainPolicyList`
-- `SecretsPolicyCard`
+- `SecretsPolicyPanel`
 
 ## Usage
 
-- `UsageSummaryCard`
+- `UsageSummary`
 - `CostBreakdownTable`
-- `ModelRoutingCard`
+- `ModelRoutingPanel`
 - `ContextPacketTimeline`
-- `ScreenshotBudgetCard`
+- `ScreenshotBudget`
 
 ## Billing
 
 - `TrialStatusBanner`
-- `PlanCard`
+- `PlanSummary`
 - `ProviderSpendNotice`
 - `UpgradeDialog`
 
@@ -68,3 +72,9 @@
 - `MiniSparkline`
 - `EmptyState`
 - `InlineAlert`
+
+## Naming rule
+
+Prefer `Panel`, `Summary`, `Status`, `Timeline`, `Row`, and `Checkpoint` names
+unless the component truly represents one bounded card object. This keeps the
+desktop UI from drifting back into a dashboard of repeated cards.

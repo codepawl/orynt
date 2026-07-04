@@ -24,12 +24,12 @@ Constraints: Use Tauri v2 + React + TypeScript. Do not use Electron. Keep fronte
 Done when: Tauri app launches, `/app/run` renders with mock data, basic command/event bridge streams mock run events, capability files exist, and lint/typecheck/cargo checks pass.
 ```
 
-## 2. Implement UI shell from mockups
+## 2. Implement UI shell
 
 ```text
 Goal: Implement the simple commercial CodePawl UI shell.
-Context: Inspect .codex/ui/mockups/screens/02_cockpit_run.html, .codex/ui/05_screen_specs.md, and .codex/technical/07_frontend_architecture.md.
-Constraints: Keep UI simple: left rail, task sidebar, command/run timeline, right inspector. Use mock runtime data only.
+Context: Inspect apps/desktop/src, DESIGN.md, PRODUCT.md, docs/mvp/local-coding-apprentice-walkthrough.md, .codex/ui/05_screen_specs.md, and .codex/technical/07_frontend_architecture.md.
+Constraints: Keep UI simple: left rail, task sidebar, command/run timeline, compact right inspector. Use mock runtime data only. Do not copy dashboard density or card grids.
 Done when: `/app/run`, `/app/tasks`, `/app/permissions`, `/app/usage`, `/app/settings/billing`, and Settings routes render with mock data and responsive layout; checks pass.
 ```
 
@@ -102,7 +102,7 @@ Done when: Mock model tests pass, one real provider test call works, invalid JSO
 Goal: Add approval gating for risky actions.
 Context: Inspect .codex/technical/23_security_threat_model.md and 24_permission_policy_engine.md.
 Constraints: Submit/download/upload/delete/payment-like actions must not execute silently. Persistent allows must be scoped.
-Done when: Approval card appears, approve/deny changes run behavior, policy decision is stored, and tests cover required approvals.
+Done when: Approval checkpoint appears, approve/deny changes run behavior, policy decision is stored, and tests cover required approvals.
 ```
 
 ## 11. Package internal alpha
