@@ -1180,6 +1180,16 @@ fn validate_repository_path(repository_path: Option<&str>) -> Result<PathBuf, Ap
     Ok(canonical)
 }
 
+fn is_desktop_repository_runner_root(root: &Path) -> bool {
+    root.join("scripts")
+        .join("desktop-repository-run.mjs")
+        .is_file()
+        && root.join("scripts")
+            .join("register-extensionless-esm-loader.mjs")
+            .is_file()
+        && root.join("package.json").is_file()
+}
+
 fn find_repository_root(start: &Path) -> Option<PathBuf> {
     let mut current = if start.is_file() {
         start.parent()?.to_path_buf()
@@ -1187,18 +1197,24 @@ fn find_repository_root(start: &Path) -> Option<PathBuf> {
         start.to_path_buf()
     };
     loop {
-        if current
-            .join("scripts")
-            .join("desktop-repository-run.mjs")
-            .is_file()
-            && current.join("package.json").is_file()
-        {
+        if is_desktop_repository_runner_root(&current) {
             return Some(current);
         }
         if !current.pop() {
             return None;
         }
     }
+}
+
+fn packaged_repository_runner_root(executable_path: &Path) -> Option<PathBuf> {
+    let binary_dir = executable_path.parent()?;
+    let candidates = [
+        binary_dir.join("codepawl-runner"),
+        binary_dir.join("../codepawl-runner"),
+    ];
+    candidates
+        .into_iter()
+        .find(|candidate| is_desktop_repository_runner_root(candidate))
 }
 
 fn resolve_desktop_repository_runner() -> Result<(PathBuf, PathBuf), AppError> {
@@ -1210,6 +1226,15 @@ fn resolve_desktop_repository_runner() -> Result<(PathBuf, PathBuf), AppError> {
             )
         })?;
         return Ok((root, script));
+    }
+
+    if let Ok(executable_path) = std::env::current_exe() {
+        if let Some(root) = packaged_repository_runner_root(&executable_path) {
+            return Ok((
+                root.clone(),
+                root.join("scripts").join("desktop-repository-run.mjs"),
+            ));
+        }
     }
 
     let current_dir = std::env::current_dir().map_err(|error| {
@@ -2784,6 +2809,26 @@ mod tests {
             unique_suffix()
         ));
         root
+    }
+
+    #[test]
+    fn packaged_repository_runner_root_resolves_runner_next_to_binary() {
+        let root = temp_store_root("packaged-runner");
+        let app_dir = root.join("app");
+        let runner_dir = app_dir.join("codepawl-runner");
+        let scripts_dir = runner_dir.join("scripts");
+        std::fs::create_dir_all(&scripts_dir).expect("create packaged runner scripts");
+        std::fs::write(runner_dir.join("package.json"), "{}\n").expect("write package manifest");
+        std::fs::write(scripts_dir.join("desktop-repository-run.mjs"), "\n")
+            .expect("write repository runner");
+        std::fs::write(scripts_dir.join("register-extensionless-esm-loader.mjs"), "\n")
+            .expect("write esm loader");
+
+        let executable = app_dir.join("codepawl-desktop");
+        let resolved =
+            packaged_repository_runner_root(&executable).expect("packaged runner root resolves");
+
+        assert_eq!(resolved, runner_dir);
     }
 
     fn write_manifest(root: &Path, run_id: &str) -> String {

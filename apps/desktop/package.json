@@ -7,7 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
     "test": "vitest run",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "tauri build --bundles appimage --no-sign --ci"
   },
   "dependencies": {
     "@codepawl/ipc-contracts": "workspace:*",

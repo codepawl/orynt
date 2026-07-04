@@ -14,6 +14,8 @@
     "test:desktop": "pnpm --filter @codepawl/desktop test",
     "test:eval": "pnpm --filter @codepawl/eval-harness test",
     "test:tauri": "node scripts/test-tauri.mjs",
+    "release:desktop:check": "node --test scripts/private-beta-release.test.mjs",
+    "package:desktop:internal": "node scripts/package-desktop-internal.mjs",
     "walkthrough:smoke": "pnpm --filter @codepawl/coding-apprentice build && pnpm --filter @codepawl/skill-registry build && node --import ./scripts/register-extensionless-esm-loader.mjs scripts/mvp-walkthrough-smoke.mjs",
     "walkthrough:real-codex": "pnpm --filter @codepawl/coding-apprentice build && node --import ./scripts/register-extensionless-esm-loader.mjs scripts/real-codex-walkthrough.mjs",
     "preview:marketing": "pnpm --filter @codepawl/marketing-site preview"

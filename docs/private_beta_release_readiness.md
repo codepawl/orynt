@@ -6,9 +6,9 @@ Audit date: 2026-07-04
 
 CodePawl now has a first real private-beta desktop slice for a supervised, repository-scoped Coding Apprentice. It is still not a complete private beta desktop product for real users.
 
-The strongest implemented path is now the Tauri-owned repository run slice: the desktop UI accepts a selected local git repository path and task prompt, Tauri validates local path boundaries, invokes the local Coding Apprentice runner through a sidecar boundary, emits real lifecycle events to the UI, writes a local artifact manifest with contract, event log, verifier input/result, redacted log, memory store, and replay plan references, persists repository-run snapshots under the app data directory, blocks real runs until first-run onboarding is dismissed, a repository path is selected, and a provider reference passes preflight, and opens persisted run evidence through a Tauri-validated artifact viewer. Package-level walkthroughs still cover the broader fake/controlled Codex path. The product remains incomplete because packaged distribution, updater/signing, and real OS keychain-backed provider storage are still missing or partial.
+The strongest implemented path is now the Tauri-owned repository run slice: the desktop UI accepts a selected local git repository path and task prompt, Tauri validates local path boundaries, invokes the local Coding Apprentice runner through a sidecar boundary, emits real lifecycle events to the UI, writes a local artifact manifest with contract, event log, verifier input/result, redacted log, memory store, and replay plan references, persists repository-run snapshots under the app data directory, blocks real runs until first-run onboarding is dismissed, a repository path is selected, and a provider reference passes preflight, opens persisted run evidence through a Tauri-validated artifact viewer, and has an unsigned internal Linux beta packaging path. Package-level walkthroughs still cover the broader fake/controlled Codex path. The product remains incomplete because updater/signing, real OS keychain-backed provider storage, and packaged manual smoke execution are still missing or partial.
 
-This audit covers the current dirty working tree, including untracked MVP/productization files and the current git diff.
+This audit covers the current checkout and focused diff for the private beta desktop path.
 
 ## Evidence Inspected
 
@@ -45,8 +45,8 @@ There is no top-level `crates/` directory in this checkout. The only Rust crate 
 | Provider setup | partial | Desktop settings can save, list, test, and delete a local Codex CLI provider reference through Tauri IPC. Tauri preflight checks whether the `codex` executable is available on `PATH`, records ready/failed status plus preflight reasons, and blocks repository runs unless at least one provider reference is ready. First-run onboarding states the local Codex CLI/provider-readiness requirement. Tests cover save/load/delete, failed preflight, successful mocked preflight, run blocking, and raw-secret non-persistence. | The private beta currently uses a documented local-safe fallback reference (`local-safe-keychain://...`) instead of a real OS keychain item. It does not store raw API keys and depends on the user's existing local Codex CLI authentication. Model/provider selection remains minimal. | Replace the local-safe fallback with OS keychain-backed references or keep the CLI-auth-only boundary explicit in beta onboarding; add current CLI argument display and richer diagnostics. |
 | Onboarding | working | Desktop now shows first-run private-beta onboarding for new local app state, persists dismissal under `codepawl:private-beta-onboarding:v1`, explains repository-only scope, local-first app data/artifact storage, Codex CLI provider readiness, approval/evidence workflow, and disabled browser/desktop/files/terminal/cloud/billing surfaces. Composer start-run guards block until onboarding is dismissed, a repository path is selected, and provider readiness passes. | The copy is renderer-side and not yet paired with a packaged-app first-run smoke. | Preserve this conservative beta boundary during packaging and add a packaged first-run smoke. |
 | Settings | partial | Desktop settings show plan quota, usage ledger metric, permission mode, connectors, provider setup, beta status checklist, and account shell; Tauri `settings_get`/`settings_update` now persist local settings, provider references, preflight status, and a private-beta retention policy under the app data directory. The checklist shows provider readiness, local persistence, evidence viewer availability, packaging status, and disabled surfaces. Mock provider state is labeled demo-only. | Provider refs are durable references only; no OS keychain-backed raw secret storage or release-channel settings are implemented. | Add keychain-backed provider setup or explicitly CLI-auth-only provider setup, release channel settings, and diagnostics/data-location controls. |
-| Packaging | scaffold | Tauri config exists and `pnpm build:desktop` passes; `bundle.active` is `false`. | No enabled installer/bundle target, package smoke, release artifact inventory, or app data migration check. | Produce one unsigned/internal beta build artifact with install/run smoke documented. |
-| Updater/signing | missing | Tauri config has no updater/signing setup; platform notes call signing/notarization future work. | No signing identities, update endpoint, release metadata, or rollback policy. | For private beta, either disable updater explicitly with manual signed/verified downloads, or implement signed update metadata before distribution. |
+| Packaging | partial | Tauri bundling is enabled for Linux AppImage metadata, `pnpm package:desktop:internal` builds the desktop release binary with `tauri build --no-bundle --ci`, assembles an unsigned Linux tarball containing the binary, compiled repository-runner sidecar, release manifest, release notes, smoke checklist, and `SHA256SUMS`. The packaged binary can discover `codepawl-runner` next to the executable. | The archive is manually distributed, unsigned, and still needs a human packaged-app launch/repository-run smoke on each beta host; no installer migration checks exist. | Run the packaged-app smoke on the target Linux beta host before distributing each archive. |
+| Updater/signing | missing | `bundle.createUpdaterArtifacts` is `false`; release notes state unsigned/manual distribution and no update metadata, endpoint, or signing keys. | No signing identities, update endpoint, release metadata, or rollback policy. | Keep manual checksum-verified distribution for private beta or implement signed update metadata before wider distribution. |
 | Billing boundary | scaffold | Product plan configs and Paddle-safe copy exist; docs explicitly say no live Paddle IDs/webhooks. | No production auth, license, subscription state, Paddle webhook, payment UI, or hosted account. | Keep billing out of beta runtime; use manual access/licensing and ensure UI copy does not imply live billing. |
 | Tests | partial | Unit/package, desktop, Tauri, real repository-run sidecar, fake walkthrough, provider-reference/preflight/run-blocking coverage, hardened artifact listing/reading, local persistence, restart reload, unsafe path rejection, corrupted manifest handling, and local Chromium marketing smoke pass. | No packaged desktop smoke, real Tauri backend E2E, installer test, or real provider/API invocation smoke. | Add release gate covering packaged app start, local repo run, provider preflight, hardened artifact review, and secret scan. |
 | Docs | partial | MVP walkthrough, progress log, productization docs, ADR, roadmap, and checklist exist. | Some docs overstate "all phases complete" relative to beta desktop readiness; beta release gap doc was missing before this audit. | Keep this audit as the release-readiness source until blockers are closed and docs are updated to separate MVP/package tests from beta readiness. |
@@ -71,8 +71,8 @@ Do not include hosted SaaS, team accounts, cloud sync, live Paddle billing, brow
 1. Desktop runtime state is still partly mock-backed and in-memory outside the repository-run path.
 2. Durable local persistence now exists for repository-run snapshots, settings, and Tauri-validated evidence viewing, but automatic cleanup and mock-to-real memory/skill management remain incomplete.
 3. Provider setup is partial: local Codex CLI references, status persistence, and preflight gating exist, but OS keychain-backed raw-secret storage and richer provider diagnostics are not implemented.
-4. Tauri bundling is disabled (`bundle.active: false`), and there is no packaged app smoke test.
-5. Updater/signing/release-channel policy is missing.
+4. Internal packaging now exists, but each archive still needs a manual packaged app launch/repository-run smoke on the target Linux beta host.
+5. Updater/signing/release-channel implementation is intentionally absent; private beta is unsigned/manual with checksums only.
 6. Desktop evidence viewing is repository-run scoped and still needs packaged-app smoke coverage.
 7. Browser/desktop/files/terminal/cloud/billing surfaces are intentionally blocked and must remain visibly labeled unavailable.
 8. Billing is documentation/config scaffold only; no hosted account, license, Paddle IDs, or webhook path exists.
@@ -80,8 +80,8 @@ Do not include hosted SaaS, team accounts, cloud sync, live Paddle billing, brow
 
 ## Recommended Next Implementation Slices
 
-1. Package and smoke the hardened repository beta path.
-   - Exercise provider preflight, local repo run, persisted run reopen, and artifact viewer read states from the packaged desktop app.
+1. Smoke the internal desktop archive on the target beta host.
+   - Exercise app launch, first-run onboarding, provider preflight, local repo run, persisted run reopen, hardened artifact viewer read states, disabled surfaces, and no live billing.
    - Keep automatic cleanup disabled until a tested retention implementation exists.
 
 2. Harden provider setup for beta operators.
@@ -92,10 +92,8 @@ Do not include hosted SaaS, team accounts, cloud sync, live Paddle billing, brow
 3. Deepen repository evidence review.
    - Add richer diff/result visualization on top of the existing safe artifact reader without widening filesystem access.
 
-4. Package the beta app.
-   - Enable an internal Tauri bundle target.
-   - Define signing/updater stance.
-   - Add install/start smoke and record platform prerequisites.
+4. Decide the next release-channel step.
+   - Either keep unsigned manual tarball distribution with checksums for private beta, or add signed update metadata and installer smoke before widening distribution.
 
 5. Keep beta onboarding/settings/docs aligned while packaging.
    - Preserve local-only repository scope, disabled surfaces, approval model, data location, provider setup, and no live billing.
@@ -113,7 +111,9 @@ Do not include hosted SaaS, team accounts, cloud sync, live Paddle billing, brow
 | `pnpm --filter @codepawl/coding-apprentice test` | pass | Built shared, sandbox, adapter, verifier, memory, skill registry, cognitive kernel, gateway; 1 file, 10 tests passed, including the desktop repository-run artifact manifest path. |
 | `pnpm --filter @codepawl/desktop test` | pass | 1 file, 46 tests passed, including first-run onboarding persistence, beta status checklist, demo-only provider labeling, onboarding/repository/provider start-run blocking, selected repository path submission, provider setup/preflight UI, persisted run listing after restart, and hardened evidence viewer states. |
 | `pnpm build:desktop` | pass | Builds the Coding Apprentice runner package first, then TypeScript and Vite desktop build completed. |
-| `pnpm test:tauri` | pass | Rust/Tauri unit wrapper passed 23 tests, including repository path validation, durable persistence write/read, restart reload, provider reference save/load/delete, provider preflight ready/failed states, missing-provider run blocking, raw-secret non-persistence, artifact read/list validation, traversal/external/scheme/oversize rejection, unsafe path rejection, and corrupted manifest handling. |
+| `pnpm test:tauri` | pass | Rust/Tauri unit wrapper passed 24 tests, including repository path validation, durable persistence write/read, restart reload, provider reference save/load/delete, provider preflight ready/failed states, missing-provider run blocking, raw-secret non-persistence, artifact read/list validation, traversal/external/scheme/oversize rejection, unsafe path rejection, corrupted manifest handling, and packaged runner discovery. |
+| `pnpm release:desktop:check` | pass | Node test validates internal beta package scripts, enabled AppImage target metadata, disabled updater artifacts, release notes, smoke checklist, data paths, evidence path wording, reset instructions, and no live billing stance. |
+| `pnpm package:desktop:internal` | pass | Built the release desktop binary with `tauri build --no-bundle --ci`, assembled `dist/private-beta/codepawl-desktop-0.1.0-linux-x64.tar.gz`, wrote `SHA256SUMS`, and verified archive contents include `codepawl-desktop`, `codepawl-runner`, release docs, and compiled package outputs. SHA256: `d95d11b042e92b04da46f9f913cf7a8e4021900289d73a72fdb3a8cf9019fef5`. |
 | `git diff --check` | pass | No whitespace errors in the current diff. |
 
 Optional real Codex smoke was not used as a release gate. `CODEPAWL_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex` can use local auth, network, and model budget, so it should remain an explicit local operator check rather than a default beta validation command.

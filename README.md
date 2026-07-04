@@ -31,9 +31,11 @@ pnpm --filter @codepawl/marketing-site build
 pnpm test:contracts
 pnpm test:desktop
 pnpm test:tauri
+pnpm release:desktop:check
 pnpm walkthrough:smoke
 CODEPAWL_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex
 pnpm build:desktop
+pnpm package:desktop:internal
 pnpm --filter @codepawl/desktop exec tauri dev
 ```
 
@@ -42,6 +44,12 @@ On Linux/Fedora, `pnpm test:tauri` forces Cargo to use system `pkg-config` when 
 ## Local MVP Walkthrough
 
 The default local Coding Apprentice walkthrough uses a disposable fixture repository and a fake Codex binary, so it requires no model credentials and keeps controlled execution approval-gated. An opt-in real Codex walkthrough is also available for local authenticated CLI testing. See [`docs/mvp/local-coding-apprentice-walkthrough.md`](docs/mvp/local-coding-apprentice-walkthrough.md).
+
+## Private Beta Packaging
+
+`pnpm package:desktop:internal` creates an Unsigned internal Linux beta tarball under `dist/private-beta/` with the built Tauri binary, the compiled repository-runner sidecar, release notes, smoke checklist, and `SHA256SUMS`.
+
+The private beta package is manually distributed only. Updater artifacts are disabled, signing is not configured, and live billing, hosted accounts, managed AI credits, browser automation, general desktop control, arbitrary file control, terminal autonomy, and cloud sync are out of runtime scope. See [`docs/productization/private-beta-release-notes.md`](docs/productization/private-beta-release-notes.md) and [`docs/productization/private-beta-release-smoke.md`](docs/productization/private-beta-release-smoke.md).
 
 ## MVP Sequence
 
