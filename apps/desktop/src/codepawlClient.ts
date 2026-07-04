@@ -81,7 +81,7 @@ function createMockCodexExecutionPreview(runId: string, overrides: Partial<Codex
     runId,
     planId: `codex-execution-plan-${runId}`,
     status,
-    command: "codex exec --json --ephemeral --sandbox workspace-write --ask-for-approval never",
+    command: "codex exec --json --ephemeral --sandbox workspace-write",
     contractArtifact: `codepawl-artifact://${runId}/codex-contract.md`,
     artifactRoot: `codepawl-artifact://${runId}/execution/`,
     blockedReasons: [],

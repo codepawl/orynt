@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -30,6 +32,7 @@ pub struct CreateRunInput {
     capability_id: String,
     task_id: String,
     workspace_id: String,
+    repository_path: Option<String>,
     budget: BudgetPolicy,
 }
 
@@ -192,6 +195,29 @@ pub struct SecretReference {
     key_ref: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopRepositoryRunOutput {
+    run_id: String,
+    status: String,
+    artifact_root: String,
+    artifact_manifest_path: String,
+    event_count: usize,
+    events: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopRepositoryRunRequest {
+    goal: String,
+    task_id: String,
+    workspace_id: String,
+    repository_path: String,
+    sandbox_root: String,
+    artifact_root: String,
+    memory_root: String,
+}
+
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("{0}")]
@@ -200,6 +226,8 @@ pub enum AppError {
     StateLock,
     #[error("event emit failed: {0}")]
     Event(String),
+    #[error("repository run failed: {0}")]
+    RepositoryRun(String),
 }
 
 impl serde::Serialize for AppError {
@@ -251,7 +279,144 @@ fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
         ));
     }
 
+    validate_repository_path(input.repository_path.as_deref())?;
+
     Ok(())
+}
+
+fn validate_repository_path(repository_path: Option<&str>) -> Result<PathBuf, AppError> {
+    let repository_path = repository_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::Validation(
+                "repositoryPath must point to a selected local git repository".into(),
+            )
+        })?;
+    let canonical = Path::new(repository_path).canonicalize().map_err(|_| {
+        AppError::Validation("repositoryPath must point to a selected local git repository".into())
+    })?;
+    if !canonical.is_dir()
+        || canonical.parent().is_none()
+        || !canonical.join(".git").exists()
+    {
+        return Err(AppError::Validation(
+            "repositoryPath must point to a selected local git repository".into(),
+        ));
+    }
+
+    Ok(canonical)
+}
+
+fn find_repository_root(start: &Path) -> Option<PathBuf> {
+    let mut current = if start.is_file() {
+        start.parent()?.to_path_buf()
+    } else {
+        start.to_path_buf()
+    };
+    loop {
+        if current.join("scripts").join("desktop-repository-run.mjs").is_file()
+            && current.join("package.json").is_file()
+        {
+            return Some(current);
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
+}
+
+fn resolve_desktop_repository_runner() -> Result<(PathBuf, PathBuf), AppError> {
+    if let Ok(script_path) = std::env::var("CODEPAWL_DESKTOP_REPOSITORY_RUNNER") {
+        let script = PathBuf::from(script_path);
+        let root = find_repository_root(&script).ok_or_else(|| {
+            AppError::RepositoryRun(
+                "could not locate CodePawl repository root for desktop repository runner".into(),
+            )
+        })?;
+        return Ok((root, script));
+    }
+
+    let current_dir = std::env::current_dir().map_err(|error| {
+        AppError::RepositoryRun(format!("could not resolve current directory: {error}"))
+    })?;
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for start in [&current_dir, &manifest_dir] {
+        if let Some(root) = find_repository_root(start) {
+            return Ok((root.clone(), root.join("scripts").join("desktop-repository-run.mjs")));
+        }
+    }
+
+    Err(AppError::RepositoryRun(
+        "could not locate scripts/desktop-repository-run.mjs".into(),
+    ))
+}
+
+fn run_data_root(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("codepawl-desktop"))
+}
+
+fn run_desktop_repository_sidecar(
+    app: &AppHandle,
+    input: &CreateRunInput,
+    repository_path: &Path,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    let (repo_root, script_path) = resolve_desktop_repository_runner()?;
+    let loader_path = repo_root
+        .join("scripts")
+        .join("register-extensionless-esm-loader.mjs");
+    let data_root = run_data_root(app);
+    let request = DesktopRepositoryRunRequest {
+        goal: input.goal.clone(),
+        task_id: input.task_id.clone(),
+        workspace_id: input.workspace_id.clone(),
+        repository_path: repository_path.to_string_lossy().to_string(),
+        sandbox_root: data_root.join("sandboxes").to_string_lossy().to_string(),
+        artifact_root: data_root.join("artifacts").to_string_lossy().to_string(),
+        memory_root: data_root.join("memory").to_string_lossy().to_string(),
+    };
+    let request_json = serde_json::to_string(&request)
+        .map_err(|error| AppError::RepositoryRun(format!("could not encode run request: {error}")))?;
+    let mut child = Command::new("node")
+        .arg("--import")
+        .arg(&loader_path)
+        .arg(&script_path)
+        .current_dir(repo_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| AppError::RepositoryRun(format!("could not start repository runner: {error}")))?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(request_json.as_bytes())
+            .map_err(|error| AppError::RepositoryRun(format!("could not write runner request: {error}")))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|error| AppError::RepositoryRun(format!("repository runner did not finish: {error}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::RepositoryRun(stderr.trim().to_string()));
+    }
+
+    let output: DesktopRepositoryRunOutput = serde_json::from_slice(&output.stdout)
+        .map_err(|error| AppError::RepositoryRun(format!("could not parse repository runner output: {error}")))?;
+    if output.event_count != output.events.len()
+        || output.status.trim().is_empty()
+        || output.artifact_root.trim().is_empty()
+        || output.artifact_manifest_path.trim().is_empty()
+    {
+        return Err(AppError::RepositoryRun(
+            "repository runner returned incomplete run metadata".into(),
+        ));
+    }
+
+    Ok(output)
 }
 
 fn validate_candidate_rule_status_update(
@@ -338,7 +503,7 @@ fn mock_codex_execution_preview(
         "runId": run_id,
         "planId": plan_id,
         "status": status,
-        "command": "codex exec --json --ephemeral --sandbox workspace-write --ask-for-approval never",
+        "command": "codex exec --json --ephemeral --sandbox workspace-write",
         "contractArtifact": format!("codepawl-artifact://{run_id}/codex-contract.md"),
         "artifactRoot": format!("codepawl-artifact://{run_id}/execution/"),
         "blockedReasons": blocked_reasons,
@@ -347,14 +512,6 @@ fn mock_codex_execution_preview(
         "verificationSeparate": true,
         "summary": summary,
     })
-}
-
-fn now_run_id() -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or_default();
-    format!("run-{millis}")
 }
 
 fn memory_namespace() -> serde_json::Value {
@@ -772,492 +929,21 @@ async fn run_create(
     input: CreateRunInput,
 ) -> Result<RunId, AppError> {
     validate_create_run(&input)?;
+    let repository_path = validate_repository_path(input.repository_path.as_deref())?;
+    let output = run_desktop_repository_sidecar(&app, &input, &repository_path)?;
 
-    let run_id = now_run_id();
     state
         .runs
         .lock()
         .map_err(|_| AppError::StateLock)?
-        .push(run_id.clone());
+        .push(output.run_id.clone());
 
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            1,
-            "run_started",
-            "runtime",
-            "tauri-host",
-            "Mock repository run started",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(&run_id, 2, "goal_received", "user", "operator", &input.goal),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            3,
-            "policy_checked",
-            "policy",
-            "core-policy",
-            "Allowed: command is on the conservative allowlist",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            4,
-            "sandbox_planned",
-            "policy",
-            "core-policy",
-            "Planned isolated repository worktree without executing commands",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            5,
-            "sandbox_ready_mock",
-            "runtime",
-            "tauri-host",
-            "Dry-run sandbox boundary is ready; no worktree was created",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            6,
-            "codex_missing",
-            "runtime",
-            "tauri-host",
-            "Codex CLI was not required for contract-only mode",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            7,
-            "codex_contract_requested",
-            "runtime",
-            "tauri-host",
-            "Requested safe Codex work contract generation",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        RunEvent {
-            id: format!("{run_id}-event-8"),
-            run_id: run_id.clone(),
-            sequence: 8,
-            event_type: "codex_contract_created".into(),
-            timestamp: now_iso_like(),
-            actor: serde_json::json!({ "kind": "runtime", "id": "tauri-host" }),
-            payload: serde_json::json!({
-                "summary": "Generated safe Codex work contract artifact",
-                "contractId": format!("codex-contract-{run_id}"),
-            }),
-            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
-            artifacts: vec![
-                serde_json::json!({
-                    "id": "mock-codex-contract-md",
-                    "kind": "codex_contract",
-                    "uri": format!("codepawl-artifact://{run_id}/codex-contract.md"),
-                    "label": "Generated Codex work contract",
-                    "sha256": "mock-codex-contract-md-sha256",
-                }),
-                serde_json::json!({
-                    "id": "mock-codex-contract-metadata",
-                    "kind": "codex_contract_metadata",
-                    "uri": format!("codepawl-artifact://{run_id}/codex-contract.metadata.json"),
-                    "label": "Generated Codex contract metadata",
-                    "sha256": "mock-codex-contract-metadata-sha256",
-                }),
-            ],
-            safety: None,
-        },
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            9,
-            "codex_manual_next_step",
-            "runtime",
-            "tauri-host",
-            "Manual next step: review the generated Codex contract before any provider execution",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            10,
-            "codex_result_import_requested",
-            "runtime",
-            "tauri-host",
-            "Requested manual Codex result import from the managed sandbox artifact directory",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            11,
-            "codex_sandbox_diff_inspected",
-            "runtime",
-            "tauri-host",
-            "Inspected sandbox diff scope before trusting imported result notes",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            12,
-            "codex_manual_log_imported",
-            "runtime",
-            "tauri-host",
-            "Imported optional manual Codex log from the CodePawl-managed artifact directory",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            13,
-            "codex_result_redacted",
-            "runtime",
-            "tauri-host",
-            "Redacted imported manual result content before persistence",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        RunEvent {
-            id: format!("{run_id}-event-14"),
-            run_id: run_id.clone(),
-            sequence: 14,
-            event_type: "codex_result_imported".into(),
-            timestamp: now_iso_like(),
-            actor: serde_json::json!({ "kind": "runtime", "id": "tauri-host" }),
-            payload: serde_json::json!({
-                "summary": "Imported structured manual Codex result bundle for verifier handoff",
-                "status": "imported",
-                "changedFileCount": 1,
-            }),
-            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
-            artifacts: vec![serde_json::json!({
-                "id": "mock-codex-result-import",
-                "kind": "codex_result_bundle",
-                "uri": format!("codepawl-artifact://{run_id}/codex-result-import.json"),
-                "label": "Imported manual Codex result bundle",
-                "sha256": "mock-codex-result-import-sha256",
-            })],
-            safety: None,
-        },
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            15,
-            "manual_review_required",
-            "runtime",
-            "tauri-host",
-            "Manual review checkpoint remains required before adopting imported work",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        RunEvent {
-            id: format!("{run_id}-event-16"),
-            run_id: run_id.clone(),
-            sequence: 16,
-            event_type: "verifier_input_created".into(),
-            timestamp: now_iso_like(),
-            actor: serde_json::json!({ "kind": "verifier", "id": "tauri-host" }),
-            payload: serde_json::json!({
-                "summary": "Created verifier input from imported Codex result without running verification",
-                "commands": ["pnpm test:contracts"],
-            }),
-            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
-            artifacts: vec![
-                serde_json::json!({
-                    "id": "mock-verifier-input",
-                    "kind": "verifier_input",
-                    "uri": format!("codepawl-artifact://{run_id}/verifier-input.json"),
-                    "label": "Verifier input from imported Codex result",
-                    "sha256": "mock-verifier-input-sha256",
-                }),
-            ],
-            safety: None,
-        },
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            17,
-            "context_initialized",
-            "runtime",
-            "tauri-host",
-            "Mock Rust host validated the run and initialized repository context",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            18,
-            "budget_initialized",
-            "budget",
-            "resource-governor",
-            "Initialized ResourceGovernor budget",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            19,
-            "budget_checked",
-            "budget",
-            "resource-governor",
-            "Allowed: budget is within conservative limits",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            20,
-            "workspace_initialized",
-            "runtime",
-            "tauri-host",
-            "Initialized bounded ContextWorkspace",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            21,
-            "workspace_item_added",
-            "runtime",
-            "tauri-host",
-            "Added workspace item: sandbox boundary",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            22,
-            "budget_checked",
-            "budget",
-            "resource-governor",
-            "Allowed: budget check before verifier",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            23,
-            "context_packet_created",
-            "runtime",
-            "tauri-host",
-            "Created bounded ContextPacket",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            24,
-            "verification_planned",
-            "verifier",
-            "tauri-host",
-            "Planned deterministic repository verification",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            25,
-            "verification_policy_checked",
-            "verifier",
-            "tauri-host",
-            "Verified validation commands against CorePolicy allowlist",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            26,
-            "verification_started",
-            "verifier",
-            "tauri-host",
-            "Started deterministic verifier for sandbox worktree",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            27,
-            "verification_command_started",
-            "verifier",
-            "tauri-host",
-            "Started verification command: pnpm test:contracts",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            28,
-            "verification_command_finished",
-            "verifier",
-            "tauri-host",
-            "Finished verification command: pnpm test:contracts",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            29,
-            "verification_diff_checked",
-            "verifier",
-            "tauri-host",
-            "Checked diff scope for protected and unexpected paths",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        RunEvent {
-            id: format!("{run_id}-event-30"),
-            run_id: run_id.clone(),
-            sequence: 30,
-            event_type: "verification_recorded".into(),
-            timestamp: now_iso_like(),
-            actor: serde_json::json!({ "kind": "verifier", "id": "tauri-host" }),
-            payload: serde_json::json!({
-                "summary": "Recorded deterministic validation evidence for the repository run",
-            }),
-            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
-            artifacts: vec![serde_json::json!({
-                "id": "mock-verification-result",
-                "kind": "validation_report",
-                "uri": format!("codepawl-artifact://{run_id}/verification-result.json"),
-                "label": "Verification result",
-                "sha256": "mock-verification-result-sha256",
-            })],
-            safety: None,
-        },
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            31,
-            "verification_passed",
-            "verifier",
-            "tauri-host",
-            "Verification passed with machine-readable evidence",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            32,
-            "memory_extraction_started",
-            "runtime",
-            "tauri-host",
-            "Memory extraction started from redacted verifier and import evidence",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            33,
-            "memory_episode_written",
-            "runtime",
-            "tauri-host",
-            "Wrote successful run episode memory with verifier provenance",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            34,
-            "candidate_rule_proposed",
-            "runtime",
-            "tauri-host",
-            "Candidate rule proposed from verified package-only change",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
-    app.emit(
-        "run_event",
-        run_event(
-            &run_id,
-            35,
-            "memory_extraction_finished",
-            "runtime",
-            "tauri-host",
-            "Memory extraction finished with candidate-only learning output",
-        ),
-    )
-    .map_err(|error| AppError::Event(error.to_string()))?;
+    for event in &output.events {
+        app.emit("run_event", event.clone())
+            .map_err(|error| AppError::Event(error.to_string()))?;
+    }
 
-    Ok(RunId { id: run_id })
+    Ok(RunId { id: output.run_id })
 }
 
 #[tauri::command]
@@ -1779,12 +1465,27 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    fn local_git_repository_path(label: &str) -> String {
+        let mut repository_path = std::env::temp_dir();
+        repository_path.push(format!("codepawl-tauri-test-{label}-{}", unique_suffix()));
+        std::fs::create_dir_all(repository_path.join(".git")).expect("create test git marker");
+        repository_path.to_string_lossy().to_string()
+    }
+
+    fn unique_suffix() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos()
+    }
+
     fn valid_run_input() -> CreateRunInput {
         CreateRunInput {
             goal: "Fix a failing unit test".into(),
             capability_id: "coding-apprentice".into(),
             task_id: "task-1".into(),
             workspace_id: "workspace-1".into(),
+            repository_path: Some(local_git_repository_path("valid")),
             budget: BudgetPolicy {
                 max_steps: 40,
                 max_wall_time_ms: 1_800_000,
@@ -1795,9 +1496,59 @@ mod tests {
         }
     }
 
+    fn valid_run_input_json(repository_path: Option<&str>) -> CreateRunInput {
+        let mut value = serde_json::json!({
+            "goal": "Fix a failing unit test",
+            "capabilityId": "coding-apprentice",
+            "taskId": "task-1",
+            "workspaceId": "workspace-1",
+            "budget": {
+                "maxSteps": 40,
+                "maxWallTimeMs": 1_800_000,
+                "maxModelTokens": 120_000,
+                "maxUsd": 1.0,
+                "stopOnBudgetExceeded": true
+            }
+        });
+        if let Some(repository_path) = repository_path {
+            value["repositoryPath"] = serde_json::Value::String(repository_path.into());
+        }
+
+        serde_json::from_value(value).expect("valid create run input json")
+    }
+
     #[test]
     fn validate_create_run_accepts_repository_run_input() {
         assert!(validate_create_run(&valid_run_input()).is_ok());
+    }
+
+    #[test]
+    fn validate_create_run_accepts_selected_local_git_repository_path() {
+        let input = valid_run_input_json(Some(&local_git_repository_path("json-valid")));
+
+        assert!(validate_create_run(&input).is_ok());
+    }
+
+    #[test]
+    fn validate_create_run_requires_selected_repository_path() {
+        let input = valid_run_input_json(None);
+
+        let error = validate_create_run(&input).expect_err("repository path is required");
+        assert_eq!(
+            error.to_string(),
+            "repositoryPath must point to a selected local git repository"
+        );
+    }
+
+    #[test]
+    fn validate_create_run_rejects_filesystem_root_repository_path() {
+        let input = valid_run_input_json(Some("/"));
+
+        let error = validate_create_run(&input).expect_err("filesystem root is unsafe");
+        assert_eq!(
+            error.to_string(),
+            "repositoryPath must point to a selected local git repository"
+        );
     }
 
     #[test]
