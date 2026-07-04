@@ -109,10 +109,10 @@ const surfaceLabels: Record<SurfaceKind, string> = {
 
 const surfaceDescriptions: Record<SurfaceKind, string> = {
   repository: "Allow repository reads, diffs, and scoped code changes.",
-  browser: "Allow approved browser automation and web evidence collection.",
-  desktop: "Allow desktop app and system UI actions after approval.",
-  files: "Allow local file access within approved workspace paths.",
-  terminal: "Allow shell commands gated by the permission mode.",
+  browser: "Unavailable in private beta; no browser automation runs from this app.",
+  desktop: "Unavailable in private beta; no computer-wide desktop control runs from this app.",
+  files: "Unavailable in private beta; only the selected repository path is in scope.",
+  terminal: "Unavailable in private beta; no arbitrary shell or terminal control runs from this app.",
 };
 
 const messageBlockMetaDescription = "Show or hide compact block labels above agent and approval messages.";
@@ -185,20 +185,22 @@ function artifactStatusLabel(status: ArtifactEvidenceStatus): string {
 
 const composerAttachmentOptionGroups = [
   [
-    { id: "files", label: "Add files or photos", shortcut: "Ctrl+U", Icon: Paperclip },
-    { id: "screenshot", label: "Take a screenshot", Icon: Camera },
+    { id: "files", label: "Add files or photos", Icon: Paperclip, disabled: true, helper: "Unavailable in beta" },
+    { id: "screenshot", label: "Take a screenshot", Icon: Camera, disabled: true, helper: "Unavailable in beta" },
     { id: "project", label: "Add to project", Icon: FolderPlus, hasSubmenu: true },
-    { id: "github", label: "Add from GitHub", Icon: GitBranch },
+    { id: "github", label: "Add from GitHub", Icon: GitBranch, disabled: true, helper: "Unavailable in beta" },
   ],
   [
     { id: "skills", label: "Skills", Icon: Blocks, hasSubmenu: true },
     { id: "connectors", label: "Connectors", Icon: Plug, hasSubmenu: true },
     { id: "plugins", label: "Add plugins...", Icon: Puzzle },
   ],
-  [{ id: "web-search", label: "Web search", Icon: Globe2, checked: true }],
+  [{ id: "web-search", label: "Web search", Icon: Globe2, checked: false, disabled: true, helper: "Unavailable in beta" }],
 ] as const;
 
 const messageBlockMetaStorageKey = "codepawl:message-block-meta-visible:v1";
+const privateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
+const privateBetaDisabledSurfaceSummary = "Browser, desktop, files, terminal, cloud, and billing unavailable";
 const defaultLandingUrl = "http://127.0.0.1:5173/";
 
 export function getLandingUrl() {
@@ -393,7 +395,7 @@ function createInitialThreadMessages(runState: MockRunState): Record<string, Thr
         id: "draft-runtime-policy",
         role: "system",
         label: "System notice · Runtime policy",
-        content: "Controlled runtime only. Codex execution and browser automation require an approved connector before they run.",
+        content: "Controlled repository runtime only. Browser automation is unavailable in this private beta.",
       },
       {
         id: "draft-verifier-handoff",
@@ -552,6 +554,7 @@ function App({
   const [artifactEvidenceMessage, setArtifactEvidenceMessage] = useState("");
   const [settingsSnapshot, setSettingsSnapshot] = useState<SettingsSnapshot | null>(null);
   const [providerSetupMessage, setProviderSetupMessage] = useState("");
+  const [composerReadinessMessage, setComposerReadinessMessage] = useState("");
   const [copiedAgentResponseId, setCopiedAgentResponseId] = useState<string | null>(null);
   const [sharedAgentResponseId, setSharedAgentResponseId] = useState<string | null>(null);
   const [agentResponseRatings, setAgentResponseRatings] = useState<Record<string, AgentResponseRating>>({});
@@ -585,6 +588,13 @@ function App({
   const [showMessageBlockMeta, setShowMessageBlockMeta] = useState(() => {
     try {
       return window.localStorage.getItem(messageBlockMetaStorageKey) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [hasDismissedPrivateBetaOnboarding, setHasDismissedPrivateBetaOnboarding] = useState(() => {
+    try {
+      return window.localStorage.getItem(privateBetaOnboardingStorageKey) === "dismissed";
     } catch {
       return false;
     }
@@ -632,6 +642,8 @@ function App({
   const landingUrl = getLandingUrl();
   const primaryProviderRef = settingsSnapshot?.providerRefs[0];
   const isProviderReady = providerIsReady(settingsSnapshot);
+  const isMockDemoMode = primaryProviderRef?.providerId === "mock-provider" || primaryProviderRef?.keyRef.startsWith("mock-provider://") === true;
+  const composerStatusMessage = composerReadinessMessage || (!isProviderReady ? providerSetupMessage : "");
 
   const refreshPersistedRuns = async () => {
     const runs = await codepawl.listPersistedRuns();
@@ -899,11 +911,24 @@ function App({
     });
     setComposerValue("");
 
-    const currentSettings = settingsSnapshot ?? (await refreshSettingsSnapshot());
-    if (!providerIsReady(currentSettings)) {
-      setProviderSetupMessage(providerStatusMessage(currentSettings.providerRefs[0]));
+    if (!hasDismissedPrivateBetaOnboarding) {
+      setComposerReadinessMessage("Finish private beta onboarding before starting a repository run.");
       return;
     }
+
+    if (!repositoryPath.trim()) {
+      setComposerReadinessMessage("Select a local git repository path before starting a repository run.");
+      return;
+    }
+
+    const currentSettings = settingsSnapshot ?? (await refreshSettingsSnapshot());
+    if (!providerIsReady(currentSettings)) {
+      const message = providerStatusMessage(currentSettings.providerRefs[0]);
+      setProviderSetupMessage(message);
+      setComposerReadinessMessage(message);
+      return;
+    }
+    setComposerReadinessMessage("");
 
     const run = await codepawl.createRun({
       goal,
@@ -1073,6 +1098,18 @@ function App({
     const settings = await refreshSettingsSnapshot();
     setSettingsSnapshot(settings);
     setProviderSetupMessage(providerStatusMessage(settings.providerRefs[0]));
+  };
+
+  const handleDismissPrivateBetaOnboarding = () => {
+    try {
+      window.localStorage.setItem(privateBetaOnboardingStorageKey, "dismissed");
+    } catch {
+      // Onboarding dismissal is best-effort in constrained webviews.
+    }
+    setHasDismissedPrivateBetaOnboarding(true);
+    if (composerReadinessMessage === "Finish private beta onboarding before starting a repository run.") {
+      setComposerReadinessMessage("");
+    }
   };
 
   const hasSelectedRun = currentRunId !== null;
@@ -1765,12 +1802,39 @@ function App({
       return null;
     }
 
+    const renderPrivateBetaStatusChecklist = () => (
+      <section className="settings-review-list private-beta-checklist" aria-label="Private beta status checklist">
+        <h3>Private beta status checklist</h3>
+        <div className="settings-queue-row">
+          <span>Provider readiness</span>
+          <strong>{providerStatusLabel(primaryProviderRef)}</strong>
+        </div>
+        <div className="settings-queue-row">
+          <span>Local persistence</span>
+          <strong>Enabled under local app data</strong>
+        </div>
+        <div className="settings-queue-row">
+          <span>Evidence viewer</span>
+          <strong>Available for persisted repository runs</strong>
+        </div>
+        <div className="settings-queue-row">
+          <span>Packaging</span>
+          <strong>Internal build only; bundle/signing/updater incomplete</strong>
+        </div>
+        <div className="settings-queue-row">
+          <span>Disabled surfaces</span>
+          <strong>{privateBetaDisabledSurfaceSummary}</strong>
+        </div>
+      </section>
+    );
+
     const renderSettingsSectionContent = () => {
       switch (activeSettingsSection) {
         case "general":
           return (
             <section className="settings-section" aria-labelledby="settings-general-title">
               <h2 id="settings-general-title">Profile</h2>
+              {renderPrivateBetaStatusChecklist()}
               <div className="settings-profile-avatar-row">
                 <span>Avatar</span>
                 <span className="settings-profile-avatar" aria-hidden="true">
@@ -1835,18 +1899,15 @@ function App({
                     <small>{runState.traceSummary.modelTokens.toLocaleString()} model tokens</small>
                   </ChatBubble>
                   <ChatBubble tone="metric" className="dashboard-metric" title="Usage ledger">
-                    <strong>{formatUsd(runState.usageSummary.creditsConsumed)} credits</strong>
+                    <strong>{formatUsd(runState.usageSummary.creditsConsumed)} local estimate</strong>
                     <small>
                       {pluralize(runState.usageSummary.runCount, "run")}, {pluralize(runState.usageSummary.gatewayActionCount, "gateway action")},{" "}
                       {pluralize(runState.usageSummary.artifactCount, "artifact")}
                     </small>
                   </ChatBubble>
-                  <ChatBubble tone="metric" className="dashboard-metric" title="Plan quota">
-                    <strong>{runState.productPlan.name}</strong>
-                    <small>
-                      {runState.quotaSummary.monthlyManagedAiCredits.toLocaleString()} credits / month resets{" "}
-                      {runState.quotaSummary.creditResetCadence}
-                    </small>
+                  <ChatBubble tone="metric" className="dashboard-metric" title="Beta access">
+                    <strong>Local demo quota</strong>
+                    <small>No managed AI credits or live billing in this beta.</small>
                   </ChatBubble>
                   <ChatBubble tone="metric" className="dashboard-metric" title="Trace">
                     <strong>{runState.traceSummary.eventCount} events</strong>
@@ -1968,7 +2029,12 @@ function App({
                     type="button"
                     role="switch"
                     aria-checked={surfaceToggles[surface]}
-                    onClick={() => setSurfaceToggles((current) => ({ ...current, [surface]: !current[surface] }))}
+                    disabled={surface !== "repository"}
+                    onClick={() => {
+                      if (surface === "repository") {
+                        setSurfaceToggles((current) => ({ ...current, repository: !current.repository }));
+                      }
+                    }}
                     key={surface}
                   >
                     <span className="surface-switch-copy">
@@ -2240,10 +2306,15 @@ function App({
                     <div>
                       <h3>{primaryProviderRef?.label ?? "Local Codex CLI"}</h3>
                       <span>{primaryProviderRef?.keyRef ?? "No provider reference configured"}</span>
+                      {isMockDemoMode ? <small>Demo-only mock provider</small> : null}
                     </div>
                     <strong>{providerStatusLabel(primaryProviderRef)}</strong>
                   </div>
-                  <p>{providerSetupMessage || providerStatusMessage(primaryProviderRef)}</p>
+                  <p>
+                    {isMockDemoMode
+                      ? "Browser preview uses deterministic demo data; real repository beta runs require the local Codex CLI in Tauri."
+                      : providerSetupMessage || providerStatusMessage(primaryProviderRef)}
+                  </p>
                   <div className="candidate-rule-actions">
                     <button type="button" onClick={() => void handleUseLocalCodexProvider()} aria-label="Use local Codex CLI">
                       Use local Codex CLI
@@ -2420,9 +2491,9 @@ function App({
             <span key={surface}>{surface} unavailable</span>
           ))}
         </div>
-        {providerSetupMessage && !isProviderReady ? (
+        {composerStatusMessage ? (
           <p className="composer-provider-status" role="status">
-            {providerSetupMessage}
+            {composerStatusMessage}
           </p>
         ) : null}
         <div className="composer-toolbar">
@@ -2452,22 +2523,28 @@ function App({
                   <div className="composer-attachment-menu-section" role="none" key={`attachment-group-${groupIndex}`}>
                     {group.map((option) => {
                       const OptionIcon = option.Icon;
-                      const isChecked = "checked" in option && option.checked === true;
+                      const hasCheckedState = "checked" in option;
+                      const isChecked = hasCheckedState ? Boolean(option.checked) : false;
                       const hasSubmenu = "hasSubmenu" in option && option.hasSubmenu === true;
+                      const isDisabled = "disabled" in option && option.disabled === true;
+                      const shortcut = "shortcut" in option && typeof option.shortcut === "string" ? option.shortcut : "";
+                      const helper = "helper" in option && typeof option.helper === "string" ? option.helper : "";
                       return (
                         <button
                           className="composer-attachment-menu-item"
                           type="button"
-                          role={isChecked ? "menuitemcheckbox" : "menuitem"}
+                          role={hasCheckedState ? "menuitemcheckbox" : "menuitem"}
                           aria-label={option.label}
-                          aria-checked={isChecked ? true : undefined}
+                          aria-checked={hasCheckedState ? isChecked : undefined}
                           aria-haspopup={hasSubmenu ? "menu" : undefined}
+                          disabled={isDisabled}
                           key={option.id}
                           onClick={handleSelectComposerAttachmentOption}
                         >
                           <OptionIcon className="composer-attachment-menu-icon" aria-hidden="true" strokeWidth={2} />
                           <span>{option.label}</span>
-                          {"shortcut" in option ? <small>{option.shortcut}</small> : null}
+                          {shortcut ? <small>{shortcut}</small> : null}
+                          {helper ? <small>{helper}</small> : null}
                           {hasSubmenu ? <ChevronRight className="composer-attachment-menu-accessory" aria-hidden="true" strokeWidth={2} /> : null}
                           {isChecked ? <Check className="composer-attachment-menu-accessory" aria-hidden="true" strokeWidth={2} /> : null}
                         </button>
@@ -2608,6 +2685,46 @@ function App({
       showComposer: true,
       children: renderThreadMessages(),
     });
+  };
+
+  const renderPrivateBetaOnboarding = () => {
+    if (hasDismissedPrivateBetaOnboarding) {
+      return null;
+    }
+
+    return (
+      <section className="private-beta-onboarding" aria-label="Private beta onboarding">
+        <div>
+          <span>Repository-only beta</span>
+          <h2>CodePawl private beta</h2>
+          <p>
+            CodePawl currently runs supervised repository tasks only. Local-first data, persisted runs, and evidence artifacts stay in the local Tauri app data directory for this
+            device.
+          </p>
+        </div>
+        <ul>
+          <li>
+            <strong>Codex CLI provider readiness</strong>
+            <span>Real repository runs require a local Codex CLI provider reference and a passing preflight in Settings.</span>
+          </li>
+          <li>
+            <strong>Approval and evidence</strong>
+            <span>Repository actions stay gated, runs produce an event ledger, and persisted artifacts can be reopened from the evidence viewer.</span>
+          </li>
+          <li>
+            <strong>Local-first data</strong>
+            <span>Run history, settings, provider references, and artifact manifests are stored under the local app data directory.</span>
+          </li>
+          <li>
+            <strong>Unavailable surfaces</strong>
+            <span>Browser, desktop, files, terminal, cloud, and billing are unavailable in this private beta.</span>
+          </li>
+        </ul>
+        <button type="button" onClick={handleDismissPrivateBetaOnboarding}>
+          Continue to repository beta
+        </button>
+      </section>
+    );
   };
 
   return (
@@ -2793,6 +2910,7 @@ function App({
 
       {renderCockpitContent()}
       {renderAgentResponseSourcesPanel()}
+      {renderPrivateBetaOnboarding()}
 
       {renderSettingsDialog()}
       {renderDeleteWorkspaceDialog()}

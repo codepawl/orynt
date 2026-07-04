@@ -2205,6 +2205,80 @@ h3 {
   padding: 6px 8px;
 }
 
+.private-beta-onboarding {
+  position: fixed;
+  right: var(--space-stage);
+  bottom: var(--space-stage);
+  z-index: 14;
+  display: grid;
+  gap: var(--space-content);
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid rgba(143, 182, 232, 0.38);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(143, 182, 232, 0.12), rgba(241, 241, 241, 0.04)),
+    var(--thread-surface);
+  box-shadow: 0 24px 80px rgba(28, 28, 28, 0.42);
+  padding: var(--space-panel);
+}
+
+.private-beta-onboarding > div {
+  display: grid;
+  gap: var(--space-control);
+}
+
+.private-beta-onboarding h2,
+.private-beta-checklist h3 {
+  color: var(--mono-100);
+  font-family: var(--font-title);
+  font-size: 22px;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.private-beta-onboarding > div > span {
+  color: var(--accent-info);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.private-beta-onboarding p,
+.private-beta-onboarding li span {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.42;
+  margin: 0;
+}
+
+.private-beta-onboarding ul {
+  display: grid;
+  gap: var(--space-control);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.private-beta-onboarding li {
+  display: grid;
+  gap: 3px;
+  border-radius: 8px;
+  background: rgba(241, 241, 241, 0.045);
+  padding: var(--space-row);
+}
+
+.private-beta-onboarding li strong {
+  color: var(--mono-100);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.private-beta-onboarding button {
+  justify-self: end;
+}
+
 .composer-toolbar {
   display: flex;
   align-items: center;
@@ -2784,6 +2858,11 @@ h3 {
   margin: 0;
 }
 
+.private-beta-checklist h3 {
+  font-family: inherit;
+  font-size: 13px;
+}
+
 .settings-review-card,
 .settings-replay-plan {
   border: 1px solid var(--border);
@@ -2808,6 +2887,7 @@ h3 {
 }
 
 .settings-review-card-header span,
+.settings-review-card-header small,
 .settings-review-card p,
 .settings-replay-plan p,
 .settings-review-grid span {

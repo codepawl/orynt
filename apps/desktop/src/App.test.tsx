@@ -9,6 +9,7 @@ import App, { getLandingUrl } from "./App";
 import { codepawl } from "./codepawlClient";
 
 const defaultLandingUrl = "http://127.0.0.1:5173/";
+const privateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
 
 function installLocalStorageMock() {
   const values = new Map<string, string>();
@@ -75,6 +76,10 @@ function openSettings() {
 function openAccountMenu() {
   fireEvent.click(screen.getByRole("button", { name: "Open account menu" }));
   return screen.getByRole("menu", { name: "Account menu" });
+}
+
+function dismissPrivateBetaOnboarding() {
+  window.localStorage.setItem(privateBetaOnboardingStorageKey, "dismissed");
 }
 
 function getArticleTexts(region: HTMLElement) {
@@ -240,7 +245,7 @@ describe("CodePawl desktop shell", () => {
     expect(within(agentDetails).getByText("2 notices")).toBeInTheDocument();
     expect(agentDetails.querySelector(".agent-details-node")).toBeNull();
     expect(agentDetails.querySelector(".agent-details-row")).not.toBeNull();
-    const runtimeNotice = within(thread).getByText("Controlled runtime only. Codex execution and browser automation require an approved connector before they run.");
+    const runtimeNotice = within(thread).getByText("Controlled repository runtime only. Browser automation is unavailable in this private beta.");
     const verifierNotice = within(thread).getByText("Verifier evidence stays separate from result import.");
     const runtimeNoticeRow = runtimeNotice.closest("li");
     if (!runtimeNoticeRow) {
@@ -354,13 +359,9 @@ describe("CodePawl desktop shell", () => {
     expect(packageManifest).toContain('"lucide-react": "^1.21.0"');
     expect(appSource).toContain('from "lucide-react"');
     expect(appSource).not.toContain("function NavIcon");
-    expect(shellClasses).toEqual(["workspace-panel", "thread"]);
+    expect(shellClasses).toEqual(["workspace-panel", "thread", "private-beta-onboarding"]);
     openSettings();
-    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual([
-      "workspace-panel",
-      "thread",
-      "shell-modal-backdrop",
-    ]);
+    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread", "private-beta-onboarding", "shell-modal-backdrop"]);
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     expect(styles).toContain(".app-shell-settings-open");
     expect(styles).not.toContain(".app-shell-dashboard");
@@ -1186,9 +1187,13 @@ describe("CodePawl desktop shell", () => {
   it("scopes created runs to the selected repository workspace instead of the active chat thread", async () => {
     const runState = createMockRunState();
     const createRunSpy = vi.spyOn(codepawl, "createRun");
+    dismissPrivateBetaOnboarding();
     render(<App initialRunState={runState} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+      target: { value: "/home/operator/project" },
+    });
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
       target: { value: "Run from a created thread" },
     });
@@ -1207,6 +1212,7 @@ describe("CodePawl desktop shell", () => {
   it("submits the selected repository path with a local repository run", async () => {
     const runState = createMockRunState();
     const createRunSpy = vi.spyOn(codepawl, "createRun");
+    dismissPrivateBetaOnboarding();
     render(<App initialRunState={runState} />);
 
     fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
@@ -1481,8 +1487,91 @@ describe("CodePawl desktop shell", () => {
     expect(within(settings).getByText("Ready")).toBeInTheDocument();
   });
 
+  it("shows first-run private beta onboarding and persists dismissal", () => {
+    const { unmount } = render(<App />);
+
+    const onboarding = screen.getByRole("region", { name: "Private beta onboarding" });
+    expect(within(onboarding).getByRole("heading", { name: "CodePawl private beta" })).toBeInTheDocument();
+    expect(within(onboarding).getByText(/Repository-only beta/i)).toBeInTheDocument();
+    expect(within(onboarding).getAllByText(/Local-first data/i).length).toBeGreaterThan(0);
+    expect(within(onboarding).getByText(/Codex CLI provider readiness/i)).toBeInTheDocument();
+    expect(within(onboarding).getByText(/Approval and evidence/i)).toBeInTheDocument();
+    expect(within(onboarding).getByText(/Browser, desktop, files, terminal, cloud, and billing are unavailable/i)).toBeInTheDocument();
+    expect(within(onboarding).getByText(/local app data directory/i)).toBeInTheDocument();
+
+    fireEvent.click(within(onboarding).getByRole("button", { name: "Continue to repository beta" }));
+
+    expect(window.localStorage.getItem(privateBetaOnboardingStorageKey)).toBe("dismissed");
+    expect(screen.queryByRole("region", { name: "Private beta onboarding" })).not.toBeInTheDocument();
+
+    unmount();
+    render(<App />);
+
+    expect(screen.queryByRole("region", { name: "Private beta onboarding" })).not.toBeInTheDocument();
+  });
+
+  it("shows private beta checklist status and disabled surfaces in settings", async () => {
+    dismissPrivateBetaOnboarding();
+    render(<App />);
+
+    const settings = openSettings();
+    const checklist = await within(settings).findByRole("region", { name: "Private beta status checklist" });
+
+    expect(within(checklist).getByText("Provider readiness")).toBeInTheDocument();
+    expect(within(checklist).getByText("Ready")).toBeInTheDocument();
+    expect(within(checklist).getByText("Local persistence")).toBeInTheDocument();
+    expect(within(checklist).getByText("Enabled under local app data")).toBeInTheDocument();
+    expect(within(checklist).getByText("Evidence viewer")).toBeInTheDocument();
+    expect(within(checklist).getByText("Available for persisted repository runs")).toBeInTheDocument();
+    expect(within(checklist).getByText("Packaging")).toBeInTheDocument();
+    expect(within(checklist).getByText("Internal build only; bundle/signing/updater incomplete")).toBeInTheDocument();
+    expect(within(checklist).getByText("Disabled surfaces")).toBeInTheDocument();
+    expect(within(checklist).getByText("Browser, desktop, files, terminal, cloud, and billing unavailable")).toBeInTheDocument();
+  });
+
+  it("labels mock provider and mock-backed settings surfaces as demo-only", async () => {
+    dismissPrivateBetaOnboarding();
+    render(<App />);
+
+    const settings = openSettings();
+    const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
+    fireEvent.click(within(settingsNav).getByRole("button", { name: "Connectors" }));
+
+    expect(await within(settings).findByText("Demo-only mock provider")).toBeInTheDocument();
+    expect(within(settings).getByText("Browser preview uses deterministic demo data; real repository beta runs require the local Codex CLI in Tauri.")).toBeInTheDocument();
+  });
+
+  it("blocks repository submission until onboarding and repository path are ready", async () => {
+    const createRunSpy = vi.spyOn(codepawl, "createRun");
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+      target: { value: "/home/operator/project" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
+      target: { value: "Run before onboarding" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+
+    expect(await screen.findByText("Finish private beta onboarding before starting a repository run.")).toBeInTheDocument();
+    expect(createRunSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue to repository beta" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
+      target: { value: "Run without repository path" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+
+    expect(await screen.findByText("Select a local git repository path before starting a repository run.")).toBeInTheDocument();
+    expect(createRunSpy).not.toHaveBeenCalled();
+  });
+
   it("blocks real repository submission when provider setup is missing", async () => {
     const createRunSpy = vi.spyOn(codepawl, "createRun");
+    dismissPrivateBetaOnboarding();
     vi.spyOn(codepawl, "getSettings").mockResolvedValue({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
@@ -1700,15 +1789,17 @@ describe("CodePawl desktop shell", () => {
     fireEvent.click(addContent);
     const contentMenu = within(composer).getByRole("menu", { name: "Add content options" });
     expect(contentMenu).toHaveClass("composer-attachment-menu-dropdown");
-    expect(within(contentMenu).getByRole("menuitem", { name: "Add files or photos" })).toBeInTheDocument();
-    expect(within(contentMenu).getByText("Ctrl+U")).toBeInTheDocument();
-    expect(within(contentMenu).getByRole("menuitem", { name: "Take a screenshot" })).toBeInTheDocument();
+    expect(within(contentMenu).getByRole("menuitem", { name: "Add files or photos" })).toBeDisabled();
+    expect(within(contentMenu).queryByText("Ctrl+U")).not.toBeInTheDocument();
+    expect(within(contentMenu).getByRole("menuitem", { name: "Take a screenshot" })).toBeDisabled();
     expect(within(contentMenu).getByRole("menuitem", { name: "Add to project" })).toHaveAttribute("aria-haspopup", "menu");
-    expect(within(contentMenu).getByRole("menuitem", { name: "Add from GitHub" })).toBeInTheDocument();
+    expect(within(contentMenu).getByRole("menuitem", { name: "Add from GitHub" })).toBeDisabled();
     expect(within(contentMenu).getByRole("menuitem", { name: "Skills" })).toHaveAttribute("aria-haspopup", "menu");
     expect(within(contentMenu).getByRole("menuitem", { name: "Connectors" })).toHaveAttribute("aria-haspopup", "menu");
     expect(within(contentMenu).getByRole("menuitem", { name: "Add plugins..." })).toBeInTheDocument();
-    expect(within(contentMenu).getByRole("menuitemcheckbox", { name: "Web search" })).toHaveAttribute("aria-checked", "true");
+    expect(within(contentMenu).getByRole("menuitemcheckbox", { name: "Web search" })).toHaveAttribute("aria-checked", "false");
+    expect(within(contentMenu).getByRole("menuitemcheckbox", { name: "Web search" })).toBeDisabled();
+    expect(within(contentMenu).getAllByText("Unavailable in beta")).toHaveLength(4);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(within(composer).queryByRole("menu", { name: "Add content options" })).not.toBeInTheDocument();
 
@@ -1879,11 +1970,7 @@ describe("CodePawl desktop shell", () => {
 
     openSettings();
     expect(screen.getByRole("main")).toHaveClass("app-shell-cockpit");
-    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual([
-      "workspace-panel",
-      "thread",
-      "shell-modal-backdrop",
-    ]);
+    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread", "private-beta-onboarding", "shell-modal-backdrop"]);
     expect(screen.getByRole("navigation", { name: "Threads" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Thread conversation" })).toBeInTheDocument();
     const settings = screen.getByRole("dialog", { name: "Settings" });
@@ -1899,9 +1986,9 @@ describe("CodePawl desktop shell", () => {
     expect(within(dashboard).getByText("Run spend")).toBeInTheDocument();
     expect(within(dashboard).getByText("Usage ledger")).toBeInTheDocument();
     expect(within(dashboard).getByText("1 run, 1 gateway action, 8 artifacts")).toBeInTheDocument();
-    expect(within(dashboard).getByText("Plan quota")).toBeInTheDocument();
-    expect(within(dashboard).getByText("Managed AI")).toBeInTheDocument();
-    expect(within(dashboard).getByText("2,500 credits / month resets monthly")).toBeInTheDocument();
+    expect(within(dashboard).getByText("Beta access")).toBeInTheDocument();
+    expect(within(dashboard).getByText("Local demo quota")).toBeInTheDocument();
+    expect(within(dashboard).getByText("No managed AI credits or live billing in this beta.")).toBeInTheDocument();
     expect(within(dashboard).getByText("Approvals")).toBeInTheDocument();
     expect(within(dashboard).getByText("Allowed surfaces")).toBeInTheDocument();
 
@@ -1912,11 +1999,7 @@ describe("CodePawl desktop shell", () => {
     openSettings();
     expect(screen.queryByRole("dialog", { name: "Dashboard" })).not.toBeInTheDocument();
     expect(screen.getByRole("main")).toHaveClass("app-shell-cockpit", "app-shell-settings-open");
-    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual([
-      "workspace-panel",
-      "thread",
-      "shell-modal-backdrop",
-    ]);
+    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread", "private-beta-onboarding", "shell-modal-backdrop"]);
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Settings" })).toHaveClass("shell-modal-atmospheric");
     expect(screen.getByLabelText("Modal backdrop")).toBeInTheDocument();
@@ -2058,7 +2141,7 @@ describe("CodePawl desktop shell", () => {
     fireEvent.click(browser);
 
     expect(modeSelector).toHaveDisplayValue("Locked");
-    expect(browser).toHaveAttribute("aria-checked", "true");
+    expect(browser).toHaveAttribute("aria-checked", "false");
     expect(within(settings).getByText(/Keep the cockpit read-only/i)).toBeInTheDocument();
 
     fireEvent.click(within(sections).getByRole("button", { name: "Billing" }));
@@ -2076,9 +2159,13 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("renders run lifecycle events streamed through the client", async () => {
+    dismissPrivateBetaOnboarding();
     render(<App />);
 
     const input = screen.getByRole("textbox", { name: "Repository task message" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+      target: { value: "/home/operator/project" },
+    });
     fireEvent.change(input, {
       target: { value: "Fix a failing unit test in the selected repository" },
     });
@@ -2158,11 +2245,14 @@ describe("CodePawl desktop shell", () => {
     expect(files).toHaveAttribute("aria-checked", "false");
     expect(terminal).toHaveAttribute("aria-checked", "false");
     expect(within(repository).getByText("Allow repository reads, diffs, and scoped code changes.")).toBeInTheDocument();
-    expect(within(browser).getByText("Allow approved browser automation and web evidence collection.")).toBeInTheDocument();
-    expect(within(desktop).getByText("Allow desktop app and system UI actions after approval.")).toBeInTheDocument();
-    expect(within(files).getByText("Allow local file access within approved workspace paths.")).toBeInTheDocument();
-    expect(within(terminal).getByText("Allow shell commands gated by the permission mode.")).toBeInTheDocument();
-    expect(within(browser).queryByText("blocked")).not.toBeInTheDocument();
+    expect(within(browser).getByText("Unavailable in private beta; no browser automation runs from this app.")).toBeInTheDocument();
+    expect(within(desktop).getByText("Unavailable in private beta; no computer-wide desktop control runs from this app.")).toBeInTheDocument();
+    expect(within(files).getByText("Unavailable in private beta; only the selected repository path is in scope.")).toBeInTheDocument();
+    expect(within(terminal).getByText("Unavailable in private beta; no arbitrary shell or terminal control runs from this app.")).toBeInTheDocument();
+    expect(browser).toBeDisabled();
+    expect(desktop).toBeDisabled();
+    expect(files).toBeDisabled();
+    expect(terminal).toBeDisabled();
     [repository, browser, desktop, files, terminal].forEach((surfaceSwitch) => {
       expect(surfaceSwitch.querySelector(".surface-switch-icon")).toBeNull();
       expect(surfaceSwitch.querySelector(".surface-switch-toggle")).not.toBeNull();
@@ -2171,8 +2261,7 @@ describe("CodePawl desktop shell", () => {
 
     fireEvent.click(browser);
 
-    expect(browser).toHaveAttribute("aria-checked", "true");
-    expect(within(browser).queryByText("enabled")).not.toBeInTheDocument();
+    expect(browser).toHaveAttribute("aria-checked", "false");
   });
 
   it("records approval decisions in the mock cockpit state", async () => {
