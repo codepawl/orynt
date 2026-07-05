@@ -14,6 +14,7 @@
     "@codepawl/ipc-contracts": "workspace:*",
     "@codepawl/shared": "workspace:*",
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "lucide-react": "^1.21.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"

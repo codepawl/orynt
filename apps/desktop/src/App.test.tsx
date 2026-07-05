@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockRunState } from "@codepawl/shared";
@@ -7,9 +7,36 @@ import type { MockRunState } from "@codepawl/shared";
 
 import App, { getLandingUrl } from "./App";
 import { codepawl } from "./codepawlClient";
+import type { SettingsSnapshot } from "./codepawlClient";
 
 const defaultLandingUrl = "http://127.0.0.1:5173/";
 const privateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
+
+function withPreferenceSettings(
+  settings: Omit<SettingsSnapshot, "operatorProfile" | "uiPreferences" | "voicePreferences" | "modelConnection"> &
+    Partial<Pick<SettingsSnapshot, "operatorProfile" | "uiPreferences" | "voicePreferences" | "modelConnection">>,
+): SettingsSnapshot {
+  return {
+    ...settings,
+    modelConnection: settings.modelConnection ?? null,
+    operatorProfile: settings.operatorProfile ?? {
+      fullName: "Operator",
+      callSign: "Operator",
+      workType: "engineering",
+    },
+    uiPreferences: settings.uiPreferences ?? {
+      appearance: "dark",
+      chatFont: "codepawl-sans",
+      motion: "system",
+      showMessageBlockMeta: false,
+    },
+    voicePreferences: settings.voicePreferences ?? {
+      language: "english",
+      style: "buttery",
+      speed: "normal",
+    },
+  };
+}
 
 function installLocalStorageMock() {
   const values = new Map<string, string>();
@@ -82,6 +109,12 @@ function dismissPrivateBetaOnboarding() {
   window.localStorage.setItem(privateBetaOnboardingStorageKey, "dismissed");
 }
 
+function fillRepositoryPath(path = "/home/operator/project") {
+  fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+    target: { value: path },
+  });
+}
+
 function getArticleTexts(region: HTMLElement) {
   return within(region)
     .getAllByRole("article")
@@ -115,10 +148,27 @@ function mockElementRect(element: Element, rect: Partial<DOMRect>) {
   } as DOMRect);
 }
 
+function mockMobileViewport(matches = true) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes("max-width: 720px") ? matches : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 describe("CodePawl desktop shell", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    mockMobileViewport(false);
     installLocalStorageMock();
     window.localStorage.clear();
     Object.assign(navigator, {
@@ -128,8 +178,275 @@ describe("CodePawl desktop shell", () => {
     });
   });
 
-  it("renders the repository cockpit with sidebar shell actions and core control primitives", () => {
+  it("starts the first draft thread blank with setup in a popup and only a compact chat warning", () => {
     render(<App />);
+
+    const thread = screen.getByRole("region", { name: "Thread conversation" });
+    expect(within(thread).getByRole("heading", { name: "Draft" })).toBeInTheDocument();
+    expect(within(thread).queryByText("Controlled repository runtime only. Browser automation is unavailable in this private beta.")).not.toBeInTheDocument();
+    expect(within(thread).queryByText("Verifier evidence stays separate from result import.")).not.toBeInTheDocument();
+    expect(within(thread).queryByRole("article", { name: "Agent response" })).not.toBeInTheDocument();
+    expect(within(thread).queryByRole("article", { name: "Approval request" })).not.toBeInTheDocument();
+    expect(within(thread).queryByRole("region", { name: "Setup guide" })).not.toBeInTheDocument();
+    expect(within(thread).queryByRole("heading", { name: "Set up CodePawl" })).not.toBeInTheDocument();
+    expect(within(thread).getByRole("status", { name: "Setup required" })).toBeInTheDocument();
+    expect(within(thread).getByRole("button", { name: "Open setup" })).toBeInTheDocument();
+    const setupDialog = screen.getByRole("dialog", { name: "Set up CodePawl" });
+    expect(within(setupDialog).queryByRole("heading", { name: "Set up CodePawl" })).not.toBeInTheDocument();
+    expect(setupDialog.querySelectorAll("#setup-dialog-title")).toHaveLength(1);
+    expect(within(setupDialog).queryByRole("heading", { name: "Setup controls" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("region", { name: "Setup controls" })).toBeInTheDocument();
+    expect(within(setupDialog).getByText(/Connect a local repository, choose a model provider/i)).toBeInTheDocument();
+    expect(within(thread).getByRole("textbox", { name: "Repository task message" })).toHaveValue("");
+    expect(within(thread).getByRole("button", { name: "Send task" })).toBeDisabled();
+  });
+
+  it("keeps setup editable from the dedicated setup dialog without showing the full settings rail", async () => {
+    const updatedSettings = withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "manual" as const,
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "/home/operator/project",
+      welcomeCompleted: true,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 14,
+        artifactRetentionDays: 21,
+        cleanupEnabled: true,
+        summary: "Automatic cleanup after 14 days for runs and 21 days for artifacts.",
+      },
+    });
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+      ...updatedSettings,
+      permissionMode: "safe",
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    }));
+    const updateSettingsSpy = vi.spyOn(codepawl, "updateSettings").mockResolvedValue(updatedSettings);
+
+    render(<App />);
+
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up CodePawl" });
+    expect(within(setupDialog).queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("heading", { name: "Set up CodePawl" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("heading", { name: "Setup controls" })).not.toBeInTheDocument();
+    const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default repository path" });
+    fireEvent.change(repositoryPath, { target: { value: "/home/operator/project" } });
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/project" });
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Repository path" })).toHaveValue("/home/operator/project"));
+  });
+
+  it("detects and browses repository paths without silently saving them", async () => {
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    }));
+    const detectRepositorySpy = vi.spyOn(codepawl, "detectCurrentRepositoryPath").mockResolvedValue("/home/operator/detected-repo");
+    const browseRepositorySpy = vi.spyOn(codepawl, "browseRepositoryPath").mockResolvedValue("/home/operator/browsed-repo");
+    const updateSettingsSpy = vi.spyOn(codepawl, "updateSettings").mockImplementation(async (input) =>
+      withPreferenceSettings({
+        workspaceId: "workspace-local-alpha",
+        permissionMode: "safe",
+        executableSurfaces: ["repository"],
+        blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+        defaultRepositoryPath: input.defaultRepositoryPath ?? "",
+        welcomeCompleted: false,
+        codexConnection: null,
+        retentionPolicy: {
+          runHistoryDays: 30,
+          artifactRetentionDays: 30,
+          cleanupEnabled: false,
+          summary: "Cleanup is manual for private beta; automatic retention is planned.",
+        },
+      }),
+    );
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up CodePawl" });
+    const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default repository path" });
+
+    await waitFor(() => expect(repositoryPath).toHaveValue("/home/operator/detected-repo"));
+    expect(detectRepositorySpy).toHaveBeenCalled();
+    expect(updateSettingsSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Browse" }));
+
+    await waitFor(() => expect(repositoryPath).toHaveValue("/home/operator/browsed-repo"));
+    expect(browseRepositorySpy).toHaveBeenCalledWith("/home/operator/detected-repo");
+    expect(updateSettingsSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/browsed-repo" });
+  });
+
+  it("keeps each setup checklist item next to its related controls in one readable flow", () => {
+    render(<App />);
+
+    const setupDialog = screen.getByRole("dialog", { name: "Set up CodePawl" });
+    const setupFlow = within(setupDialog).getByRole("list", { name: "Setup flow" });
+    const steps = within(setupFlow).getAllByRole("listitem");
+
+    expect(steps).toHaveLength(3);
+    expect(within(steps[0]).getByText("Choose a repository")).toBeInTheDocument();
+    expect(within(steps[0]).getByRole("textbox", { name: "Default repository path" })).toBeInTheDocument();
+    expect(within(steps[0]).getByRole("button", { name: "Detect current" })).toBeInTheDocument();
+    expect(within(steps[0]).getByRole("button", { name: "Browse" })).toBeInTheDocument();
+    expect(within(steps[1]).getByText("Choose model provider")).toBeInTheDocument();
+    expect(within(steps[1]).getByRole("searchbox", { name: "Search providers" })).toBeInTheDocument();
+    expect(within(steps[1]).queryByRole("searchbox", { name: "Search models" })).not.toBeInTheDocument();
+    expect(within(steps[1]).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    expect(within(steps[2]).getByText("Review advanced defaults")).toBeInTheDocument();
+    expect(within(steps[2]).getByRole("combobox", { name: "Permission mode" })).toBeInTheDocument();
+    expect(setupDialog.querySelector(".setup-status-list")).toBeNull();
+  });
+
+  it("stages provider and model choices without showing both lists at once", async () => {
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: {
+        providerId: "codex-cli",
+        providerLabel: "Codex CLI",
+        modelId: "gpt-5.5",
+        modelLabel: "GPT-5.5",
+        authMethod: "chatgptOAuth",
+        status: "authRequired",
+        lastPreflight: null,
+      },
+    } as Parameters<typeof withPreferenceSettings>[0]));
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up CodePawl" });
+
+    expect(await within(setupDialog).findByRole("searchbox", { name: "Search models" })).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("searchbox", { name: "Search providers" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("option", { name: /GPT-5.5/ })).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("option", { name: /OpenAI API/ })).not.toBeInTheDocument();
+
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Change provider" }));
+
+    expect(within(setupDialog).getByRole("searchbox", { name: "Search providers" })).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("searchbox", { name: "Search models" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("option", { name: /OpenAI API/ })).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("option", { name: /GPT-5.5/ })).not.toBeInTheDocument();
+
+    fireEvent.click(within(setupDialog).getByRole("option", { name: /OpenAI API/ }));
+
+    expect(within(setupDialog).getByRole("searchbox", { name: "Search models" })).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("searchbox", { name: "Search providers" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("option", { name: /GPT-5.5/ })).toBeInTheDocument();
+    expect(within(setupDialog).getByRole("textbox", { name: "API key environment variable" })).toHaveValue("OPENAI_API_KEY");
+  });
+
+  it("filters staged provider and model choices and shows env-var auth for OpenAI API only", async () => {
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    const saveModelConnectionSpy = vi
+      .spyOn(codepawl, "saveModelConnection")
+      .mockImplementation(async (input) => ({
+        providerId: input.providerId,
+        providerLabel: "OpenAI API",
+        modelId: input.modelId,
+        modelLabel: "GPT-5.5",
+        authMethod: "apiKeyEnv",
+        envKey: input.envKey,
+        status: "authRequired",
+        lastPreflight: null,
+      }));
+    vi.spyOn(codepawl, "preflightModelConnection").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "gpt-5.5",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up CodePawl" });
+
+    fireEvent.change(within(setupDialog).getByRole("searchbox", { name: "Search providers" }), {
+      target: { value: "openai" },
+    });
+    fireEvent.click(within(setupDialog).getByRole("option", { name: /OpenAI API/ }));
+
+    expect(within(setupDialog).queryByRole("searchbox", { name: "Search providers" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("searchbox", { name: "Search models" })).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Use device code" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("textbox", { name: "API key environment variable" })).toHaveValue("OPENAI_API_KEY");
+
+    fireEvent.change(within(setupDialog).getByRole("searchbox", { name: "Search models" }), {
+      target: { value: "mini" },
+    });
+    expect(within(setupDialog).getByRole("option", { name: /GPT-5.4 mini/ })).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("option", { name: /GPT-5.5/ })).not.toBeInTheDocument();
+    fireEvent.change(within(setupDialog).getByRole("searchbox", { name: "Search models" }), {
+      target: { value: "5.5" },
+    });
+    fireEvent.click(within(setupDialog).getByRole("option", { name: /GPT-5.5/ }));
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save provider setup" }));
+
+    expect(saveModelConnectionSpy).toHaveBeenCalledWith({
+      providerId: "openai-api",
+      modelId: "gpt-5.5",
+      authMethod: "apiKeyEnv",
+      envKey: "OPENAI_API_KEY",
+    });
+
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Run provider check" }));
+    expect((await within(setupDialog).findAllByText("OPENAI_API_KEY is available for OpenAI API.")).length).toBeGreaterThan(0);
+  });
+
+  it("renders the repository cockpit with sidebar shell actions and core control primitives", () => {
+    render(<App seedDemoThread />);
 
     const sidebar = screen.getByRole("complementary");
     const brandButton = within(sidebar).getByRole("button", { name: "Open Cockpit" });
@@ -317,7 +634,8 @@ describe("CodePawl desktop shell", () => {
     expect(settingsDialog).toHaveTextContent("Settings");
     expect(settingsDialog).not.toHaveTextContent("Workspace controls");
     expect(within(settingsDialog).getByRole("navigation", { name: "Settings sections" })).toBeInTheDocument();
-    expect(within(settingsDialog).getByRole("button", { name: "Dashboard" })).toBeInTheDocument();
+    expect(within(settingsDialog).queryByRole("button", { name: "Setup" })).not.toBeInTheDocument();
+    expect(within(settingsDialog).queryByRole("button", { name: "Dashboard" })).not.toBeInTheDocument();
     expect(within(settingsDialog).getByRole("heading", { name: "Profile" })).toBeInTheDocument();
     expect(within(settingsDialog).queryByText("Local Alpha Workspace")).not.toBeInTheDocument();
     expect(within(settingsDialog).queryByText("Fix a failing unit test")).not.toBeInTheDocument();
@@ -328,24 +646,62 @@ describe("CodePawl desktop shell", () => {
     const settings = screen.getByRole("dialog", { name: "Settings" });
     expect(settings.querySelector(".eyebrow")).toBeNull();
     const settingsSections = within(settings).getByRole("navigation", { name: "Settings sections" });
-    fireEvent.click(within(settingsSections).getByRole("button", { name: "Capabilities" }));
-    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveDisplayValue("Safe");
-    expect(within(settings).getByText("Allowed surfaces")).toBeInTheDocument();
     fireEvent.click(within(settingsSections).getByRole("button", { name: "Billing" }));
-    expect(within(settings).getByText("$0.00 / $1.00")).toBeInTheDocument();
-    fireEvent.click(within(settingsSections).getByRole("button", { name: "Skills" }));
-    expect(within(settings).getByText("Thread queues")).toBeInTheDocument();
-    expect(within(settings).getByText("1 pending")).toBeInTheDocument();
-    expect(within(settings).getByText("2 reviewable")).toBeInTheDocument();
-    expect(within(settings).getByText("1 registered")).toBeInTheDocument();
-    expect(within(settings).getByText("No archived runs")).toBeInTheDocument();
-    fireEvent.click(within(settingsSections).getByRole("button", { name: "CodePawl Code" }));
-    expect(within(settings).getByText("46 events")).toBeInTheDocument();
-    expect(within(settings).getByText("Latest verdict: pass")).toBeInTheDocument();
+    expect(within(settings).getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
+    expect(within(settings).getByRole("table", { name: "Invoices" })).toBeInTheDocument();
+    fireEvent.click(within(settingsSections).getByRole("button", { name: "Account" }));
+    expect(within(settings).getByRole("button", { name: "Log out" })).toBeInTheDocument();
+    expect(within(settings).getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss settings" }));
     expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Modal backdrop")).not.toBeInTheDocument();
+  });
+
+  it("uses a closed mobile thread drawer that opens, closes, and yields the viewport to chat", () => {
+    mockMobileViewport();
+    render(<App />);
+
+    const shell = screen.getByRole("main");
+    const sidebar = screen.getByRole("complementary");
+    expect(shell).toHaveClass("app-shell-mobile-workspace-closed");
+    expect(sidebar.querySelector(".workspace-drawer")).toHaveAttribute("hidden");
+
+    const drawerButton = within(sidebar).getByRole("button", { name: "Open threads" });
+    expect(drawerButton).toHaveAttribute("aria-controls", "workspace-drawer");
+    expect(drawerButton).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(drawerButton);
+    expect(shell).toHaveClass("app-shell-mobile-workspace-open");
+    expect(within(sidebar).getByRole("button", { name: "Close threads" })).toHaveAttribute("aria-expanded", "true");
+    expect(sidebar.querySelector(".workspace-drawer")).not.toHaveAttribute("hidden");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(shell).toHaveClass("app-shell-mobile-workspace-closed");
+    expect(within(sidebar).getByRole("button", { name: "Open threads" })).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Open threads" }));
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Draft" }));
+    expect(shell).toHaveClass("app-shell-mobile-workspace-closed");
+  });
+
+  it("keeps empty-thread setup content separate from the composer so narrow screens can scroll the guide", () => {
+    render(<App />);
+    const styles = readFileSync("src/styles.css", "utf8");
+
+    const thread = screen.getByRole("region", { name: "Thread conversation" });
+    const setupPane = thread.querySelector<HTMLElement>(".thread-start");
+    const composer = thread.querySelector<HTMLElement>(".composer-start");
+
+    expect(setupPane).toBeInTheDocument();
+    expect(composer).toBeInTheDocument();
+    expect(setupPane).not.toContainElement(composer);
+    expect(setupPane).not.toContainElement(within(thread).getByRole("textbox", { name: "Repository task message" }));
+    expect(styles).toContain("width: min(100%, 1040px);");
+    expect(styles).toContain("width: min(100%, 1120px);");
+    expect(styles).toContain("max-height: 28px;");
+    expect(styles).not.toContain("width: min(100%, 720px);");
+    expect(styles).toContain("overflow-x: auto;");
   });
 
   it("renders the cockpit chat surface directly and keeps settings action in the sidebar", () => {
@@ -359,9 +715,9 @@ describe("CodePawl desktop shell", () => {
     expect(packageManifest).toContain('"lucide-react": "^1.21.0"');
     expect(appSource).toContain('from "lucide-react"');
     expect(appSource).not.toContain("function NavIcon");
-    expect(shellClasses).toEqual(["workspace-panel", "thread", "private-beta-onboarding"]);
+    expect(shellClasses).toEqual(["workspace-panel", "thread thread-empty", "shell-modal-backdrop"]);
     openSettings();
-    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread", "private-beta-onboarding", "shell-modal-backdrop"]);
+    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread thread-empty", "shell-modal-backdrop"]);
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     expect(styles).toContain(".app-shell-settings-open");
     expect(styles).not.toContain(".app-shell-dashboard");
@@ -571,13 +927,14 @@ describe("CodePawl desktop shell", () => {
     const threadStyles =
       Array.from(styles.matchAll(/\.thread \{[\s\S]*?\}/g))
         .map((match) => match[0])
-        .find((block) => block.includes("gap: var(--space-stage);")) ?? "";
+        .find((block) => block.includes("gap: var(--space-content);")) ?? "";
     const messageListStyles =
       Array.from(styles.matchAll(/\.message-list \{[\s\S]*?\}/g))
         .map((match) => match[0])
-        .find((block) => block.includes("width: min(100%, 960px);")) ?? "";
-    expect(threadStyles).toContain("gap: var(--space-stage);");
+        .find((block) => block.includes("width: min(100%, 1040px);")) ?? "";
+    expect(threadStyles).toContain("gap: var(--space-content);");
     expect(threadStyles).not.toContain("border-radius:");
+    expect(messageListStyles).toContain("width: min(100%, 1040px);");
     expect(styles).toMatch(/\.thread-header-title \{[\s\S]*?display: flex;[\s\S]*?align-items: baseline;[\s\S]*?gap: var\(--space-row\);/);
     expect(styles).toContain(".thread-header-title-editable");
     expect(styles).toContain(".thread-header-title-editing");
@@ -588,7 +945,7 @@ describe("CodePawl desktop shell", () => {
     expect(styles).toMatch(/\.input-focus-shell:focus-within,[\s\S]*?\.input-focus-standalone:focus-visible \{[\s\S]*?border-color: rgba\(143, 182, 232, 0\.55\);/);
     expect(styles).toMatch(/\.thread-header-title > span \{[\s\S]*?flex: 1 1 auto;[\s\S]*?min-width: 0;[\s\S]*?text-overflow: ellipsis;/);
     expect(styles).toContain(".message-list");
-    expect(styles).toMatch(/\.message-list \{[\s\S]*?--scrollbar-size: 11px;[\s\S]*?--scrollbar-track: transparent;[\s\S]*?align-content: start;[\s\S]*?gap: var\(--space-content\);[\s\S]*?justify-self: center;[\s\S]*?width: min\(100%, 960px\);[\s\S]*?overflow-y: auto;/);
+    expect(styles).toMatch(/\.message-list \{[\s\S]*?--scrollbar-size: 11px;[\s\S]*?--scrollbar-track: transparent;[\s\S]*?align-content: start;[\s\S]*?gap: var\(--space-row\);[\s\S]*?justify-self: center;[\s\S]*?width: min\(100%, 1040px\);[\s\S]*?overflow-y: auto;/);
     expect(messageListStyles).toContain("max-width: 100%;");
     expect(messageListStyles).toContain("overflow-x: hidden;");
     expect(styles).toContain("scrollbar-gutter: stable;");
@@ -875,7 +1232,7 @@ describe("CodePawl desktop shell", () => {
     expect(styles).toContain(".settings-queue");
     expect(styles).not.toContain(".execution-control");
     expect(styles).toContain("position: sticky;");
-    expect(styles).toContain("bottom: var(--space-row);");
+    expect(styles).toContain("bottom: var(--space-content);");
     expect(appSource).toContain("Maximize2");
     expect(appSource).toContain("Minimize2");
     expect(appSource).toContain("composerScaleMode");
@@ -899,9 +1256,9 @@ describe("CodePawl desktop shell", () => {
     expect(composerStyles).not.toContain("grid-template-columns:");
     expect(composerStyles).toContain("gap: calc(var(--space-control) + 2px);");
     expect(composerStyles).toContain("justify-self: center;");
-    expect(composerStyles).toContain("width: min(100%, 720px);");
-    expect(composerStyles).toContain("min-height: 124px;");
-    expect(composerStyles).toContain("padding-inline: calc(var(--space-content) + 10px);");
+    expect(composerStyles).toContain("width: min(100%, 1040px);");
+    expect(composerStyles).toContain("min-height: 0;");
+    expect(composerStyles).toContain("padding-inline: 0;");
     expect(composerStyles).not.toContain("padding-top");
     expect(composerStyles).not.toContain("padding-right");
     expect(composerStyles).not.toContain("padding-left");
@@ -911,7 +1268,7 @@ describe("CodePawl desktop shell", () => {
     const composerTextareaStyles =
       Array.from(styles.matchAll(/\.composer textarea \{[\s\S]*?\}/g))
         .map((match) => match[0])
-        .find((block) => block.includes("min-height: 64px;")) ?? "";
+        .find((block) => block.includes("min-height: 84px;")) ?? "";
     const composerScaleNormalStyles = styles.match(/\.composer-scale-normal \{[\s\S]*?\}/)?.[0] ?? "";
     const composerScaleFullStyles = styles.match(/\.composer-scale-full \{[\s\S]*?\}/)?.[0] ?? "";
     const composerScaleFullFieldStyles = styles.match(/\.composer-scale-full \.composer-field \{[\s\S]*?\}/)?.[0] ?? "";
@@ -919,24 +1276,24 @@ describe("CodePawl desktop shell", () => {
     const composerScaleButtonStyles = styles.match(/\.composer-scale-button \{[\s\S]*?\}/)?.[0] ?? "";
     expect(composerFieldStyles).toContain("display: grid;");
     expect(composerFieldStyles).toContain("position: relative;");
-    expect(composerFieldStyles).toContain("grid-template-rows: auto minmax(64px, auto) auto auto;");
-    expect(composerFieldStyles).toContain("gap: var(--space-content);");
+    expect(composerFieldStyles).toContain("grid-template-rows: auto minmax(84px, auto) auto auto;");
+    expect(composerFieldStyles).toContain("gap: var(--space-row);");
     expect(composerFieldStyles).toContain("width: 100%;");
-    expect(composerFieldStyles).toContain("min-height: 168px;");
+    expect(composerFieldStyles).toContain("min-height: 154px;");
     expect(composerFieldStyles).not.toContain("border:");
     expect(composerFieldStyles).not.toContain("box-shadow:");
     expect(composerFieldStyles).not.toContain("transition:");
     expect(styles).toMatch(/\.input-focus-shell:focus-within,[\s\S]*?\.input-focus-standalone:focus-visible \{[\s\S]*?border-color: rgba\(143, 182, 232, 0\.55\);[\s\S]*?0 0 10px rgba\(143, 182, 232, 0\.12\);/);
     expect(styles).toMatch(
-      /\.composer textarea \{[\s\S]*?min-height: 64px;[\s\S]*?resize: none;[\s\S]*?padding: 0 calc\(var\(--space-stage\) \+ var\(--space-content\)\) 0 var\(--space-content\);/,
+      /\.composer textarea \{[\s\S]*?min-height: 84px;[\s\S]*?resize: none;[\s\S]*?padding: 0 calc\(var\(--space-stage\) \+ var\(--space-content\)\) 0 var\(--space-content\);/,
     );
     expect(composerTextareaStyles).toContain("--scrollbar-size: 8px;");
     expect(composerTextareaStyles).toContain("overflow-y: auto;");
     expect(composerTextareaStyles).toContain("scrollbar-gutter: stable;");
-    expect(composerScaleNormalStyles).toContain("width: min(100%, 720px);");
-    expect(composerScaleFullStyles).toContain("width: min(100%, 960px);");
-    expect(composerScaleFullStyles).toContain("min-height: 252px;");
-    expect(composerScaleFullFieldStyles).toContain("min-height: 292px;");
+    expect(composerScaleNormalStyles).toContain("width: min(100%, 1040px);");
+    expect(composerScaleFullStyles).toContain("width: min(100%, 1120px);");
+    expect(composerScaleFullStyles).toContain("min-height: 0;");
+    expect(composerScaleFullFieldStyles).toContain("min-height: 252px;");
     expect(composerScaleFullTextareaStyles).toContain("height: min(34vh, 220px);");
     expect(composerScaleFullTextareaStyles).toContain("min-height: 180px;");
     expect(styles).toMatch(/\.input-focus-control:focus-visible \{[\s\S]*?outline: 0;/);
@@ -1066,9 +1423,9 @@ describe("CodePawl desktop shell", () => {
     expect(appSource).toContain('className="thread-header-field thread-header-name-field input-focus-control"');
     expect(appSource).toContain('className="thread-header-field-shell thread-header-description-shell input-focus-shell input-focus-shell-labeled"');
     expect(appSource).toContain('className="thread-header-field thread-header-description-field input-focus-control"');
-    expect(appSource).toMatch(/<input className="input-focus-standalone" type="text" value=\{operatorFullName\}/);
-    expect(appSource).toMatch(/<textarea className="input-focus-standalone" value=\{operatorInstructions\}/);
-    expect(appSource).toMatch(/<select[\s\S]*?className="input-focus-standalone"[\s\S]*?id="permission-mode"/);
+    expect(appSource).toMatch(/<input[\s\S]*?className="input-focus-standalone"[\s\S]*?value=\{operatorFullName\}/);
+    expect(appSource).toMatch(/<input[\s\S]*?className="input-focus-standalone"[\s\S]*?value=\{operatorCallSign\}/);
+    expect(appSource).toMatch(/<select[\s\S]*?className="input-focus-standalone settings-select"[\s\S]*?aria-label="Permission mode"/);
   });
 
   it("adds new threads at the top and scopes the thread composer", () => {
@@ -1089,14 +1446,14 @@ describe("CodePawl desktop shell", () => {
     expect(within(spaces).getByRole("button", { name: "Thread options for New thread" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Repository task message" })).toHaveAttribute("placeholder", "Message New thread...");
     expect(screen.getByRole("heading", { level: 1, name: "New thread" })).toBeInTheDocument();
-    expect(screen.getAllByText("Draft thread.")).toHaveLength(2);
+    expect(screen.getAllByText("Draft thread.")).toHaveLength(1);
 
     fireEvent.click(within(spaces).getByRole("button", { name: "Draft" }));
 
     expect(within(spaces).getByRole("button", { name: "Draft" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("navigation", { name: "Cockpit sections" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Draft" })).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Thread conversation" })).getByText("Candidate repository rule from verified correction")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Thread conversation" })).queryByText("Candidate repository rule from verified correction")).not.toBeInTheDocument();
   });
 
   it("edits the active thread header title and description inline", () => {
@@ -1146,24 +1503,20 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("keeps each thread conversation separate and chronological", async () => {
+    dismissPrivateBetaOnboarding();
     render(<App />);
+    fillRepositoryPath();
 
     const spaces = screen.getByRole("navigation", { name: "Threads" });
-    const composer = screen.getByRole("form", { name: "Thread composer" });
-    const input = within(composer).getByRole("textbox", { name: "Repository task message" });
-    const send = within(composer).getByRole("button", { name: "Send task" });
     const draftThread = screen.getByRole("region", { name: "Thread conversation" });
 
-    fireEvent.change(input, { target: { value: "First draft message" } });
-    fireEvent.click(send);
-    fireEvent.change(input, { target: { value: "Second draft message" } });
-    fireEvent.click(send);
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), { target: { value: "First draft message" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), { target: { value: "Second draft message" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
 
     expect(await within(draftThread).findByText("Second draft message")).toBeInTheDocument();
     const codeTexts = getArticleTexts(draftThread);
-    expect(codeTexts.findIndex((text) => text.includes("Fix a failing unit test"))).toBeLessThan(
-      codeTexts.findIndex((text) => text.includes("First draft message")),
-    );
     expect(codeTexts.findIndex((text) => text.includes("First draft message"))).toBeLessThan(
       codeTexts.findIndex((text) => text.includes("Second draft message")),
     );
@@ -1295,14 +1648,8 @@ describe("CodePawl desktop shell", () => {
       memoryCandidates: [{ id: "candidate-rule-1", status: "candidate" }],
       skills: [{ id: "skill-1", status: "candidate" }],
       skillReplayPlan: { id: "skill-replay-plan-1", dryRunOnly: true },
-      providerRefs: [
-        {
-          providerId: "openai",
-          label: "OpenAI",
-          keyRef: "keychain://codepawl/local-beta/openai",
-          status: "ready",
-        },
-      ],
+      modelConnection: null,
+      codexConnection: null,
       createdAt: "2026-07-04T00:00:00.000Z",
       updatedAt: "2026-07-04T00:00:01.000Z",
     });
@@ -1320,18 +1667,10 @@ describe("CodePawl desktop shell", () => {
     render(<App />);
     const settings = openSettings();
     const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
-    fireEvent.click(within(settingsNav).getByRole("button", { name: "CodePawl Code" }));
 
-    expect(await within(settings).findByRole("region", { name: "Repository run history" })).toBeInTheDocument();
-    expect(within(settings).getByText("Reload durable repository run")).toBeInTheDocument();
-    expect(within(settings).getByText("/home/operator/project")).toBeInTheDocument();
-    fireEvent.click(within(settings).getByRole("button", { name: "Open persisted run Reload durable repository run" }));
-
-    expect(await within(settings).findByText("Persisted run started")).toBeInTheDocument();
-    expect(within(settings).getByText("Persisted run finished")).toBeInTheDocument();
-    expect(within(settings).getByText("Codex contract")).toBeInTheDocument();
-    expect(within(settings).getByText("1 memory candidate")).toBeInTheDocument();
-    expect(within(settings).getByText("1 skill")).toBeInTheDocument();
+    expect(within(settingsNav).queryByRole("button", { name: "CodePawl Code" })).not.toBeInTheDocument();
+    expect(within(settings).queryByRole("region", { name: "Repository run history" })).not.toBeInTheDocument();
+    expect(within(settings).queryByText("Reload durable repository run")).not.toBeInTheDocument();
   });
 
   it("opens persisted run artifacts through the hardened evidence viewer", async () => {
@@ -1366,7 +1705,8 @@ describe("CodePawl desktop shell", () => {
       memoryCandidates: [{ id: "candidate-rule-1", status: "candidate" }],
       skills: [{ id: "skill-1", status: "candidate" }],
       skillReplayPlan: { id: "skill-replay-plan-1", dryRunOnly: true },
-      providerRefs: [],
+      modelConnection: null,
+      codexConnection: null,
       createdAt: "2026-07-04T00:00:00.000Z",
       updatedAt: "2026-07-04T00:00:01.000Z",
     });
@@ -1415,44 +1755,36 @@ describe("CodePawl desktop shell", () => {
     render(<App />);
     const settings = openSettings();
     const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
-    fireEvent.click(within(settingsNav).getByRole("button", { name: "CodePawl Code" }));
-    fireEvent.click(await within(settings).findByRole("button", { name: "Open persisted run Inspect durable evidence" }));
 
-    const evidenceViewer = await within(settings).findByRole("region", { name: "Artifact evidence viewer" });
-    expect(within(evidenceViewer).getByText("Artifact manifest")).toBeInTheDocument();
-    expect(within(evidenceViewer).getAllByText("Verified")).toHaveLength(2);
-    expect(within(evidenceViewer).getByText("Unavailable")).toBeInTheDocument();
-    expect(within(evidenceViewer).getByText("artifact file is missing")).toBeInTheDocument();
-    expect(within(evidenceViewer).getByText("Corrupted")).toBeInTheDocument();
-    expect(within(evidenceViewer).getByText("artifact manifest entry is unsafe")).toBeInTheDocument();
-
-    fireEvent.click(within(evidenceViewer).getByRole("button", { name: "View artifact Contract" }));
-
-    expect(await within(evidenceViewer).findByText("Repository contract")).toBeInTheDocument();
-    expect(within(evidenceViewer).getByText("[REDACTED_SECRET]")).toBeInTheDocument();
+    expect(within(settingsNav).queryByRole("button", { name: "CodePawl Code" })).not.toBeInTheDocument();
+    expect(within(settings).queryByRole("region", { name: "Artifact evidence viewer" })).not.toBeInTheDocument();
+    expect(within(settings).queryByText("[REDACTED_SECRET]")).not.toBeInTheDocument();
   });
 
-  it("configures and preflights a private-beta local Codex provider reference", async () => {
-    const readyReference = {
-      providerId: "codex-cli",
+  it("connects and preflights the private-beta local Codex connection", async () => {
+    const readyConnection = {
+      connectionId: "codex-cli",
       label: "Local Codex CLI",
-      keyRef: "local-safe-keychain://codepawl/private-beta/codex-cli",
       status: "ready" as const,
       lastPreflight: {
-        checkedProviderId: "codex-cli",
+        checkedConnectionId: "codex-cli",
         status: "ready" as const,
         ready: true,
         checkedAt: "2026-07-04T00:00:00.000Z",
         executablePath: "/usr/local/bin/codex",
-        reasons: ["Codex CLI executable is available."],
+        authMode: "chatgpt",
+        reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+        warnings: [],
       },
     };
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue({
+    const initialSettings = withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
       executableSurfaces: ["repository"],
       blockedSurfaces: ["browser", "desktop", "files", "terminal"],
-      providerRefs: [],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
       retentionPolicy: {
         runHistoryDays: 30,
         artifactRetentionDays: 30,
@@ -1460,90 +1792,180 @@ describe("CodePawl desktop shell", () => {
         summary: "Cleanup is manual for private beta; automatic retention is planned.",
       },
     });
-    const saveProviderSpy = vi.spyOn(codepawl, "saveProviderReference").mockResolvedValue({
-      ...readyReference,
-      status: "untested",
+    const readySettings = withPreferenceSettings({
+      ...initialSettings,
+      codexConnection: readyConnection,
+      modelConnection: {
+        providerId: "codex-cli",
+        providerLabel: "Codex CLI",
+        modelId: "gpt-5.5",
+        modelLabel: "GPT-5.5",
+        authMethod: "chatgptOAuth",
+        status: "ready",
+        lastPreflight: {
+          checkedProviderId: "codex-cli",
+          checkedModelId: "gpt-5.5",
+          status: "ready",
+          ready: true,
+          checkedAt: "2026-07-04T00:00:00.000Z",
+          executablePath: "/usr/local/bin/codex",
+          authMode: "chatgptOAuth",
+          reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+          warnings: [],
+        },
+      },
+    });
+    vi.spyOn(codepawl, "getSettings").mockResolvedValueOnce(initialSettings).mockResolvedValue(readySettings);
+    const loginSpy = vi.spyOn(codepawl, "loginCodexConnection").mockResolvedValue({
+      ...readyConnection,
+      status: "authRequired",
       lastPreflight: null,
     });
-    vi.spyOn(codepawl, "testProviderReference").mockResolvedValue(readyReference.lastPreflight);
+    const saveModelConnectionSpy = vi.spyOn(codepawl, "saveModelConnection").mockResolvedValue({
+      providerId: "codex-cli",
+      providerLabel: "Codex CLI",
+      modelId: "gpt-5.5",
+      modelLabel: "GPT-5.5",
+      authMethod: "chatgptOAuth",
+      status: "authRequired",
+      lastPreflight: null,
+    });
+    vi.spyOn(codepawl, "preflightModelConnection").mockResolvedValue({
+      checkedProviderId: "codex-cli",
+      checkedModelId: "gpt-5.5",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-04T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: "chatgptOAuth",
+      reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+      warnings: [],
+    });
 
     render(<App />);
-    const settings = openSettings();
-    const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
-    fireEvent.click(within(settingsNav).getByRole("button", { name: "Connectors" }));
+    const setupDialog = screen.getByRole("dialog", { name: "Set up CodePawl" });
 
-    expect(await within(settings).findByRole("region", { name: "Provider setup" })).toBeInTheDocument();
-    expect(within(settings).getByText("Provider setup is required before real repository runs.")).toBeInTheDocument();
-    fireEvent.click(within(settings).getByRole("button", { name: "Use local Codex CLI" }));
+    expect(within(setupDialog).queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("region", { name: "Setup model provider" })).toBeInTheDocument();
+    expect(within(setupDialog).getByText("Select a provider, model, and authentication method before the first repository run.")).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    fireEvent.click(within(setupDialog).getByRole("option", { name: /Codex CLI/ }));
+    expect(within(setupDialog).queryByLabelText("Codex access token")).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Use access token" })).not.toBeInTheDocument();
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Connect with ChatGPT" }));
 
-    expect(saveProviderSpy).toHaveBeenCalledWith({
+    expect(saveModelConnectionSpy).toHaveBeenCalledWith({
       providerId: "codex-cli",
-      label: "Local Codex CLI",
+      modelId: "gpt-5.5",
+      authMethod: "chatgptOAuth",
+      envKey: null,
     });
-    expect(await within(settings).findByText("Preflight required")).toBeInTheDocument();
-    fireEvent.click(within(settings).getByRole("button", { name: "Run provider preflight" }));
+    await waitFor(() =>
+      expect(loginSpy).toHaveBeenCalledWith({
+        method: "chatgpt",
+      }),
+    );
 
-    expect(await within(settings).findByText("Codex CLI executable is available.")).toBeInTheDocument();
-    expect(within(settings).getByText("Ready")).toBeInTheDocument();
+    expect((await within(setupDialog).findAllByText("Codex CLI is installed and authenticated with ChatGPT.")).length).toBeGreaterThan(0);
+    expect(within(setupDialog).getByText("Ready")).toBeInTheDocument();
   });
 
-  it("shows first-run private beta onboarding and persists dismissal", () => {
+  it("keeps access-token login out of the default Codex setup UI", () => {
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    }));
+
+    render(<App />);
+    const setupDialog = screen.getByRole("dialog", { name: "Set up CodePawl" });
+    fireEvent.click(within(setupDialog).getByRole("option", { name: /Codex CLI/ }));
+
+    expect(within(setupDialog).queryByLabelText("Codex access token")).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Use access token" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByText("ChatGPT OAuth")).toBeInTheDocument();
+  });
+
+  it("shows first-run setup dialog and persists completion", async () => {
+    const updateSettingsSpy = vi.spyOn(codepawl, "updateSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: true,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    }));
     const { unmount } = render(<App />);
 
-    const onboarding = screen.getByRole("region", { name: "Private beta onboarding" });
-    expect(within(onboarding).getByRole("heading", { name: "CodePawl private beta" })).toBeInTheDocument();
+    const onboarding = screen.getByRole("dialog", { name: "Set up CodePawl" });
+    expect(within(onboarding).queryByRole("heading", { name: "Set up CodePawl" })).not.toBeInTheDocument();
+    expect(onboarding.querySelectorAll("#setup-dialog-title")).toHaveLength(1);
     expect(within(onboarding).getByText(/Repository-only beta/i)).toBeInTheDocument();
-    expect(within(onboarding).getAllByText(/Local-first data/i).length).toBeGreaterThan(0);
-    expect(within(onboarding).getByText(/Codex CLI provider readiness/i)).toBeInTheDocument();
-    expect(within(onboarding).getByText(/Approval and evidence/i)).toBeInTheDocument();
-    expect(within(onboarding).getByText(/Browser, desktop, files, terminal, cloud, and billing are unavailable/i)).toBeInTheDocument();
-    expect(within(onboarding).getByText(/local app data directory/i)).toBeInTheDocument();
+    expect(within(onboarding).getByText(/Choose a repository/i)).toBeInTheDocument();
+    expect(within(onboarding).getByText(/Choose model provider/i)).toBeInTheDocument();
+    expect(within(onboarding).getByText(/Review advanced defaults/i)).toBeInTheDocument();
+    expect(within(onboarding).getByText(/browser, desktop, files, terminal, cloud, and billing remain unavailable/i)).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Thread conversation" })).queryByRole("region", { name: "Setup guide" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(onboarding).getByRole("button", { name: "Continue to repository beta" }));
+    fireEvent.click(within(onboarding).getByRole("button", { name: "Complete setup" }));
 
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ welcomeCompleted: true });
     expect(window.localStorage.getItem(privateBetaOnboardingStorageKey)).toBe("dismissed");
-    expect(screen.queryByRole("region", { name: "Private beta onboarding" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Set up CodePawl" })).not.toBeInTheDocument());
 
     unmount();
     render(<App />);
 
-    expect(screen.queryByRole("region", { name: "Private beta onboarding" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Set up CodePawl" })).not.toBeInTheDocument();
   });
 
-  it("shows private beta checklist status and disabled surfaces in settings", async () => {
+  it("keeps setup and private-beta status out of settings", async () => {
     dismissPrivateBetaOnboarding();
     render(<App />);
 
     const settings = openSettings();
-    const checklist = await within(settings).findByRole("region", { name: "Private beta status checklist" });
 
-    expect(within(checklist).getByText("Provider readiness")).toBeInTheDocument();
-    expect(within(checklist).getByText("Ready")).toBeInTheDocument();
-    expect(within(checklist).getByText("Local persistence")).toBeInTheDocument();
-    expect(within(checklist).getByText("Enabled under local app data")).toBeInTheDocument();
-    expect(within(checklist).getByText("Evidence viewer")).toBeInTheDocument();
-    expect(within(checklist).getByText("Available for persisted repository runs")).toBeInTheDocument();
-    expect(within(checklist).getByText("Packaging")).toBeInTheDocument();
-    expect(within(checklist).getByText("Internal build only; bundle/signing/updater incomplete")).toBeInTheDocument();
-    expect(within(checklist).getByText("Disabled surfaces")).toBeInTheDocument();
-    expect(within(checklist).getByText("Browser, desktop, files, terminal, cloud, and billing unavailable")).toBeInTheDocument();
+    expect(within(settings).queryByRole("region", { name: "Private beta status checklist" })).not.toBeInTheDocument();
+    expect(within(settings).queryByRole("button", { name: "Setup" })).not.toBeInTheDocument();
+    expect(within(settings).queryByText("Codex connection readiness")).not.toBeInTheDocument();
+    expect(within(settings).queryByText("Browser, desktop, files, terminal, cloud, and billing unavailable")).not.toBeInTheDocument();
   });
 
-  it("labels mock provider and mock-backed settings surfaces as demo-only", async () => {
+  it("renders local-beta billing without fake paid invoices", async () => {
     dismissPrivateBetaOnboarding();
     render(<App />);
 
     const settings = openSettings();
     const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
-    fireEvent.click(within(settingsNav).getByRole("button", { name: "Connectors" }));
+    fireEvent.click(within(settingsNav).getByRole("button", { name: "Billing" }));
 
-    expect(await within(settings).findByText("Demo-only mock provider")).toBeInTheDocument();
-    expect(within(settings).getByText("Browser preview uses deterministic demo data; real repository beta runs require the local Codex CLI in Tauri.")).toBeInTheDocument();
+    expect(within(settings).getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
+    expect(within(settings).getByText("Local beta access")).toBeInTheDocument();
+    expect(within(settings).getByText("No invoices yet.")).toBeInTheDocument();
+    expect(within(settings).queryByText("Paid")).not.toBeInTheDocument();
   });
 
   it("blocks repository submission until onboarding and repository path are ready", async () => {
     const createRunSpy = vi.spyOn(codepawl, "createRun");
-    render(<App />);
+    const { unmount } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss set up CodePawl/i }));
 
     fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
       target: { value: "/home/operator/project" },
@@ -1554,9 +1976,14 @@ describe("CodePawl desktop shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send task" }));
 
     expect(await screen.findByText("Finish private beta onboarding before starting a repository run.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Repository task message" })).toHaveValue("Run before onboarding");
+    expect(screen.queryByText("Run before onboarding", { selector: ".chat-bubble p" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Set up CodePawl" })).toBeInTheDocument();
     expect(createRunSpy).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue to repository beta" }));
+    unmount();
+    dismissPrivateBetaOnboarding();
+    render(<App />);
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
       target: { value: "Run without repository path" },
     });
@@ -1569,38 +1996,42 @@ describe("CodePawl desktop shell", () => {
     expect(createRunSpy).not.toHaveBeenCalled();
   });
 
-  it("blocks real repository submission when provider setup is missing", async () => {
+  it("blocks real repository submission when Codex connection setup is missing", async () => {
     const createRunSpy = vi.spyOn(codepawl, "createRun");
     dismissPrivateBetaOnboarding();
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue({
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
       executableSurfaces: ["repository"],
       blockedSurfaces: ["browser", "desktop", "files", "terminal"],
-      providerRefs: [],
+      defaultRepositoryPath: "",
+      welcomeCompleted: true,
+      codexConnection: null,
       retentionPolicy: {
         runHistoryDays: 30,
         artifactRetentionDays: 30,
         cleanupEnabled: false,
         summary: "Cleanup is manual for private beta; automatic retention is planned.",
       },
-    });
+    }));
 
     render(<App />);
     fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
       target: { value: "/home/operator/project" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
-      target: { value: "Run without provider" },
+      target: { value: "Run without Codex connection" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send task" }));
 
-    expect(await screen.findByText("Provider setup is required before real repository runs.")).toBeInTheDocument();
+    expect(await screen.findByText("Choose a provider and run the provider check before real repository runs.")).toBeInTheDocument();
     expect(createRunSpy).not.toHaveBeenCalled();
   });
 
   it("does not reuse deleted thread ids or overwrite an existing thread conversation", async () => {
+    dismissPrivateBetaOnboarding();
     render(<App />);
+    fillRepositoryPath();
 
     const spaces = screen.getByRole("navigation", { name: "Threads" });
 
@@ -1629,7 +2060,9 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("keeps long user input inside the compact user bubble", async () => {
+    dismissPrivateBetaOnboarding();
     render(<App />);
+    fillRepositoryPath();
 
     const thread = screen.getByRole("region", { name: "Thread conversation" });
     const composer = screen.getByRole("form", { name: "Thread composer" });
@@ -1640,7 +2073,7 @@ describe("CodePawl desktop shell", () => {
     fireEvent.change(input, { target: { value: longMessage } });
     fireEvent.click(send);
 
-    const messageText = await within(thread).findByText(longMessage);
+    const messageText = await within(thread).findByText(longMessage, { selector: ".chat-bubble p" });
     const bubble = messageText.closest("article");
     expect(bubble).toHaveClass("chat-bubble-user");
     expect(bubble).toHaveClass("chat-bubble-width-compact");
@@ -1649,7 +2082,7 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("renders local-only mocked agent response actions and cited sources", async () => {
-    render(<App />);
+    render(<App seedDemoThread />);
 
     const thread = screen.getByRole("region", { name: "Thread conversation" });
     const agentResponse = within(thread).getByRole("article", { name: "Agent response" });
@@ -1715,7 +2148,7 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("quotes selected agent response text from the floating reply action", () => {
-    render(<App />);
+    render(<App seedDemoThread />);
 
     const agentResponse = screen.getByRole("article", { name: "Agent response" });
     const responseText = within(agentResponse).getByText("Candidate repository rule from verified correction");
@@ -1738,7 +2171,7 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("keeps retry and branch response actions local to the mock thread UI", async () => {
-    render(<App />);
+    render(<App seedDemoThread />);
 
     let agentResponse = screen.getByRole("article", { name: "Agent response" });
     let actionRail = within(agentResponse).getByRole("toolbar", { name: "Agent response actions" });
@@ -1758,14 +2191,17 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("centers the empty thread start composer and keeps its controls real", async () => {
+    dismissPrivateBetaOnboarding();
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     const thread = screen.getByRole("region", { name: "Thread conversation" });
     expect(thread).toHaveClass("thread-empty");
-    expect(within(thread).getByText("Ready for the next run")).toBeInTheDocument();
-    expect(within(thread).getAllByText("Draft thread.")).toHaveLength(2);
+    expect(within(thread).getByRole("status", { name: "Setup required" })).toBeInTheDocument();
+    expect(within(thread).getByText("Select a local git repository path before starting a repository run.")).toBeInTheDocument();
+    expect(within(thread).getByRole("button", { name: "Open setup" })).toBeInTheDocument();
+    expect(within(thread).getAllByText("Draft thread.")).toHaveLength(1);
 
     const composer = within(thread).getByRole("form", { name: "Thread composer" });
     expect(composer).toHaveClass("composer-start");
@@ -1812,6 +2248,7 @@ describe("CodePawl desktop shell", () => {
     expect(within(composer).queryByRole("menu", { name: "Permission mode options" })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument();
 
+    fillRepositoryPath();
     const textarea = within(composer).getByRole("textbox", { name: "Repository task message" });
     const send = within(composer).getByRole("button", { name: "Send task" });
     fireEvent.change(textarea, { target: { value: "Plan a focused test pass" } });
@@ -1961,7 +2398,7 @@ describe("CodePawl desktop shell", () => {
     expect(within(screen.getByRole("menu", { name: "Thread options for Engineering" })).getByRole("menuitem", { name: "Delete" })).toBeDisabled();
   });
 
-  it("shows dashboard inside settings while keeping the cockpit mounted", () => {
+  it("keeps the cockpit mounted while settings only exposes preference tabs", () => {
     render(<App />);
 
     expect(screen.queryByRole("navigation", { name: "Primary app navigation" })).not.toBeInTheDocument();
@@ -1970,27 +2407,18 @@ describe("CodePawl desktop shell", () => {
 
     openSettings();
     expect(screen.getByRole("main")).toHaveClass("app-shell-cockpit");
-    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread", "private-beta-onboarding", "shell-modal-backdrop"]);
+    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread thread-empty", "shell-modal-backdrop"]);
     expect(screen.getByRole("navigation", { name: "Threads" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Thread conversation" })).toBeInTheDocument();
     const settings = screen.getByRole("dialog", { name: "Settings" });
     const settingsSections = within(settings).getByRole("navigation", { name: "Settings sections" });
-    fireEvent.click(within(settingsSections).getByRole("button", { name: "Dashboard" }));
-    expect(within(settings).getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(within(settingsSections).getByRole("button", { name: "General" })).toBeInTheDocument();
+    expect(within(settingsSections).getByRole("button", { name: "Account" })).toBeInTheDocument();
+    expect(within(settingsSections).getByRole("button", { name: "Billing" })).toBeInTheDocument();
+    expect(within(settingsSections).queryByRole("button", { name: "Dashboard" })).not.toBeInTheDocument();
+    expect(within(settings).getByRole("heading", { name: "Profile" })).toBeInTheDocument();
     expect(within(settings).queryByRole("dialog", { name: "Dashboard" })).not.toBeInTheDocument();
-    const dashboard = within(settings).getByRole("region", { name: "Dashboard summary" });
-    expect(within(dashboard).queryByText("Compact run status")).not.toBeInTheDocument();
-    expect(within(dashboard).queryByText("Secondary scan, primary run stays in the cockpit.")).not.toBeInTheDocument();
-    expect(within(dashboard).queryByText("Scan approvals, budget, verifier state, memory review, skills, and allowed surfaces from one quiet summary.")).not.toBeInTheDocument();
-    expect(within(dashboard).getByText("Active run")).toBeInTheDocument();
-    expect(within(dashboard).getByText("Run spend")).toBeInTheDocument();
-    expect(within(dashboard).getByText("Usage ledger")).toBeInTheDocument();
-    expect(within(dashboard).getByText("1 run, 1 gateway action, 8 artifacts")).toBeInTheDocument();
-    expect(within(dashboard).getByText("Beta access")).toBeInTheDocument();
-    expect(within(dashboard).getByText("Local demo quota")).toBeInTheDocument();
-    expect(within(dashboard).getByText("No managed AI credits or live billing in this beta.")).toBeInTheDocument();
-    expect(within(dashboard).getByText("Approvals")).toBeInTheDocument();
-    expect(within(dashboard).getByText("Allowed surfaces")).toBeInTheDocument();
+    expect(within(settings).queryByRole("region", { name: "Dashboard summary" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss settings" }));
     expect(screen.getByRole("main")).toHaveClass("app-shell-cockpit");
@@ -1999,7 +2427,7 @@ describe("CodePawl desktop shell", () => {
     openSettings();
     expect(screen.queryByRole("dialog", { name: "Dashboard" })).not.toBeInTheDocument();
     expect(screen.getByRole("main")).toHaveClass("app-shell-cockpit", "app-shell-settings-open");
-    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread", "private-beta-onboarding", "shell-modal-backdrop"]);
+    expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread thread-empty", "shell-modal-backdrop"]);
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Settings" })).toHaveClass("shell-modal-atmospheric");
     expect(screen.getByLabelText("Modal backdrop")).toBeInTheDocument();
@@ -2049,7 +2477,7 @@ describe("CodePawl desktop shell", () => {
     expect(screen.queryByRole("menu", { name: "Account menu" })).not.toBeInTheDocument();
   });
 
-  it("renders settings as a searchable sectioned workspace", () => {
+  it("renders settings as preference rows with account and billing tabs", () => {
     render(<App />);
 
     const settings = openSettings();
@@ -2058,35 +2486,130 @@ describe("CodePawl desktop shell", () => {
 
     expect(within(sections).getByRole("button", { name: "General" })).toHaveAttribute("aria-current", "page");
     expect(within(sections).getByRole("button", { name: "Account" })).toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "Privacy" })).toBeInTheDocument();
     expect(within(sections).getByRole("button", { name: "Billing" })).toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "Capabilities" })).toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "CodePawl Code" })).toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "Skills" })).toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "Connectors" })).toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "Plugins" })).toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Setup" })).not.toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Capabilities" })).not.toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Connectors" })).not.toBeInTheDocument();
 
     expect(within(settings).getByRole("heading", { name: "Profile" })).toBeInTheDocument();
+    expect(within(settings).getByText("Avatar")).toBeInTheDocument();
     expect(within(settings).getByRole("textbox", { name: "Full name" })).toHaveValue("Operator");
     expect(within(settings).getByRole("textbox", { name: "What should CodePawl call you?" })).toHaveValue("Operator");
-    expect(within(settings).getByRole("textbox", { name: "Operator instructions" })).toHaveValue(
-      "Use controlled runtime defaults. Keep repository, browser, file, and terminal actions bounded by approvals until the operator explicitly changes capability settings.",
-    );
+    expect(within(settings).getByRole("combobox", { name: "What best describes your work?" })).toHaveDisplayValue("Engineering");
     expect(within(settings).getByRole("group", { name: "Appearance" })).toHaveTextContent("Dark");
+    expect(within(settings).getByRole("group", { name: "Appearance" }).querySelectorAll("svg")).toHaveLength(3);
+    expect(within(settings).getByRole("combobox", { name: "Chat font" })).toHaveDisplayValue("CodePawl Sans");
+    expect(within(settings).getByRole("group", { name: "Motion" })).toHaveTextContent("System");
+    expect(within(settings).getByRole("combobox", { name: "Language" })).toHaveDisplayValue("English");
+    expect(within(settings).getByRole("combobox", { name: "Style" })).toHaveDisplayValue("Buttery");
+    expect(within(settings).getByRole("combobox", { name: "Speed" })).toHaveDisplayValue("Normal");
+    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveDisplayValue("Safe");
     const messageLabelsSwitch = within(settings).getByRole("switch", { name: /Show message labels/ });
     expect(messageLabelsSwitch).toHaveAttribute("aria-checked", "false");
     expect(within(messageLabelsSwitch).getByText("Show or hide compact block labels above agent and approval messages.")).toBeInTheDocument();
     expect(within(messageLabelsSwitch).queryByText("hidden")).not.toBeInTheDocument();
     expect(messageLabelsSwitch.querySelector(".surface-switch-icon")).toBeNull();
 
+    fireEvent.click(within(sections).getByRole("button", { name: "Account" }));
+    expect(within(settings).getByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(within(settings).getByRole("button", { name: "Log out" })).toBeInTheDocument();
+    expect(within(settings).getByRole("button", { name: "Delete account" })).toBeDisabled();
+    expect(within(settings).getByText("workspace-local-alpha")).toBeInTheDocument();
+    expect(within(settings).getByRole("table", { name: "Trusted devices" })).toBeInTheDocument();
+    expect(within(settings).getByText("No trusted devices.")).toBeInTheDocument();
+    expect(within(settings).getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
+    expect(within(settings).getByText("Current")).toBeInTheDocument();
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Billing" }));
+    expect(within(settings).getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
+    expect(within(settings).getByRole("button", { name: "Upgrade plan" })).toBeDisabled();
+    expect(within(settings).getByRole("table", { name: "Invoices" })).toBeInTheDocument();
+    expect(within(settings).getByText("No invoices yet.")).toBeInTheDocument();
+
     fireEvent.change(search, { target: { value: "code" } });
 
     expect(within(sections).queryByRole("button", { name: "General" })).not.toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "CodePawl Code" })).toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Account" })).not.toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Billing" })).not.toBeInTheDocument();
+  });
+
+  it("persists editable profile, UI, and voice preferences from settings rows", async () => {
+    dismissPrivateBetaOnboarding();
+    const updatedSettings = {
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe" as const,
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "/home/operator/project",
+      welcomeCompleted: true,
+      modelConnection: null,
+      codexConnection: null,
+      operatorProfile: {
+        fullName: "Xuan An",
+        callSign: "An",
+        workType: "data-science" as const,
+      },
+      uiPreferences: {
+        appearance: "system" as const,
+        chatFont: "codepawl-serif" as const,
+        motion: "reduced" as const,
+        showMessageBlockMeta: true,
+      },
+      voicePreferences: {
+        language: "english" as const,
+        style: "buttery" as const,
+        speed: "slow" as const,
+      },
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    };
+    vi.spyOn(codepawl, "getSettings").mockResolvedValue({
+      ...updatedSettings,
+      operatorProfile: {
+        fullName: "Operator",
+        callSign: "Operator",
+        workType: "engineering",
+      },
+      uiPreferences: {
+        appearance: "dark",
+        chatFont: "codepawl-sans",
+        motion: "system",
+        showMessageBlockMeta: false,
+      },
+      voicePreferences: {
+        language: "english",
+        style: "buttery",
+        speed: "normal",
+      },
+    });
+    const updateSettingsSpy = vi.spyOn(codepawl, "updateSettings").mockResolvedValue(updatedSettings);
+
+    render(<App />);
+
+    const settings = openSettings();
+    fireEvent.change(await within(settings).findByRole("textbox", { name: "Full name" }), { target: { value: "Xuan An" } });
+    fireEvent.change(within(settings).getByRole("textbox", { name: "What should CodePawl call you?" }), { target: { value: "An" } });
+    fireEvent.change(within(settings).getByRole("combobox", { name: "What best describes your work?" }), { target: { value: "data-science" } });
+    fireEvent.click(within(settings).getByRole("button", { name: "Use system appearance" }));
+    fireEvent.change(within(settings).getByRole("combobox", { name: "Chat font" }), { target: { value: "codepawl-serif" } });
+    fireEvent.click(within(settings).getByRole("button", { name: "Use reduced motion" }));
+    fireEvent.change(within(settings).getByRole("combobox", { name: "Speed" }), { target: { value: "slow" } });
+
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ operatorProfile: { fullName: "Xuan An" } });
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ operatorProfile: { callSign: "An" } });
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ operatorProfile: { workType: "data-science" } });
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ uiPreferences: { appearance: "system" } });
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ uiPreferences: { chatFont: "codepawl-serif" } });
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ uiPreferences: { motion: "reduced" } });
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ voicePreferences: { speed: "slow" } });
   });
 
   it("keeps message block labels hidden by default and restores them from settings", () => {
-    render(<App />);
+    render(<App seedDemoThread />);
 
     const thread = screen.getByRole("region", { name: "Thread conversation" });
     expect(within(thread).queryByText("Agent response")).not.toBeInTheDocument();
@@ -2113,7 +2636,7 @@ describe("CodePawl desktop shell", () => {
   it("persists the message block label display preference", () => {
     window.localStorage.setItem("codepawl:message-block-meta-visible:v1", "true");
 
-    render(<App />);
+    render(<App seedDemoThread />);
 
     const thread = screen.getByRole("region", { name: "Thread conversation" });
     expect(within(thread).getByText("Agent response")).toHaveClass("message-block-meta");
@@ -2122,40 +2645,26 @@ describe("CodePawl desktop shell", () => {
     expect(within(settings).getByRole("switch", { name: /Show message labels/ })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("navigates settings sections while preserving local controls", () => {
+  it("navigates the preference-only settings sections", () => {
     render(<App />);
 
     const settings = openSettings();
     const sections = within(settings).getByRole("navigation", { name: "Settings sections" });
 
-    fireEvent.click(within(sections).getByRole("button", { name: "Capabilities" }));
-
-    expect(within(sections).getByRole("button", { name: "Capabilities" })).toHaveAttribute("aria-current", "page");
-    const modeSelector = within(settings).getByRole("combobox", { name: "Permission mode" });
-    const surfaces = within(settings).getByRole("region", { name: "Allowed surfaces" });
-    const browser = within(surfaces).getByRole("switch", { name: /Browser/ });
-    expect(modeSelector).toHaveDisplayValue("Safe");
-    expect(browser).toHaveAttribute("aria-checked", "false");
-
-    fireEvent.change(modeSelector, { target: { value: "locked" } });
-    fireEvent.click(browser);
-
-    expect(modeSelector).toHaveDisplayValue("Locked");
-    expect(browser).toHaveAttribute("aria-checked", "false");
-    expect(within(settings).getByText(/Keep the cockpit read-only/i)).toBeInTheDocument();
+    expect(within(sections).getByRole("button", { name: "General" })).toHaveAttribute("aria-current", "page");
+    expect(within(sections).queryByRole("button", { name: "Capabilities" })).not.toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Skills" })).not.toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "CodePawl Code" })).not.toBeInTheDocument();
+    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveDisplayValue("Safe");
+    expect(within(settings).queryByRole("region", { name: "Allowed surfaces" })).not.toBeInTheDocument();
 
     fireEvent.click(within(sections).getByRole("button", { name: "Billing" }));
-    expect(within(settings).getByRole("heading", { name: "Billing" })).toBeInTheDocument();
-    expect(within(settings).getByText("$0.00 / $1.00")).toBeInTheDocument();
+    expect(within(settings).getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
+    expect(within(settings).getByRole("table", { name: "Invoices" })).toBeInTheDocument();
 
-    fireEvent.click(within(sections).getByRole("button", { name: "Skills" }));
-    expect(within(settings).getByRole("region", { name: "Thread queues" })).toBeInTheDocument();
-    expect(within(settings).getByText("2 reviewable")).toBeInTheDocument();
-
-    fireEvent.click(within(sections).getByRole("button", { name: "CodePawl Code" }));
-    expect(within(settings).getByRole("heading", { name: "CodePawl Code" })).toBeInTheDocument();
-    expect(within(settings).getByText("46 events")).toBeInTheDocument();
-    expect(within(settings).getByText("Latest verdict: pass")).toBeInTheDocument();
+    fireEvent.click(within(sections).getByRole("button", { name: "Account" }));
+    expect(within(settings).getByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(within(settings).getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
   });
 
   it("renders run lifecycle events streamed through the client", async () => {
@@ -2171,14 +2680,16 @@ describe("CodePawl desktop shell", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send task" }));
 
-    expect(await screen.findAllByText("Fix a failing unit test in the selected repository")).toHaveLength(2);
-    expect(input).toHaveValue("");
+    expect(await screen.findAllByText("Fix a failing unit test in the selected repository")).toHaveLength(1);
+    expect(screen.getByRole("textbox", { name: "Repository task message" })).toHaveValue("");
     expect(screen.queryByRole("button", { name: "Open run info" })).not.toBeInTheDocument();
     expect(await screen.findByText(/run_event: run_finished/i)).toBeInTheDocument();
   });
 
   it("sends typed cockpit tasks as unlabeled user chat bubbles", async () => {
+    dismissPrivateBetaOnboarding();
     render(<App />);
+    fillRepositoryPath();
 
     const conversation = screen.getByRole("region", { name: "Thread conversation" });
     const composer = screen.getByRole("form", { name: "Thread composer" });
@@ -2196,12 +2707,12 @@ describe("CodePawl desktop shell", () => {
     fireEvent.click(send);
 
     expect(await within(conversation).findByText("Add validation coverage for repository rules")).toBeInTheDocument();
-    expect(input).toHaveValue("");
+    expect(within(conversation).getByRole("textbox", { name: "Repository task message" })).toHaveValue("");
     expect(within(conversation).queryByText("Operator")).not.toBeInTheDocument();
   });
 
   it("keeps onboarding and trial cards out of the compact cockpit", () => {
-    render(<App />);
+    render(<App seedDemoThread />);
 
     expect(screen.queryByRole("region", { name: "Product onboarding" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Trial status" })).not.toBeInTheDocument();
@@ -2211,61 +2722,30 @@ describe("CodePawl desktop shell", () => {
     expect(screen.queryByText(/Local MVP/i)).not.toBeInTheDocument();
   });
 
-  it("lets the compact inspector change permission mode locally", () => {
+  it("lets the general settings pane change permission mode locally", () => {
     render(<App />);
 
     const settings = openSettings();
-    fireEvent.click(within(settings).getByRole("button", { name: "Capabilities" }));
     const modeSelector = within(settings).getByRole("combobox", { name: "Permission mode" });
 
     expect(modeSelector).toHaveDisplayValue("Safe");
-    expect(within(settings).getByText(/Ask before protected paths/i)).toBeInTheDocument();
 
-    fireEvent.change(modeSelector, { target: { value: "locked" } });
+    fireEvent.change(modeSelector, { target: { value: "ask-first" } });
 
-    expect(modeSelector).toHaveDisplayValue("Locked");
-    expect(within(settings).getByText(/Keep the cockpit read-only/i)).toBeInTheDocument();
+    expect(modeSelector).toHaveDisplayValue("Ask first");
   });
 
-  it("renders allowed surfaces as switchers with local toggles", () => {
+  it("keeps executable surfaces out of user preferences settings", () => {
     render(<App />);
 
     const settings = openSettings();
-    fireEvent.click(within(settings).getByRole("button", { name: "Capabilities" }));
-    const surfaces = within(settings).getByRole("region", { name: "Allowed surfaces" });
-    const repository = within(surfaces).getByRole("switch", { name: /Repository/ });
-    const browser = within(surfaces).getByRole("switch", { name: /Browser/ });
-    const desktop = within(surfaces).getByRole("switch", { name: /Desktop/ });
-    const files = within(surfaces).getByRole("switch", { name: /Files/ });
-    const terminal = within(surfaces).getByRole("switch", { name: /Terminal/ });
-
-    expect(repository).toHaveAttribute("aria-checked", "true");
-    expect(browser).toHaveAttribute("aria-checked", "false");
-    expect(desktop).toHaveAttribute("aria-checked", "false");
-    expect(files).toHaveAttribute("aria-checked", "false");
-    expect(terminal).toHaveAttribute("aria-checked", "false");
-    expect(within(repository).getByText("Allow repository reads, diffs, and scoped code changes.")).toBeInTheDocument();
-    expect(within(browser).getByText("Unavailable in private beta; no browser automation runs from this app.")).toBeInTheDocument();
-    expect(within(desktop).getByText("Unavailable in private beta; no computer-wide desktop control runs from this app.")).toBeInTheDocument();
-    expect(within(files).getByText("Unavailable in private beta; only the selected repository path is in scope.")).toBeInTheDocument();
-    expect(within(terminal).getByText("Unavailable in private beta; no arbitrary shell or terminal control runs from this app.")).toBeInTheDocument();
-    expect(browser).toBeDisabled();
-    expect(desktop).toBeDisabled();
-    expect(files).toBeDisabled();
-    expect(terminal).toBeDisabled();
-    [repository, browser, desktop, files, terminal].forEach((surfaceSwitch) => {
-      expect(surfaceSwitch.querySelector(".surface-switch-icon")).toBeNull();
-      expect(surfaceSwitch.querySelector(".surface-switch-toggle")).not.toBeNull();
-      expect(surfaceSwitch.querySelector(".surface-switch-thumb")).not.toBeNull();
-    });
-
-    fireEvent.click(browser);
-
-    expect(browser).toHaveAttribute("aria-checked", "false");
+    expect(within(settings).queryByRole("region", { name: "Allowed surfaces" })).not.toBeInTheDocument();
+    expect(within(settings).queryByText("Unavailable in private beta; no browser automation runs from this app.")).not.toBeInTheDocument();
+    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toBeInTheDocument();
   });
 
   it("records approval decisions in the mock cockpit state", async () => {
-    render(<App />);
+    render(<App seedDemoThread />);
 
     fireEvent.click(screen.getByRole("button", { name: "Approve step" }));
 
@@ -2304,22 +2784,17 @@ describe("CodePawl desktop shell", () => {
     expect(screen.queryByRole("button", { name: "Approve Codex execution" })).not.toBeInTheDocument();
   });
 
-  it("renders compact settings queue summaries from an empty local snapshot", () => {
+  it("keeps queue summaries out of preferences settings", () => {
     render(<App initialRunState={createEmptyMockRunState()} />);
     const settings = openSettings();
-    fireEvent.click(within(settings).getByRole("button", { name: "Skills" }));
-    const queues = within(settings).getByRole("region", { name: "Thread queues" });
 
-    expect(within(queues).getByText("Memory rules")).toBeInTheDocument();
-    expect(within(queues).getByText("0 reviewable")).toBeInTheDocument();
-    expect(within(queues).getByText("Skills")).toBeInTheDocument();
-    expect(within(queues).getByText("0 registered")).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Cockpit sections" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Memory review" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Skill registry" })).not.toBeInTheDocument();
+    expect(within(settings).queryByRole("region", { name: "Thread queues" })).not.toBeInTheDocument();
   });
 
-  it("keeps memory rule and skill queues actionable from settings", async () => {
+  it("does not expose memory rule and skill queues from settings", async () => {
     const runState = createMockRunState();
     const updateRuleSpy = vi.spyOn(codepawl, "updateCandidateRuleStatus").mockResolvedValue({
       ...runState.memoryReview.candidateRules[0],
@@ -2332,31 +2807,10 @@ describe("CodePawl desktop shell", () => {
     render(<App initialRunState={runState} />);
 
     const settings = openSettings();
-    fireEvent.click(within(settings).getByRole("button", { name: "Skills" }));
-
-    const memoryReview = within(settings).getByRole("region", { name: "Memory review" });
-    expect(within(memoryReview).getByText("Keep package fixes scoped")).toBeInTheDocument();
-    fireEvent.click(within(memoryReview).getByRole("button", { name: "Accept Keep package fixes scoped" }));
-    expect(await screen.findByText("accepted")).toBeInTheDocument();
-    expect(updateRuleSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "candidate-rule-package-scope",
-        status: "accepted",
-      }),
-    );
-
-    const skillRegistry = within(settings).getByRole("region", { name: "Skill registry" });
-    expect(within(skillRegistry).getByText("Keep package fixes scoped")).toBeInTheDocument();
-    fireEvent.click(within(skillRegistry).getByRole("button", { name: "Preview replay for Keep package fixes scoped" }));
-    expect(await within(skillRegistry).findByText(/dry-run preview/i)).toBeInTheDocument();
-
-    fireEvent.click(within(skillRegistry).getByRole("button", { name: "Promote Keep package fixes scoped" }));
-    expect(await screen.findByText("active")).toBeInTheDocument();
-    expect(promoteSkillSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        skillId: "skill-keep-package-fixes-scoped",
-        decision: "promote",
-      }),
-    );
+    expect(within(settings).queryByRole("button", { name: "Skills" })).not.toBeInTheDocument();
+    expect(within(settings).queryByRole("region", { name: "Memory review" })).not.toBeInTheDocument();
+    expect(within(settings).queryByRole("region", { name: "Skill registry" })).not.toBeInTheDocument();
+    expect(updateRuleSpy).not.toHaveBeenCalled();
+    expect(promoteSkillSpy).not.toHaveBeenCalled();
   });
 });

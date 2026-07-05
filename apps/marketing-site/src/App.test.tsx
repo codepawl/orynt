@@ -1492,9 +1492,14 @@ describe("CodePawl landing page", () => {
     expect(styles).not.toContain(".pricing-reassurance");
     expect(styles).not.toContain(".pricing-reassurance-icon");
     expect(styles).toContain(".download-direct {");
-    expect(styles).toContain("width: min(1020px, 100%)");
+    expect(styles).toContain("width: min(920px, 100%)");
     expect(styles).toContain("margin: 22px auto 0");
     expect(styles).toContain("padding: 16px 18px");
+    expect(styles).toContain(".module.waitlist-panel {");
+    expect(styles).toContain("grid-template-columns: minmax(0, 1fr) auto");
+    expect(styles).toContain("width: min(920px, calc(100% - clamp(28px, 5vw, 64px)))");
+    expect(styles).toContain(".module.waitlist-panel .cta-row");
+    expect(styles).toContain("justify-content: flex-end");
     expect(styles).toContain("font-size: clamp(20px, 2vw, 26px)");
     expect(styles).toContain("font-size: 13px");
     expect(styles).toContain(".pricing-card .button {");

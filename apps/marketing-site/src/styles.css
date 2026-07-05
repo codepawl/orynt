@@ -418,13 +418,15 @@ h3,
   font-size: 13px;
 }
 
-.button-primary {
+.button-primary,
+.button.primary {
   border-color: rgba(255, 255, 255, 0.58);
   background: linear-gradient(180deg, var(--mono-100), var(--mono-300));
   color: var(--mono-950);
 }
 
-.button-secondary {
+.button-secondary,
+.button.secondary {
   background: rgba(241, 241, 241, 0.03);
   color: var(--mono-100);
 }
@@ -2175,8 +2177,8 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
-  width: min(1020px, 100%);
+  gap: clamp(16px, 3vw, 28px);
+  width: min(920px, 100%);
   margin: 22px auto 0;
   padding: 16px 18px;
   border: 1px solid var(--border);
@@ -2202,6 +2204,30 @@ h1 {
 
 .download-direct .button {
   min-width: 230px;
+}
+
+.module.waitlist-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(16px, 3vw, 28px);
+  width: min(920px, calc(100% - clamp(28px, 5vw, 64px)));
+  margin: clamp(24px, 4vw, 44px) auto;
+  padding: clamp(18px, 2.5vw, 26px);
+  text-align: left;
+}
+
+.module.waitlist-panel > div:first-child {
+  max-width: 640px;
+}
+
+.module.waitlist-panel .cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  justify-self: end;
 }
 
 .final-cta {
@@ -2566,6 +2592,7 @@ h1 {
   .hero-section,
   .value-strip,
   .section,
+  .module.waitlist-panel,
   .page-hero,
   .page-stub,
   .footer-mock-page,
@@ -2651,6 +2678,7 @@ h1 {
   .landing-animation-frame,
   .value-strip,
   .pricing-grid,
+  .module.waitlist-panel,
   .footer-mock-grid,
   .legal-page-header,
   .legal-page-shell,
@@ -2660,6 +2688,11 @@ h1 {
   .download-direct,
   .final-cta {
     grid-template-columns: 1fr;
+  }
+
+  .module.waitlist-panel .cta-row {
+    justify-self: stretch;
+    justify-content: flex-start;
   }
 
   .footer-mock-page,
@@ -2799,6 +2832,7 @@ h1 {
   }
 
   .final-cta-actions .button,
+  .module.waitlist-panel .button,
   .download-direct .button {
     width: 100%;
     min-width: 0;

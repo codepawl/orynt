@@ -174,8 +174,21 @@ pub struct SettingsSnapshot {
     permission_mode: String,
     executable_surfaces: Vec<String>,
     blocked_surfaces: Vec<String>,
-    provider_refs: Vec<SecretReference>,
+    #[serde(default)]
+    default_repository_path: String,
+    #[serde(default)]
+    welcome_completed: bool,
+    #[serde(default)]
+    model_connection: Option<ModelConnectionReference>,
+    #[serde(default)]
+    codex_connection: Option<CodexConnectionReference>,
     retention_policy: RetentionPolicySnapshot,
+    #[serde(default = "default_operator_profile")]
+    operator_profile: OperatorProfileSnapshot,
+    #[serde(default = "default_ui_preferences")]
+    ui_preferences: UiPreferencesSnapshot,
+    #[serde(default = "default_voice_preferences")]
+    voice_preferences: VoicePreferencesSnapshot,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -187,64 +200,194 @@ pub struct RetentionPolicySnapshot {
     summary: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SettingsUpdateInput {
-    permission_mode: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderKeySaveInput {
-    provider_id: String,
-    label: String,
-    raw_secret: Option<String>,
+pub struct OperatorProfileSnapshot {
+    full_name: String,
+    call_sign: String,
+    work_type: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderSetupInput {
-    provider_id: String,
+pub struct UiPreferencesSnapshot {
+    appearance: String,
+    chat_font: String,
+    motion: String,
+    show_message_block_meta: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoicePreferencesSnapshot {
+    language: String,
+    style: String,
+    speed: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsUpdateInput {
+    permission_mode: Option<String>,
+    default_repository_path: Option<String>,
+    welcome_completed: Option<bool>,
+    executable_surfaces: Option<Vec<String>>,
+    retention_policy: Option<RetentionPolicyUpdateInput>,
+    operator_profile: Option<OperatorProfileUpdateInput>,
+    ui_preferences: Option<UiPreferencesUpdateInput>,
+    voice_preferences: Option<VoicePreferencesUpdateInput>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionPolicyUpdateInput {
+    run_history_days: Option<u32>,
+    artifact_retention_days: Option<u32>,
+    cleanup_enabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperatorProfileUpdateInput {
+    full_name: Option<String>,
+    call_sign: Option<String>,
+    work_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiPreferencesUpdateInput {
+    appearance: Option<String>,
+    chat_font: Option<String>,
+    motion: Option<String>,
+    show_message_block_meta: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoicePreferencesUpdateInput {
+    language: Option<String>,
+    style: Option<String>,
+    speed: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexConnectionSaveInput {
+    connection_id: Option<String>,
     label: String,
-    raw_secret: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexConnectionSetupInput {
+    connection_id: String,
+    label: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ProviderReadinessStatus {
-    Untested,
+#[serde(rename_all = "camelCase")]
+pub enum CodexConnectionStatus {
+    Missing,
+    AuthRequired,
     Ready,
     Failed,
 }
 
-impl Default for ProviderReadinessStatus {
+impl Default for CodexConnectionStatus {
     fn default() -> Self {
-        Self::Untested
+        Self::AuthRequired
     }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderPreflightResult {
-    checked_provider_id: String,
-    status: ProviderReadinessStatus,
+pub struct CodexConnectionPreflightResult {
+    checked_connection_id: String,
+    status: CodexConnectionStatus,
     ready: bool,
     checked_at: String,
     executable_path: Option<String>,
+    auth_mode: Option<String>,
     reasons: Vec<String>,
+    warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SecretReference {
-    provider_id: String,
+pub struct CodexConnectionReference {
+    connection_id: String,
     #[serde(default)]
     label: String,
-    key_ref: String,
     #[serde(default)]
-    status: ProviderReadinessStatus,
+    status: CodexConnectionStatus,
     #[serde(default)]
-    last_preflight: Option<ProviderPreflightResult>,
+    last_preflight: Option<CodexConnectionPreflightResult>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexConnectionLoginInput {
+    method: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexAccessTokenLoginInput {
+    access_token: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ModelConnectionStatus {
+    Missing,
+    AuthRequired,
+    Ready,
+    Failed,
+}
+
+impl Default for ModelConnectionStatus {
+    fn default() -> Self {
+        Self::AuthRequired
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelConnectionPreflightResult {
+    checked_provider_id: String,
+    checked_model_id: String,
+    status: ModelConnectionStatus,
+    ready: bool,
+    checked_at: String,
+    executable_path: Option<String>,
+    auth_mode: Option<String>,
+    reasons: Vec<String>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelConnectionReference {
+    provider_id: String,
+    provider_label: String,
+    model_id: String,
+    model_label: String,
+    auth_method: String,
+    env_key: Option<String>,
+    #[serde(default)]
+    status: ModelConnectionStatus,
+    #[serde(default)]
+    last_preflight: Option<ModelConnectionPreflightResult>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelConnectionSetupInput {
+    provider_id: String,
+    model_id: String,
+    auth_method: String,
+    env_key: Option<String>,
 }
 
 const MAX_ARTIFACT_EVIDENCE_BYTES: usize = 256 * 1024;
@@ -345,7 +488,10 @@ pub struct PersistedRunRecord {
     memory_candidates: Vec<serde_json::Value>,
     skills: Vec<serde_json::Value>,
     skill_replay_plan: Option<serde_json::Value>,
-    provider_refs: Vec<SecretReference>,
+    #[serde(default)]
+    model_connection: Option<ModelConnectionReference>,
+    #[serde(default)]
+    codex_connection: Option<CodexConnectionReference>,
     created_at: String,
     updated_at: String,
 }
@@ -488,50 +634,122 @@ impl LocalPersistenceStore {
         }
         let raw = fs::read_to_string(self.settings_path())
             .map_err(|error| AppError::Persistence(format!("could not read settings: {error}")))?;
-        serde_json::from_str(&raw)
+        let value = serde_json::from_str(&raw)
+            .map_err(|error| AppError::Persistence(format!("could not parse settings: {error}")))?;
+        let migrated = migrate_settings_value(value);
+        serde_json::from_value(migrated)
             .map_err(|error| AppError::Persistence(format!("could not parse settings: {error}")))
     }
 
-    pub fn save_provider_reference(
+    pub fn save_codex_connection(
         &self,
-        input: ProviderSetupInput,
-    ) -> Result<SecretReference, AppError> {
-        validate_provider_setup_input(&input)?;
-        let reference = SecretReference {
-            provider_id: input.provider_id.trim().to_string(),
+        input: CodexConnectionSetupInput,
+    ) -> Result<CodexConnectionReference, AppError> {
+        validate_codex_connection_setup_input(&input)?;
+        let reference = CodexConnectionReference {
+            connection_id: input.connection_id.trim().to_string(),
             label: input.label.trim().to_string(),
-            key_ref: provider_key_ref(input.provider_id.trim()),
-            status: ProviderReadinessStatus::Untested,
+            status: CodexConnectionStatus::AuthRequired,
             last_preflight: None,
         };
-        self.save_provider_reference_record(reference.clone())?;
+        self.save_codex_connection_record(reference.clone())?;
         Ok(reference)
     }
 
-    pub fn save_provider_reference_record(
+    pub fn save_codex_connection_record(
         &self,
-        reference: SecretReference,
+        reference: CodexConnectionReference,
     ) -> Result<(), AppError> {
+        if reference.connection_id.trim() != "codex-cli" {
+            return Err(AppError::Validation(
+                "only the local Codex CLI connection is supported".into(),
+            ));
+        }
         let mut settings = self.load_settings()?;
-        settings
-            .provider_refs
-            .retain(|existing| existing.provider_id != reference.provider_id);
-        settings.provider_refs.push(reference);
+        settings.model_connection = Some(model_connection_from_codex_connection(&reference));
+        settings.codex_connection = Some(reference);
         self.save_settings(&settings)
     }
 
-    pub fn list_provider_references(&self) -> Result<Vec<SecretReference>, AppError> {
-        Ok(self.load_settings()?.provider_refs)
+    pub fn load_codex_connection(&self) -> Result<Option<CodexConnectionReference>, AppError> {
+        Ok(self.load_settings()?.codex_connection)
     }
 
-    pub fn delete_provider_reference(&self, provider_id: &str) -> Result<(), AppError> {
-        if provider_id.trim().is_empty() {
-            return Err(AppError::Validation("providerId is required".into()));
-        }
+    pub fn delete_codex_connection(&self) -> Result<(), AppError> {
         let mut settings = self.load_settings()?;
-        settings
-            .provider_refs
-            .retain(|existing| existing.provider_id != provider_id.trim());
+        if settings
+            .model_connection
+            .as_ref()
+            .is_some_and(|reference| reference.provider_id == "codex-cli")
+        {
+            settings.model_connection = None;
+        }
+        settings.codex_connection = None;
+        self.save_settings(&settings)
+    }
+
+    pub fn save_model_connection(
+        &self,
+        input: ModelConnectionSetupInput,
+    ) -> Result<ModelConnectionReference, AppError> {
+        validate_model_connection_setup_input(&input)?;
+        let provider_id = input.provider_id.trim().to_string();
+        let auth_method = normalized_model_auth_method(&input);
+        let reference = ModelConnectionReference {
+            provider_label: model_provider_label(&provider_id).into(),
+            model_label: model_label(&provider_id, input.model_id.trim()).into(),
+            model_id: input.model_id.trim().to_string(),
+            env_key: if auth_method == "apiKeyEnv" {
+                Some(
+                    input
+                        .env_key
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|key| !key.is_empty())
+                        .unwrap_or("OPENAI_API_KEY")
+                        .to_string(),
+                )
+            } else {
+                None
+            },
+            auth_method,
+            provider_id,
+            status: ModelConnectionStatus::AuthRequired,
+            last_preflight: None,
+        };
+        self.save_model_connection_record(reference.clone())?;
+        Ok(reference)
+    }
+
+    pub fn save_model_connection_record(
+        &self,
+        reference: ModelConnectionReference,
+    ) -> Result<(), AppError> {
+        validate_model_connection_reference(&reference)?;
+        let mut settings = self.load_settings()?;
+        if reference.provider_id == "codex-cli" {
+            settings.codex_connection = Some(codex_connection_from_model_connection(&reference));
+        } else {
+            settings.codex_connection = None;
+        }
+        settings.model_connection = Some(reference);
+        self.save_settings(&settings)
+    }
+
+    pub fn load_model_connection(&self) -> Result<Option<ModelConnectionReference>, AppError> {
+        let settings = self.load_settings()?;
+        Ok(settings.model_connection.or_else(|| {
+            settings
+                .codex_connection
+                .as_ref()
+                .map(model_connection_from_codex_connection)
+        }))
+    }
+
+    pub fn delete_model_connection(&self) -> Result<(), AppError> {
+        let mut settings = self.load_settings()?;
+        settings.model_connection = None;
+        settings.codex_connection = None;
         self.save_settings(&settings)
     }
 
@@ -820,6 +1038,31 @@ fn default_retention_policy() -> RetentionPolicySnapshot {
     }
 }
 
+fn default_operator_profile() -> OperatorProfileSnapshot {
+    OperatorProfileSnapshot {
+        full_name: "Operator".into(),
+        call_sign: "Operator".into(),
+        work_type: "engineering".into(),
+    }
+}
+
+fn default_ui_preferences() -> UiPreferencesSnapshot {
+    UiPreferencesSnapshot {
+        appearance: "dark".into(),
+        chat_font: "codepawl-sans".into(),
+        motion: "system".into(),
+        show_message_block_meta: false,
+    }
+}
+
+fn default_voice_preferences() -> VoicePreferencesSnapshot {
+    VoicePreferencesSnapshot {
+        language: "english".into(),
+        style: "buttery".into(),
+        speed: "normal".into(),
+    }
+}
+
 fn default_settings_snapshot() -> SettingsSnapshot {
     SettingsSnapshot {
         workspace_id: "workspace-local-alpha".into(),
@@ -831,9 +1074,277 @@ fn default_settings_snapshot() -> SettingsSnapshot {
             "files".into(),
             "terminal".into(),
         ],
-        provider_refs: vec![],
+        default_repository_path: String::new(),
+        welcome_completed: false,
+        model_connection: None,
+        codex_connection: None,
         retention_policy: default_retention_policy(),
+        operator_profile: default_operator_profile(),
+        ui_preferences: default_ui_preferences(),
+        voice_preferences: default_voice_preferences(),
     }
+}
+
+fn migrate_settings_value(mut value: serde_json::Value) -> serde_json::Value {
+    let Some(object) = value.as_object_mut() else {
+        return value;
+    };
+    let has_codex_connection = object
+        .get("codexConnection")
+        .is_some_and(|connection| !connection.is_null());
+    if !has_codex_connection {
+        let codex_connection = object
+            .get("providerRefs")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|references| {
+                references.iter().find_map(|reference| {
+                    if reference
+                        .get("providerId")
+                        .and_then(serde_json::Value::as_str)
+                        != Some("codex-cli")
+                    {
+                        return None;
+                    }
+                    let label = reference
+                        .get("label")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|label| !label.trim().is_empty())
+                        .unwrap_or("Local Codex CLI");
+                    let status = match reference.get("status").and_then(serde_json::Value::as_str) {
+                        Some("ready") => "ready",
+                        Some("failed") => "failed",
+                        Some("missing") => "missing",
+                        _ => "authRequired",
+                    };
+                    Some(serde_json::json!({
+                        "connectionId": "codex-cli",
+                        "label": label,
+                        "status": status,
+                        "lastPreflight": null,
+                    }))
+                })
+            });
+        object.insert(
+            "codexConnection".into(),
+            codex_connection.unwrap_or(serde_json::Value::Null),
+        );
+    }
+    let has_model_connection = object
+        .get("modelConnection")
+        .is_some_and(|connection| !connection.is_null());
+    if !has_model_connection {
+        let model_connection = object
+            .get("codexConnection")
+            .and_then(legacy_codex_model_connection_value);
+        object.insert(
+            "modelConnection".into(),
+            model_connection.unwrap_or(serde_json::Value::Null),
+        );
+    }
+    object.remove("providerRefs");
+    value
+}
+
+fn legacy_codex_model_connection_value(
+    connection: &serde_json::Value,
+) -> Option<serde_json::Value> {
+    if connection.is_null() {
+        return None;
+    }
+    let status = match connection.get("status").and_then(serde_json::Value::as_str) {
+        Some("ready") => "ready",
+        Some("failed") => "failed",
+        Some("missing") => "missing",
+        _ => "authRequired",
+    };
+    let last_preflight = connection
+        .get("lastPreflight")
+        .and_then(|preflight| {
+            if preflight.is_null() {
+                return None;
+            }
+            Some(serde_json::json!({
+                "checkedProviderId": "codex-cli",
+                "checkedModelId": "gpt-5.5",
+                "status": preflight.get("status").and_then(serde_json::Value::as_str).unwrap_or(status),
+                "ready": preflight.get("ready").and_then(serde_json::Value::as_bool).unwrap_or(status == "ready"),
+                "checkedAt": preflight.get("checkedAt").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "executablePath": preflight.get("executablePath").cloned().unwrap_or(serde_json::Value::Null),
+                "authMode": preflight.get("authMode").cloned().unwrap_or(serde_json::Value::Null),
+                "reasons": preflight.get("reasons").cloned().unwrap_or_else(|| serde_json::json!([])),
+                "warnings": preflight.get("warnings").cloned().unwrap_or_else(|| serde_json::json!([])),
+            }))
+        })
+        .unwrap_or(serde_json::Value::Null);
+    Some(serde_json::json!({
+        "providerId": "codex-cli",
+        "providerLabel": "Codex CLI",
+        "modelId": "gpt-5.5",
+        "modelLabel": "GPT-5.5",
+        "authMethod": "chatgptOAuth",
+        "envKey": null,
+        "status": status,
+        "lastPreflight": last_preflight,
+    }))
+}
+
+fn retention_policy_summary(policy: &RetentionPolicySnapshot) -> String {
+    if policy.cleanup_enabled {
+        return format!(
+            "Automatic cleanup after {} days for runs and {} days for artifacts.",
+            policy.run_history_days, policy.artifact_retention_days
+        );
+    }
+
+    "Cleanup is manual for private beta; automatic retention is planned.".into()
+}
+
+fn apply_settings_update(
+    mut settings: SettingsSnapshot,
+    input: SettingsUpdateInput,
+) -> Result<SettingsSnapshot, AppError> {
+    if let Some(permission_mode) = input.permission_mode {
+        match permission_mode.as_str() {
+            "safe" | "balanced" | "manual" => settings.permission_mode = permission_mode,
+            _ => {
+                return Err(AppError::Validation(
+                    "permissionMode must be safe, balanced, or manual".into(),
+                ));
+            }
+        }
+    }
+
+    if let Some(default_repository_path) = input.default_repository_path {
+        settings.default_repository_path = default_repository_path.trim().to_string();
+    }
+
+    if let Some(welcome_completed) = input.welcome_completed {
+        settings.welcome_completed = welcome_completed;
+    }
+
+    if input.executable_surfaces.is_some() {
+        settings.executable_surfaces = vec!["repository".into()];
+        settings.blocked_surfaces = vec![
+            "browser".into(),
+            "desktop".into(),
+            "files".into(),
+            "terminal".into(),
+        ];
+    }
+
+    if let Some(retention_update) = input.retention_policy {
+        if let Some(run_history_days) = retention_update.run_history_days {
+            settings.retention_policy.run_history_days = run_history_days.clamp(1, 365);
+        }
+        if let Some(artifact_retention_days) = retention_update.artifact_retention_days {
+            settings.retention_policy.artifact_retention_days =
+                artifact_retention_days.clamp(1, 365);
+        }
+        if let Some(cleanup_enabled) = retention_update.cleanup_enabled {
+            settings.retention_policy.cleanup_enabled = cleanup_enabled;
+        }
+        settings.retention_policy.summary = retention_policy_summary(&settings.retention_policy);
+    }
+
+    if let Some(profile_update) = input.operator_profile {
+        if let Some(full_name) = profile_update.full_name {
+            let full_name = full_name.trim();
+            settings.operator_profile.full_name = if full_name.is_empty() {
+                "Operator".into()
+            } else {
+                full_name.into()
+            };
+        }
+        if let Some(call_sign) = profile_update.call_sign {
+            let call_sign = call_sign.trim();
+            settings.operator_profile.call_sign = if call_sign.is_empty() {
+                "Operator".into()
+            } else {
+                call_sign.into()
+            };
+        }
+        if let Some(work_type) = profile_update.work_type {
+            match work_type.as_str() {
+                "engineering" | "data-science" | "qa-automation" | "indie-builder" => {
+                    settings.operator_profile.work_type = work_type;
+                }
+                _ => {
+                    return Err(AppError::Validation(
+                        "workType must be engineering, data-science, qa-automation, or indie-builder".into(),
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(preferences_update) = input.ui_preferences {
+        if let Some(appearance) = preferences_update.appearance {
+            match appearance.as_str() {
+                "system" | "light" | "dark" => settings.ui_preferences.appearance = appearance,
+                _ => {
+                    return Err(AppError::Validation(
+                        "appearance must be system, light, or dark".into(),
+                    ));
+                }
+            }
+        }
+        if let Some(chat_font) = preferences_update.chat_font {
+            match chat_font.as_str() {
+                "codepawl-sans" | "codepawl-serif" | "system" => {
+                    settings.ui_preferences.chat_font = chat_font;
+                }
+                _ => {
+                    return Err(AppError::Validation(
+                        "chatFont must be codepawl-sans, codepawl-serif, or system".into(),
+                    ));
+                }
+            }
+        }
+        if let Some(motion) = preferences_update.motion {
+            match motion.as_str() {
+                "system" | "reduced" => settings.ui_preferences.motion = motion,
+                _ => {
+                    return Err(AppError::Validation(
+                        "motion must be system or reduced".into(),
+                    ));
+                }
+            }
+        }
+        if let Some(show_message_block_meta) = preferences_update.show_message_block_meta {
+            settings.ui_preferences.show_message_block_meta = show_message_block_meta;
+        }
+    }
+
+    if let Some(voice_update) = input.voice_preferences {
+        if let Some(language) = voice_update.language {
+            match language.as_str() {
+                "english" => settings.voice_preferences.language = language,
+                _ => return Err(AppError::Validation("language must be english".into())),
+            }
+        }
+        if let Some(style) = voice_update.style {
+            match style.as_str() {
+                "buttery" | "precise" | "direct" => settings.voice_preferences.style = style,
+                _ => {
+                    return Err(AppError::Validation(
+                        "style must be buttery, precise, or direct".into(),
+                    ));
+                }
+            }
+        }
+        if let Some(speed) = voice_update.speed {
+            match speed.as_str() {
+                "slow" | "normal" | "fast" => settings.voice_preferences.speed = speed,
+                _ => {
+                    return Err(AppError::Validation(
+                        "speed must be slow, normal, or fast".into(),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(settings)
 }
 
 struct ArtifactEvidenceSpec {
@@ -1014,28 +1525,211 @@ fn redact_secret_like_strings(input: &str) -> String {
     redacted
 }
 
-fn validate_provider_setup_input(input: &ProviderSetupInput) -> Result<(), AppError> {
-    if input.provider_id.trim().is_empty() || input.label.trim().is_empty() {
+fn validate_codex_connection_setup_input(
+    input: &CodexConnectionSetupInput,
+) -> Result<(), AppError> {
+    if input.connection_id.trim() != "codex-cli" {
         return Err(AppError::Validation(
-            "providerId and label are required".into(),
+            "only the local Codex CLI connection is supported".into(),
+        ));
+    }
+    if input.label.trim().is_empty() {
+        return Err(AppError::Validation("label is required".into()));
+    }
+    Ok(())
+}
+
+fn model_provider_label(provider_id: &str) -> &'static str {
+    match provider_id {
+        "codex-cli" => "Codex CLI",
+        "openai-api" => "OpenAI API",
+        _ => "Unknown provider",
+    }
+}
+
+fn model_label(provider_id: &str, model_id: &str) -> &'static str {
+    match (provider_id, model_id) {
+        ("codex-cli", "gpt-5.5") => "GPT-5.5",
+        ("codex-cli", "gpt-5.4-mini") => "GPT-5.4 mini",
+        ("codex-cli", "gpt-5.3-codex-spark") => "GPT-5.3 Codex Spark",
+        ("openai-api", "gpt-5.5") => "GPT-5.5",
+        ("openai-api", "gpt-5.4") => "GPT-5.4",
+        ("openai-api", "gpt-5.4-mini") => "GPT-5.4 mini",
+        ("openai-api", "gpt-5.4-nano") => "GPT-5.4 nano",
+        _ => "Unknown model",
+    }
+}
+
+fn model_is_supported(provider_id: &str, model_id: &str) -> bool {
+    matches!(
+        (provider_id, model_id),
+        ("codex-cli", "gpt-5.5")
+            | ("codex-cli", "gpt-5.4-mini")
+            | ("codex-cli", "gpt-5.3-codex-spark")
+            | ("openai-api", "gpt-5.5")
+            | ("openai-api", "gpt-5.4")
+            | ("openai-api", "gpt-5.4-mini")
+            | ("openai-api", "gpt-5.4-nano")
+    )
+}
+
+fn model_auth_method_is_supported(provider_id: &str, auth_method: &str) -> bool {
+    matches!(
+        (provider_id, auth_method),
+        ("codex-cli", "chatgptOAuth")
+            | ("codex-cli", "deviceCode")
+            | ("codex-cli", "accessToken")
+            | ("openai-api", "apiKeyEnv")
+    )
+}
+
+fn normalized_model_auth_method(input: &ModelConnectionSetupInput) -> String {
+    if input.provider_id.trim() == "openai-api" {
+        "apiKeyEnv".into()
+    } else {
+        input.auth_method.trim().to_string()
+    }
+}
+
+fn validate_model_connection_setup_input(
+    input: &ModelConnectionSetupInput,
+) -> Result<(), AppError> {
+    let provider_id = input.provider_id.trim();
+    let model_id = input.model_id.trim();
+    let auth_method = normalized_model_auth_method(input);
+    if !matches!(provider_id, "codex-cli" | "openai-api") {
+        return Err(AppError::Validation(
+            "providerId must be codex-cli or openai-api".into(),
+        ));
+    }
+    if !model_is_supported(provider_id, model_id) {
+        return Err(AppError::Validation(
+            "modelId is not supported for provider".into(),
+        ));
+    }
+    if !model_auth_method_is_supported(provider_id, &auth_method) {
+        return Err(AppError::Validation(
+            "authMethod is not supported for provider".into(),
+        ));
+    }
+    if provider_id == "openai-api"
+        && input
+            .env_key
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("OPENAI_API_KEY")
+            .is_empty()
+    {
+        return Err(AppError::Validation(
+            "envKey is required for OpenAI API".into(),
         ));
     }
     Ok(())
 }
 
-fn provider_key_ref(provider_id: &str) -> String {
-    let suffix = provider_id
-        .trim()
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>();
-    format!("local-safe-keychain://codepawl/private-beta/{suffix}")
+fn validate_model_connection_reference(
+    reference: &ModelConnectionReference,
+) -> Result<(), AppError> {
+    validate_model_connection_setup_input(&ModelConnectionSetupInput {
+        provider_id: reference.provider_id.clone(),
+        model_id: reference.model_id.clone(),
+        auth_method: reference.auth_method.clone(),
+        env_key: reference.env_key.clone(),
+    })
+}
+
+fn model_status_from_codex_status(status: &CodexConnectionStatus) -> ModelConnectionStatus {
+    match status {
+        CodexConnectionStatus::Missing => ModelConnectionStatus::Missing,
+        CodexConnectionStatus::AuthRequired => ModelConnectionStatus::AuthRequired,
+        CodexConnectionStatus::Ready => ModelConnectionStatus::Ready,
+        CodexConnectionStatus::Failed => ModelConnectionStatus::Failed,
+    }
+}
+
+fn codex_status_from_model_status(status: &ModelConnectionStatus) -> CodexConnectionStatus {
+    match status {
+        ModelConnectionStatus::Missing => CodexConnectionStatus::Missing,
+        ModelConnectionStatus::AuthRequired => CodexConnectionStatus::AuthRequired,
+        ModelConnectionStatus::Ready => CodexConnectionStatus::Ready,
+        ModelConnectionStatus::Failed => CodexConnectionStatus::Failed,
+    }
+}
+
+fn model_auth_from_codex_auth(auth_mode: Option<&String>) -> Option<String> {
+    match auth_mode.map(String::as_str) {
+        Some("chatgpt") => Some("chatgptOAuth".into()),
+        Some("accessToken") => Some("accessToken".into()),
+        Some(other) => Some(other.into()),
+        None => None,
+    }
+}
+
+fn model_preflight_from_codex_preflight(
+    result: &CodexConnectionPreflightResult,
+    model_id: &str,
+) -> ModelConnectionPreflightResult {
+    ModelConnectionPreflightResult {
+        checked_provider_id: "codex-cli".into(),
+        checked_model_id: model_id.into(),
+        status: model_status_from_codex_status(&result.status),
+        ready: result.ready,
+        checked_at: result.checked_at.clone(),
+        executable_path: result.executable_path.clone(),
+        auth_mode: model_auth_from_codex_auth(result.auth_mode.as_ref()),
+        reasons: result.reasons.clone(),
+        warnings: result.warnings.clone(),
+    }
+}
+
+fn codex_preflight_from_model_preflight(
+    result: &ModelConnectionPreflightResult,
+) -> Option<CodexConnectionPreflightResult> {
+    if result.checked_provider_id != "codex-cli" {
+        return None;
+    }
+    Some(CodexConnectionPreflightResult {
+        checked_connection_id: "codex-cli".into(),
+        status: codex_status_from_model_status(&result.status),
+        ready: result.ready,
+        checked_at: result.checked_at.clone(),
+        executable_path: result.executable_path.clone(),
+        auth_mode: result.auth_mode.clone(),
+        reasons: result.reasons.clone(),
+        warnings: result.warnings.clone(),
+    })
+}
+
+fn model_connection_from_codex_connection(
+    reference: &CodexConnectionReference,
+) -> ModelConnectionReference {
+    ModelConnectionReference {
+        provider_id: "codex-cli".into(),
+        provider_label: "Codex CLI".into(),
+        model_id: "gpt-5.5".into(),
+        model_label: "GPT-5.5".into(),
+        auth_method: "chatgptOAuth".into(),
+        env_key: None,
+        status: model_status_from_codex_status(&reference.status),
+        last_preflight: reference
+            .last_preflight
+            .as_ref()
+            .map(|result| model_preflight_from_codex_preflight(result, "gpt-5.5")),
+    }
+}
+
+fn codex_connection_from_model_connection(
+    reference: &ModelConnectionReference,
+) -> CodexConnectionReference {
+    CodexConnectionReference {
+        connection_id: "codex-cli".into(),
+        label: "Local Codex CLI".into(),
+        status: codex_status_from_model_status(&reference.status),
+        last_preflight: reference
+            .last_preflight
+            .as_ref()
+            .and_then(codex_preflight_from_model_preflight),
+    }
 }
 
 fn executable_path_on_path(path_env: &str, executable_name: &str) -> Option<PathBuf> {
@@ -1055,63 +1749,315 @@ fn executable_path_on_path(path_env: &str, executable_name: &str) -> Option<Path
     None
 }
 
-fn preflight_provider_reference(
-    reference: &SecretReference,
+fn codex_command_output(
     path_env: &str,
-) -> ProviderPreflightResult {
+    args: &[&str],
+    stdin_text: Option<&str>,
+) -> Result<std::process::Output, AppError> {
+    let executable_path = executable_path_on_path(path_env, "codex")
+        .ok_or_else(|| AppError::Validation("Codex CLI was not found on PATH.".into()))?;
+    let mut command = Command::new(executable_path);
+    command
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if stdin_text.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| AppError::Validation(format!("could not start Codex CLI: {error}")))?;
+    if let Some(stdin_text) = stdin_text {
+        let mut stdin = child.stdin.take().ok_or_else(|| {
+            AppError::Validation("could not open Codex CLI stdin for access token login".into())
+        })?;
+        stdin.write_all(stdin_text.as_bytes()).map_err(|error| {
+            AppError::Validation(format!("could not write Codex CLI stdin: {error}"))
+        })?;
+    }
+    child
+        .wait_with_output()
+        .map_err(|error| AppError::Validation(format!("could not read Codex CLI output: {error}")))
+}
+
+fn codex_output_text(output: &std::process::Output) -> String {
+    format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+fn codex_auth_mode(output_text: &str) -> Option<String> {
+    let lower = output_text.to_ascii_lowercase();
+    if lower.contains("chatgpt") {
+        Some("chatgpt".into())
+    } else if lower.contains("api key") || lower.contains("api-key") {
+        Some("apiKey".into())
+    } else if lower.contains("access token") || lower.contains("access-token") {
+        Some("accessToken".into())
+    } else {
+        Some("unknown".into())
+    }
+}
+
+fn codex_doctor_warnings(path_env: &str) -> Vec<String> {
+    let Ok(output) = codex_command_output(path_env, &["doctor", "--json"], None) else {
+        return vec![];
+    };
+    if output.status.success() {
+        return vec![];
+    }
+    let text = codex_output_text(&output);
+    if text.trim().is_empty() {
+        vec!["Codex doctor reported warnings.".into()]
+    } else {
+        vec![format!("Codex doctor reported warnings: {}", text.trim())]
+    }
+}
+
+fn preflight_codex_connection(
+    reference: &CodexConnectionReference,
+    path_env: &str,
+) -> CodexConnectionPreflightResult {
     let checked_at = now_iso_like();
-    if reference.provider_id != "codex-cli" {
-        return ProviderPreflightResult {
-            checked_provider_id: reference.provider_id.clone(),
-            status: ProviderReadinessStatus::Failed,
+    if reference.connection_id != "codex-cli" {
+        return CodexConnectionPreflightResult {
+            checked_connection_id: reference.connection_id.clone(),
+            status: CodexConnectionStatus::Failed,
             ready: false,
             checked_at,
             executable_path: None,
+            auth_mode: None,
             reasons: vec![format!(
-                "Provider {} is not supported in the private beta repository runner.",
-                reference.provider_id
+                "Connection {} is not supported in the private beta repository runner.",
+                reference.connection_id
             )],
+            warnings: vec![],
         };
     }
 
     if let Some(executable_path) = executable_path_on_path(path_env, "codex") {
-        return ProviderPreflightResult {
-            checked_provider_id: reference.provider_id.clone(),
-            status: ProviderReadinessStatus::Ready,
+        let login_status = codex_command_output(path_env, &["login", "status"], None);
+        let Ok(login_output) = login_status else {
+            return CodexConnectionPreflightResult {
+                checked_connection_id: reference.connection_id.clone(),
+                status: CodexConnectionStatus::AuthRequired,
+                ready: false,
+                checked_at,
+                executable_path: Some(executable_path.to_string_lossy().to_string()),
+                auth_mode: None,
+                reasons: vec![
+                    "Codex CLI is installed but not authenticated. Run codex login or use a Codex access token.".into(),
+                ],
+                warnings: vec![],
+            };
+        };
+        if !login_output.status.success() {
+            return CodexConnectionPreflightResult {
+                checked_connection_id: reference.connection_id.clone(),
+                status: CodexConnectionStatus::AuthRequired,
+                ready: false,
+                checked_at,
+                executable_path: Some(executable_path.to_string_lossy().to_string()),
+                auth_mode: None,
+                reasons: vec![
+                    "Codex CLI is installed but not authenticated. Run codex login or use a Codex access token.".into(),
+                ],
+                warnings: vec![],
+            };
+        }
+        let output_text = codex_output_text(&login_output);
+        let auth_mode = codex_auth_mode(&output_text);
+        let reason = if auth_mode.as_deref() == Some("chatgpt") {
+            "Codex CLI is installed and authenticated with ChatGPT."
+        } else {
+            "Codex CLI is installed and authenticated."
+        };
+        return CodexConnectionPreflightResult {
+            checked_connection_id: reference.connection_id.clone(),
+            status: CodexConnectionStatus::Ready,
             ready: true,
             checked_at,
             executable_path: Some(executable_path.to_string_lossy().to_string()),
-            reasons: vec!["Codex CLI executable is available.".into()],
+            auth_mode,
+            reasons: vec![reason.into()],
+            warnings: codex_doctor_warnings(path_env),
         };
     }
 
-    ProviderPreflightResult {
-        checked_provider_id: reference.provider_id.clone(),
-        status: ProviderReadinessStatus::Failed,
+    CodexConnectionPreflightResult {
+        checked_connection_id: reference.connection_id.clone(),
+        status: CodexConnectionStatus::Missing,
         ready: false,
         checked_at,
         executable_path: None,
+        auth_mode: None,
         reasons: vec!["Codex CLI was not found on PATH.".into()],
+        warnings: vec![],
     }
 }
 
-fn ensure_provider_ready_for_run(
+fn preflight_model_connection(
+    reference: &ModelConnectionReference,
+    path_env: &str,
+) -> ModelConnectionPreflightResult {
+    let checked_at = now_iso_like();
+    match reference.provider_id.as_str() {
+        "codex-cli" => {
+            let codex_reference = codex_connection_from_model_connection(reference);
+            let codex_result = preflight_codex_connection(&codex_reference, path_env);
+            model_preflight_from_codex_preflight(&codex_result, &reference.model_id)
+        }
+        "openai-api" => {
+            let env_key = reference
+                .env_key
+                .as_deref()
+                .unwrap_or("OPENAI_API_KEY")
+                .trim();
+            if env_key.is_empty() {
+                return ModelConnectionPreflightResult {
+                    checked_provider_id: reference.provider_id.clone(),
+                    checked_model_id: reference.model_id.clone(),
+                    status: ModelConnectionStatus::AuthRequired,
+                    ready: false,
+                    checked_at,
+                    executable_path: None,
+                    auth_mode: Some("apiKeyEnv".into()),
+                    reasons: vec!["OPENAI_API_KEY is required for OpenAI API.".into()],
+                    warnings: vec![],
+                };
+            }
+            match std::env::var(env_key) {
+                Ok(value) if !value.trim().is_empty() => ModelConnectionPreflightResult {
+                    checked_provider_id: reference.provider_id.clone(),
+                    checked_model_id: reference.model_id.clone(),
+                    status: ModelConnectionStatus::Ready,
+                    ready: true,
+                    checked_at,
+                    executable_path: None,
+                    auth_mode: Some("apiKeyEnv".into()),
+                    reasons: vec![format!("{env_key} is available for OpenAI API.")],
+                    warnings: vec![],
+                },
+                _ => ModelConnectionPreflightResult {
+                    checked_provider_id: reference.provider_id.clone(),
+                    checked_model_id: reference.model_id.clone(),
+                    status: ModelConnectionStatus::AuthRequired,
+                    ready: false,
+                    checked_at,
+                    executable_path: None,
+                    auth_mode: Some("apiKeyEnv".into()),
+                    reasons: vec![format!(
+                        "{env_key} is not set. Set it in your shell before running OpenAI API tasks."
+                    )],
+                    warnings: vec![],
+                },
+            }
+        }
+        _ => ModelConnectionPreflightResult {
+            checked_provider_id: reference.provider_id.clone(),
+            checked_model_id: reference.model_id.clone(),
+            status: ModelConnectionStatus::Failed,
+            ready: false,
+            checked_at,
+            executable_path: None,
+            auth_mode: None,
+            reasons: vec![format!(
+                "Provider {} is not supported in the repository runner.",
+                reference.provider_id
+            )],
+            warnings: vec![],
+        },
+    }
+}
+
+fn login_codex_connection(
+    path_env: &str,
+    method: &str,
+) -> Result<CodexConnectionReference, AppError> {
+    let args = match method {
+        "chatgpt" => vec!["login"],
+        "device" => vec!["login", "--device-auth"],
+        _ => {
+            return Err(AppError::Validation(
+                "method must be chatgpt or device".into(),
+            ))
+        }
+    };
+    let output = codex_command_output(path_env, &args, None)?;
+    if !output.status.success() {
+        let text = codex_output_text(&output);
+        return Err(AppError::Validation(format!(
+            "Codex login failed: {}",
+            text.trim()
+        )));
+    }
+    Ok(CodexConnectionReference {
+        connection_id: "codex-cli".into(),
+        label: "Local Codex CLI".into(),
+        status: CodexConnectionStatus::AuthRequired,
+        last_preflight: None,
+    })
+}
+
+fn login_codex_connection_with_access_token(
+    path_env: &str,
+    access_token: &str,
+) -> Result<CodexConnectionReference, AppError> {
+    if access_token.trim().is_empty() {
+        return Err(AppError::Validation("accessToken is required".into()));
+    }
+    let output = codex_command_output(
+        path_env,
+        &["login", "--with-access-token"],
+        Some(access_token.trim()),
+    )?;
+    if !output.status.success() {
+        let text = codex_output_text(&output);
+        return Err(AppError::Validation(format!(
+            "Codex access token login failed: {}",
+            text.trim()
+        )));
+    }
+    Ok(CodexConnectionReference {
+        connection_id: "codex-cli".into(),
+        label: "Local Codex CLI".into(),
+        status: CodexConnectionStatus::AuthRequired,
+        last_preflight: None,
+    })
+}
+
+fn ensure_codex_connection_ready_for_run(
     store: &LocalPersistenceStore,
-) -> Result<SecretReference, AppError> {
-    let provider_refs = store.list_provider_references()?;
-    if provider_refs.is_empty() {
+) -> Result<CodexConnectionReference, AppError> {
+    let Some(reference) = store.load_codex_connection()? else {
+        return Err(AppError::Validation(
+            "Codex connection is required before running a real repository task".into(),
+        ));
+    };
+    if reference.status != CodexConnectionStatus::Ready {
+        return Err(AppError::Validation(
+            "Codex connection check must pass before running a real repository task".into(),
+        ));
+    }
+    Ok(reference)
+}
+
+fn ensure_model_connection_ready_for_run(
+    store: &LocalPersistenceStore,
+) -> Result<ModelConnectionReference, AppError> {
+    let Some(reference) = store.load_model_connection()? else {
         return Err(AppError::Validation(
             "Provider setup is required before running a real repository task".into(),
         ));
+    };
+    if reference.status != ModelConnectionStatus::Ready {
+        return Err(AppError::Validation(
+            "Provider check must pass before running a real repository task".into(),
+        ));
     }
-    provider_refs
-        .into_iter()
-        .find(|reference| reference.status == ProviderReadinessStatus::Ready)
-        .ok_or_else(|| {
-            AppError::Validation(
-                "Provider preflight must pass before running a real repository task".into(),
-            )
-        })
+    Ok(reference)
 }
 
 fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
@@ -1180,11 +2126,28 @@ fn validate_repository_path(repository_path: Option<&str>) -> Result<PathBuf, Ap
     Ok(canonical)
 }
 
+fn find_git_repository_root(start: &Path) -> Option<PathBuf> {
+    let mut current = if start.is_file() {
+        start.parent()?.to_path_buf()
+    } else {
+        start.to_path_buf()
+    };
+    loop {
+        if current.join(".git").exists() && current.parent().is_some() {
+            return Some(current);
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
+}
+
 fn is_desktop_repository_runner_root(root: &Path) -> bool {
     root.join("scripts")
         .join("desktop-repository-run.mjs")
         .is_file()
-        && root.join("scripts")
+        && root
+            .join("scripts")
             .join("register-extensionless-esm-loader.mjs")
             .is_file()
         && root.join("package.json").is_file()
@@ -1377,7 +2340,13 @@ fn persisted_run_from_output(
         memory_candidates: manifest_memory_candidates(&manifest),
         skills: manifest_skills(&skill_replay_plan),
         skill_replay_plan,
-        provider_refs: settings.provider_refs,
+        model_connection: settings.model_connection.or_else(|| {
+            settings
+                .codex_connection
+                .as_ref()
+                .map(model_connection_from_codex_connection)
+        }),
+        codex_connection: settings.codex_connection,
         created_at: now.clone(),
         updated_at: now,
     })
@@ -1963,7 +2932,7 @@ async fn run_create(
     validate_create_run(&input)?;
     let repository_path = validate_repository_path(input.repository_path.as_deref())?;
     let store = persistence_store(&app);
-    let _provider_reference = ensure_provider_ready_for_run(&store)?;
+    let _model_connection = ensure_model_connection_ready_for_run(&store)?;
     let output = run_desktop_repository_sidecar(&app, &input, &repository_path)?;
     let persisted_run = persisted_run_from_output(&app, &input, &repository_path, &output)?;
     store.save_run(&persisted_run)?;
@@ -2465,61 +3434,118 @@ async fn settings_update(
     app: AppHandle,
     input: SettingsUpdateInput,
 ) -> Result<SettingsSnapshot, AppError> {
-    match input.permission_mode.as_str() {
-        "safe" | "balanced" | "manual" => {
-            let mut settings = persistence_store(&app).load_settings()?;
-            settings.permission_mode = input.permission_mode;
-            persistence_store(&app).save_settings(&settings)?;
-            Ok(settings)
-        }
-        _ => Err(AppError::Validation(
-            "permissionMode must be safe, balanced, or manual".into(),
-        )),
-    }
+    let settings = persistence_store(&app).load_settings()?;
+    let updated_settings = apply_settings_update(settings, input)?;
+    persistence_store(&app).save_settings(&updated_settings)?;
+    Ok(updated_settings)
 }
 
 #[tauri::command]
-async fn provider_key_save(
+async fn repository_detect_current_path() -> Result<Option<String>, AppError> {
+    let current_dir = std::env::current_dir()
+        .map_err(|error| AppError::Validation(format!("could not read current directory: {error}")))?;
+    Ok(find_git_repository_root(&current_dir).map(|path| path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+async fn codex_connection_save(
     app: AppHandle,
-    input: ProviderKeySaveInput,
-) -> Result<SecretReference, AppError> {
-    persistence_store(&app).save_provider_reference(ProviderSetupInput {
-        provider_id: input.provider_id,
+    input: CodexConnectionSaveInput,
+) -> Result<CodexConnectionReference, AppError> {
+    persistence_store(&app).save_codex_connection(CodexConnectionSetupInput {
+        connection_id: input.connection_id.unwrap_or_else(|| "codex-cli".into()),
         label: input.label,
-        raw_secret: input.raw_secret,
     })
 }
 
 #[tauri::command]
-async fn provider_key_list(app: AppHandle) -> Result<Vec<SecretReference>, AppError> {
-    persistence_store(&app).list_provider_references()
+async fn codex_connection_login(
+    app: AppHandle,
+    input: CodexConnectionLoginInput,
+) -> Result<CodexConnectionReference, AppError> {
+    let reference = login_codex_connection(
+        &(std::env::var("PATH").unwrap_or_default()),
+        input.method.trim(),
+    )?;
+    persistence_store(&app).save_codex_connection_record(reference.clone())?;
+    Ok(reference)
 }
 
 #[tauri::command]
-async fn provider_key_test(
+async fn codex_connection_login_with_access_token(
     app: AppHandle,
-    provider_id: String,
-) -> Result<ProviderPreflightResult, AppError> {
-    if provider_id.trim().is_empty() {
-        return Err(AppError::Validation("providerId is required".into()));
-    }
+    input: CodexAccessTokenLoginInput,
+) -> Result<CodexConnectionReference, AppError> {
+    let reference = login_codex_connection_with_access_token(
+        &(std::env::var("PATH").unwrap_or_default()),
+        &input.access_token,
+    )?;
+    persistence_store(&app).save_codex_connection_record(reference.clone())?;
+    Ok(reference)
+}
+
+#[tauri::command]
+async fn codex_connection_preflight(
+    app: AppHandle,
+) -> Result<CodexConnectionPreflightResult, AppError> {
     let store = persistence_store(&app);
     let mut reference = store
-        .list_provider_references()?
-        .into_iter()
-        .find(|reference| reference.provider_id == provider_id.trim())
-        .ok_or_else(|| AppError::Validation("provider reference not found".into()))?;
+        .load_codex_connection()?
+        .unwrap_or(CodexConnectionReference {
+            connection_id: "codex-cli".into(),
+            label: "Local Codex CLI".into(),
+            status: CodexConnectionStatus::AuthRequired,
+            last_preflight: None,
+        });
     let result =
-        preflight_provider_reference(&reference, &(std::env::var("PATH").unwrap_or_default()));
+        preflight_codex_connection(&reference, &(std::env::var("PATH").unwrap_or_default()));
     reference.status = result.status.clone();
     reference.last_preflight = Some(result.clone());
-    store.save_provider_reference_record(reference)?;
+    store.save_codex_connection_record(reference)?;
     Ok(result)
 }
 
 #[tauri::command]
-async fn provider_key_delete(app: AppHandle, provider_id: String) -> Result<(), AppError> {
-    persistence_store(&app).delete_provider_reference(&provider_id)
+async fn codex_connection_delete(app: AppHandle) -> Result<(), AppError> {
+    persistence_store(&app).delete_codex_connection()
+}
+
+#[tauri::command]
+async fn model_connection_save(
+    app: AppHandle,
+    input: ModelConnectionSetupInput,
+) -> Result<ModelConnectionReference, AppError> {
+    persistence_store(&app).save_model_connection(input)
+}
+
+#[tauri::command]
+async fn model_connection_preflight(
+    app: AppHandle,
+) -> Result<ModelConnectionPreflightResult, AppError> {
+    let store = persistence_store(&app);
+    let mut reference = store
+        .load_model_connection()?
+        .unwrap_or(ModelConnectionReference {
+            provider_id: "codex-cli".into(),
+            provider_label: "Codex CLI".into(),
+            model_id: "gpt-5.5".into(),
+            model_label: "GPT-5.5".into(),
+            auth_method: "chatgptOAuth".into(),
+            env_key: None,
+            status: ModelConnectionStatus::AuthRequired,
+            last_preflight: None,
+        });
+    let result =
+        preflight_model_connection(&reference, &(std::env::var("PATH").unwrap_or_default()));
+    reference.status = result.status.clone();
+    reference.last_preflight = Some(result.clone());
+    store.save_model_connection_record(reference)?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn model_connection_delete(app: AppHandle) -> Result<(), AppError> {
+    persistence_store(&app).delete_model_connection()
 }
 
 #[tauri::command]
@@ -2534,6 +3560,7 @@ async fn trace_export(run_id: String) -> Result<String, AppError> {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             run_create,
             run_list,
@@ -2556,10 +3583,15 @@ pub fn run() {
             codex_execution_blocked_preview,
             settings_get,
             settings_update,
-            provider_key_save,
-            provider_key_list,
-            provider_key_test,
-            provider_key_delete,
+            repository_detect_current_path,
+            model_connection_save,
+            model_connection_preflight,
+            model_connection_delete,
+            codex_connection_save,
+            codex_connection_login,
+            codex_connection_login_with_access_token,
+            codex_connection_preflight,
+            codex_connection_delete,
             trace_export
         ])
         .setup(|app| {
@@ -2636,6 +3668,24 @@ mod tests {
         let input = valid_run_input_json(Some(&local_git_repository_path("json-valid")));
 
         assert!(validate_create_run(&input).is_ok());
+    }
+
+    #[test]
+    fn find_git_repository_root_returns_nearest_parent_git_repo() {
+        let root = PathBuf::from(local_git_repository_path("detect-root"));
+        let nested = root.join("packages").join("demo");
+        std::fs::create_dir_all(&nested).expect("create nested path");
+
+        assert_eq!(find_git_repository_root(&nested), Some(root));
+    }
+
+    #[test]
+    fn find_git_repository_root_returns_none_outside_git_repo() {
+        let root = std::env::temp_dir().join(format!("codepawl-tauri-test-no-git-{}", unique_suffix()));
+        let nested = root.join("packages").join("demo");
+        std::fs::create_dir_all(&nested).expect("create nested path");
+
+        assert_eq!(find_git_repository_root(&nested), None);
     }
 
     #[test]
@@ -2821,8 +3871,11 @@ mod tests {
         std::fs::write(runner_dir.join("package.json"), "{}\n").expect("write package manifest");
         std::fs::write(scripts_dir.join("desktop-repository-run.mjs"), "\n")
             .expect("write repository runner");
-        std::fs::write(scripts_dir.join("register-extensionless-esm-loader.mjs"), "\n")
-            .expect("write esm loader");
+        std::fs::write(
+            scripts_dir.join("register-extensionless-esm-loader.mjs"),
+            "\n",
+        )
+        .expect("write esm loader");
 
         let executable = app_dir.join("codepawl-desktop");
         let resolved =
@@ -2895,13 +3948,22 @@ mod tests {
             skill_replay_plan: Some(
                 serde_json::json!({ "id": "skill-replay-plan-1", "dryRunOnly": true }),
             ),
-            provider_refs: vec![SecretReference {
-                provider_id: "openai".into(),
-                label: "OpenAI".into(),
-                key_ref: "keychain://codepawl/local-beta/openai".into(),
-                status: ProviderReadinessStatus::Untested,
+            model_connection: Some(ModelConnectionReference {
+                provider_id: "codex-cli".into(),
+                provider_label: "Codex CLI".into(),
+                model_id: "gpt-5.5".into(),
+                model_label: "GPT-5.5".into(),
+                auth_method: "chatgptOAuth".into(),
+                env_key: None,
+                status: ModelConnectionStatus::AuthRequired,
                 last_preflight: None,
-            }],
+            }),
+            codex_connection: Some(CodexConnectionReference {
+                connection_id: "codex-cli".into(),
+                label: "Local Codex CLI".into(),
+                status: CodexConnectionStatus::AuthRequired,
+                last_preflight: None,
+            }),
             created_at: "2026-07-04T00:00:00.000Z".into(),
             updated_at: "2026-07-04T00:00:00.000Z".into(),
         }
@@ -2924,8 +3986,18 @@ mod tests {
         assert!(reopened.skill_replay_plan.is_some());
         assert_eq!(reopened.usage_summary["artifactCount"], 1);
         assert_eq!(
-            reopened.provider_refs[0].key_ref,
-            "keychain://codepawl/local-beta/openai"
+            reopened
+                .model_connection
+                .expect("persisted model connection")
+                .provider_id,
+            "codex-cli"
+        );
+        assert_eq!(
+            reopened
+                .codex_connection
+                .expect("persisted Codex connection")
+                .connection_id,
+            "codex-cli"
         );
     }
 
@@ -2947,48 +4019,142 @@ mod tests {
     }
 
     #[test]
-    fn local_persistence_persists_settings_and_provider_references_without_raw_secrets() {
+    fn local_persistence_filters_legacy_provider_refs_and_keeps_only_codex_connection() {
         let root = temp_store_root("settings");
         let store = LocalPersistenceStore::new(root.clone());
-        let settings = SettingsSnapshot {
-            workspace_id: "workspace-local-alpha".into(),
-            permission_mode: "manual".into(),
-            executable_surfaces: vec!["repository".into()],
-            blocked_surfaces: vec![
-                "browser".into(),
-                "desktop".into(),
-                "files".into(),
-                "terminal".into(),
+        let legacy_settings = serde_json::json!({
+            "workspaceId": "workspace-local-alpha",
+            "permissionMode": "manual",
+            "executableSurfaces": ["repository"],
+            "blockedSurfaces": ["browser", "desktop", "files", "terminal"],
+            "defaultRepositoryPath": "/home/operator/project",
+            "welcomeCompleted": true,
+            "providerRefs": [
+                {
+                    "providerId": "openai",
+                    "label": "OpenAI",
+                    "keyRef": "keychain://codepawl/local-beta/openai",
+                    "status": "ready"
+                },
+                {
+                    "providerId": "codex-cli",
+                    "label": "Local Codex CLI",
+                    "keyRef": "local-safe-keychain://codepawl/private-beta/codex-cli",
+                    "status": "ready"
+                }
             ],
-            provider_refs: vec![SecretReference {
-                provider_id: "openai".into(),
-                label: "OpenAI".into(),
-                key_ref: "keychain://codepawl/local-beta/openai".into(),
-                status: ProviderReadinessStatus::Untested,
-                last_preflight: None,
-            }],
-            retention_policy: RetentionPolicySnapshot {
-                run_history_days: 30,
-                artifact_retention_days: 30,
-                cleanup_enabled: false,
-                summary: "Cleanup is manual for private beta; automatic retention is planned."
-                    .into(),
-            },
-        };
+            "retentionPolicy": {
+                "runHistoryDays": 30,
+                "artifactRetentionDays": 30,
+                "cleanupEnabled": false,
+                "summary": "Cleanup is manual for private beta; automatic retention is planned."
+            }
+        });
+        std::fs::create_dir_all(store.settings_path().parent().expect("settings parent"))
+            .expect("create settings parent");
+        std::fs::write(store.settings_path(), legacy_settings.to_string())
+            .expect("write legacy settings");
 
-        store.save_settings(&settings).expect("save settings");
         let reloaded = LocalPersistenceStore::new(root)
             .load_settings()
             .expect("load settings");
-        let raw_settings = std::fs::read_to_string(store.settings_path()).expect("read settings");
 
         assert_eq!(reloaded.permission_mode, "manual");
         assert_eq!(
-            reloaded.provider_refs[0].key_ref,
-            "keychain://codepawl/local-beta/openai"
+            reloaded
+                .model_connection
+                .expect("migrated model connection")
+                .provider_id,
+            "codex-cli"
         );
-        assert!(!raw_settings.contains("sk-"));
-        assert!(!raw_settings.contains("rawApiKey"));
+        assert_eq!(
+            reloaded
+                .codex_connection
+                .expect("migrated Codex connection")
+                .connection_id,
+            "codex-cli"
+        );
+    }
+
+    #[test]
+    fn settings_update_preserves_codex_connection_and_persists_setup_fields() {
+        let mut settings = default_settings_snapshot();
+        let codex_connection = CodexConnectionReference {
+            connection_id: "codex-cli".into(),
+            label: "Local Codex CLI".into(),
+            status: CodexConnectionStatus::Ready,
+            last_preflight: None,
+        };
+        settings.model_connection = Some(model_connection_from_codex_connection(&codex_connection));
+        settings.codex_connection = Some(codex_connection);
+
+        let updated = apply_settings_update(
+            settings,
+            SettingsUpdateInput {
+                permission_mode: Some("manual".into()),
+                default_repository_path: Some("/home/operator/project".into()),
+                welcome_completed: Some(true),
+                executable_surfaces: Some(vec!["repository".into(), "browser".into()]),
+                retention_policy: Some(RetentionPolicyUpdateInput {
+                    run_history_days: Some(14),
+                    artifact_retention_days: Some(21),
+                    cleanup_enabled: Some(true),
+                }),
+                operator_profile: Some(OperatorProfileUpdateInput {
+                    full_name: Some("Xuan An".into()),
+                    call_sign: Some("An".into()),
+                    work_type: Some("data-science".into()),
+                }),
+                ui_preferences: Some(UiPreferencesUpdateInput {
+                    appearance: Some("system".into()),
+                    chat_font: Some("codepawl-serif".into()),
+                    motion: Some("reduced".into()),
+                    show_message_block_meta: Some(true),
+                }),
+                voice_preferences: Some(VoicePreferencesUpdateInput {
+                    language: Some("english".into()),
+                    style: Some("buttery".into()),
+                    speed: Some("slow".into()),
+                }),
+            },
+        )
+        .expect("partial settings update");
+
+        assert_eq!(updated.permission_mode, "manual");
+        assert_eq!(updated.default_repository_path, "/home/operator/project");
+        assert!(updated.welcome_completed);
+        assert_eq!(updated.executable_surfaces, vec!["repository"]);
+        assert_eq!(
+            updated.blocked_surfaces,
+            vec!["browser", "desktop", "files", "terminal"]
+        );
+        assert_eq!(
+            updated
+                .model_connection
+                .expect("model connection persists")
+                .provider_id,
+            "codex-cli"
+        );
+        assert_eq!(
+            updated
+                .codex_connection
+                .expect("connection persists")
+                .connection_id,
+            "codex-cli"
+        );
+        assert_eq!(updated.retention_policy.run_history_days, 14);
+        assert_eq!(updated.retention_policy.artifact_retention_days, 21);
+        assert!(updated.retention_policy.cleanup_enabled);
+        assert_eq!(updated.operator_profile.full_name, "Xuan An");
+        assert_eq!(updated.operator_profile.call_sign, "An");
+        assert_eq!(updated.operator_profile.work_type, "data-science");
+        assert_eq!(updated.ui_preferences.appearance, "system");
+        assert_eq!(updated.ui_preferences.chat_font, "codepawl-serif");
+        assert_eq!(updated.ui_preferences.motion, "reduced");
+        assert!(updated.ui_preferences.show_message_block_meta);
+        assert_eq!(updated.voice_preferences.language, "english");
+        assert_eq!(updated.voice_preferences.style, "buttery");
+        assert_eq!(updated.voice_preferences.speed, "slow");
     }
 
     #[test]
@@ -3027,55 +4193,118 @@ mod tests {
     }
 
     #[test]
-    fn provider_reference_save_load_and_delete_never_persists_raw_secret() {
-        let root = temp_store_root("provider-ref");
+    fn codex_connection_save_load_and_delete_never_persists_raw_secret() {
+        let root = temp_store_root("codex-connection");
         let store = LocalPersistenceStore::new(root.clone());
 
         let reference = store
-            .save_provider_reference(ProviderSetupInput {
-                provider_id: "codex-cli".into(),
+            .save_codex_connection(CodexConnectionSetupInput {
+                connection_id: "codex-cli".into(),
                 label: "Local Codex CLI".into(),
-                raw_secret: Some("sk-privatebeta-secret-123".into()),
             })
-            .expect("save provider reference");
+            .expect("save Codex connection");
         let loaded = store
-            .list_provider_references()
-            .expect("load provider references");
+            .load_codex_connection()
+            .expect("load Codex connection");
         let raw_settings = std::fs::read_to_string(store.settings_path()).expect("read settings");
 
-        assert_eq!(reference.provider_id, "codex-cli");
-        assert_eq!(reference.status, ProviderReadinessStatus::Untested);
-        assert_eq!(loaded.len(), 1);
-        assert!(reference
-            .key_ref
-            .starts_with("local-safe-keychain://codepawl/private-beta/"));
-        assert!(!raw_settings.contains("sk-privatebeta-secret-123"));
+        assert_eq!(reference.connection_id, "codex-cli");
+        assert_eq!(reference.status, CodexConnectionStatus::AuthRequired);
+        assert_eq!(
+            loaded.expect("loaded connection").connection_id,
+            "codex-cli"
+        );
+        assert_eq!(
+            store
+                .load_model_connection()
+                .expect("load model connection")
+                .expect("loaded model connection")
+                .provider_id,
+            "codex-cli"
+        );
+        assert!(!raw_settings.contains("sk-"));
+        assert!(!raw_settings.contains("accessToken"));
 
         store
-            .delete_provider_reference("codex-cli")
-            .expect("delete provider reference");
+            .delete_codex_connection()
+            .expect("delete Codex connection");
         assert!(store
-            .list_provider_references()
+            .load_codex_connection()
             .expect("reload after delete")
-            .is_empty());
+            .is_none());
+        assert!(store
+            .load_model_connection()
+            .expect("reload model after delete")
+            .is_none());
     }
 
     #[test]
-    fn provider_preflight_reports_failed_and_ready_states() {
-        let root = temp_store_root("provider-preflight");
+    fn model_connection_openai_env_preflight_never_persists_raw_secret() {
+        let root = temp_store_root("model-openai");
+        let store = LocalPersistenceStore::new(root.clone());
+        let env_key = "CODEPAWL_TEST_OPENAI_API_KEY";
+        std::env::remove_var(env_key);
+
+        let mut reference = store
+            .save_model_connection(ModelConnectionSetupInput {
+                provider_id: "openai-api".into(),
+                model_id: "gpt-5.5".into(),
+                auth_method: "apiKeyEnv".into(),
+                env_key: Some(env_key.into()),
+            })
+            .expect("save OpenAI model connection");
+
+        let missing = preflight_model_connection(&reference, "");
+        assert!(!missing.ready);
+        assert_eq!(missing.status, ModelConnectionStatus::AuthRequired);
+        assert!(missing
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("CODEPAWL_TEST_OPENAI_API_KEY is not set")));
+
+        std::env::set_var(env_key, "sk-test-secret-openai");
+        let ready = preflight_model_connection(&reference, "");
+        std::env::remove_var(env_key);
+        assert!(ready.ready);
+        assert_eq!(ready.status, ModelConnectionStatus::Ready);
+        assert_eq!(ready.checked_provider_id, "openai-api");
+        assert_eq!(ready.checked_model_id, "gpt-5.5");
+        assert!(ready
+            .reasons
+            .iter()
+            .any(|reason| reason == "CODEPAWL_TEST_OPENAI_API_KEY is available for OpenAI API."));
+
+        reference.status = ready.status.clone();
+        reference.last_preflight = Some(ready);
+        store
+            .save_model_connection_record(reference)
+            .expect("save ready OpenAI connection");
+
+        let raw_settings = std::fs::read_to_string(store.settings_path()).expect("read settings");
+        assert!(raw_settings.contains("openai-api"));
+        assert!(raw_settings.contains("CODEPAWL_TEST_OPENAI_API_KEY"));
+        assert!(!raw_settings.contains("sk-test-secret-openai"));
+        assert!(store
+            .load_codex_connection()
+            .expect("load legacy Codex connection")
+            .is_none());
+    }
+
+    #[test]
+    fn codex_connection_preflight_reports_missing_auth_and_ready_states() {
+        let root = temp_store_root("codex-preflight");
         let store = LocalPersistenceStore::new(root.clone());
         let mut reference = store
-            .save_provider_reference(ProviderSetupInput {
-                provider_id: "codex-cli".into(),
+            .save_codex_connection(CodexConnectionSetupInput {
+                connection_id: "codex-cli".into(),
                 label: "Local Codex CLI".into(),
-                raw_secret: None,
             })
-            .expect("save provider reference");
+            .expect("save Codex connection");
 
-        let failed = preflight_provider_reference(&reference, "");
-        assert!(!failed.ready);
-        assert_eq!(failed.status, ProviderReadinessStatus::Failed);
-        assert!(failed
+        let missing = preflight_codex_connection(&reference, "");
+        assert!(!missing.ready);
+        assert_eq!(missing.status, CodexConnectionStatus::Missing);
+        assert!(missing
             .reasons
             .iter()
             .any(|reason| reason.contains("Codex CLI was not found")));
@@ -3085,7 +4314,7 @@ mod tests {
         std::fs::create_dir_all(&bin_dir).expect("create fake bin dir");
         std::fs::write(
             &codex_path,
-            "#!/usr/bin/env node\nconsole.log('codex fake')\n",
+            "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"status\" ]; then echo 'Not logged in'; exit 1; fi\nif [ \"$1\" = \"doctor\" ]; then echo '{\"checks\":{}}'; exit 0; fi\necho 'codex fake'\n",
         )
         .expect("write fake codex");
         let mut permissions = std::fs::metadata(&codex_path)
@@ -3096,83 +4325,143 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             permissions.set_mode(0o755);
         }
-        std::fs::set_permissions(&codex_path, permissions).expect("chmod fake codex");
+        std::fs::set_permissions(&codex_path, permissions.clone()).expect("chmod fake codex");
 
-        let ready = preflight_provider_reference(&reference, &bin_dir.to_string_lossy());
+        let auth_required = preflight_codex_connection(&reference, &bin_dir.to_string_lossy());
+        assert!(!auth_required.ready);
+        assert_eq!(auth_required.status, CodexConnectionStatus::AuthRequired);
+
+        std::fs::write(
+            &codex_path,
+            "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"status\" ]; then echo 'Logged in using ChatGPT'; exit 0; fi\nif [ \"$1\" = \"doctor\" ]; then echo '{\"checks\":{}}'; exit 0; fi\necho 'codex fake'\n",
+        )
+        .expect("write authenticated fake codex");
+        std::fs::set_permissions(&codex_path, permissions).expect("chmod authenticated fake codex");
+
+        let ready = preflight_codex_connection(&reference, &bin_dir.to_string_lossy());
         assert!(ready.ready);
-        assert_eq!(ready.status, ProviderReadinessStatus::Ready);
-        assert_eq!(ready.checked_provider_id, "codex-cli");
+        assert_eq!(ready.status, CodexConnectionStatus::Ready);
+        assert_eq!(ready.checked_connection_id, "codex-cli");
 
         reference.last_preflight = Some(ready);
-        reference.status = ProviderReadinessStatus::Ready;
+        reference.status = CodexConnectionStatus::Ready;
         store
-            .save_provider_reference_record(reference)
-            .expect("persist ready provider");
-        assert!(ensure_provider_ready_for_run(&store).is_ok());
+            .save_codex_connection_record(reference)
+            .expect("persist ready Codex connection");
+        assert!(ensure_codex_connection_ready_for_run(&store).is_ok());
+        assert!(ensure_model_connection_ready_for_run(&store).is_ok());
     }
 
     #[test]
-    fn repository_runs_are_blocked_without_ready_provider() {
-        let root = temp_store_root("provider-block");
+    fn repository_runs_are_blocked_without_ready_model_connection() {
+        let root = temp_store_root("codex-block");
         let store = LocalPersistenceStore::new(root.clone());
 
-        let missing_error =
-            ensure_provider_ready_for_run(&store).expect_err("missing provider blocks run");
+        let missing_error = ensure_model_connection_ready_for_run(&store)
+            .expect_err("missing connection blocks run");
         assert_eq!(
             missing_error.to_string(),
             "Provider setup is required before running a real repository task"
         );
 
         store
-            .save_provider_reference(ProviderSetupInput {
-                provider_id: "codex-cli".into(),
-                label: "Local Codex CLI".into(),
-                raw_secret: None,
+            .save_model_connection(ModelConnectionSetupInput {
+                provider_id: "openai-api".into(),
+                model_id: "gpt-5.5".into(),
+                auth_method: "apiKeyEnv".into(),
+                env_key: Some("CODEPAWL_TEST_OPENAI_API_KEY".into()),
             })
-            .expect("save untested provider");
-        let failed_error =
-            ensure_provider_ready_for_run(&store).expect_err("untested provider blocks run");
+            .expect("save unauthenticated model connection");
+        let failed_error = ensure_model_connection_ready_for_run(&store)
+            .expect_err("unchecked connection blocks run");
         assert_eq!(
             failed_error.to_string(),
-            "Provider preflight must pass before running a real repository task"
+            "Provider check must pass before running a real repository task"
         );
     }
 
     #[test]
-    fn persisted_repository_run_records_provider_status_without_raw_secret() {
-        let root = temp_store_root("provider-run");
+    fn codex_access_token_login_pipes_token_to_stdin_without_persisting_it() {
+        let root = temp_store_root("codex-token");
+        let token_capture_path = root.join("captured-token.txt");
+        let bin_dir = root.join("bin");
+        let codex_path = bin_dir.join("codex");
+        std::fs::create_dir_all(&bin_dir).expect("create fake bin dir");
+        std::fs::write(
+            &codex_path,
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"--with-access-token\" ]; then cat > '{}'; exit 0; fi\nexit 1\n",
+                token_capture_path.display()
+            ),
+        )
+        .expect("write fake codex token login");
+        let mut permissions = std::fs::metadata(&codex_path)
+            .expect("codex metadata")
+            .permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            permissions.set_mode(0o755);
+        }
+        std::fs::set_permissions(&codex_path, permissions).expect("chmod fake codex");
+
+        let connection = login_codex_connection_with_access_token(
+            &bin_dir.to_string_lossy(),
+            "codex-access-token-secret",
+        )
+        .expect("token login succeeds");
+
+        assert_eq!(connection.connection_id, "codex-cli");
+        assert_eq!(connection.status, CodexConnectionStatus::AuthRequired);
+        assert_eq!(
+            std::fs::read_to_string(token_capture_path).expect("read captured token"),
+            "codex-access-token-secret"
+        );
+        let serialized = serde_json::to_string(&connection).expect("serialize connection");
+        assert!(!serialized.contains("codex-access-token-secret"));
+    }
+
+    #[test]
+    fn persisted_repository_run_records_codex_connection_status_without_raw_secret() {
+        let root = temp_store_root("codex-run");
         let store = LocalPersistenceStore::new(root.clone());
-        let mut provider = store
-            .save_provider_reference(ProviderSetupInput {
-                provider_id: "codex-cli".into(),
+        let mut connection = store
+            .save_codex_connection(CodexConnectionSetupInput {
+                connection_id: "codex-cli".into(),
                 label: "Local Codex CLI".into(),
-                raw_secret: Some("sk-privatebeta-secret-456".into()),
             })
-            .expect("save provider");
-        provider.status = ProviderReadinessStatus::Ready;
-        provider.last_preflight = Some(ProviderPreflightResult {
-            checked_provider_id: "codex-cli".into(),
-            status: ProviderReadinessStatus::Ready,
+            .expect("save connection");
+        connection.status = CodexConnectionStatus::Ready;
+        connection.last_preflight = Some(CodexConnectionPreflightResult {
+            checked_connection_id: "codex-cli".into(),
+            status: CodexConnectionStatus::Ready,
             ready: true,
             checked_at: "2026-07-04T00:00:00.000Z".into(),
             executable_path: Some("/usr/local/bin/codex".into()),
-            reasons: vec!["Codex CLI executable is available.".into()],
+            auth_mode: Some("chatgpt".into()),
+            reasons: vec!["Codex CLI is installed and authenticated with ChatGPT.".into()],
+            warnings: vec![],
         });
         store
-            .save_provider_reference_record(provider)
-            .expect("save ready provider");
+            .save_codex_connection_record(connection)
+            .expect("save ready connection");
 
-        let mut run = persisted_run(&root, "run-provider-ready");
-        run.provider_refs = store
-            .list_provider_references()
-            .expect("load provider refs for run");
+        let mut run = persisted_run(&root, "run-codex-ready");
+        run.model_connection = store
+            .load_model_connection()
+            .expect("load model connection for run");
+        run.codex_connection = store
+            .load_codex_connection()
+            .expect("load connection for run");
         store.save_run(&run).expect("save run");
 
-        let raw_run =
-            std::fs::read_to_string(store.run_path("run-provider-ready")).expect("read run");
+        let raw_run = std::fs::read_to_string(store.run_path("run-codex-ready")).expect("read run");
         assert!(raw_run.contains("codex-cli"));
+        assert!(raw_run.contains("modelConnection"));
         assert!(raw_run.contains("ready"));
-        assert!(!raw_run.contains("sk-privatebeta-secret-456"));
+        assert!(!raw_run.contains("rawSecret"));
+        assert!(!raw_run.contains("accessToken"));
+        assert!(!raw_run.contains("codex-access-token-secret"));
     }
 
     #[test]

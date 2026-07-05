@@ -60,10 +60,11 @@ describe("CodePawl IPC contracts", () => {
     expect(SETTINGS_IPC_METHODS).toEqual([
       "settings.get",
       "settings.update",
-      "providerKey.save",
-      "providerKey.list",
-      "providerKey.test",
-      "providerKey.delete",
+      "codexConnection.save",
+      "codexConnection.preflight",
+      "codexConnection.login",
+      "codexConnection.loginWithAccessToken",
+      "codexConnection.delete",
     ]);
   });
 

@@ -57,10 +57,11 @@ export const RUN_IPC_METHODS = [
 export const SETTINGS_IPC_METHODS = [
   "settings.get",
   "settings.update",
-  "providerKey.save",
-  "providerKey.list",
-  "providerKey.test",
-  "providerKey.delete",
+  "codexConnection.save",
+  "codexConnection.preflight",
+  "codexConnection.login",
+  "codexConnection.loginWithAccessToken",
+  "codexConnection.delete",
 ] as const;
 
 export const SKILL_IPC_METHODS = [

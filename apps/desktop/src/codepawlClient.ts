@@ -27,6 +27,10 @@ type TauriEventApi = {
   listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<UnlistenFn>;
 };
 
+type TauriDialogApi = {
+  open(options?: { directory?: boolean; multiple?: boolean; title?: string; defaultPath?: string }): Promise<string | string[] | null>;
+};
+
 export type CodexExecutionPreviewStatus = "approval_required" | "running" | "result_ready" | "blocked";
 
 export type CodexExecutionPreview = {
@@ -50,41 +54,115 @@ export type RetentionPolicySnapshot = {
   summary: string;
 };
 
+export type OperatorWorkType = "engineering" | "data-science" | "qa-automation" | "indie-builder";
+export type AppearancePreference = "system" | "light" | "dark";
+export type ChatFontPreference = "codepawl-sans" | "codepawl-serif" | "system";
+export type MotionPreference = "system" | "reduced";
+export type VoiceLanguagePreference = "english";
+export type VoiceStylePreference = "buttery" | "precise" | "direct";
+export type VoiceSpeedPreference = "slow" | "normal" | "fast";
+
+export type OperatorProfileSnapshot = {
+  fullName: string;
+  callSign: string;
+  workType: OperatorWorkType;
+};
+
+export type UiPreferencesSnapshot = {
+  appearance: AppearancePreference;
+  chatFont: ChatFontPreference;
+  motion: MotionPreference;
+  showMessageBlockMeta: boolean;
+};
+
+export type VoicePreferencesSnapshot = {
+  language: VoiceLanguagePreference;
+  style: VoiceStylePreference;
+  speed: VoiceSpeedPreference;
+};
+
 export type SettingsSnapshot = {
   workspaceId: string;
   permissionMode: "safe" | "balanced" | "manual";
   executableSurfaces: string[];
   blockedSurfaces: string[];
-  providerRefs: ProviderReference[];
+  defaultRepositoryPath: string;
+  welcomeCompleted: boolean;
+  modelConnection: ModelConnectionReference | null;
+  codexConnection: CodexConnectionReference | null;
   retentionPolicy: RetentionPolicySnapshot;
+  operatorProfile: OperatorProfileSnapshot;
+  uiPreferences: UiPreferencesSnapshot;
+  voicePreferences: VoicePreferencesSnapshot;
 };
 
 export type SettingsUpdateInput = {
-  permissionMode: "safe" | "balanced" | "manual";
+  permissionMode?: "safe" | "balanced" | "manual";
+  defaultRepositoryPath?: string;
+  welcomeCompleted?: boolean;
+  executableSurfaces?: string[];
+  retentionPolicy?: Partial<Pick<RetentionPolicySnapshot, "runHistoryDays" | "artifactRetentionDays" | "cleanupEnabled">>;
+  operatorProfile?: Partial<OperatorProfileSnapshot>;
+  uiPreferences?: Partial<UiPreferencesSnapshot>;
+  voicePreferences?: Partial<VoicePreferencesSnapshot>;
 };
 
-export type ProviderReadinessStatus = "untested" | "ready" | "failed";
+export type CodexConnectionStatus = "missing" | "authRequired" | "ready" | "failed";
 
-export type ProviderPreflightResult = {
-  checkedProviderId: string;
-  status: ProviderReadinessStatus;
+export type CodexConnectionPreflightResult = {
+  checkedConnectionId: string;
+  status: CodexConnectionStatus;
   ready: boolean;
   checkedAt: string;
   executablePath?: string | null;
+  authMode?: string | null;
   reasons: string[];
+  warnings: string[];
 };
 
-export type ProviderReference = {
-  providerId: string;
+export type CodexConnectionReference = {
+  connectionId: string;
   label: string;
-  keyRef: string;
-  status: ProviderReadinessStatus;
-  lastPreflight?: ProviderPreflightResult | null;
+  status: CodexConnectionStatus;
+  lastPreflight?: CodexConnectionPreflightResult | null;
 };
 
-export type ProviderSetupInput = {
-  providerId: string;
-  label: string;
+export type CodexConnectionLoginInput = {
+  method: "chatgpt" | "device";
+};
+
+export type ModelProviderId = "codex-cli" | "openai-api";
+export type ModelAuthMethod = "chatgptOAuth" | "deviceCode" | "accessToken" | "apiKeyEnv";
+export type ModelConnectionStatus = "missing" | "authRequired" | "ready" | "failed";
+
+export type ModelConnectionPreflightResult = {
+  checkedProviderId: ModelProviderId;
+  checkedModelId: string;
+  status: ModelConnectionStatus;
+  ready: boolean;
+  checkedAt: string;
+  executablePath?: string | null;
+  authMode?: ModelAuthMethod | string | null;
+  reasons: string[];
+  warnings: string[];
+};
+
+export type ModelConnectionReference = {
+  providerId: ModelProviderId;
+  providerLabel: string;
+  modelId: string;
+  modelLabel: string;
+  authMethod: ModelAuthMethod;
+  envKey?: string | null;
+  status: ModelConnectionStatus;
+  lastPreflight?: ModelConnectionPreflightResult | null;
+};
+
+export type ModelConnectionSetupInput = {
+  providerId: ModelProviderId;
+  modelId: string;
+  authMethod: ModelAuthMethod;
+  envKey?: string | null;
 };
 
 export type PersistedRunSummary = {
@@ -117,7 +195,8 @@ export type PersistedRunRecord = {
   memoryCandidates: Array<Record<string, unknown>>;
   skills: Array<Record<string, unknown>>;
   skillReplayPlan?: Record<string, unknown> | null;
-  providerRefs: ProviderReference[];
+  modelConnection: ModelConnectionReference | null;
+  codexConnection: CodexConnectionReference | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -160,23 +239,44 @@ export type ArtifactEvidenceContent = {
 
 let mockListeners = new Set<(event: RunEvent) => void>();
 const initialMockState = createMockRunState();
-const mockProviderReference: ProviderReference = {
-  providerId: "mock-provider",
-  label: "Mock provider",
-  keyRef: "mock-provider://codepawl/local-alpha",
+const mockCodexConnection: CodexConnectionReference = {
+  connectionId: "codex-cli",
+  label: "Local Codex CLI",
   status: "ready",
   lastPreflight: {
-    checkedProviderId: "mock-provider",
+    checkedConnectionId: "codex-cli",
     status: "ready",
     ready: true,
     checkedAt: "2026-07-04T00:00:00.000Z",
     executablePath: null,
-    reasons: ["Mock provider is ready for the browser demo."],
+    authMode: "mock",
+    reasons: ["Mock Codex connection is ready for the browser demo."],
+    warnings: [],
+  },
+};
+const mockModelConnection: ModelConnectionReference = {
+  providerId: "codex-cli",
+  providerLabel: "Codex CLI",
+  modelId: "gpt-5.5",
+  modelLabel: "GPT-5.5",
+  authMethod: "chatgptOAuth",
+  status: "ready",
+  lastPreflight: {
+    checkedProviderId: "codex-cli",
+    checkedModelId: "gpt-5.5",
+    status: "ready",
+    ready: true,
+    checkedAt: "2026-07-04T00:00:00.000Z",
+    executablePath: null,
+    authMode: "chatgptOAuth",
+    reasons: ["Mock Codex connection is ready for the browser demo."],
+    warnings: [],
   },
 };
 let mockMemoryReview: MemoryReviewSnapshot = initialMockState.memoryReview;
 let mockSkillRegistry: SkillRegistrySnapshot = initialMockState.skillRegistry;
-let mockProviderRefs: ProviderReference[] = [mockProviderReference];
+let mockCodexConnectionState: CodexConnectionReference | null = mockCodexConnection;
+let mockModelConnectionState: ModelConnectionReference | null = mockModelConnection;
 let mockReviewEventSequence = 20_000;
 
 function isTauriRuntime(): boolean {
@@ -199,10 +299,38 @@ async function loadTauriApi(): Promise<{ core: TauriCoreApi; event: TauriEventAp
   }
 }
 
+async function loadTauriDialogApi(): Promise<TauriDialogApi | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  try {
+    return await import("@tauri-apps/plugin-dialog");
+  } catch {
+    return null;
+  }
+}
+
 function emitMockRunEvent(event: RunEvent) {
   for (const listener of mockListeners) {
     listener(event);
   }
+}
+
+function modelLabelForMock(modelId: string): string {
+  if (modelId === "gpt-5.4-mini") {
+    return "GPT-5.4 mini";
+  }
+  if (modelId === "gpt-5.4-nano") {
+    return "GPT-5.4 nano";
+  }
+  if (modelId === "gpt-5.4") {
+    return "GPT-5.4";
+  }
+  if (modelId === "gpt-5.3-codex-spark") {
+    return "GPT-5.3 Codex Spark";
+  }
+  return "GPT-5.5";
 }
 
 function createMockCodexExecutionPreview(runId: string, overrides: Partial<CodexExecutionPreview> = {}): CodexExecutionPreview {
@@ -625,14 +753,57 @@ export const codepawl = {
       permissionMode: "safe",
       executableSurfaces: ["repository"],
       blockedSurfaces: ["browser", "desktop", "files", "terminal"],
-      providerRefs: structuredClone(mockProviderRefs),
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      modelConnection: structuredClone(mockModelConnectionState),
+      codexConnection: structuredClone(mockCodexConnectionState),
       retentionPolicy: {
         runHistoryDays: 30,
         artifactRetentionDays: 30,
         cleanupEnabled: false,
         summary: "Cleanup is manual for private beta; automatic retention is planned.",
       },
+      operatorProfile: {
+        fullName: "Operator",
+        callSign: "Operator",
+        workType: "engineering",
+      },
+      uiPreferences: {
+        appearance: "dark",
+        chatFont: "codepawl-sans",
+        motion: "system",
+        showMessageBlockMeta: false,
+      },
+      voicePreferences: {
+        language: "english",
+        style: "buttery",
+        speed: "normal",
+      },
     };
+  },
+
+  async detectCurrentRepositoryPath(): Promise<string | null> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<string | null>("repository_detect_current_path");
+    }
+
+    return null;
+  },
+
+  async browseRepositoryPath(defaultPath?: string): Promise<string | null> {
+    const dialog = await loadTauriDialogApi();
+    if (!dialog) {
+      return null;
+    }
+
+    const selected = await dialog.open({
+      directory: true,
+      multiple: false,
+      title: "Choose CodePawl repository",
+      defaultPath: defaultPath?.trim() || undefined,
+    });
+    return typeof selected === "string" ? selected : null;
   },
 
   async updateSettings(input: SettingsUpdateInput): Promise<SettingsSnapshot> {
@@ -641,72 +812,250 @@ export const codepawl = {
       return tauri.core.invoke<SettingsSnapshot>("settings_update", { input });
     }
 
+    const currentSettings = await this.getSettings();
+    const nextRetentionPolicy = input.retentionPolicy
+      ? {
+          ...currentSettings.retentionPolicy,
+          ...input.retentionPolicy,
+        }
+      : currentSettings.retentionPolicy;
+    const retentionPolicy = input.retentionPolicy
+      ? {
+          ...nextRetentionPolicy,
+          summary: nextRetentionPolicy.cleanupEnabled
+            ? `Automatic cleanup after ${nextRetentionPolicy.runHistoryDays} days for runs and ${nextRetentionPolicy.artifactRetentionDays} days for artifacts.`
+            : "Cleanup is manual for private beta; automatic retention is planned.",
+        }
+      : nextRetentionPolicy;
+
     return {
-      ...(await this.getSettings()),
-      permissionMode: input.permissionMode,
+      ...currentSettings,
+      ...input,
+      executableSurfaces: input.executableSurfaces ? ["repository"] : currentSettings.executableSurfaces,
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      retentionPolicy,
+      operatorProfile: input.operatorProfile ? { ...currentSettings.operatorProfile, ...input.operatorProfile } : currentSettings.operatorProfile,
+      uiPreferences: input.uiPreferences ? { ...currentSettings.uiPreferences, ...input.uiPreferences } : currentSettings.uiPreferences,
+      voicePreferences: input.voicePreferences ? { ...currentSettings.voicePreferences, ...input.voicePreferences } : currentSettings.voicePreferences,
     };
   },
 
-  async saveProviderReference(input: ProviderSetupInput): Promise<ProviderReference> {
+  async saveModelConnection(input: ModelConnectionSetupInput): Promise<ModelConnectionReference> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<ProviderReference>("provider_key_save", { input });
+      return tauri.core.invoke<ModelConnectionReference>("model_connection_save", { input });
     }
 
-    const reference: ProviderReference = {
+    const isCodex = input.providerId === "codex-cli";
+    const connection: ModelConnectionReference = {
       providerId: input.providerId,
-      label: input.label,
-      keyRef: `mock-provider://codepawl/${input.providerId}`,
-      status: "untested",
+      providerLabel: isCodex ? "Codex CLI" : "OpenAI API",
+      modelId: input.modelId,
+      modelLabel: modelLabelForMock(input.modelId),
+      authMethod: input.authMethod,
+      envKey: input.authMethod === "apiKeyEnv" ? (input.envKey?.trim() || "OPENAI_API_KEY") : null,
+      status: "authRequired",
       lastPreflight: null,
     };
-    mockProviderRefs = [reference, ...mockProviderRefs.filter((item) => item.providerId !== input.providerId)];
-    return structuredClone(reference);
+    mockModelConnectionState = connection;
+    if (isCodex) {
+      mockCodexConnectionState = {
+        connectionId: "codex-cli",
+        label: "Local Codex CLI",
+        status: "authRequired",
+        lastPreflight: null,
+      };
+    }
+    return structuredClone(connection);
   },
 
-  async listProviderReferences(): Promise<ProviderReference[]> {
+  async preflightModelConnection(): Promise<ModelConnectionPreflightResult> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<ProviderReference[]>("provider_key_list");
+      return tauri.core.invoke<ModelConnectionPreflightResult>("model_connection_preflight");
     }
 
-    return structuredClone(mockProviderRefs);
+    const current = mockModelConnectionState ?? mockModelConnection;
+    const isOpenAi = current.providerId === "openai-api";
+    const result: ModelConnectionPreflightResult = {
+      checkedProviderId: current.providerId,
+      checkedModelId: current.modelId,
+      status: "ready",
+      ready: true,
+      checkedAt: new Date().toISOString(),
+      executablePath: isOpenAi ? null : "/usr/local/bin/codex",
+      authMode: current.authMethod,
+      reasons: [isOpenAi ? `${current.envKey ?? "OPENAI_API_KEY"} is available for OpenAI API.` : "Mock Codex connection is ready for the browser demo."],
+      warnings: [],
+    };
+    mockModelConnectionState = {
+      ...current,
+      status: result.status,
+      lastPreflight: result,
+    };
+    if (current.providerId === "codex-cli") {
+      mockCodexConnectionState = {
+        connectionId: "codex-cli",
+        label: "Local Codex CLI",
+        status: result.status,
+        lastPreflight: {
+          checkedConnectionId: "codex-cli",
+          status: result.status,
+          ready: result.ready,
+          checkedAt: result.checkedAt,
+          executablePath: result.executablePath,
+          authMode: result.authMode,
+          reasons: result.reasons,
+          warnings: result.warnings,
+        },
+      };
+    }
+    return result;
   },
 
-  async testProviderReference(providerId: string): Promise<ProviderPreflightResult> {
+  async deleteModelConnection(): Promise<void> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<ProviderPreflightResult>("provider_key_test", { providerId });
+      await tauri.core.invoke<void>("model_connection_delete");
+      return;
     }
 
-    const result: ProviderPreflightResult = {
-      checkedProviderId: providerId,
+    mockModelConnectionState = null;
+    mockCodexConnectionState = null;
+  },
+
+  async saveCodexConnection(): Promise<CodexConnectionReference> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CodexConnectionReference>("codex_connection_save", {
+        input: { connectionId: "codex-cli", label: "Local Codex CLI" },
+      });
+    }
+
+    const connection: CodexConnectionReference = {
+      connectionId: "codex-cli",
+      label: "Local Codex CLI",
+      status: "authRequired",
+      lastPreflight: null,
+    };
+    mockCodexConnectionState = connection;
+    mockModelConnectionState = {
+      providerId: "codex-cli",
+      providerLabel: "Codex CLI",
+      modelId: "gpt-5.5",
+      modelLabel: "GPT-5.5",
+      authMethod: "chatgptOAuth",
+      status: "authRequired",
+      lastPreflight: null,
+    };
+    return structuredClone(connection);
+  },
+
+  async loginCodexConnection(input: CodexConnectionLoginInput): Promise<CodexConnectionReference> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CodexConnectionReference>("codex_connection_login", { input });
+    }
+
+    const connection: CodexConnectionReference = {
+      connectionId: "codex-cli",
+      label: "Local Codex CLI",
+      status: "authRequired",
+      lastPreflight: null,
+    };
+    mockCodexConnectionState = connection;
+    mockModelConnectionState = {
+      providerId: "codex-cli",
+      providerLabel: "Codex CLI",
+      modelId: mockModelConnectionState?.modelId ?? "gpt-5.5",
+      modelLabel: mockModelConnectionState?.modelLabel ?? "GPT-5.5",
+      authMethod: input.method === "device" ? "deviceCode" : "chatgptOAuth",
+      status: "authRequired",
+      lastPreflight: null,
+    };
+    return structuredClone(connection);
+  },
+
+  async loginCodexConnectionWithAccessToken(accessToken: string): Promise<CodexConnectionReference> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CodexConnectionReference>("codex_connection_login_with_access_token", {
+        input: { accessToken },
+      });
+    }
+
+    const connection: CodexConnectionReference = {
+      connectionId: "codex-cli",
+      label: "Local Codex CLI",
+      status: "authRequired",
+      lastPreflight: null,
+    };
+    mockCodexConnectionState = connection;
+    mockModelConnectionState = {
+      providerId: "codex-cli",
+      providerLabel: "Codex CLI",
+      modelId: mockModelConnectionState?.modelId ?? "gpt-5.5",
+      modelLabel: mockModelConnectionState?.modelLabel ?? "GPT-5.5",
+      authMethod: "accessToken",
+      status: "authRequired",
+      lastPreflight: null,
+    };
+    return structuredClone(connection);
+  },
+
+  async preflightCodexConnection(): Promise<CodexConnectionPreflightResult> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CodexConnectionPreflightResult>("codex_connection_preflight");
+    }
+
+    const result: CodexConnectionPreflightResult = {
+      checkedConnectionId: "codex-cli",
       status: "ready",
       ready: true,
       checkedAt: new Date().toISOString(),
       executablePath: null,
-      reasons: ["Mock provider is ready for the browser demo."],
+      authMode: "mock",
+      reasons: ["Mock Codex connection is ready for the browser demo."],
+      warnings: [],
     };
-    mockProviderRefs = mockProviderRefs.map((reference) =>
-      reference.providerId === providerId
-        ? {
-            ...reference,
-            status: result.status,
-            lastPreflight: result,
-          }
-        : reference,
-    );
+    mockCodexConnectionState = {
+      connectionId: "codex-cli",
+      label: "Local Codex CLI",
+      status: result.status,
+      lastPreflight: result,
+    };
+    mockModelConnectionState = {
+      providerId: "codex-cli",
+      providerLabel: "Codex CLI",
+      modelId: mockModelConnectionState?.modelId ?? "gpt-5.5",
+      modelLabel: mockModelConnectionState?.modelLabel ?? "GPT-5.5",
+      authMethod: mockModelConnectionState?.authMethod ?? "chatgptOAuth",
+      status: result.status,
+      lastPreflight: {
+        checkedProviderId: "codex-cli",
+        checkedModelId: mockModelConnectionState?.modelId ?? "gpt-5.5",
+        status: result.status,
+        ready: result.ready,
+        checkedAt: result.checkedAt,
+        executablePath: result.executablePath,
+        authMode: result.authMode,
+        reasons: result.reasons,
+        warnings: result.warnings,
+      },
+    };
     return result;
   },
 
-  async deleteProviderReference(providerId: string): Promise<void> {
+  async deleteCodexConnection(): Promise<void> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      await tauri.core.invoke<void>("provider_key_delete", { providerId });
+      await tauri.core.invoke<void>("codex_connection_delete");
       return;
     }
 
-    mockProviderRefs = mockProviderRefs.filter((reference) => reference.providerId !== providerId);
+    mockCodexConnectionState = null;
+    mockModelConnectionState = null;
   },
 
   async cancelRun(runId: string): Promise<void> {
@@ -897,7 +1246,8 @@ export const codepawl = {
     mockListeners = new Set();
     mockMemoryReview = resetState.memoryReview;
     mockSkillRegistry = resetState.skillRegistry;
-    mockProviderRefs = [mockProviderReference];
+    mockCodexConnectionState = mockCodexConnection;
+    mockModelConnectionState = mockModelConnection;
     mockReviewEventSequence = 20_000;
   },
 };
