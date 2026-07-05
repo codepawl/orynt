@@ -189,8 +189,8 @@ const pricing = [
     badge: "Best price",
     savings: "100% off trial window",
     tone: "price",
-    fit: "Best for evaluating CodePawl before committing.",
-    copy: "Explore CodePawl with full access.",
+    fit: "Best for evaluating Orynt before committing.",
+    copy: "Explore Orynt with full access.",
     cta: "Download trial build opens soon",
     features: ["All core features", "Up to 50 agent steps", "Closed-source product access", "Community support"],
   },
@@ -236,7 +236,7 @@ const docsPreviewSections = [
   {
     label: "Agent loop",
     category: "Operate runs",
-    title: "How CodePawl perceives, plans, acts, and verifies",
+    title: "How Orynt perceives, plans, acts, and verifies",
     copy: "A guided map of the working loop, tool boundaries, run state, and the review points that keep autonomy bounded.",
     keywords: ["perceive", "plan", "act", "run state", "tools"],
     previewTone: "blue",
@@ -299,7 +299,7 @@ const contactChannels = [
   {
     label: "Primary contact",
     email: "hello@codepawl.com",
-    copy: "Early-access questions, partnerships, and general CodePawl intake.",
+    copy: "Early-access questions, partnerships, and general Orynt intake.",
     emphasis: true,
   },
   {
@@ -344,7 +344,7 @@ const footerMockPages: FooterMockPage[] = [
   {
     route: "/guides",
     title: "Guides for operator-led agent work.",
-    copy: "Future guides will turn the CodePawl operating model into practical setup, run review, and skill-promotion workflows.",
+    copy: "Future guides will turn the Orynt operating model into practical setup, run review, and skill-promotion workflows.",
     panels: [
       {
         title: "Start with a bounded run",
@@ -362,7 +362,7 @@ const footerMockPages: FooterMockPage[] = [
   },
   {
     route: "/api-reference",
-    title: "API reference preview for CodePawl integrations.",
+    title: "API reference preview for Orynt integrations.",
     copy: "The public API surface is not live yet. This mock page reserves the future home for connectors, run events, and local control contracts.",
     panels: [
       {
@@ -381,7 +381,7 @@ const footerMockPages: FooterMockPage[] = [
   },
   {
     route: "/build-log",
-    title: "Build log for CodePawl early access.",
+    title: "Build log for Orynt early access.",
     copy: "A future build log will track product decisions, desktop build availability, and meaningful changes without pretending the package is final.",
     panels: [
       {
@@ -400,8 +400,8 @@ const footerMockPages: FooterMockPage[] = [
   },
   {
     route: "/careers",
-    title: "Careers at CodePawl will open later.",
-    copy: "CodePawl is not publishing roles yet. This page previews the future hiring lane for people who care about agent control systems.",
+    title: "Careers at Orynt will open later.",
+    copy: "Orynt is not publishing roles yet. This page previews the future hiring lane for people who care about agent control systems.",
     panels: [
       {
         title: "Product engineering",
@@ -424,16 +424,16 @@ const legalPolicyLastUpdated = "July 3, 2026";
 const legalPolicyPages: LegalPolicyPage[] = [
   {
     route: "/legal",
-    title: "Legal center for CodePawl.",
+    title: "Legal center for Orynt.",
     summary:
-      "This launch-draft legal center gathers the current CodePawl privacy, terms, and security notes for early-access visitors.",
+      "This launch-draft legal center gathers the current Orynt privacy, terms, and security notes for early-access visitors.",
     status: "Launch draft for review. These pages are informational and should be reviewed by counsel before public launch.",
     contactEmail: "hello@codepawl.com",
     sections: [
       {
         title: "What this covers",
         body: [
-          "CodePawl is currently presented as an early-access product. The legal pages describe the intended website, access, product, and security posture for that phase.",
+          "Orynt is currently presented as an early-access product. The legal pages describe the intended website, access, product, and security posture for that phase.",
           "The individual policy pages are written to be plain and conservative. They should not be treated as a substitute for legal advice.",
         ],
         items: [
@@ -445,7 +445,7 @@ const legalPolicyPages: LegalPolicyPage[] = [
       {
         title: "Contact lanes",
         body: [
-          "Use the most specific inbox so requests can be routed cleanly while CodePawl is still in early access.",
+          "Use the most specific inbox so requests can be routed cleanly while Orynt is still in early access.",
         ],
         items: [
           "General legal or product intake: hello@codepawl.com.",
@@ -466,15 +466,15 @@ const legalPolicyPages: LegalPolicyPage[] = [
     route: "/privacy",
     title: "Privacy policy launch draft.",
     summary:
-      "This privacy draft explains what CodePawl expects to collect, why it is used, and how privacy requests should be sent during early access.",
+      "This privacy draft explains what Orynt expects to collect, why it is used, and how privacy requests should be sent during early access.",
     status: "Launch draft for review. This is not legal advice and may change before public signup opens.",
     contactEmail: "privacy@codepawl.com",
     sections: [
       {
         title: "Information we expect to collect",
         body: [
-          "CodePawl may collect information you provide directly, such as name, email address, organization, contact messages, plan interest, and early-access requests.",
-          "If account access opens, CodePawl may collect account credentials or authentication metadata needed to manage access. Do not send passwords, secrets, provider keys, or confidential workspace data through public contact forms.",
+          "Orynt may collect information you provide directly, such as name, email address, organization, contact messages, plan interest, and early-access requests.",
+          "If account access opens, Orynt may collect account credentials or authentication metadata needed to manage access. Do not send passwords, secrets, provider keys, or confidential workspace data through public contact forms.",
         ],
         items: [
           "Contact and account details.",
@@ -487,34 +487,34 @@ const legalPolicyPages: LegalPolicyPage[] = [
         title: "How information is used",
         body: [
           "Information is used to respond to requests, manage early-access interest, provide product/support communication, protect the service, understand website performance, and prepare account/download access.",
-          "CodePawl does not need sensitive personal data for ordinary website intake. Users should avoid submitting regulated data, secrets, credentials, or third-party confidential material unless a specific secure process is provided.",
+          "Orynt does not need sensitive personal data for ordinary website intake. Users should avoid submitting regulated data, secrets, credentials, or third-party confidential material unless a specific secure process is provided.",
         ],
       },
       {
         title: "Sharing and service providers",
         body: [
-          "CodePawl may use service providers for hosting, email, analytics, security monitoring, support, and product operations. These providers should only receive information needed to perform those services.",
-          "Provider/model/browser usage for agent work is separate from CodePawl plan access. If those integrations become available, their own terms and privacy practices may also apply.",
+          "Orynt may use service providers for hosting, email, analytics, security monitoring, support, and product operations. These providers should only receive information needed to perform those services.",
+          "Provider/model/browser usage for agent work is separate from Orynt plan access. If those integrations become available, their own terms and privacy practices may also apply.",
         ],
       },
       {
         title: "Retention and security",
         body: [
-          "CodePawl should keep personal information only as long as it is reasonably needed for the purposes described here, legal compliance, dispute handling, security, or product operations.",
-          "No website can promise perfect security. CodePawl intends to use reasonable safeguards, limit access to operational need, and avoid collecting information that is not useful for the early-access relationship.",
+          "Orynt should keep personal information only as long as it is reasonably needed for the purposes described here, legal compliance, dispute handling, security, or product operations.",
+          "No website can promise perfect security. Orynt intends to use reasonable safeguards, limit access to operational need, and avoid collecting information that is not useful for the early-access relationship.",
         ],
       },
       {
         title: "Choices and rights",
         body: [
           "You may contact privacy@codepawl.com to request access, correction, deletion, or restriction of personal information where applicable. Some requests may require verification.",
-          "Visitors outside the United States may have additional rights under local privacy laws. CodePawl will evaluate those requests based on the applicable law and the current product stage.",
+          "Visitors outside the United States may have additional rights under local privacy laws. Orynt will evaluate those requests based on the applicable law and the current product stage.",
         ],
       },
       {
         title: "Children and updates",
         body: [
-          "CodePawl is intended for technical operators and teams, not children. The service should not knowingly collect information from children.",
+          "Orynt is intended for technical operators and teams, not children. The service should not knowingly collect information from children.",
           "This page may be updated as account access, downloads, analytics, billing, or provider integrations become more concrete.",
         ],
       },
@@ -524,49 +524,49 @@ const legalPolicyPages: LegalPolicyPage[] = [
     route: "/terms",
     title: "Terms of use launch draft.",
     summary:
-      "These terms describe the expected rules for using the CodePawl website, early-access materials, and future download lane.",
+      "These terms describe the expected rules for using the Orynt website, early-access materials, and future download lane.",
     status: "Launch draft for review. These terms are informational until public signup or a signed agreement adopts them.",
     contactEmail: "hello@codepawl.com",
     sections: [
       {
         title: "Early-access status",
         body: [
-          "CodePawl is not yet a generally available product. Website content, pricing, plan limits, download availability, support levels, and product capabilities may change before launch.",
+          "Orynt is not yet a generally available product. Website content, pricing, plan limits, download availability, support levels, and product capabilities may change before launch.",
           "A payment flow is not active on the current marketing site. If paid plans open later, the final package and cancellation terms should be presented before signup.",
         ],
       },
       {
         title: "Accounts and downloads",
         body: [
-          "Downloads may require an account or access step so CodePawl can connect builds, update notices, plan context, and security notes to the right operator.",
+          "Downloads may require an account or access step so Orynt can connect builds, update notices, plan context, and security notes to the right operator.",
           "You are responsible for keeping account credentials and provider keys secure. Do not share access in a way that bypasses intended plan, security, or approval boundaries.",
         ],
       },
       {
         title: "Acceptable use",
         body: [
-          "Use CodePawl and related materials lawfully and responsibly. Do not use the service to violate third-party rights, attack systems, bypass access controls, abuse websites, evade security controls, or process data you are not authorized to use.",
+          "Use Orynt and related materials lawfully and responsibly. Do not use the service to violate third-party rights, attack systems, bypass access controls, abuse websites, evade security controls, or process data you are not authorized to use.",
           "Agentic tool use must remain under appropriate human supervision, especially for actions involving files, credentials, account changes, browser sessions, payments, or destructive operations.",
         ],
       },
       {
         title: "Provider usage and costs",
         body: [
-          "Model, browser-provider, infrastructure, and third-party service costs are separate from CodePawl plan access unless a trial or written package says otherwise.",
-          "You are responsible for understanding the terms, costs, data handling, and limits of providers you connect to CodePawl.",
+          "Model, browser-provider, infrastructure, and third-party service costs are separate from Orynt plan access unless a trial or written package says otherwise.",
+          "You are responsible for understanding the terms, costs, data handling, and limits of providers you connect to Orynt.",
         ],
       },
       {
         title: "Ownership and feedback",
         body: [
-          "CodePawl and its website, design, software, documentation, and product materials remain owned by CodePawl or its licensors.",
-          "If you send feedback, suggestions, or product ideas, CodePawl may use them without obligation, while respecting any separate written confidentiality commitments.",
+          "Orynt and its website, design, software, documentation, and product materials remain owned by Orynt or its licensors.",
+          "If you send feedback, suggestions, or product ideas, Orynt may use them without obligation, while respecting any separate written confidentiality commitments.",
         ],
       },
       {
         title: "Disclaimers, limits, and changes",
         body: [
-          "Early-access materials are provided for evaluation and may contain defects, incomplete features, or changing limits. CodePawl should not be used as the only control for high-risk decisions.",
+          "Early-access materials are provided for evaluation and may contain defects, incomplete features, or changing limits. Orynt should not be used as the only control for high-risk decisions.",
           "These terms may change as the product moves toward public access. Continued use after an update means the updated terms apply unless a signed agreement says otherwise.",
         ],
       },
@@ -576,7 +576,7 @@ const legalPolicyPages: LegalPolicyPage[] = [
     route: "/security",
     title: "Security notes and reporting.",
     summary:
-      "These security notes describe how to report vulnerabilities and how CodePawl expects responsible testing to work during early access.",
+      "These security notes describe how to report vulnerabilities and how Orynt expects responsible testing to work during early access.",
     status: "Launch draft for review. Security procedures may change as the product and disclosure process mature.",
     contactEmail: "security@codepawl.com",
     sections: [
@@ -584,7 +584,7 @@ const legalPolicyPages: LegalPolicyPage[] = [
         title: "Report a vulnerability",
         body: [
           "Send security reports to security@codepawl.com. Include enough detail to understand impact, affected surface, reproduction steps, and whether credentials, personal data, or third-party systems may be involved.",
-          "Please avoid sending sensitive exploit artifacts through public channels unless CodePawl provides a secure transfer path.",
+          "Please avoid sending sensitive exploit artifacts through public channels unless Orynt provides a secure transfer path.",
         ],
         items: [
           "Affected URL, build, route, package, or component.",
@@ -604,21 +604,21 @@ const legalPolicyPages: LegalPolicyPage[] = [
         title: "Out of scope",
         body: [
           "Reports that rely only on missing headers, automated scanner output without exploitability, self-XSS, spam, social engineering, physical attacks, or denial-of-service may not be actionable during early access.",
-          "Do not test third-party providers, websites, or accounts through CodePawl unless you have independent authorization for those targets.",
+          "Do not test third-party providers, websites, or accounts through Orynt unless you have independent authorization for those targets.",
         ],
       },
       {
         title: "Security posture",
         body: [
-          "CodePawl is designed around operator approval gates, bounded tool use, visible evidence, and separation between CodePawl access and external provider usage.",
+          "Orynt is designed around operator approval gates, bounded tool use, visible evidence, and separation between Orynt access and external provider usage.",
           "Security work should emphasize data minimization, access control, reviewable changes, dependency hygiene, and clear handling of credentials and provider tokens.",
         ],
       },
       {
         title: "Response expectations",
         body: [
-          "CodePawl will review legitimate reports and may ask for clarification. Response timing may vary while the early-access process is still being staged.",
-          "Do not publicly disclose unresolved vulnerabilities before CodePawl has had a reasonable opportunity to investigate and address the report.",
+          "Orynt will review legitimate reports and may ask for clarification. Response timing may vary while the early-access process is still being staged.",
+          "Do not publicly disclose unresolved vulnerabilities before Orynt has had a reasonable opportunity to investigate and address the report.",
         ],
       },
     ],
@@ -724,7 +724,7 @@ function BrandLink({
   return (
     <RouteLink className="brand" href="/" ariaLabel={ariaLabel} onNavigate={onNavigate}>
       <BrandMark size={logoSize} />
-      <span>CodePawl</span>
+      <span>Orynt</span>
     </RouteLink>
   );
 }
@@ -735,12 +735,12 @@ function LoadingScreen({ isVisible }: { isVisible: boolean }) {
   }
 
   return (
-    <section className="loading-screen" role="status" aria-live="polite" aria-label="Loading CodePawl content">
+    <section className="loading-screen" role="status" aria-live="polite" aria-label="Loading Orynt content">
       <div className="loading-screen-mark" aria-hidden="true">
         <img className="loading-screen-logo-motion" src={codepawlLogoLoading} alt="" width="128" height="128" />
         <BrandMark className="loading-screen-logo-static" size={128} />
       </div>
-      <span className="loading-screen-label">Loading CodePawl</span>
+      <span className="loading-screen-label">Loading Orynt</span>
     </section>
   );
 }
@@ -760,7 +760,7 @@ function DownloadLinks({
   className,
   onNavigate,
   primaryHref = "/access",
-  primaryLabel = "Download CodePawl",
+  primaryLabel = "Download Orynt",
   secondaryHref = "/docs",
   secondaryLabel = "Start here",
 }: {
@@ -852,7 +852,7 @@ function LegalPolicyPageView({ page }: { page: LegalPolicyPage }) {
           <div className="legal-contact-card">
             <div>
               <h2>Questions or requests</h2>
-              <p>Use the policy-specific inbox so CodePawl can route the request while early access is still staged.</p>
+              <p>Use the policy-specific inbox so Orynt can route the request while early access is still staged.</p>
             </div>
             <a className="button button-secondary contact-mail-button" href={`mailto:${page.contactEmail}`}>
               {page.contactEmail}
@@ -1203,7 +1203,7 @@ function App() {
       <LoadingScreen isVisible={isLoadingScreenVisible} />
 
       <header className="site-header">
-        <BrandLink ariaLabel="CodePawl home" onNavigate={navigateToRoute} />
+        <BrandLink ariaLabel="Orynt home" onNavigate={navigateToRoute} />
 
         <nav className="primary-nav" aria-label="Primary navigation">
           {navItems.map((item) => (
@@ -1222,7 +1222,7 @@ function App() {
         <div className="hero-copy">
           <h1 id="hero-title">Give AI agents a working brain.</h1>
           <p className="hero-lede">
-            CodePawl is a brain-like operating system for adaptive AI agents. It gives them structured memory,
+            Orynt is a brain-like operating system for adaptive AI agents. It gives them structured memory,
             reusable skills, verification, self-improvement loops, and safe tool use so successful work can become
             reusable behavior only after review.
           </p>
@@ -1235,7 +1235,7 @@ function App() {
           />
         </div>
 
-        <section className="landing-animation" aria-label="CodePawl landing page animation" id="animation">
+        <section className="landing-animation" aria-label="Orynt landing page animation" id="animation">
           <div className="landing-animation-frame">
             <div className="landing-animation-visual" aria-hidden="true">
               <LandingPageAnimation />
@@ -1452,7 +1452,7 @@ function App() {
       {currentRoute === "/access" ? (
         <section className="access-page" aria-labelledby="access-page-title">
           <div className="access-page-header">
-            <h1 id="access-page-title">Create access before downloading CodePawl.</h1>
+            <h1 id="access-page-title">Create access before downloading Orynt.</h1>
             <p>
               Downloads stay behind a lightweight account step so early-access builds, plan context, security notes,
               and update notices stay attached to the right operator.
@@ -1521,7 +1521,7 @@ function App() {
               <ul>
                 <li>Build access is tied to the plan and early-access package shown on pricing.</li>
                 <li>Security and update notes need a verified operator inbox.</li>
-                <li>Provider/model usage stays separate from CodePawl plan access.</li>
+                <li>Provider/model usage stays separate from Orynt plan access.</li>
               </ul>
             </aside>
           </div>
@@ -1533,7 +1533,7 @@ function App() {
           <div className="docs-page-header">
             <h1 id="docs-page-title">Future docs for operator-led agents.</h1>
             <p>
-              A preview of the CodePawl documentation structure for setup, memory, skills, verification, approvals,
+              A preview of the Orynt documentation structure for setup, memory, skills, verification, approvals,
               and early-access builds.
             </p>
           </div>
@@ -1614,7 +1614,7 @@ function App() {
       {currentRoute === "/contact" ? (
         <section className="contact-page" aria-labelledby="contact-page-title">
           <div className="contact-page-header">
-            <h1 id="contact-page-title">Reach the right CodePawl inbox.</h1>
+            <h1 id="contact-page-title">Reach the right Orynt inbox.</h1>
             <p>
               Use the clearest lane for early-access questions, product support, security reports, and future legal or
               privacy requests.
@@ -1624,7 +1624,7 @@ function App() {
           <div className="contact-shell">
             <form className="contact-primary contact-form" aria-labelledby="primary-contact-title">
               <span>Primary contact</span>
-              <h2 id="primary-contact-title">Start with hello for general CodePawl intake.</h2>
+              <h2 id="primary-contact-title">Start with hello for general Orynt intake.</h2>
               <p>Questions about access, partnerships, launch timing, or the product direction can start here.</p>
               <div className="contact-field-row">
                 <label className="contact-field" htmlFor="contact-name">
@@ -1687,9 +1687,9 @@ function App() {
 
       <footer className="site-footer">
         <div>
-          <BrandLink ariaLabel="CodePawl home footer" logoSize={36} onNavigate={navigateToRoute} />
+          <BrandLink ariaLabel="Orynt home footer" logoSize={36} onNavigate={navigateToRoute} />
           <p>Brain-like operating system for adaptive AI agents.</p>
-          <small>© 2026 CodePawl. All rights reserved.</small>
+          <small>© 2026 Orynt. All rights reserved.</small>
         </div>
         <nav aria-label="Footer product links">
           <strong>Product</strong>

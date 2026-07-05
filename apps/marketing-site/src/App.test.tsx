@@ -12,7 +12,7 @@ const renderAtRoute = (path = "/") => {
   return render(<App />);
 };
 
-describe("CodePawl landing page", () => {
+describe("Orynt landing page", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/");
   });
@@ -36,13 +36,13 @@ describe("CodePawl landing page", () => {
   it("renders the landing nav, hero, and primary landing animation", () => {
     render(<App />);
 
-    const brandLink = screen.getByRole("link", { name: "CodePawl home" });
+    const brandLink = screen.getByRole("link", { name: "Orynt home" });
     const logo = brandLink.querySelector(".brand-logo");
     expect(logo?.tagName.toLowerCase()).toBe("svg");
     expect(logo).toHaveAttribute("aria-hidden", "true");
     expect(brandLink.querySelector("img")).not.toBeInTheDocument();
 
-    const loadingStatus = screen.getByRole("status", { name: "Loading CodePawl content" });
+    const loadingStatus = screen.getByRole("status", { name: "Loading Orynt content" });
     expect(loadingStatus.querySelector(".loading-screen-logo-motion")).toHaveAttribute("src", codepawlLogoLoading);
     expect(loadingStatus.querySelector(".loading-screen-logo-static")).toBeInTheDocument();
 
@@ -65,7 +65,7 @@ describe("CodePawl landing page", () => {
     expect(screen.queryByRole("link", { name: "View cockpit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "View Animation" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Start Local Walkthrough" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download CodePawl" })).toHaveAttribute("href", "/access");
+    expect(screen.getByRole("link", { name: "Download Orynt" })).toHaveAttribute("href", "/access");
     expect(screen.getByRole("link", { name: "Start here" })).toHaveAttribute("href", "/docs");
     expect(screen.getAllByRole("link", { name: "Start Here" })).toHaveLength(2);
     expect(screen.getAllByRole("link", { name: "Learn More" })).toHaveLength(2);
@@ -77,7 +77,7 @@ describe("CodePawl landing page", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Give AI agents a working brain." }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/codepawl is a brain-like operating system for adaptive ai agents/i)).toBeInTheDocument();
+    expect(screen.getByText(/orynt is a brain-like operating system for adaptive ai agents/i)).toBeInTheDocument();
     expect(
       screen.getByText(/structured memory, reusable skills, verification, self-improvement loops, and safe tool use/i),
     ).toBeInTheDocument();
@@ -87,7 +87,7 @@ describe("CodePawl landing page", () => {
     expect(screen.queryByText(/reviewed memory/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^closed-source product$/i)).not.toBeInTheDocument();
 
-    const preview = screen.getByRole("region", { name: "CodePawl landing page animation" });
+    const preview = screen.getByRole("region", { name: "Orynt landing page animation" });
     expect(within(preview).queryByRole("heading", { level: 2, name: "Working brain loop" })).not.toBeInTheDocument();
     ["Perceive", "Remember", "Plan", "Act", "Verify", "Improve"].forEach((label) => {
       expect(within(preview).queryByText(label)).not.toBeInTheDocument();
@@ -143,18 +143,18 @@ describe("CodePawl landing page", () => {
     vi.useFakeTimers();
     render(<App />);
 
-    expect(screen.getByRole("status", { name: "Loading CodePawl content" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading Orynt content" })).toBeInTheDocument();
 
     act(() => {
       window.dispatchEvent(new Event("load"));
       vi.advanceTimersByTime(649);
     });
-    expect(screen.getByRole("status", { name: "Loading CodePawl content" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading Orynt content" })).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(screen.queryByRole("status", { name: "Loading CodePawl content" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading Orynt content" })).not.toBeInTheDocument();
   });
 
   it("renders value props, workflow, pricing, and footer without removed middle marketing sections", () => {
@@ -253,7 +253,7 @@ describe("CodePawl landing page", () => {
   it("renders pricing and direct application download on the pricing page", () => {
     renderAtRoute("/pricing");
 
-    expect(screen.queryByRole("heading", { level: 1, name: "Choose a CodePawl build." })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "Choose a Orynt build." })).not.toBeInTheDocument();
     expect(screen.queryByText(/compare the early-access package/i)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Simple, predictable pricing." })).toBeInTheDocument();
     const pricingSection = screen.getByRole("region", { name: "Simple, predictable pricing." });
@@ -270,7 +270,7 @@ describe("CodePawl landing page", () => {
     expect(within(billingPeriod).getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "false");
     expect(within(billingPeriod).getByRole("button", { name: "Yearly" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByText("Monthly planning numbers shown.")).not.toBeInTheDocument();
-    expect(screen.getByText("Best for evaluating CodePawl before committing.")).toBeInTheDocument();
+    expect(screen.getByText("Best for evaluating Orynt before committing.")).toBeInTheDocument();
     expect(screen.getByText("Closed-source product access")).toBeInTheDocument();
     expect(screen.getByText("Best for solo operators running recurring browser work.")).toBeInTheDocument();
     expect(screen.getByText("Best for heavier usage, shared skills, and tighter approvals.")).toBeInTheDocument();
@@ -285,7 +285,7 @@ describe("CodePawl landing page", () => {
       "Full-loop trial",
       "Evaluate memory, skills, verification, and approval gates before paying.",
       "Clear base price",
-      "Plan price buys CodePawl control; provider usage stays separate instead of buried in markup.",
+      "Plan price buys Orynt control; provider usage stays separate instead of buried in markup.",
       "Early-access upside",
       "Final package, limits, and support terms are explicit before signup while these anchors stay visible.",
       "No live checkout",
@@ -320,11 +320,11 @@ describe("CodePawl landing page", () => {
   it("gates download actions behind the access page before returning to pricing", () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("link", { name: "Download CodePawl" }));
+    fireEvent.click(screen.getByRole("link", { name: "Download Orynt" }));
 
     expect(window.location.pathname).toBe("/access");
     expect(
-      screen.getByRole("heading", { level: 1, name: "Create access before downloading CodePawl." }),
+      screen.getByRole("heading", { level: 1, name: "Create access before downloading Orynt." }),
     ).toBeInTheDocument();
     expect(screen.getByText(/downloads stay behind a lightweight account step/i)).toBeInTheDocument();
     const accessForm = screen.getByRole("form", { name: "Sign up to continue to downloads." });
@@ -414,7 +414,7 @@ describe("CodePawl landing page", () => {
       "href",
       "/docs",
     );
-    expect(within(headerActions as HTMLElement).getByRole("link", { name: "Download CodePawl" })).toHaveAttribute(
+    expect(within(headerActions as HTMLElement).getByRole("link", { name: "Download Orynt" })).toHaveAttribute(
       "href",
       "/access",
     );
@@ -429,7 +429,7 @@ describe("CodePawl landing page", () => {
         "href",
         "/docs",
       );
-      expect(within(actions as HTMLElement).queryByRole("link", { name: "Download CodePawl" })).not.toBeInTheDocument();
+      expect(within(actions as HTMLElement).queryByRole("link", { name: "Download Orynt" })).not.toBeInTheDocument();
       expect(within(actions as HTMLElement).queryByRole("link", { name: "Review workflow" })).not.toBeInTheDocument();
     });
 
@@ -463,7 +463,7 @@ describe("CodePawl landing page", () => {
     const docsPage = screen.getByRole("region", { name: "Future docs for operator-led agents." });
 
     expect(screen.getByRole("heading", { level: 1, name: "Future docs for operator-led agents." })).toBeInTheDocument();
-    expect(screen.getByText(/a preview of the CodePawl documentation structure/i)).toBeInTheDocument();
+    expect(screen.getByText(/a preview of the Orynt documentation structure/i)).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Future documentation sections" })).not.toBeInTheDocument();
     const docsFilters = screen.getByRole("complementary", { name: "Documentation filters" });
     expect(within(docsFilters).getByText("Find useful docs")).toBeInTheDocument();
@@ -474,11 +474,11 @@ describe("CodePawl landing page", () => {
     });
     expect(screen.queryByRole("complementary", { name: "Documentation index" })).not.toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Documentation availability" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "How CodePawl perceives, plans, acts, and verifies" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "How Orynt perceives, plans, acts, and verifies" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Turn reviewed corrections into reusable behavior" })).toBeInTheDocument();
     expect(docsPage.querySelectorAll(".docs-preview-thumb")).toHaveLength(7);
     expect(docsPage.querySelectorAll(".docs-preview-item small")).toHaveLength(0);
-    expect(screen.queryByText("Provider/model billing notes will stay separate from CodePawl plan docs.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Provider/model billing notes will stay separate from Orynt plan docs.")).not.toBeInTheDocument();
     expect(screen.queryByText("These pages are not live docs yet.")).not.toBeInTheDocument();
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
     expect(screen.queryByText("Draft")).not.toBeInTheDocument();
@@ -493,7 +493,7 @@ describe("CodePawl landing page", () => {
     expect(screen.getByRole("heading", { level: 2, name: "What becomes durable context" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Turn reviewed corrections into reusable behavior" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { level: 2, name: "How CodePawl perceives, plans, acts, and verifies" }),
+      screen.queryByRole("heading", { level: 2, name: "How Orynt perceives, plans, acts, and verifies" }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(within(docsFilters).getByRole("button", { name: "All docs" }));
@@ -513,11 +513,11 @@ describe("CodePawl landing page", () => {
     unmount();
     renderAtRoute("/contact");
 
-    const contactPage = screen.getByRole("region", { name: "Reach the right CodePawl inbox." });
-    expect(screen.getByRole("heading", { level: 1, name: "Reach the right CodePawl inbox." })).toBeInTheDocument();
+    const contactPage = screen.getByRole("region", { name: "Reach the right Orynt inbox." });
+    expect(screen.getByRole("heading", { level: 1, name: "Reach the right Orynt inbox." })).toBeInTheDocument();
     expect(screen.getByText(/use the clearest lane for early-access questions/i)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Start with hello for general CodePawl intake." })).toBeInTheDocument();
-    expect(screen.getByRole("form", { name: "Start with hello for general CodePawl intake." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Start with hello for general Orynt intake." })).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: "Start with hello for general Orynt intake." })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Email" })).toHaveAttribute("type", "email");
     expect(screen.getByRole("combobox", { name: "Topic" })).toHaveValue("early-access");
@@ -549,17 +549,17 @@ describe("CodePawl landing page", () => {
       },
       {
         href: "/api-reference",
-        title: "API reference preview for CodePawl integrations.",
+        title: "API reference preview for Orynt integrations.",
         panel: "Run lifecycle contracts",
       },
       {
         href: "/build-log",
-        title: "Build log for CodePawl early access.",
+        title: "Build log for Orynt early access.",
         panel: "Release notes",
       },
       {
         href: "/careers",
-        title: "Careers at CodePawl will open later.",
+        title: "Careers at Orynt will open later.",
         panel: "Product engineering",
       },
     ].forEach(({ href, panel, title }) => {
@@ -581,7 +581,7 @@ describe("CodePawl landing page", () => {
     [
       {
         href: "/legal",
-        title: "Legal center for CodePawl.",
+        title: "Legal center for Orynt.",
         section: "What this covers",
         contact: "hello@codepawl.com",
       },
@@ -648,7 +648,7 @@ describe("CodePawl landing page", () => {
       window.dispatchEvent(new Event("popstate"));
     });
 
-    expect(screen.getByRole("heading", { level: 1, name: "Reach the right CodePawl inbox." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Reach the right Orynt inbox." })).toBeInTheDocument();
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "Footer resource links" })).getByRole("link", { name: "Guides" }));
     expect(window.location.pathname).toBe("/guides");
@@ -1532,7 +1532,7 @@ describe("CodePawl landing page", () => {
     expect(actions).toBeInTheDocument();
     expect(within(actions as HTMLElement).getByRole("link", { name: "Start here" })).toHaveAttribute("href", "/docs");
     expect(within(actions as HTMLElement).queryByRole("link", { name: "Learn More" })).not.toBeInTheDocument();
-    expect(within(actions as HTMLElement).getByRole("link", { name: "Download CodePawl" })).toHaveAttribute("href", "/access");
+    expect(within(actions as HTMLElement).getByRole("link", { name: "Download Orynt" })).toHaveAttribute("href", "/access");
 
     const styles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
     const headerStart = styles.indexOf(".site-header {\n  position: sticky");
@@ -1598,7 +1598,7 @@ describe("CodePawl landing page", () => {
     expect(actions).toBeInTheDocument();
     expect(within(actions as HTMLElement).queryByRole("link", { name: "View plans" })).not.toBeInTheDocument();
     expect(within(actions as HTMLElement).queryByRole("link", { name: "Review workflow" })).not.toBeInTheDocument();
-    expect(within(actions as HTMLElement).queryByRole("link", { name: "Download CodePawl" })).not.toBeInTheDocument();
+    expect(within(actions as HTMLElement).queryByRole("link", { name: "Download Orynt" })).not.toBeInTheDocument();
     expect(within(actions as HTMLElement).getByRole("link", { name: "Start Here" })).toHaveAttribute(
       "href",
       "/pricing",
