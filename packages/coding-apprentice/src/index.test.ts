@@ -22,8 +22,8 @@ async function createFixtureRepository(name = "repo") {
   await mkdir(path.join(repositoryPath, "packages"), { recursive: true });
   await mkdir(path.join(repositoryPath, "scripts"), { recursive: true });
   await git(["init"], repositoryPath);
-  await git(["config", "user.email", "codepawl@example.test"], repositoryPath);
-  await git(["config", "user.name", "CodePawl Test"], repositoryPath);
+  await git(["config", "user.email", "orynt@example.test"], repositoryPath);
+  await git(["config", "user.name", "Orynt Test"], repositoryPath);
   await writeFile(path.join(repositoryPath, "README.md"), "# Fixture\n");
   await writeFile(path.join(repositoryPath, "packages", "value.txt"), "initial\n");
   await writeFile(path.join(repositoryPath, "scripts", "pass.mjs"), "console.log('verification ok apiKey=sk-shouldberedacted123');\n");
@@ -70,7 +70,7 @@ function demoRequest(repositoryPath: string, overrides: Partial<Parameters<Local
 
 describe("LocalCodingApprenticeDemoOrchestrator", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-coding-apprentice-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-coding-apprentice-test-"));
   });
 
   afterEach(async () => {
@@ -149,11 +149,28 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       sandboxRoot: path.join(tempRoot, "desktop-sandboxes"),
       artifactRoot: path.join(tempRoot, "desktop-artifacts"),
       memoryRoot: path.join(tempRoot, "desktop-memory"),
+      modelConnection: {
+        providerId: "openai-api",
+        providerLabel: "OpenAI API",
+        modelId: "gpt-5.5",
+        modelLabel: "GPT-5.5",
+        authMethod: "apiKeyEnv",
+        envKey: "ORYNT_TEST_OPENAI_API_KEY",
+      },
+      thinkingEffort: "high",
     });
 
     const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
       runId: string;
       repositoryPath: string;
+      modelConnection?: { providerId: string; modelId: string; modelLabel: string; authMethod: string; envKey?: string };
+      thinkingEffort?: string;
+      budgetedAgent?: {
+        mode: string;
+        compactWorkingState: { activeChunks: string[]; hardConstraints: string[] };
+        selectedOptionId: string;
+        cost: { costPerSuccessfulTask?: number };
+      };
       artifacts: Record<string, string | null>;
       eventTypes: string[];
     };
@@ -163,6 +180,25 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     expect(manifest).toMatchObject({
       runId: result.runId,
       repositoryPath,
+      modelConnection: {
+        providerId: "openai-api",
+        modelId: "gpt-5.5",
+        modelLabel: "GPT-5.5",
+        authMethod: "apiKeyEnv",
+        envKey: "ORYNT_TEST_OPENAI_API_KEY",
+      },
+      thinkingEffort: "high",
+      budgetedAgent: {
+        mode: "HABIT",
+        compactWorkingState: {
+          activeChunks: expect.any(Array),
+          hardConstraints: expect.arrayContaining(["supervised repository run"]),
+        },
+        selectedOptionId: expect.stringMatching(/^O[0-9]+$/),
+        cost: {
+          costPerSuccessfulTask: expect.any(Number),
+        },
+      },
       artifacts: {
         contract: expect.stringContaining("codex-contract.md"),
         eventLog: expect.stringContaining("run-events.json"),
@@ -173,6 +209,36 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       },
     });
     expect(manifest.eventTypes).toContain("run_finished");
+  });
+
+  it("uses selected provider metadata in repository run ledger and contract context", async () => {
+    const repositoryPath = await createFixtureRepository("model-context-repo");
+    const result = await new LocalCodingApprenticeDemoOrchestrator().runDemo(
+      demoRequest(repositoryPath, {
+        modelConnection: {
+          providerId: "openai-api",
+          providerLabel: "OpenAI API",
+          modelId: "gpt-5.5",
+          modelLabel: "GPT-5.5",
+          authMethod: "apiKeyEnv",
+          envKey: "ORYNT_TEST_OPENAI_API_KEY",
+        },
+        thinkingEffort: "xhigh",
+        applyManualChange: async ({ sandbox, artifactRoot }) => {
+          await writeFile(path.join(sandbox.worktreePath, "packages", "value.txt"), "manual pass\n");
+          await writeFile(path.join(artifactRoot, "codex-log.md"), "Manual Codex fixture result\n");
+          return { manualLogPath: path.join(artifactRoot, "codex-log.md") };
+        },
+      }),
+    );
+
+    const contract = await readFile(result.contractArtifact.markdownPath, "utf8");
+
+    expect(result.ledgerRun.primaryModelProvider).toBe("openai-api");
+    expect(result.ledgerRun.primaryModelName).toBe("gpt-5.5");
+    expect(contract).toContain("Selected model provider: OpenAI API (openai-api).");
+    expect(contract).toContain("Selected model: GPT-5.5 (gpt-5.5).");
+    expect(contract).toContain("Thinking effort: xhigh.");
   });
 
   it("returns a verifier no-change failure when imported result has no changed files", async () => {

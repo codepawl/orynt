@@ -3,7 +3,7 @@ import { createConservativeCodingApprenticePolicy } from "@codepawl/shared";
 
 import { DeterministicCognitiveKernel, StaticMemoryProvider, type KernelActionPlan } from "./index";
 
-const policy = createConservativeCodingApprenticePolicy("/repo/codepawl", "/tmp/codepawl-worktree");
+const policy = createConservativeCodingApprenticePolicy("/repo/orynt", "/tmp/orynt-worktree");
 
 function plan(overrides: Partial<KernelActionPlan> = {}): KernelActionPlan {
   return {
@@ -62,6 +62,56 @@ describe("DeterministicCognitiveKernel", () => {
     expect(result.actionDecisions[0]).toMatchObject({ decision: "allow" });
     expect(result.verifications[0]).toMatchObject({ status: "pass", expectedObservation: "working tree clean", actualObservation: "working tree clean" });
     expect(result.summary).toContain("completed");
+    expect(result.budgetedTrace.decision.mode).toBe("HABIT");
+    expect(result.budgetedTrace.cost.costPerSuccessfulTask).toBeGreaterThan(0);
+  });
+
+  it("builds compact lossless-constraint state and typed memory under a token budget", async () => {
+    const kernel = new DeterministicCognitiveKernel({
+      policy,
+      memoryProvider: new StaticMemoryProvider([
+        { id: "semantic-1", kind: "semantic", summary: "Use targeted tests before broad builds.", relevance: 0.95 },
+        { id: "episodic-1", kind: "episodic", summary: "Prior repository run recovered after inspecting the smallest failing file.", relevance: 0.91 },
+        { id: "procedural-1", kind: "procedural", summary: "TDD loop: failing test, minimal fix, focused verification, broad verification.", relevance: 0.89 },
+        { id: "semantic-low", kind: "semantic", summary: "Long unrelated memory that should lose the budget competition.", relevance: 0.1 },
+      ]),
+      planner: { plan: async () => plan() },
+      gateway: {
+        execute: async () => ({
+          actionId: "action-read-repo",
+          observation: "working tree clean",
+          evidence: [{ id: "trace-1", kind: "trace", label: "verification trace" }],
+        }),
+      },
+      tokenBudgetPolicy: {
+        workingState: { maxActiveChunks: 7, maxChunkWords: 15 },
+        memoryRetrieval: { semantic: 12, episodic: 12, procedural: 12, maxTotal: 36 },
+        optionGenerator: { maxOptions: 5, maxOutputTokens: 500 },
+        tradeoffSimulator: { maxOutputTokens: 600 },
+        policySelector: { maxOutputTokens: 300 },
+        finalResponder: { maxOutputTokens: 800 },
+      },
+    });
+
+    const hardConstraints = ["do not mutate files", "all auth tests must pass", "budget <= 50 USD"];
+    const result = await kernel.runTask({
+      runId: "run-budgeted-state",
+      taskId: "task-budgeted-state",
+      workspaceId: "workspace-1",
+      goal: "Fix the login 401 bug after token refresh without touching public auth API.",
+      constraints: hardConstraints,
+      maxSteps: 4,
+    });
+
+    expect(result.budgetedTrace.needState.hardConstraints).toEqual(hardConstraints);
+    expect(result.budgetedTrace.workingState.hardConstraints).toEqual(hardConstraints);
+    expect(result.budgetedTrace.workingState.activeChunks.length).toBeLessThanOrEqual(7);
+    expect(result.budgetedTrace.workingState.activeChunks.every((chunk) => chunk.split(/\s+/).length <= 15)).toBe(true);
+    expect(result.budgetedTrace.memoryContext.selected.map((hit) => hit.kind)).toEqual(["semantic", "episodic", "procedural"]);
+    expect(result.budgetedTrace.memoryContext.dropped.map((hit) => hit.id)).toContain("semantic-low");
+    expect(result.budgetedTrace.options).toHaveLength(3);
+    expect(result.budgetedTrace.tradeoffScores[0].score).toBeGreaterThanOrEqual(result.budgetedTrace.tradeoffScores.at(-1)?.score ?? 0);
+    expect(result.budgetedTrace.decision.selectedOptionId).toBe(result.budgetedTrace.tradeoffScores[0].optionId);
   });
 
   it("pauses for explicit approval when policy classifies the action as review risk", async () => {

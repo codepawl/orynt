@@ -62,6 +62,17 @@ export type ManualDemoChangeContext = {
   policy: CorePolicy;
 };
 
+export type DesktopModelConnectionReference = {
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  modelLabel: string;
+  authMethod: string;
+  envKey?: string | null;
+};
+
+export type DesktopThinkingEffort = "minimal" | "none" | "low" | "medium" | "high" | "xhigh";
+
 export type CodingApprenticeDemoRequest = {
   goal: string;
   taskId: string;
@@ -89,6 +100,8 @@ export type CodingApprenticeDemoRequest = {
   memoryRoot?: string;
   memoryNamespace?: MemoryNamespace;
   applyManualChange?: (context: ManualDemoChangeContext) => Promise<ManualDemoChangeResult | void> | ManualDemoChangeResult | void;
+  modelConnection?: DesktopModelConnectionReference | null;
+  thinkingEffort?: DesktopThinkingEffort | string | null;
 };
 
 export type CodingApprenticeDemoResult = {
@@ -127,6 +140,8 @@ export type DesktopRepositoryRunRequest = {
   sandboxRoot: string;
   artifactRoot: string;
   memoryRoot?: string;
+  modelConnection?: DesktopModelConnectionReference | null;
+  thinkingEffort?: DesktopThinkingEffort | string | null;
 };
 
 export type DesktopRepositoryRunOutput = {
@@ -160,17 +175,19 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
     sandboxRoot: request.sandboxRoot,
     artifactRoot: request.artifactRoot,
     memoryRoot: request.memoryRoot,
-    validationCommands: ["node .codex/codepawl-beta-verify.mjs"],
-    allowedVerificationCommands: ["node .codex/codepawl-beta-verify.mjs"],
+    modelConnection: request.modelConnection,
+    thinkingEffort: request.thinkingEffort,
+    validationCommands: ["node .codex/orynt-beta-verify.mjs"],
+    allowedVerificationCommands: ["node .codex/orynt-beta-verify.mjs"],
     enableControlledCodexExecution: false,
     applyManualChange: async ({ sandbox, artifactRoot: runArtifactRoot }) => {
       const readmePath = path.join(sandbox.worktreePath, "README.md");
-      const verifyScriptPath = path.join(sandbox.worktreePath, ".codex", "codepawl-beta-verify.mjs");
+      const verifyScriptPath = path.join(sandbox.worktreePath, ".codex", "orynt-beta-verify.mjs");
       const manualLogPath = path.join(runArtifactRoot, "manual-result.log");
       redactedLogPath = path.join(runArtifactRoot, "manual-result.redacted.log");
       await mkdir(path.dirname(verifyScriptPath), { recursive: true });
-      await appendFile(readmePath, `\nCodePawl supervised beta run\n\n- Goal: ${request.goal}\n`, "utf8");
-      await writeFile(verifyScriptPath, "console.log('CodePawl beta repository smoke passed');\n", "utf8");
+      await appendFile(readmePath, `\nOrynt supervised beta run\n\n- Goal: ${request.goal}\n`, "utf8");
+      await writeFile(verifyScriptPath, "console.log('Orynt beta repository smoke passed');\n", "utf8");
       await writeFile(manualLogPath, `Manual repository-scoped beta result for: ${request.goal}\n`, "utf8");
       await writeFile(redactedLogPath, `Manual repository-scoped beta result for: ${request.goal}\n`, "utf8");
       return { manualLogPath };
@@ -197,8 +214,19 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
         repositoryPath: result.inspection.gitRoot,
         sandboxWorktreePath: result.sandbox.worktreePath,
         artifactRoot: runArtifactRoot,
+        modelConnection: request.modelConnection ?? null,
+        thinkingEffort: request.thinkingEffort ?? null,
         status: result.verificationResult.status,
         summary: result.summary,
+        budgetedAgent: {
+          mode: result.cognitiveKernelResult.budgetedTrace.decision.mode,
+          needState: result.cognitiveKernelResult.budgetedTrace.needState,
+          compactWorkingState: result.cognitiveKernelResult.budgetedTrace.workingState,
+          selectedOptionId: result.cognitiveKernelResult.budgetedTrace.decision.selectedOptionId,
+          tradeoffScores: result.cognitiveKernelResult.budgetedTrace.tradeoffScores,
+          cost: result.cognitiveKernelResult.budgetedTrace.cost,
+          memoryConsolidation: result.cognitiveKernelResult.budgetedTrace.memoryConsolidation,
+        },
         artifacts: {
           contract: result.contractArtifact.markdownPath,
           contractMetadata: result.contractArtifact.metadataPath,
@@ -307,8 +335,8 @@ export class LocalCodingApprenticeDemoOrchestrator {
       normalizedGoal: request.goal.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 120),
       taskType: "coding_apprentice",
       riskLevel: "review",
-      primaryModelProvider: "local",
-      primaryModelName: "codex-controlled-runtime",
+      primaryModelProvider: request.modelConnection?.providerId ?? "local",
+      primaryModelName: request.modelConnection?.modelId ?? "codex-controlled-runtime",
       startedAt: run.createdAt,
     });
     this.agentLedger.appendEvent(ledgerRun.id, {
@@ -395,7 +423,17 @@ export class LocalCodingApprenticeDemoOrchestrator {
       runId: run.id,
       taskId: run.taskId,
       goal: request.goal,
-      context: ["Local Coding Apprentice demo flow.", `Repository: ${inspection.gitRoot}`],
+      context: [
+        "Local Coding Apprentice demo flow.",
+        `Repository: ${inspection.gitRoot}`,
+        ...(request.modelConnection
+          ? [
+              `Selected model provider: ${request.modelConnection.providerLabel} (${request.modelConnection.providerId}).`,
+              `Selected model: ${request.modelConnection.modelLabel} (${request.modelConnection.modelId}).`,
+            ]
+          : []),
+        ...(request.thinkingEffort ? [`Thinking effort: ${request.thinkingEffort}.`] : []),
+      ],
       constraints: ["Do not execute Codex automatically.", "Import only managed manual artifacts.", "Verifier owns final success verdict."],
       doneWhen: ["Manual result is imported.", "Verifier input is created.", "Verifier records final evidence."],
       repository: inspection,
