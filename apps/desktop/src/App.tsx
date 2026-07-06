@@ -23,6 +23,7 @@ import {
   Info,
   Languages,
   LayoutDashboard,
+  LoaderCircle,
   LogOut,
   Maximize2,
   Minimize2,
@@ -52,9 +53,11 @@ import {
 } from "lucide-react";
 import type { CandidateRule, MemoryReviewSnapshot, MockRunState, SkillDefinition, SkillRegistrySnapshot, SkillReplayPlan, SurfaceKind } from "@codepawl/shared";
 import type { LucideIcon } from "lucide-react";
-import type { FocusEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
+import type { FocusEvent, FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
-import { codepawl } from "./codepawlClient";
+import lightbulbLogoOnDark from "../../../assets/pictures/lightbulb-mark-on-dark.svg";
+
+import { orynt } from "./oryntClient";
 import type {
   ArtifactEvidenceContent,
   ArtifactEvidenceStatus,
@@ -62,13 +65,15 @@ import type {
   CodexConnectionPreflightResult,
   CodexConnectionReference,
   ModelAuthMethod,
+  ModelCatalogOption,
   ModelConnectionPreflightResult,
   ModelConnectionReference,
   ModelProviderId,
   PersistedRunRecord,
   PersistedRunSummary,
   SettingsSnapshot,
-} from "./codepawlClient";
+  ThinkingEffort,
+} from "./oryntClient";
 import "./styles.css";
 
 type Workspace = {
@@ -88,6 +93,14 @@ type ThreadMessage = {
 };
 
 type AgentResponseRating = "good" | "bad";
+
+type AppNotificationTone = "success" | "info" | "warning" | "error";
+
+type AppNotification = {
+  id: number;
+  message: string;
+  tone: AppNotificationTone;
+};
 
 type AgentResponseTextSelection = {
   messageId: string;
@@ -118,12 +131,20 @@ const surfaceDescriptions: Record<SurfaceKind, string> = {
   repository: "Allow repository reads, diffs, and scoped code changes.",
   browser: "Unavailable in private beta; no browser automation runs from this app.",
   desktop: "Unavailable in private beta; no computer-wide desktop control runs from this app.",
-  files: "Unavailable in private beta; only the selected repository path is in scope.",
+  files: "Unavailable in private beta; only the selected local directory is in scope.",
   terminal: "Unavailable in private beta; no arbitrary shell or terminal control runs from this app.",
 };
 
 const messageBlockMetaDescription = "Show or hide compact block labels above agent and approval messages.";
 const betaUnavailableSurfaces = ["Browser", "Desktop", "Files", "Terminal", "Cloud", "Billing"] as const;
+const betaUnavailableSurfaceDescriptions: Record<(typeof betaUnavailableSurfaces)[number], string> = {
+  Browser: "Browser automation is not available from this private beta workspace.",
+  Desktop: "Computer-wide desktop control remains unavailable.",
+  Files: "Only the selected local directory is in scope.",
+  Terminal: "Arbitrary shell and terminal control remain unavailable.",
+  Cloud: "Hosted cloud runs are not enabled for this local-first beta.",
+  Billing: "Billing actions stay disabled while this release uses local beta access.",
+};
 const renderedRunEventTypes = new Set([
   "run_started",
   "sandbox_created",
@@ -141,6 +162,15 @@ const permissionModeOptions = [
   { value: "locked", label: "Locked", helper: "Keep the cockpit read-only until the operator re-enables controlled actions." },
 ] as const;
 
+const thinkingEffortOptions = [
+  { value: "minimal", label: "Minimal", helper: "Smallest reasoning budget for very direct changes." },
+  { value: "none", label: "None", helper: "Disable reasoning effort when the selected model supports it." },
+  { value: "low", label: "Low", helper: "Faster, lighter planning for simple changes." },
+  { value: "medium", label: "Medium", helper: "Balanced reasoning for normal repository work." },
+  { value: "high", label: "High", helper: "Deeper planning for complex or risky changes." },
+  { value: "xhigh", label: "X High", helper: "Maximum available reasoning effort for the selected model." },
+] as const;
+
 function toUiPermissionMode(mode: SettingsSnapshot["permissionMode"]): PermissionModeOption {
   if (mode === "manual") {
     return "ask-first";
@@ -153,6 +183,41 @@ function toSettingsPermissionMode(mode: PermissionModeOption): SettingsSnapshot[
     return "manual";
   }
   return "safe";
+}
+
+function toUiThinkingEffort(effort: ThinkingEffort | undefined): ThinkingEffortOption {
+  if (!effort) {
+    return "medium";
+  }
+  return thinkingEffortOptions.some((option) => option.value === effort) ? effort : "medium";
+}
+
+function supportedThinkingEffortsForModel(model: SetupModelOption | null | undefined): ThinkingEffortOption[] {
+  const supportedEfforts = model?.supportedThinkingEfforts ?? [];
+  return supportedEfforts.filter((effort): effort is ThinkingEffortOption => thinkingEffortOptions.some((option) => option.value === effort));
+}
+
+function thinkingEffortOptionsForModel(model: SetupModelOption | null | undefined) {
+  const supportedEfforts = supportedThinkingEffortsForModel(model);
+  return thinkingEffortOptions.filter((option) => supportedEfforts.includes(option.value));
+}
+
+function resolveThinkingEffortForModel(model: SetupModelOption | null | undefined, currentEffort: ThinkingEffortOption): ThinkingEffortOption {
+  const supportedEfforts = supportedThinkingEffortsForModel(model);
+  if (supportedEfforts.length === 0) {
+    return currentEffort;
+  }
+  if (supportedEfforts.includes(currentEffort)) {
+    return currentEffort;
+  }
+  const defaultEffort = model?.defaultThinkingEffort;
+  if (defaultEffort && supportedEfforts.includes(defaultEffort)) {
+    return defaultEffort;
+  }
+  if (supportedEfforts.includes("medium")) {
+    return "medium";
+  }
+  return supportedEfforts[0] ?? currentEffort;
 }
 
 function codexConnectionIsReady(settings: SettingsSnapshot | null): boolean {
@@ -182,37 +247,65 @@ function codexConnectionStatusMessage(reference: CodexConnectionReference | null
   if (!reference) {
     return "Codex connection is required before real repository runs.";
   }
-  return reference.lastPreflight?.reasons[0] ?? "Run Codex login or connection check before real repository runs.";
+  return reference.lastPreflight?.reasons[0] ?? "Run the Codex CLI provider check before real repository runs.";
+}
+
+function messageFromUnknownError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return fallback;
+}
+
+type SetupNoticeTone = "info" | "success" | "warning" | "error";
+
+function setupLogTextClassName(tone: SetupNoticeTone): string {
+  return `setup-log-text setup-log-text-${tone}`;
+}
+
+function preflightTone(ready: boolean, status: string): SetupNoticeTone {
+  if (ready) {
+    return "success";
+  }
+  return status === "failed" || status === "missing" ? "error" : "warning";
+}
+
+function LoadingSpinner() {
+  return <LoaderCircle className="ui-icon loading-spinner" aria-hidden="true" strokeWidth={2} />;
+}
+
+function LoadingButtonContent({
+  children,
+  isLoading,
+  loadingLabel,
+}: {
+  children: ReactNode;
+  isLoading: boolean;
+  loadingLabel: string;
+}) {
+  if (!isLoading) {
+    return <>{children}</>;
+  }
+  return (
+    <span className="loading-button-content">
+      <LoadingSpinner />
+      <span>{loadingLabel}</span>
+    </span>
+  );
+}
+
+function codexPreflightSetupMessage(result: CodexConnectionPreflightResult, fallback: string): string {
+  if (result.ready) {
+    return result.reasons[0] ?? fallback;
+  }
+  if (result.status === "authRequired") {
+    return "No authenticated Codex CLI session was detected. Orynt does not manage Codex sign-in. Run codex login in a terminal, complete sign-in, then return and click Check Codex CLI again.";
+  }
+  return result.reasons[0] ?? fallback;
 }
 
 function modelConnectionFromSettings(settings: SettingsSnapshot | null): ModelConnectionReference | null {
-  if (settings?.modelConnection) {
-    return settings.modelConnection;
-  }
-  if (!settings?.codexConnection) {
-    return null;
-  }
-  return {
-    providerId: "codex-cli",
-    providerLabel: "Codex CLI",
-    modelId: "gpt-5.5",
-    modelLabel: "GPT-5.5",
-    authMethod: "chatgptOAuth",
-    status: settings.codexConnection.status,
-    lastPreflight: settings.codexConnection.lastPreflight
-      ? {
-          checkedProviderId: "codex-cli",
-          checkedModelId: "gpt-5.5",
-          status: settings.codexConnection.lastPreflight.status,
-          ready: settings.codexConnection.lastPreflight.ready,
-          checkedAt: settings.codexConnection.lastPreflight.checkedAt,
-          executablePath: settings.codexConnection.lastPreflight.executablePath,
-          authMode: settings.codexConnection.lastPreflight.authMode,
-          reasons: settings.codexConnection.lastPreflight.reasons,
-          warnings: settings.codexConnection.lastPreflight.warnings,
-        }
-      : null,
-  };
+  return settings?.modelConnection ?? null;
 }
 
 function modelConnectionIsReady(settings: SettingsSnapshot | null): boolean {
@@ -271,14 +364,30 @@ const composerAttachmentOptionGroups = [
   [{ id: "web-search", label: "Web search", Icon: Globe2, checked: false, disabled: true, helper: "Unavailable in beta" }],
 ] as const;
 
-const messageBlockMetaStorageKey = "codepawl:message-block-meta-visible:v1";
-const privateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
+const messageBlockMetaStorageKey = "orynt:message-block-meta-visible:v1";
+const legacyMessageBlockMetaStorageKey = "codepawl:message-block-meta-visible:v1";
+const privateBetaOnboardingStorageKey = "orynt:private-beta-onboarding:v1";
+const legacyPrivateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
 const defaultLandingUrl = "http://127.0.0.1:5173/";
 const mobileWorkspaceMediaQuery = "(max-width: 720px)";
 
 function readPrivateBetaOnboardingDismissed() {
   try {
-    return window.localStorage.getItem(privateBetaOnboardingStorageKey) === "dismissed";
+    return (
+      window.localStorage.getItem(privateBetaOnboardingStorageKey) === "dismissed" ||
+      window.localStorage.getItem(legacyPrivateBetaOnboardingStorageKey) === "dismissed"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function readMessageBlockMetaVisible() {
+  try {
+    return (
+      window.localStorage.getItem(messageBlockMetaStorageKey) === "true" ||
+      window.localStorage.getItem(legacyMessageBlockMetaStorageKey) === "true"
+    );
   } catch {
     return false;
   }
@@ -292,7 +401,7 @@ function readMobileWorkspaceViewport() {
 }
 
 export function getLandingUrl() {
-  const configuredUrl = import.meta.env.VITE_CODEPAWL_LANDING_URL?.trim();
+  const configuredUrl = import.meta.env.VITE_ORYNT_LANDING_URL?.trim();
   return configuredUrl || defaultLandingUrl;
 }
 
@@ -334,8 +443,8 @@ const appearanceOptions: Array<{ value: SettingsSnapshot["uiPreferences"]["appea
 ];
 
 const chatFontOptions: Array<{ value: SettingsSnapshot["uiPreferences"]["chatFont"]; label: string }> = [
-  { value: "codepawl-sans", label: "CodePawl Sans" },
-  { value: "codepawl-serif", label: "CodePawl Serif" },
+  { value: "orynt-sans", label: "Orynt Sans" },
+  { value: "orynt-serif", label: "Orynt Serif" },
   { value: "system", label: "System" },
 ];
 
@@ -359,9 +468,13 @@ const voiceSpeedOptions: Array<{ value: SettingsSnapshot["voicePreferences"]["sp
 ];
 
 type SetupModelOption = {
+  defaultThinkingEffort?: ThinkingEffort | null;
   id: string;
   label: string;
-  description: string;
+  description?: string | null;
+  ownedBy?: string | null;
+  source?: ModelProviderId;
+  supportedThinkingEfforts?: ThinkingEffort[] | null;
 };
 
 type SetupProviderOption = {
@@ -371,23 +484,21 @@ type SetupProviderOption = {
   authMethods: ModelAuthMethod[];
   defaultAuthMethod: ModelAuthMethod;
   defaultEnvKey?: string;
-  models: SetupModelOption[];
 };
 
-type SetupPickerStage = "provider" | "model";
+type OryntDropdownOption = {
+  description?: string;
+  label: string;
+  value: string;
+};
 
 const setupProviderOptions: SetupProviderOption[] = [
   {
     id: "codex-cli",
     label: "Codex CLI",
-    description: "Local Codex authentication with ChatGPT OAuth and a device-code fallback.",
-    authMethods: ["chatgptOAuth", "deviceCode", "accessToken"],
-    defaultAuthMethod: "chatgptOAuth",
-    models: [
-      { id: "gpt-5.5", label: "GPT-5.5", description: "Default Codex model for complex coding and research work." },
-      { id: "gpt-5.4-mini", label: "GPT-5.4 mini", description: "Lower-latency Codex option for lighter coding tasks." },
-      { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark", description: "Research-preview option for near-instant coding iteration." },
-    ],
+    description: "Detects an existing local Codex CLI session without changing Codex credentials.",
+    authMethods: ["codexCliSession"],
+    defaultAuthMethod: "codexCliSession",
   },
   {
     id: "openai-api",
@@ -396,25 +507,205 @@ const setupProviderOptions: SetupProviderOption[] = [
     authMethods: ["apiKeyEnv"],
     defaultAuthMethod: "apiKeyEnv",
     defaultEnvKey: "OPENAI_API_KEY",
-    models: [
-      { id: "gpt-5.5", label: "GPT-5.5", description: "Flagship model for complex reasoning and coding." },
-      { id: "gpt-5.4", label: "GPT-5.4", description: "More affordable model for coding and professional work." },
-      { id: "gpt-5.4-mini", label: "GPT-5.4 mini", description: "Lower-cost, lower-latency model for lighter workloads." },
-      { id: "gpt-5.4-nano", label: "GPT-5.4 nano", description: "Small model option for cost-sensitive workflows." },
-    ],
   },
 ];
 
-function setupProviderById(providerId: ModelProviderId | null | undefined): SetupProviderOption {
-  return setupProviderOptions.find((provider) => provider.id === providerId) ?? setupProviderOptions[0];
+function setupProviderById(providerId: ModelProviderId | null | undefined): SetupProviderOption | null {
+  return setupProviderOptions.find((provider) => provider.id === providerId) ?? null;
 }
 
-function setupModelById(provider: SetupProviderOption, modelId: string | null | undefined): SetupModelOption {
-  return provider.models.find((model) => model.id === modelId) ?? provider.models[0];
+function setupModelById(models: SetupModelOption[], modelId: string | null | undefined): SetupModelOption | null {
+  if (!modelId) {
+    return null;
+  }
+  return models.find((model) => model.id === modelId) ?? null;
+}
+
+function OryntDropdown({
+  ariaLabel,
+  id,
+  onChange,
+  options,
+  placeholder,
+  value,
+}: {
+  ariaLabel: string;
+  id: string;
+  onChange: (value: string) => void;
+  options: OryntDropdownOption[];
+  placeholder: string;
+  value: string;
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightedValue, setHighlightedValue] = useState<string>("");
+  const selectedOption = options.find((option) => option.value === value) ?? null;
+  const displayLabel = selectedOption?.label ?? placeholder;
+  const listboxId = `${id}-listbox`;
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setHighlightedValue(value || options[0]?.value || "");
+    }
+  }, [isOpen, options, value]);
+
+  const selectOption = (nextValue: string) => {
+    setHighlightedValue(nextValue);
+    setIsOpen(false);
+    triggerRef.current?.blur();
+    onChange(nextValue);
+  };
+
+  const handleOptionPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, nextValue: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    selectOption(nextValue);
+  };
+
+  const moveHighlight = (direction: 1 | -1) => {
+    if (options.length === 0) {
+      return;
+    }
+    const currentIndex = Math.max(
+      0,
+      options.findIndex((option) => option.value === (highlightedValue || value)),
+    );
+    const nextIndex = (currentIndex + direction + options.length) % options.length;
+    setHighlightedValue(options[nextIndex]?.value ?? "");
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        return;
+      }
+      moveHighlight(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        return;
+      }
+      selectOption(highlightedValue || value || options[0]?.value || "");
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div className="orynt-dropdown" ref={rootRef}>
+      <button
+        aria-activedescendant={isOpen && highlightedValue ? `${id}-option-${highlightedValue || "empty"}` : undefined}
+        aria-controls={isOpen ? listboxId : undefined}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel}
+        className={`input-focus-standalone settings-select orynt-dropdown-trigger${selectedOption ? "" : " orynt-dropdown-trigger-placeholder"}`}
+        id={id}
+        onClick={() => setIsOpen((current) => !current)}
+        onKeyDown={handleKeyDown}
+        ref={triggerRef}
+        role="combobox"
+        type="button"
+      >
+        <span>{displayLabel}</span>
+        <ChevronsUpDown className="orynt-dropdown-icon" aria-hidden="true" />
+      </button>
+      {isOpen ? (
+        <div className="orynt-dropdown-menu" id={listboxId} role="listbox" aria-label={`${ariaLabel} options`}>
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            const isHighlighted = option.value === highlightedValue;
+            const optionId = `${id}-option-${option.value || "empty"}`;
+            return (
+              <button
+                aria-selected={isSelected}
+                className={`orynt-dropdown-option${isHighlighted ? " orynt-dropdown-option-highlighted" : ""}${isSelected ? " orynt-dropdown-option-selected" : ""}`}
+                id={optionId}
+                key={option.value}
+                onClick={() => selectOption(option.value)}
+                onMouseEnter={() => setHighlightedValue(option.value)}
+                onPointerDown={(event) => handleOptionPointerDown(event, option.value)}
+                role="option"
+                type="button"
+              >
+                <strong className="orynt-dropdown-option-title">{option.label}</strong>
+                {option.description ? <small className="orynt-dropdown-option-description">{option.description}</small> : null}
+                {isSelected ? <Check className="orynt-dropdown-check" aria-hidden="true" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SettingsLabelWithInfo({
+  info,
+  infoLabel,
+  label,
+}: {
+  info: string;
+  infoLabel: string;
+  label: string;
+}) {
+  const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+  const tooltipId = `${infoLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-tooltip`;
+
+  return (
+    <span className="settings-label-with-info">
+      <span>{label}</span>
+      <button
+        aria-describedby={isTooltipVisible ? tooltipId : undefined}
+        aria-label={infoLabel}
+        className="settings-info-button"
+        onBlur={() => setIsTooltipVisible(false)}
+        onFocus={() => setIsTooltipVisible(true)}
+        onMouseEnter={() => setIsTooltipVisible(true)}
+        onMouseLeave={() => setIsTooltipVisible(false)}
+        type="button"
+      >
+        <Info className="settings-info-icon" aria-hidden="true" />
+      </button>
+      {isTooltipVisible ? (
+        <span className="settings-info-tooltip" id={tooltipId} role="tooltip">
+          {info}
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 const settingsSections = [
   { id: "general", label: "General", group: "Settings", keywords: ["profile", "appearance", "operator", "message", "labels", "display", "voice", "font", "motion"], Icon: SettingsIcon },
+  { id: "model", label: "Model", group: "Settings", keywords: ["provider", "model", "codex", "openai", "thinking", "effort"], Icon: Cpu },
+  { id: "status", label: "Status", group: "Settings", keywords: ["status", "beta", "surface", "repository", "browser", "desktop", "files", "terminal", "cloud", "billing"], Icon: ShieldCheck },
   { id: "account", label: "Account", group: "Settings", keywords: ["identity", "session", "workspace", "devices"], Icon: CircleUserRound },
   { id: "billing", label: "Billing", group: "Settings", keywords: ["plan", "invoice", "subscription", "local"], Icon: CreditCard },
 ] as const;
@@ -436,13 +727,14 @@ const accountMenuGroups = [
   [
     { id: "upgrade", label: "Upgrade plan", Icon: CreditCard, action: "future" },
     { id: "apps", label: "Get apps and extensions", Icon: Download, action: "future" },
-    { id: "gift", label: "Gift CodePawl", Icon: Gift, action: "future" },
+    { id: "gift", label: "Gift Orynt", Icon: Gift, action: "future" },
     { id: "learn", label: "Learn more", Icon: Info, action: "future", hasSubmenu: true },
   ],
   [{ id: "logout", label: "Log out", Icon: LogOut, action: "logout" }],
 ] satisfies AccountMenuItem[][];
 
 type PermissionModeOption = (typeof permissionModeOptions)[number]["value"];
+type ThinkingEffortOption = (typeof thinkingEffortOptions)[number]["value"];
 type ComposerMetaMenuPlacement = "dropdown" | "dropup";
 type SettingsSectionId = (typeof settingsSections)[number]["id"];
 type SurfaceToggleState = Record<SurfaceKind, boolean>;
@@ -737,13 +1029,19 @@ function App({
   const [settingsSnapshot, setSettingsSnapshot] = useState<SettingsSnapshot | null>(null);
   const [codexConnectionMessage, setCodexConnectionMessage] = useState("");
   const [modelConnectionMessage, setModelConnectionMessage] = useState("");
-  const [selectedProviderId, setSelectedProviderId] = useState<ModelProviderId>("codex-cli");
-  const [selectedModelId, setSelectedModelId] = useState("gpt-5.5");
-  const [selectedAuthMethod, setSelectedAuthMethod] = useState<ModelAuthMethod>("chatgptOAuth");
-  const [providerSearchQuery, setProviderSearchQuery] = useState("");
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [setupPickerStage, setSetupPickerStage] = useState<SetupPickerStage>("provider");
+  const [modelConnectionMessageTone, setModelConnectionMessageTone] = useState<SetupNoticeTone>("info");
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<ModelProviderId | null>(null);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [apiKeyEnvName, setApiKeyEnvName] = useState("OPENAI_API_KEY");
+  const [modelCatalogProviderId, setModelCatalogProviderId] = useState<ModelProviderId | null>(null);
+  const [modelCatalogOptions, setModelCatalogOptions] = useState<ModelCatalogOption[]>([]);
+  const [modelCatalogStatus, setModelCatalogStatus] = useState<"idle" | "loading" | "ready" | "empty" | "error">("idle");
+  const [modelCatalogIsLive, setModelCatalogIsLive] = useState(false);
+  const [modelCatalogMessage, setModelCatalogMessage] = useState("");
+  const [modelCatalogMessageTone, setModelCatalogMessageTone] = useState<SetupNoticeTone>("info");
+  const [pendingActions, setPendingActions] = useState<Set<string>>(() => new Set());
+  const pendingActionsRef = useRef<Set<string>>(new Set());
   const [composerReadinessMessage, setComposerReadinessMessage] = useState("");
   const [copiedAgentResponseId, setCopiedAgentResponseId] = useState<string | null>(null);
   const [sharedAgentResponseId, setSharedAgentResponseId] = useState<string | null>(null);
@@ -780,25 +1078,20 @@ function App({
   const [showSetupDialog, setShowSetupDialog] = useState(() => !readPrivateBetaOnboardingDismissed());
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
-  const [showMessageBlockMeta, setShowMessageBlockMeta] = useState(() => {
-    try {
-      return window.localStorage.getItem(messageBlockMetaStorageKey) === "true";
-    } catch {
-      return false;
-    }
-  });
+  const [showMessageBlockMeta, setShowMessageBlockMeta] = useState(readMessageBlockMetaVisible);
   const [hasDismissedPrivateBetaOnboarding, setHasDismissedPrivateBetaOnboarding] = useState(readPrivateBetaOnboardingDismissed);
   const [operatorFullName, setOperatorFullName] = useState("Operator");
   const [operatorCallSign, setOperatorCallSign] = useState("Operator");
   const [operatorWorkType, setOperatorWorkType] = useState<SettingsSnapshot["operatorProfile"]["workType"]>("engineering");
   const [appearancePreference, setAppearancePreference] = useState<SettingsSnapshot["uiPreferences"]["appearance"]>("dark");
-  const [chatFontPreference, setChatFontPreference] = useState<SettingsSnapshot["uiPreferences"]["chatFont"]>("codepawl-sans");
+  const [chatFontPreference, setChatFontPreference] = useState<SettingsSnapshot["uiPreferences"]["chatFont"]>("orynt-sans");
   const [motionPreference, setMotionPreference] = useState<SettingsSnapshot["uiPreferences"]["motion"]>("system");
   const [voiceLanguage, setVoiceLanguage] = useState<SettingsSnapshot["voicePreferences"]["language"]>("english");
   const [voiceStyle, setVoiceStyle] = useState<SettingsSnapshot["voicePreferences"]["style"]>("buttery");
   const [voiceSpeed, setVoiceSpeed] = useState<SettingsSnapshot["voicePreferences"]["speed"]>("normal");
   const [setupRepositoryPath, setSetupRepositoryPath] = useState("");
   const [setupRepositoryMessage, setSetupRepositoryMessage] = useState("");
+  const [setupRepositoryMessageTone, setSetupRepositoryMessageTone] = useState<SetupNoticeTone>("info");
   const [hasAttemptedRepositoryAutoDetect, setHasAttemptedRepositoryAutoDetect] = useState(false);
   const [retentionRunHistoryDays, setRetentionRunHistoryDays] = useState(30);
   const [retentionArtifactRetentionDays, setRetentionArtifactRetentionDays] = useState(30);
@@ -807,6 +1100,7 @@ function App({
     const currentMode = runState.permissionPolicy.mode;
     return permissionModeOptions.some((option) => option.value === currentMode) ? (currentMode as PermissionModeOption) : "safe";
   });
+  const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffortOption>("medium");
   const [isComposerMetaMenuOpen, setIsComposerMetaMenuOpen] = useState(false);
   const [composerMetaMenuPlacement, setComposerMetaMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
   const [isComposerAttachmentMenuOpen, setIsComposerAttachmentMenuOpen] = useState(false);
@@ -825,9 +1119,27 @@ function App({
   const composerMetaMenuRef = useRef<HTMLDivElement>(null);
   const composerAttachmentButtonRef = useRef<HTMLButtonElement>(null);
   const composerAttachmentMenuRef = useRef<HTMLDivElement>(null);
+  const modelCatalogRequestIdRef = useRef(0);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
+  const nextNotificationIdRef = useRef(1);
+  const setupAutoCompleteInFlightRef = useRef(false);
+  const isPendingAction = (key: string) => pendingActions.has(key);
+  const withPendingAction = async <T,>(key: string, task: () => Promise<T>): Promise<T | null> => {
+    if (pendingActionsRef.current.has(key)) {
+      return null;
+    }
+    pendingActionsRef.current.add(key);
+    setPendingActions(new Set(pendingActionsRef.current));
+    try {
+      return await task();
+    } finally {
+      pendingActionsRef.current.delete(key);
+      setPendingActions(new Set(pendingActionsRef.current));
+    }
+  };
   const shouldHydrateClientState = initialRunState === undefined;
   const permissionModeCopy = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
+  const thinkingEffortCopy = thinkingEffortOptions.find((option) => option.value === thinkingEffort) ?? thinkingEffortOptions.find((option) => option.value === "medium") ?? thinkingEffortOptions[0];
   const orderedSurfaces = Object.keys(surfaceLabels) as SurfaceKind[];
   const normalizedSettingsSearchQuery = settingsSearchQuery.trim().toLowerCase();
   const visibleSettingsSections = settingsSections.filter((section) => {
@@ -843,24 +1155,87 @@ function App({
   const modelConnection = modelConnectionFromSettings(settingsSnapshot);
   const isModelConnectionReady = modelConnectionIsReady(settingsSnapshot);
   const selectedProvider = setupProviderById(selectedProviderId);
-  const selectedModel = setupModelById(selectedProvider, selectedModelId);
-  const filteredSetupProviders = setupProviderOptions.filter((provider) => {
-    const query = providerSearchQuery.trim().toLowerCase();
-    return !query || `${provider.label} ${provider.description}`.toLowerCase().includes(query);
-  });
-  const filteredSetupModels = selectedProvider.models.filter((model) => {
-    const query = modelSearchQuery.trim().toLowerCase();
-    return !query || `${model.label} ${model.id} ${model.description}`.toLowerCase().includes(query);
-  });
+  const activeModelCatalogOptions = selectedProvider && modelCatalogProviderId === selectedProvider.id ? modelCatalogOptions : [];
+  const selectedModel = selectedProvider ? setupModelById(activeModelCatalogOptions, selectedModelId) : null;
+  const isComposerSubmitPending = isPendingAction("composer-submit");
+  const isApprovalApprovedPending = isPendingAction("approval:approved");
+  const isApprovalDeniedPending = isPendingAction("approval:denied");
+  const isApprovalPending = isApprovalApprovedPending || isApprovalDeniedPending;
+  const isSetupSavePending = isPendingAction("setup:save-directory");
+  const isSetupCompletePending = isPendingAction("setup:complete");
+  const isSetupDetectPending = isPendingAction("setup:detect-directory");
+  const isSetupBrowsePending = isPendingAction("setup:browse-directory");
+  const isModelConnectionSavePending = isPendingAction("model-connection:save");
+  const isModelConnectionDeletePending = isPendingAction("model-connection:delete");
+  const isSelectedProviderCheckPending = selectedProvider ? isPendingAction(`provider-check:${selectedProvider.id}`) || isPendingAction(`model-connection:preflight:${selectedProvider.id}`) : false;
+  const isSelectedProviderModelFetchPending = selectedProvider ? isPendingAction(`model-fetch:${selectedProvider.id}`) : false;
+  const canSaveSelectedModelConnection = Boolean(selectedProvider && selectedModel && modelCatalogStatus === "ready" && modelCatalogIsLive && !isSelectedProviderCheckPending && !isSelectedProviderModelFetchPending);
+  const selectedProviderDescription = selectedProvider?.description ?? "Choose a provider before selecting a model.";
+  const selectedModelDescription = selectedModel?.description ?? (selectedProvider ? "Live model choices loaded for the selected provider." : "Choose a provider to enable model choices.");
+  const selectedModelThinkingEffortOptions = thinkingEffortOptionsForModel(selectedModel);
+  const selectedModelSupportsThinkingEffort = selectedModelThinkingEffortOptions.length > 0;
+  const selectedModelThinkingEffort = resolveThinkingEffortForModel(selectedModel, thinkingEffort);
+  const selectedModelThinkingEffortCopy = thinkingEffortOptions.find((option) => option.value === selectedModelThinkingEffort) ?? thinkingEffortCopy;
   const activeConnectionMessage = modelConnectionMessage || codexConnectionMessage || modelConnectionStatusMessage(modelConnection);
-  const composerStatusMessage = composerReadinessMessage ? "" : !isModelConnectionReady ? activeConnectionMessage : "";
-  const setupWarningMessage = !hasDismissedPrivateBetaOnboarding
-    ? "Setup required before repository runs."
+  const setupModelBlockerMessage = (() => {
+    if (isModelConnectionReady) {
+      return "";
+    }
+    if (modelConnection?.status === "failed" || modelConnection?.status === "missing" || modelConnection?.status === "authRequired") {
+      return modelConnectionStatusMessage(modelConnection);
+    }
+    if (selectedProvider && modelCatalogStatus === "ready" && !selectedModel) {
+      return "Choose a model and save provider setup before starting a run.";
+    }
+    if (selectedProvider && selectedModel) {
+      return "Save provider setup and run the provider check before starting a run.";
+    }
+    return "Choose a provider, run its readiness check, and save provider setup before starting a run.";
+  })();
+  const setupWarningMessage = showSetupDialog
+    ? ""
     : !repositoryPath.trim()
-      ? "Select a local git repository path before starting a repository run."
+      ? "Select a local directory before starting a run."
       : !isModelConnectionReady
-        ? activeConnectionMessage
-        : "";
+        ? setupModelBlockerMessage
+        : !hasDismissedPrivateBetaOnboarding
+          ? "Complete setup before starting a repository run."
+          : "";
+  const composerStatusMessage = composerReadinessMessage || setupWarningMessage ? "" : !isModelConnectionReady ? activeConnectionMessage : "";
+
+  const pushNotification = (tone: AppNotificationTone, message: string) => {
+    const notification: AppNotification = {
+      id: nextNotificationIdRef.current,
+      message,
+      tone,
+    };
+    nextNotificationIdRef.current += 1;
+    setNotifications([notification]);
+  };
+
+  const completeReadySetup = async () => {
+    if (setupAutoCompleteInFlightRef.current) {
+      return null;
+    }
+    setupAutoCompleteInFlightRef.current = true;
+    try {
+      try {
+        window.localStorage.setItem(privateBetaOnboardingStorageKey, "dismissed");
+      } catch {
+        // Welcome completion is persisted in Tauri settings when available.
+      }
+      const settings = await orynt.updateSettings({ welcomeCompleted: true });
+      applySettingsSnapshot(settings);
+      setHasDismissedPrivateBetaOnboarding(true);
+      setShowSetupDialog(false);
+      setComposerReadinessMessage("");
+      pushNotification("success", "Setup complete. Orynt is ready for repository runs.");
+      return settings;
+    } catch (error) {
+      setupAutoCompleteInFlightRef.current = false;
+      throw error;
+    }
+  };
 
   const applySettingsSnapshot = (settings: SettingsSnapshot) => {
     const operatorProfile = settings.operatorProfile ?? {
@@ -870,7 +1245,7 @@ function App({
     };
     const uiPreferences = settings.uiPreferences ?? {
       appearance: "dark" as const,
-      chatFont: "codepawl-sans" as const,
+      chatFont: "orynt-sans" as const,
       motion: "system" as const,
       showMessageBlockMeta: false,
     };
@@ -890,17 +1265,53 @@ function App({
     setSettingsSnapshot(normalizedSettings);
     if (normalizedModelConnection) {
       const provider = setupProviderById(normalizedModelConnection.providerId);
-      const model = setupModelById(provider, normalizedModelConnection.modelId);
-      setSelectedProviderId(provider.id);
-      setSelectedModelId(model.id);
-      setSelectedAuthMethod(normalizedModelConnection.authMethod);
-      setApiKeyEnvName(normalizedModelConnection.envKey ?? provider.defaultEnvKey ?? "OPENAI_API_KEY");
-      setModelConnectionMessage(modelConnectionStatusMessage(normalizedModelConnection));
-      setSetupPickerStage("model");
+      if (!provider) {
+        setSelectedProviderId(null);
+        setSelectedModelId(null);
+        setApiKeyEnvName("OPENAI_API_KEY");
+        setModelCatalogProviderId(null);
+        setModelCatalogOptions([]);
+        setModelCatalogStatus("idle");
+        setModelCatalogIsLive(false);
+        setModelCatalogMessage("");
+        setModelCatalogMessageTone("info");
+        setModelConnectionMessage("");
+        setModelConnectionMessageTone("info");
+      } else {
+        const savedModelOption: ModelCatalogOption = {
+          id: normalizedModelConnection.modelId,
+          label: normalizedModelConnection.modelLabel,
+          source: normalizedModelConnection.providerId,
+          supportedThinkingEfforts: normalizedModelConnection.supportedThinkingEfforts ?? null,
+          defaultThinkingEffort: normalizedModelConnection.defaultThinkingEffort ?? null,
+        };
+        setSelectedProviderId(provider.id);
+        setSelectedModelId(normalizedModelConnection.modelId);
+        setApiKeyEnvName(normalizedModelConnection.envKey ?? provider.defaultEnvKey ?? "OPENAI_API_KEY");
+        setModelCatalogProviderId(provider.id);
+        setModelCatalogOptions([savedModelOption]);
+        setModelCatalogStatus("ready");
+        setModelCatalogIsLive(false);
+        setModelCatalogMessage("");
+        setModelCatalogMessageTone("info");
+        setModelConnectionMessage(modelConnectionStatusMessage(normalizedModelConnection));
+        setModelConnectionMessageTone(normalizedModelConnection.status === "ready" ? "success" : normalizedModelConnection.status === "failed" || normalizedModelConnection.status === "missing" ? "error" : "warning");
+      }
     } else {
-      setSetupPickerStage("provider");
+      setSelectedProviderId(null);
+      setSelectedModelId(null);
+      setApiKeyEnvName("OPENAI_API_KEY");
+      setModelCatalogProviderId(null);
+      setModelCatalogOptions([]);
+      setModelCatalogStatus("idle");
+      setModelCatalogIsLive(false);
+      setModelCatalogMessage("");
+      setModelCatalogMessageTone("info");
+      setModelConnectionMessage("");
+      setModelConnectionMessageTone("info");
     }
     setPermissionMode(toUiPermissionMode(settings.permissionMode));
+    setThinkingEffort(toUiThinkingEffort(settings.thinkingEffort));
     setSetupRepositoryPath(settings.defaultRepositoryPath);
     setRetentionRunHistoryDays(settings.retentionPolicy.runHistoryDays);
     setRetentionArtifactRetentionDays(settings.retentionPolicy.artifactRetentionDays);
@@ -918,12 +1329,12 @@ function App({
   };
 
   const refreshPersistedRuns = async () => {
-    const runs = await codepawl.listPersistedRuns();
+    const runs = await orynt.listPersistedRuns();
     setPersistedRuns(runs);
   };
 
   const refreshSettingsSnapshot = async () => {
-    const settings = await codepawl.getSettings();
+    const settings = await orynt.getSettings();
     applySettingsSnapshot(settings);
     if (settings.defaultRepositoryPath && !repositoryPath.trim()) {
       setRepositoryPath(settings.defaultRepositoryPath);
@@ -938,6 +1349,21 @@ function App({
   useEffect(() => {
     activeWorkspaceIdRef.current = activeWorkspaceId;
   }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (notifications.length === 0) {
+      return undefined;
+    }
+    const timers = notifications.map((notification) =>
+      window.setTimeout(() => {
+        setNotifications((currentNotifications) => currentNotifications.filter((currentNotification) => currentNotification.id !== notification.id));
+      }, 4500),
+    );
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [notifications]);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") {
@@ -982,7 +1408,7 @@ function App({
     let unlisten: (() => void) | undefined;
     let mounted = true;
 
-    codepawl.onRunEvent((event) => {
+    orynt.onRunEvent((event) => {
       if (event.type === "run_started") {
         setCurrentRunId(event.runId);
       }
@@ -1024,7 +1450,7 @@ function App({
     return () => {
       mounted = false;
       unlisten?.();
-      codepawl.resetMockListenersForTest();
+      orynt.resetMockListenersForTest();
     };
   }, []);
 
@@ -1033,7 +1459,7 @@ function App({
       return;
     }
     let mounted = true;
-    codepawl.listSkills().then((skills) => {
+    orynt.listSkills().then((skills) => {
       if (!mounted) {
         return;
       }
@@ -1058,7 +1484,7 @@ function App({
       return;
     }
     let mounted = true;
-    Promise.all([codepawl.listPersistedRuns(), codepawl.getSettings()]).then(([runs, settings]) => {
+    Promise.all([orynt.listPersistedRuns(), orynt.getSettings()]).then(([runs, settings]) => {
       if (!mounted) {
         return;
       }
@@ -1085,13 +1511,14 @@ function App({
     }
     let mounted = true;
     setHasAttemptedRepositoryAutoDetect(true);
-    codepawl.detectCurrentRepositoryPath().then((path) => {
+    orynt.detectCurrentRepositoryPath().then((path) => {
       if (!mounted || !path) {
         return;
       }
       setSetupRepositoryPath((current) => current || path);
       setRepositoryPath((current) => current || path);
-      setSetupRepositoryMessage("Detected the current git repository path.");
+      setSetupRepositoryMessage("Detected the current local directory.");
+      setSetupRepositoryMessageTone("success");
     });
 
     return () => {
@@ -1210,7 +1637,7 @@ function App({
       return;
     }
     let mounted = true;
-    Promise.all([codepawl.listMemoryEpisodes(), codepawl.listCandidateRules()]).then(([episodes, candidateRules]) => {
+    Promise.all([orynt.listMemoryEpisodes(), orynt.listCandidateRules()]).then(([episodes, candidateRules]) => {
       if (!mounted) {
         return;
       }
@@ -1246,7 +1673,7 @@ function App({
     }
 
     if (!repositoryPath.trim()) {
-      setComposerReadinessMessage("Select a local git repository path before starting a repository run.");
+      setComposerReadinessMessage("Select a local directory before starting a run.");
       setShowSetupDialog(true);
       return;
     }
@@ -1256,43 +1683,46 @@ function App({
       const currentModelConnection = modelConnectionFromSettings(currentSettings);
       const message = modelConnectionStatusMessage(currentModelConnection);
       setModelConnectionMessage(message);
+      setModelConnectionMessageTone(currentModelConnection?.status === "failed" || currentModelConnection?.status === "missing" ? "error" : "warning");
       setComposerReadinessMessage(message);
       setShowSetupDialog(true);
       return;
     }
     setComposerReadinessMessage("");
 
-    const threadId = activeWorkspace.id;
-    setThreadMessagesByWorkspace((current) => {
-      const currentMessages = current[threadId] ?? [];
-      const nextMessage: ThreadMessage = {
-        id: `${threadId}-user-${currentMessages.length + 1}`,
-        role: "user",
-        content: goal,
-      };
-      return {
-        ...current,
-        [threadId]: [...currentMessages, nextMessage],
-      };
-    });
-    setComposerValue("");
+    await withPendingAction("composer-submit", async () => {
+      const threadId = activeWorkspace.id;
+      setThreadMessagesByWorkspace((current) => {
+        const currentMessages = current[threadId] ?? [];
+        const nextMessage: ThreadMessage = {
+          id: `${threadId}-user-${currentMessages.length + 1}`,
+          role: "user",
+          content: goal,
+        };
+        return {
+          ...current,
+          [threadId]: [...currentMessages, nextMessage],
+        };
+      });
+      setComposerValue("");
 
-    const run = await codepawl.createRun({
-      goal,
-      capabilityId: "coding-apprentice",
-      taskId: runState.activeTask.id,
-      workspaceId: runState.workspace.id,
-      repositoryPath: repositoryPath.trim(),
-      budget: {
-        maxSteps: runState.runSummary.run.budget.maxSteps,
-        maxWallTimeMs: runState.runSummary.run.budget.maxWallTimeMs,
-        maxModelTokens: runState.runSummary.run.budget.maxModelTokens,
-        maxUsd: runState.usageBudget.runLimitUsd,
-        stopOnBudgetExceeded: true,
-      },
+      const run = await orynt.createRun({
+        goal,
+        capabilityId: "coding-apprentice",
+        taskId: runState.activeTask.id,
+        workspaceId: runState.workspace.id,
+        repositoryPath: repositoryPath.trim(),
+        budget: {
+          maxSteps: runState.runSummary.run.budget.maxSteps,
+          maxWallTimeMs: runState.runSummary.run.budget.maxWallTimeMs,
+          maxModelTokens: runState.runSummary.run.budget.maxModelTokens,
+          maxUsd: runState.usageBudget.runLimitUsd,
+          stopOnBudgetExceeded: true,
+        },
+      });
+      setCurrentRunId(run.id);
+      await refreshPersistedRuns();
     });
-    setCurrentRunId(run.id);
-    await refreshPersistedRuns();
   };
 
   const handleTaskSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1328,15 +1758,17 @@ function App({
     if (!currentRunId) {
       return;
     }
-    await codepawl.approve({
-      runId: currentRunId,
-      approvalId: "approval-submit-1",
-      decision,
+    await withPendingAction(`approval:${decision}`, async () => {
+      await orynt.approve({
+        runId: currentRunId,
+        approvalId: "approval-submit-1",
+        decision,
+      });
     });
   };
 
   const handleCandidateRuleStatus = async (rule: CandidateRule, status: "accepted" | "rejected" | "superseded") => {
-    const updatedRule = await codepawl.updateCandidateRuleStatus({
+    const updatedRule = await orynt.updateCandidateRuleStatus({
       id: rule.id,
       status,
       runId: currentRunId ?? runState.traceSummary.runId,
@@ -1359,28 +1791,28 @@ function App({
     const input = createSkillDecision(skill, decision);
     const updatedSkill =
       decision === "promote"
-        ? await codepawl.promoteSkillManually(input)
+        ? await orynt.promoteSkillManually(input)
         : decision === "reject"
-          ? await codepawl.rejectSkill(input)
+          ? await orynt.rejectSkill(input)
           : decision === "supersede"
-            ? await codepawl.supersedeSkill(input)
-            : await codepawl.archiveSkill(input);
+            ? await orynt.supersedeSkill(input)
+            : await orynt.archiveSkill(input);
     setSkillRegistry((current) => updateSkillRegistrySkill(current, updatedSkill));
   };
 
   const handlePreviewSkillReplay = async (skill: SkillDefinition) => {
-    const replayPlan = await codepawl.createSkillReplayPlan(skill.id, currentRunId ?? runState.traceSummary.runId);
+    const replayPlan = await orynt.createSkillReplayPlan(skill.id, currentRunId ?? runState.traceSummary.runId);
     setSelectedSkillReplayPlan(replayPlan);
   };
 
   const handleOpenPersistedRun = async (runId: string) => {
-    const run = await codepawl.openPersistedRun(runId);
+    const run = await orynt.openPersistedRun(runId);
     setOpenedPersistedRun(run);
     setCurrentRunId(run.runId);
     setSelectedArtifactEvidence(null);
     setArtifactEvidenceMessage("");
     try {
-      const evidence = await codepawl.listArtifactEvidence(runId);
+      const evidence = await orynt.listArtifactEvidence(runId);
       setArtifactEvidence(evidence);
     } catch (error) {
       setArtifactEvidence([]);
@@ -1394,7 +1826,7 @@ function App({
     }
     setArtifactEvidenceMessage("");
     try {
-      const evidence = await codepawl.readArtifactEvidence(openedPersistedRun.runId, artifactId);
+      const evidence = await orynt.readArtifactEvidence(openedPersistedRun.runId, artifactId);
       setSelectedArtifactEvidence(evidence);
     } catch (error) {
       setSelectedArtifactEvidence(null);
@@ -1404,7 +1836,13 @@ function App({
 
   const handlePermissionModeChange = async (mode: PermissionModeOption) => {
     setPermissionMode(mode);
-    const settings = await codepawl.updateSettings({ permissionMode: toSettingsPermissionMode(mode) });
+    const settings = await orynt.updateSettings({ permissionMode: toSettingsPermissionMode(mode) });
+    applySettingsSnapshot(settings);
+  };
+
+  const handleThinkingEffortChange = async (effort: ThinkingEffortOption) => {
+    setThinkingEffort(effort);
+    const settings = await orynt.updateSettings({ thinkingEffort: effort });
     applySettingsSnapshot(settings);
   };
 
@@ -1418,7 +1856,7 @@ function App({
     if (profile.workType !== undefined) {
       setOperatorWorkType(profile.workType);
     }
-    const settings = await codepawl.updateSettings({ operatorProfile: profile });
+    const settings = await orynt.updateSettings({ operatorProfile: profile });
     applySettingsSnapshot(settings);
   };
 
@@ -1435,7 +1873,7 @@ function App({
     if (preferences.showMessageBlockMeta !== undefined) {
       setShowMessageBlockMeta(preferences.showMessageBlockMeta);
     }
-    const settings = await codepawl.updateSettings({ uiPreferences: preferences });
+    const settings = await orynt.updateSettings({ uiPreferences: preferences });
     applySettingsSnapshot(settings);
   };
 
@@ -1449,7 +1887,7 @@ function App({
     if (preferences.speed !== undefined) {
       setVoiceSpeed(preferences.speed);
     }
-    const settings = await codepawl.updateSettings({ voicePreferences: preferences });
+    const settings = await orynt.updateSettings({ voicePreferences: preferences });
     applySettingsSnapshot(settings);
   };
 
@@ -1467,16 +1905,26 @@ function App({
   };
 
   const handleSaveSetupSettings = async () => {
-    const defaultRepositoryPath = setupRepositoryPath.trim();
-    setRepositoryPath(defaultRepositoryPath);
-    const settings = await codepawl.updateSettings({ defaultRepositoryPath });
-    applySettingsSnapshot(settings);
-    setRepositoryPath(settings.defaultRepositoryPath);
-    setSetupRepositoryMessage(settings.defaultRepositoryPath ? "Repository path saved." : "");
+    try {
+      await withPendingAction("setup:save-directory", async () => {
+        const defaultRepositoryPath = setupRepositoryPath.trim() || repositoryPath.trim();
+        setSetupRepositoryPath(defaultRepositoryPath);
+        setRepositoryPath(defaultRepositoryPath);
+        const settings = await orynt.updateSettings({ defaultRepositoryPath });
+        applySettingsSnapshot(settings);
+        setSetupRepositoryPath(settings.defaultRepositoryPath);
+        setRepositoryPath(settings.defaultRepositoryPath);
+        setSetupRepositoryMessage(settings.defaultRepositoryPath ? "Local directory saved." : "Local directory cleared.");
+        setSetupRepositoryMessageTone(settings.defaultRepositoryPath ? "success" : "info");
+      });
+    } catch (error) {
+      setSetupRepositoryMessage(messageFromUnknownError(error, "Setup settings could not be saved."));
+      setSetupRepositoryMessageTone("error");
+    }
   };
 
   const handleSaveAdvancedSettings = async () => {
-    const settings = await codepawl.updateSettings({
+    const settings = await orynt.updateSettings({
       retentionPolicy: {
         runHistoryDays: retentionRunHistoryDays,
         artifactRetentionDays: retentionArtifactRetentionDays,
@@ -1487,136 +1935,285 @@ function App({
   };
 
   const handleCompleteWelcomeSetup = async () => {
-    try {
-      window.localStorage.setItem(privateBetaOnboardingStorageKey, "dismissed");
-    } catch {
-      // Welcome completion is persisted in Tauri settings when available.
-    }
-    const settings = await codepawl.updateSettings({ welcomeCompleted: true });
-    applySettingsSnapshot(settings);
-    setHasDismissedPrivateBetaOnboarding(true);
-    setShowSetupDialog(false);
-    if (composerReadinessMessage === "Finish private beta onboarding before starting a repository run.") {
-      setComposerReadinessMessage("");
-    }
+    await withPendingAction("setup:complete", async () => {
+      const defaultRepositoryPath = setupRepositoryPath.trim() || repositoryPath.trim() || settingsSnapshot?.defaultRepositoryPath.trim() || "";
+      if (!defaultRepositoryPath) {
+        setSetupRepositoryMessage("Select a local directory before completing setup.");
+        setSetupRepositoryMessageTone("warning");
+        return;
+      }
+      const currentSettings = settingsSnapshot ?? (await refreshSettingsSnapshot());
+      if (!modelConnectionIsReady(currentSettings)) {
+        setModelConnectionMessage("Save provider setup and run the provider check before completing setup.");
+        setModelConnectionMessageTone("warning");
+        return;
+      }
+      await completeReadySetup();
+    });
   };
 
   const handleDetectSetupRepositoryPath = async () => {
-    const path = await codepawl.detectCurrentRepositoryPath();
-    if (!path) {
-      setSetupRepositoryMessage("No git repository was detected from the app launch path.");
-      return;
-    }
-    setSetupRepositoryPath(path);
-    setRepositoryPath(path);
-    setSetupRepositoryMessage("Detected the current git repository path.");
+    await withPendingAction("setup:detect-directory", async () => {
+      const path = await orynt.detectCurrentRepositoryPath();
+      if (!path) {
+        setSetupRepositoryMessage("No safe local directory was detected from the app launch path.");
+        setSetupRepositoryMessageTone("warning");
+        return;
+      }
+      setSetupRepositoryPath(path);
+      setRepositoryPath(path);
+      setSetupRepositoryMessage("Detected the current local directory.");
+      setSetupRepositoryMessageTone("success");
+    });
   };
 
   const handleBrowseSetupRepositoryPath = async () => {
-    const selectedPath = await codepawl.browseRepositoryPath(setupRepositoryPath || repositoryPath || settingsSnapshot?.defaultRepositoryPath);
-    if (!selectedPath) {
-      setSetupRepositoryMessage("No repository folder was selected.");
-      return;
-    }
-    setSetupRepositoryPath(selectedPath);
-    setRepositoryPath(selectedPath);
-    setSetupRepositoryMessage("Repository folder selected. Save setup settings to persist it.");
+    await withPendingAction("setup:browse-directory", async () => {
+      const browseResult = await orynt.browseRepositoryPath(setupRepositoryPath || repositoryPath || settingsSnapshot?.defaultRepositoryPath);
+      if (browseResult.status === "cancelled") {
+        setSetupRepositoryMessage("No local directory was selected.");
+        setSetupRepositoryMessageTone("warning");
+        return;
+      }
+      if (browseResult.status === "unavailable") {
+        setSetupRepositoryMessage(browseResult.message);
+        setSetupRepositoryMessageTone("error");
+        return;
+      }
+      setSetupRepositoryPath(browseResult.path);
+      setRepositoryPath(browseResult.path);
+      setSetupRepositoryMessage("Local directory selected. Save setup settings to persist it.");
+      setSetupRepositoryMessageTone("success");
+    });
   };
 
-  const handleLoginCodexConnection = async (method: "chatgpt" | "device") => {
-    const authMethod = method === "device" ? "deviceCode" : "chatgptOAuth";
-    setSelectedAuthMethod(authMethod);
-    await codepawl.saveModelConnection({
-      providerId: "codex-cli",
-      modelId: selectedModel.id,
-      authMethod,
-      envKey: null,
+  const loadProviderModels = async (providerId: ModelProviderId, envKey = apiKeyEnvName, requestId = ++modelCatalogRequestIdRef.current) => {
+    return withPendingAction(`model-fetch:${providerId}`, async () => {
+      setModelCatalogProviderId(providerId);
+      setModelCatalogOptions([]);
+      setModelCatalogStatus("loading");
+      setModelCatalogIsLive(false);
+      setModelCatalogMessage("Fetching live models from the selected provider.");
+      setModelCatalogMessageTone("info");
+      try {
+        const catalog = await orynt.listProviderModels({
+          providerId,
+          envKey: providerId === "openai-api" ? envKey.trim() || "OPENAI_API_KEY" : null,
+        });
+        if (requestId !== modelCatalogRequestIdRef.current) {
+          return catalog;
+        }
+        setModelCatalogProviderId(catalog.providerId);
+        setModelCatalogOptions(catalog.models);
+        if (catalog.models.length === 0) {
+          setSelectedModelId(null);
+          setModelCatalogStatus("empty");
+          setModelCatalogIsLive(true);
+          setModelCatalogMessage("No available models found for this provider.");
+          setModelCatalogMessageTone("warning");
+        } else {
+          setSelectedModelId((currentModelId) => (catalog.models.some((model) => model.id === currentModelId) ? currentModelId : null));
+          setModelCatalogStatus("ready");
+          setModelCatalogIsLive(true);
+          setModelCatalogMessage("Live models loaded.");
+          setModelCatalogMessageTone("success");
+        }
+        return catalog;
+      } catch (error) {
+        if (requestId !== modelCatalogRequestIdRef.current) {
+          return null;
+        }
+        const message = messageFromUnknownError(error, "Could not fetch live models.");
+        setSelectedModelId(null);
+        setModelCatalogOptions([]);
+        setModelCatalogStatus("error");
+        setModelCatalogIsLive(false);
+        setModelCatalogMessage(message);
+        setModelCatalogMessageTone("error");
+        setModelConnectionMessage(message);
+        setModelConnectionMessageTone("error");
+        return null;
+      }
     });
-    await codepawl.loginCodexConnection({ method });
-    const result = await codepawl.preflightModelConnection();
-    const settings = await refreshSettingsSnapshot();
-    const connection = modelConnectionFromSettings(settings);
-    setCodexConnectionMessage(result.reasons[0] ?? codexConnectionStatusMessage(settings.codexConnection));
-    setModelConnectionMessage(result.reasons[0] ?? modelConnectionStatusLabel(connection));
+  };
+
+  const preflightSelectedProviderAndLoadModels = async (provider: SetupProviderOption, envKey = apiKeyEnvName) => {
+    await withPendingAction(`provider-check:${provider.id}`, async () => {
+      const requestId = ++modelCatalogRequestIdRef.current;
+      setModelCatalogProviderId(null);
+      setModelCatalogOptions([]);
+      setModelCatalogStatus("idle");
+      setModelCatalogIsLive(false);
+      setModelCatalogMessage("");
+      setModelCatalogMessageTone("info");
+      setModelConnectionMessage(provider.id === "codex-cli" ? "Checking Codex CLI before fetching live models." : "Checking provider before fetching live models.");
+      setModelConnectionMessageTone("info");
+      try {
+      if (provider.id === "codex-cli") {
+        const result: CodexConnectionPreflightResult = await orynt.preflightCodexConnection();
+        if (requestId !== modelCatalogRequestIdRef.current) {
+          return;
+        }
+        const settings = await refreshSettingsSnapshot();
+        if (requestId !== modelCatalogRequestIdRef.current) {
+          return;
+        }
+        setSelectedProviderId("codex-cli");
+        const codexConnection: CodexConnectionReference = {
+          ...(settings.codexConnection ?? { connectionId: "codex-cli", label: "Local Codex CLI" }),
+          status: result.status,
+          lastPreflight: result,
+        };
+        setSettingsSnapshot({ ...settings, codexConnection });
+        const message = codexPreflightSetupMessage(result, codexConnectionStatusLabel(codexConnection));
+        setCodexConnectionMessage(message);
+        setModelConnectionMessage(message);
+        setModelConnectionMessageTone(preflightTone(result.ready, result.status));
+        if (result.ready) {
+          pushNotification("success", message);
+          await loadProviderModels("codex-cli", envKey, requestId);
+        }
+        return;
+      }
+
+      const result = await orynt.preflightModelProvider({
+        providerId: provider.id,
+        authMethod: "apiKeyEnv",
+        envKey: envKey.trim() || "OPENAI_API_KEY",
+      });
+      if (requestId !== modelCatalogRequestIdRef.current) {
+        return;
+      }
+      setModelConnectionMessage(result.reasons[0] ?? "Provider check completed.");
+      setModelConnectionMessageTone(preflightTone(result.ready, result.status));
+      if (result.ready) {
+        pushNotification("success", result.reasons[0] ?? "Provider check completed.");
+        await loadProviderModels(provider.id, envKey, requestId);
+      }
+    } catch (error) {
+      if (requestId !== modelCatalogRequestIdRef.current) {
+        return;
+      }
+      const message = messageFromUnknownError(error, "Provider check failed.");
+      setModelConnectionMessage(message);
+      setModelConnectionMessageTone("error");
+      setModelCatalogStatus("error");
+      setModelCatalogIsLive(false);
+      setModelCatalogMessage(message);
+      setModelCatalogMessageTone("error");
+      }
+    });
   };
 
   const handleRunCodexConnectionPreflight = async () => {
-    const result: CodexConnectionPreflightResult = await codepawl.preflightCodexConnection();
-    const settings = await refreshSettingsSnapshot();
-    const codexConnection: CodexConnectionReference = {
-      ...(settings.codexConnection ?? { connectionId: "codex-cli", label: "Local Codex CLI" }),
-      status: result.status,
-      lastPreflight: result,
-    };
-    const modelConnection: ModelConnectionReference = {
-      ...(modelConnectionFromSettings(settings) ?? {
-        providerId: "codex-cli",
-        providerLabel: "Codex CLI",
-        modelId: selectedModelId,
-        modelLabel: selectedModel.label,
-        authMethod: selectedAuthMethod,
-      }),
-      status: result.status,
-      lastPreflight: {
-        checkedProviderId: "codex-cli",
-        checkedModelId: selectedModelId,
-        status: result.status,
-        ready: result.ready,
-        checkedAt: result.checkedAt,
-        executablePath: result.executablePath,
-        authMode: result.authMode,
-        reasons: result.reasons,
-        warnings: result.warnings,
-      },
-    };
-    setSettingsSnapshot({ ...settings, codexConnection, modelConnection });
-    setCodexConnectionMessage(result.reasons[0] ?? codexConnectionStatusLabel(codexConnection));
-    setModelConnectionMessage(result.reasons[0] ?? modelConnectionStatusLabel(modelConnection));
+    if (!selectedProvider || selectedProvider.id !== "codex-cli") {
+      setModelConnectionMessage("Choose the Codex CLI provider before running the provider check.");
+      setModelConnectionMessageTone("warning");
+      return;
+    }
+    await withPendingAction("provider-check:codex-cli", async () => {
+      try {
+        const result: CodexConnectionPreflightResult = await orynt.preflightCodexConnection();
+        const settings = await refreshSettingsSnapshot();
+        setSelectedProviderId("codex-cli");
+        const codexConnection: CodexConnectionReference = {
+          ...(settings.codexConnection ?? { connectionId: "codex-cli", label: "Local Codex CLI" }),
+          status: result.status,
+          lastPreflight: result,
+        };
+        setSettingsSnapshot({ ...settings, codexConnection });
+        const message = codexPreflightSetupMessage(result, codexConnectionStatusLabel(codexConnection));
+        setCodexConnectionMessage(message);
+        setModelConnectionMessage(message);
+        setModelConnectionMessageTone(preflightTone(result.ready, result.status));
+        if (result.ready) {
+          pushNotification("success", message);
+          await loadProviderModels("codex-cli");
+        }
+      } catch (error) {
+        const message = messageFromUnknownError(error, "Codex provider check failed.");
+        setCodexConnectionMessage(message);
+        setModelConnectionMessage(message);
+        setModelConnectionMessageTone("error");
+      }
+    });
   };
 
   const handleDeleteCodexConnection = async () => {
     if (!modelConnection) {
       return;
     }
-    await codepawl.deleteModelConnection();
-    const settings = await refreshSettingsSnapshot();
-    setSettingsSnapshot(settings);
-    setCodexConnectionMessage(codexConnectionStatusMessage(settings.codexConnection));
-    setModelConnectionMessage(modelConnectionStatusMessage(modelConnectionFromSettings(settings)));
+    await withPendingAction("model-connection:delete", async () => {
+      await orynt.deleteModelConnection();
+      const settings = await refreshSettingsSnapshot();
+      setSettingsSnapshot(settings);
+      setCodexConnectionMessage(codexConnectionStatusMessage(settings.codexConnection));
+      setModelConnectionMessage(modelConnectionStatusMessage(modelConnectionFromSettings(settings)));
+      setModelConnectionMessageTone("info");
+    });
   };
 
-  const handleSelectSetupProvider = (providerId: ModelProviderId) => {
+  const handleSelectSetupProvider = (providerId: ModelProviderId | "") => {
+    modelCatalogRequestIdRef.current += 1;
+    if (!providerId) {
+      setSelectedProviderId(null);
+      setSelectedModelId(null);
+      setApiKeyEnvName("OPENAI_API_KEY");
+      setModelCatalogProviderId(null);
+      setModelCatalogOptions([]);
+      setModelCatalogStatus("idle");
+      setModelCatalogIsLive(false);
+      setModelCatalogMessage("");
+      setModelCatalogMessageTone("info");
+      setModelConnectionMessage("");
+      setModelConnectionMessageTone("info");
+      return;
+    }
     const provider = setupProviderById(providerId);
-    const model = setupModelById(provider, null);
+    if (!provider) {
+      return;
+    }
     setSelectedProviderId(provider.id);
-    setSelectedModelId(model.id);
-    setSelectedAuthMethod(provider.defaultAuthMethod);
+    setSelectedModelId(null);
     setApiKeyEnvName(provider.defaultEnvKey ?? "OPENAI_API_KEY");
-    setModelSearchQuery("");
+    setModelCatalogProviderId(null);
+    setModelCatalogOptions([]);
+    setModelCatalogStatus("idle");
+    setModelCatalogIsLive(false);
+    setModelCatalogMessage("");
+    setModelCatalogMessageTone("info");
     setModelConnectionMessage("");
-    setSetupPickerStage("model");
+    setModelConnectionMessageTone("info");
+    void preflightSelectedProviderAndLoadModels(provider, provider.defaultEnvKey ?? "OPENAI_API_KEY");
   };
 
-  const handleSaveModelConnection = async () => {
-    const connection = await codepawl.saveModelConnection({
-      providerId: selectedProvider.id,
-      modelId: selectedModel.id,
-      authMethod: selectedProvider.id === "openai-api" ? "apiKeyEnv" : selectedAuthMethod,
-      envKey: selectedProvider.id === "openai-api" ? apiKeyEnvName.trim() || "OPENAI_API_KEY" : null,
-    });
-    const settings = await refreshSettingsSnapshot();
-    setSettingsSnapshot({ ...settings, modelConnection: settings.modelConnection ?? connection });
-    setModelConnectionMessage(modelConnectionStatusMessage(connection));
+  const handleSelectSetupModel = (modelId: string) => {
+    setSelectedModelId(modelId || null);
+    const model = setupModelById(activeModelCatalogOptions, modelId);
+    if (model) {
+      setThinkingEffort((currentEffort) => resolveThinkingEffortForModel(model, currentEffort));
+    }
+    setModelConnectionMessage("");
+    setModelConnectionMessageTone("info");
   };
 
-  const handleRunModelConnectionPreflight = async () => {
-    const savedConnection = await codepawl.saveModelConnection({
+  const saveSelectedModelConnectionWithPreflight = async () => {
+    if (!selectedProvider || !selectedModel) {
+      setModelConnectionMessage("Authenticate the provider and choose a live model to continue setup.");
+      setModelConnectionMessageTone("warning");
+      return null;
+    }
+    const savedConnection = await orynt.saveModelConnection({
       providerId: selectedProvider.id,
       modelId: selectedModel.id,
-      authMethod: selectedProvider.id === "openai-api" ? "apiKeyEnv" : selectedAuthMethod,
+      modelLabel: selectedModel.label,
+      authMethod: selectedProvider.id === "openai-api" ? "apiKeyEnv" : "codexCliSession",
       envKey: selectedProvider.id === "openai-api" ? apiKeyEnvName.trim() || "OPENAI_API_KEY" : null,
+      thinkingEffort: selectedModelSupportsThinkingEffort ? selectedModelThinkingEffort : null,
+      supportedThinkingEfforts: selectedModel.supportedThinkingEfforts ?? null,
+      defaultThinkingEffort: selectedModel.defaultThinkingEffort ?? null,
     });
-    const result: ModelConnectionPreflightResult = await codepawl.preflightModelConnection();
+    const result: ModelConnectionPreflightResult = await orynt.preflightModelConnection();
     const settings = await refreshSettingsSnapshot();
     const connection: ModelConnectionReference = {
       ...(settings.modelConnection ?? savedConnection),
@@ -1624,7 +2221,40 @@ function App({
       lastPreflight: result,
     };
     setSettingsSnapshot({ ...settings, modelConnection: connection });
-    setModelConnectionMessage(result.reasons[0] ?? modelConnectionStatusLabel(connection));
+    const message = result.reasons[0] ?? modelConnectionStatusLabel(connection);
+    setModelConnectionMessage(message);
+    setModelConnectionMessageTone(preflightTone(result.ready, result.status));
+    if (result.ready) {
+      pushNotification("success", message);
+    }
+    return connection;
+  };
+
+  const handleSaveModelConnection = async () => {
+    await withPendingAction("model-connection:save", async () => {
+      try {
+        await saveSelectedModelConnectionWithPreflight();
+      } catch (error) {
+        setModelConnectionMessage(messageFromUnknownError(error, "Provider setup save failed."));
+        setModelConnectionMessageTone("error");
+      }
+    });
+  };
+
+  const handleRunModelConnectionPreflight = async () => {
+    if (!selectedProvider) {
+      setModelConnectionMessage("Choose a provider before running the provider check.");
+      setModelConnectionMessageTone("warning");
+      return;
+    }
+    await withPendingAction(`model-connection:preflight:${selectedProvider.id}`, async () => {
+      try {
+        await preflightSelectedProviderAndLoadModels(selectedProvider, apiKeyEnvName);
+      } catch (error) {
+        setModelConnectionMessage(messageFromUnknownError(error, "Provider check failed."));
+        setModelConnectionMessageTone("error");
+      }
+    });
   };
 
   const hasSelectedRun = currentRunId !== null;
@@ -1642,10 +2272,12 @@ function App({
     ? visibleWorkspaces.filter((space) => space.label.toLowerCase().includes(normalizedWorkspaceSearchQuery))
     : visibleWorkspaces;
   const shouldShowWorkspaceSearch = isWorkspaceSearchOpen || workspaceSearchQuery.trim().length > 0;
+  const hasOpenShellModal = showSettingsSidebar || showSetupDialog || Boolean(deleteWorkspaceId) || showWorkspaceArchive;
   const shellClassName = [
     "app-shell",
     "app-shell-cockpit",
     showSettingsSidebar ? "app-shell-settings-open" : "app-shell-settings-closed",
+    hasOpenShellModal ? "app-shell-modal-open" : "app-shell-modal-closed",
     isWorkspacePanelCollapsed ? "app-shell-workspace-collapsed" : "app-shell-workspace-open",
     isMobileWorkspaceViewport
       ? isMobileWorkspaceDrawerOpen
@@ -2096,11 +2728,15 @@ function App({
         title="Protected action approval"
         actions={
           <>
-            <button className="approval-action-secondary" type="button" onClick={() => void handleApproval("denied")}>
-              Deny step
+            <button className="approval-action-secondary" type="button" onClick={() => void handleApproval("denied")} disabled={isApprovalPending} aria-busy={isApprovalDeniedPending}>
+              <LoadingButtonContent isLoading={isApprovalDeniedPending} loadingLabel="Denying">
+                Deny step
+              </LoadingButtonContent>
             </button>
-            <button className="approval-action-primary" type="button" onClick={() => void handleApproval("approved")}>
-              Approve step
+            <button className="approval-action-primary" type="button" onClick={() => void handleApproval("approved")} disabled={isApprovalPending} aria-busy={isApprovalApprovedPending}>
+              <LoadingButtonContent isLoading={isApprovalApprovedPending} loadingLabel="Approving">
+                Approve step
+              </LoadingButtonContent>
             </button>
           </>
         }
@@ -2341,6 +2977,217 @@ function App({
     return renderedMessages;
   };
 
+  const renderModelProviderSetupPanel = (headingId: string) => (
+    <section className="settings-review-list setup-provider-panel" aria-label="Setup model provider">
+      <div className="setup-picker-panel">
+        <section className="setup-picker setup-picker-section" aria-label="Provider selector">
+          <label className="settings-field settings-field-stacked">
+            <span>Provider</span>
+            <OryntDropdown
+              ariaLabel="Provider"
+              id={`${headingId}-provider`}
+              onChange={(nextValue) => handleSelectSetupProvider(nextValue as ModelProviderId | "")}
+              options={[
+                { value: "", label: "Choose provider" },
+                ...setupProviderOptions.map((provider) => ({
+                  description: provider.description,
+                  label: provider.label,
+                  value: provider.id,
+                })),
+              ]}
+              placeholder="Choose provider"
+              value={selectedProviderId ?? ""}
+            />
+            <small>{selectedProviderDescription}</small>
+          </label>
+        </section>
+      </div>
+      {selectedProvider ? (
+        <article className="settings-review-card">
+          <div className="settings-review-card-header">
+            <div>
+              <h3>{selectedProvider.label}</h3>
+              <span>{selectedModel?.label ?? "Provider setup"}</span>
+            </div>
+            <strong>{modelConnectionStatusLabel(modelConnection)}</strong>
+          </div>
+          <p className={setupLogTextClassName(modelConnectionMessage ? modelConnectionMessageTone : modelCatalogStatus === "ready" ? "success" : "info")}>
+            {modelConnectionMessage ||
+              (modelCatalogStatus === "ready"
+                ? "Choose a live model to finish provider setup."
+                : selectedProvider.id === "codex-cli"
+                  ? "Check Codex CLI to fetch live models."
+                  : "Run the provider check to fetch live models.")}
+          </p>
+          {selectedProvider.id === "openai-api" ? (
+            <label className="settings-field">
+              <span>API key environment variable</span>
+              <input
+                className="input-focus-standalone"
+                type="text"
+                aria-label="API key environment variable"
+                value={apiKeyEnvName}
+                placeholder="OPENAI_API_KEY"
+                autoComplete="off"
+                onChange={(event) => {
+                  setApiKeyEnvName(event.target.value);
+                  modelCatalogRequestIdRef.current += 1;
+                  setModelCatalogProviderId(null);
+                  setModelCatalogOptions([]);
+                  setModelCatalogStatus("idle");
+                  setModelCatalogIsLive(false);
+                  setModelCatalogMessage("");
+                  setModelCatalogMessageTone("info");
+                  setSelectedModelId(null);
+                }}
+              />
+            </label>
+          ) : (
+            <div className="settings-callout">
+              <strong>Existing Codex CLI session</strong>
+              <span>Orynt checks your local Codex CLI session and does not start browser, device-code, or access-token login from the app.</span>
+              <span>Orynt does not manage Codex sign-in. If no session is detected, run codex login in your terminal, complete sign-in, then return here and click Check Codex CLI again.</span>
+            </div>
+          )}
+          <div className="candidate-rule-actions">
+            {selectedProvider.id === "codex-cli" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleRunCodexConnectionPreflight()}
+                  disabled={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending}
+                  aria-busy={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending}
+                  aria-label="Check Codex CLI"
+                >
+                  <LoadingButtonContent isLoading={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} loadingLabel={isSelectedProviderModelFetchPending ? "Fetching" : "Checking"}>
+                    Check Codex CLI
+                  </LoadingButtonContent>
+                </button>
+                {canSaveSelectedModelConnection ? (
+                  <button type="button" onClick={() => void handleSaveModelConnection()} disabled={isModelConnectionSavePending} aria-busy={isModelConnectionSavePending} aria-label="Save provider setup">
+                    <LoadingButtonContent isLoading={isModelConnectionSavePending} loadingLabel="Saving">
+                      Save provider setup
+                    </LoadingButtonContent>
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => void handleRunModelConnectionPreflight()} disabled={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} aria-busy={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} aria-label="Run provider check">
+                  <LoadingButtonContent isLoading={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} loadingLabel={isSelectedProviderModelFetchPending ? "Fetching" : "Checking"}>
+                    Run provider check
+                  </LoadingButtonContent>
+                </button>
+                {canSaveSelectedModelConnection ? (
+                  <button type="button" onClick={() => void handleSaveModelConnection()} disabled={isModelConnectionSavePending} aria-busy={isModelConnectionSavePending} aria-label="Save provider setup">
+                    <LoadingButtonContent isLoading={isModelConnectionSavePending} loadingLabel="Saving">
+                      Save provider setup
+                    </LoadingButtonContent>
+                  </button>
+                ) : null}
+              </>
+            )}
+            <button type="button" onClick={() => void handleDeleteCodexConnection()} disabled={!modelConnection || isModelConnectionDeletePending} aria-busy={isModelConnectionDeletePending} aria-label="Delete provider connection">
+              <LoadingButtonContent isLoading={isModelConnectionDeletePending} loadingLabel="Deleting">
+                Delete connection
+              </LoadingButtonContent>
+            </button>
+          </div>
+        </article>
+      ) : null}
+      {selectedProvider && modelCatalogStatus === "loading" ? (
+        <article className="settings-review-card">
+          <div className="settings-review-card-header">
+            <div>
+              <h3>Live models</h3>
+              <span>Fetching</span>
+            </div>
+            <strong className="loading-status-label">
+              <LoadingSpinner />
+              Loading
+            </strong>
+          </div>
+          <p className={setupLogTextClassName(modelCatalogMessageTone)}>{modelCatalogMessage}</p>
+          <div className="loading-skeleton-list" aria-hidden="true">
+            <div className="loading-skeleton-row" />
+            <div className="loading-skeleton-row" />
+          </div>
+        </article>
+      ) : null}
+      {selectedProvider && modelCatalogStatus === "error" ? (
+        <article className="settings-review-card">
+          <div className="settings-review-card-header">
+            <div>
+              <h3>Live models</h3>
+              <span>Fetch failed</span>
+            </div>
+            <strong>Retry required</strong>
+          </div>
+          <p className={setupLogTextClassName(modelCatalogMessageTone)}>{modelCatalogMessage}</p>
+          <div className="candidate-rule-actions">
+            <button type="button" onClick={() => void loadProviderModels(selectedProvider.id, apiKeyEnvName)} disabled={isSelectedProviderModelFetchPending} aria-busy={isSelectedProviderModelFetchPending}>
+              <LoadingButtonContent isLoading={isSelectedProviderModelFetchPending} loadingLabel="Fetching">
+                Retry model fetch
+              </LoadingButtonContent>
+            </button>
+          </div>
+        </article>
+      ) : null}
+      {selectedProvider && modelCatalogStatus === "empty" ? (
+        <article className="settings-review-card">
+          <div className="settings-review-card-header">
+            <div>
+              <h3>Live models</h3>
+              <span>No models</span>
+            </div>
+            <strong>Empty</strong>
+          </div>
+          <p className={setupLogTextClassName(modelCatalogMessageTone)}>{modelCatalogMessage}</p>
+        </article>
+      ) : null}
+      {selectedProvider && modelCatalogStatus === "ready" && activeModelCatalogOptions.length > 0 ? (
+        <section className="setup-picker setup-picker-section" aria-label="Model selector">
+          <label className="settings-field settings-field-stacked">
+            <span>Model</span>
+            <OryntDropdown
+              ariaLabel="Model"
+              id={`${headingId}-model`}
+              onChange={handleSelectSetupModel}
+              options={[
+                { value: "", label: "Choose model" },
+                ...activeModelCatalogOptions.map((model) => ({
+                  description: model.description ?? model.ownedBy ?? undefined,
+                  label: model.label,
+                  value: model.id,
+                })),
+              ]}
+              placeholder="Choose model"
+              value={selectedModelId ?? ""}
+            />
+            <small>{selectedModelDescription}</small>
+          </label>
+          {selectedModelSupportsThinkingEffort ? (
+            <label className="settings-field settings-field-stacked">
+              <SettingsLabelWithInfo info={selectedModelThinkingEffortCopy.helper} infoLabel="Thinking effort info" label="Thinking effort" />
+              <OryntDropdown
+                ariaLabel="Thinking effort"
+                id={`${headingId}-thinking-effort`}
+                onChange={(nextValue) => void handleThinkingEffortChange(nextValue as ThinkingEffortOption)}
+                options={selectedModelThinkingEffortOptions.map((option) => ({
+                  description: option.helper,
+                  label: option.label,
+                  value: option.value,
+                }))}
+                placeholder="Choose thinking effort"
+                value={selectedModelThinkingEffort}
+              />
+            </label>
+          ) : null}
+        </section>
+      ) : null}
+    </section>
+  );
+
   const renderSetupControls = ({
     className = "settings-section",
     heading = "Setup",
@@ -2355,176 +3202,47 @@ function App({
       <ol className="setup-flow" aria-label="Setup flow">
         <li className="setup-flow-step">
           <div className="setup-flow-step-copy">
-            <strong>Choose a repository</strong>
-            <span>{repositoryPath.trim() || settingsSnapshot?.defaultRepositoryPath ? "Repository path selected." : "Save the local git repository path you want CodePawl to work in."}</span>
+            <strong>Choose a local directory</strong>
+            <span>{repositoryPath.trim() || settingsSnapshot?.defaultRepositoryPath ? "Local directory selected." : "Save the local folder you want Orynt to work in."}</span>
           </div>
           <label className="settings-field">
-            <span>Default repository path</span>
+            <span>Default local directory</span>
             <div className="settings-input-action-row">
               <input
                 className="input-focus-standalone"
                 type="text"
-                aria-label="Default repository path"
+                aria-label="Default local directory"
                 value={setupRepositoryPath}
-                placeholder="/path/to/local/git/repository"
+                placeholder="/path/to/local/directory"
                 onChange={(event) => {
                   setSetupRepositoryPath(event.target.value);
                   setSetupRepositoryMessage("");
+                  setSetupRepositoryMessageTone("info");
                 }}
               />
-              <button type="button" className="settings-secondary-button" onClick={() => void handleDetectSetupRepositoryPath()}>
-                Detect current
+              <button type="button" className="settings-secondary-button" onClick={() => void handleDetectSetupRepositoryPath()} disabled={isSetupDetectPending} aria-busy={isSetupDetectPending} aria-label="Detect current">
+                <LoadingButtonContent isLoading={isSetupDetectPending} loadingLabel="Detecting">
+                  Detect current
+                </LoadingButtonContent>
               </button>
-              <button type="button" className="settings-icon-text-button" onClick={() => void handleBrowseSetupRepositoryPath()}>
-                <FolderPlus className="ui-icon" aria-hidden="true" />
-                Browse
+              <button type="button" className="settings-icon-text-button" onClick={() => void handleBrowseSetupRepositoryPath()} disabled={isSetupBrowsePending} aria-busy={isSetupBrowsePending} aria-label="Browse">
+                <LoadingButtonContent isLoading={isSetupBrowsePending} loadingLabel="Opening">
+                  <>
+                    <FolderPlus className="ui-icon" aria-hidden="true" />
+                    Browse
+                  </>
+                </LoadingButtonContent>
               </button>
             </div>
-            {setupRepositoryMessage ? <small>{setupRepositoryMessage}</small> : null}
+            {setupRepositoryMessage ? <small className={setupLogTextClassName(setupRepositoryMessageTone)}>{setupRepositoryMessage}</small> : null}
           </label>
         </li>
         <li className="setup-flow-step">
           <div className="setup-flow-step-copy">
             <strong>Choose model provider</strong>
-            <span>{modelConnection ? modelConnectionStatusMessage(modelConnection) : "Select a provider, model, and authentication method before the first repository run."}</span>
+            <span>{modelConnection ? modelConnectionStatusMessage(modelConnection) : "Select a provider, run its readiness check, then choose a live model before the first repository run."}</span>
           </div>
-          <section className="settings-review-list setup-provider-panel" aria-label="Setup model provider">
-            <div className="setup-picker-panel">
-              {setupPickerStage === "provider" ? (
-                <section className="setup-picker" aria-label="Provider selector">
-                  <label className="settings-field settings-field-stacked">
-                    <span>Provider</span>
-                    <input
-                      className="input-focus-standalone"
-                      type="search"
-                      aria-label="Search providers"
-                      value={providerSearchQuery}
-                      placeholder="Search providers"
-                      onChange={(event) => setProviderSearchQuery(event.target.value)}
-                    />
-                  </label>
-                  <div className="setup-option-list" role="listbox" aria-label="Provider options">
-                    {filteredSetupProviders.map((provider) => (
-                      <button
-                        className={provider.id === selectedProvider.id ? "setup-option setup-option-active" : "setup-option"}
-                        type="button"
-                        role="option"
-                        aria-selected={provider.id === selectedProvider.id}
-                        onClick={() => handleSelectSetupProvider(provider.id)}
-                        key={provider.id}
-                      >
-                        <strong>{provider.label}</strong>
-                        <span>{provider.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ) : (
-                <section className="setup-picker" aria-label="Model selector">
-                  <div className="setup-selected-provider">
-                    <div>
-                      <span>Provider</span>
-                      <strong>{selectedProvider.label}</strong>
-                    </div>
-                    <button
-                      type="button"
-                      className="settings-secondary-button"
-                      onClick={() => {
-                        setProviderSearchQuery("");
-                        setSetupPickerStage("provider");
-                      }}
-                    >
-                      Change provider
-                    </button>
-                  </div>
-                  <label className="settings-field settings-field-stacked">
-                    <span>Model</span>
-                    <input
-                      className="input-focus-standalone"
-                      type="search"
-                      aria-label="Search models"
-                      value={modelSearchQuery}
-                      placeholder="Search models"
-                      onChange={(event) => setModelSearchQuery(event.target.value)}
-                    />
-                  </label>
-                  <div className="setup-option-list" role="listbox" aria-label="Model options">
-                    {filteredSetupModels.map((model) => (
-                      <button
-                        className={model.id === selectedModel.id ? "setup-option setup-option-active" : "setup-option"}
-                        type="button"
-                        role="option"
-                        aria-selected={model.id === selectedModel.id}
-                        onClick={() => setSelectedModelId(model.id)}
-                        key={model.id}
-                      >
-                        <strong>{model.label}</strong>
-                        <span>{model.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
-            {setupPickerStage === "model" ? (
-              <article className="settings-review-card">
-                <div className="settings-review-card-header">
-                  <div>
-                    <h3>{selectedProvider.label}</h3>
-                    <span>{selectedModel.label}</span>
-                  </div>
-                  <strong>{modelConnectionStatusLabel(modelConnection)}</strong>
-                </div>
-                <p>{modelConnectionMessage || modelConnectionStatusMessage(modelConnection)}</p>
-                {selectedProvider.id === "openai-api" ? (
-                  <label className="settings-field">
-                    <span>API key environment variable</span>
-                    <input
-                      className="input-focus-standalone"
-                      type="text"
-                      aria-label="API key environment variable"
-                      value={apiKeyEnvName}
-                      placeholder="OPENAI_API_KEY"
-                      autoComplete="off"
-                      onChange={(event) => setApiKeyEnvName(event.target.value)}
-                    />
-                  </label>
-                ) : (
-                  <div className="settings-callout">
-                    <strong>ChatGPT OAuth</strong>
-                    <span>CodePawl opens the local Codex CLI login flow. Credentials stay in the Codex credential cache.</span>
-                  </div>
-                )}
-                <div className="candidate-rule-actions">
-                  {selectedProvider.id === "codex-cli" ? (
-                    <>
-                      <button type="button" onClick={() => void handleLoginCodexConnection("chatgpt")} aria-label="Connect with ChatGPT">
-                        Connect with ChatGPT
-                      </button>
-                      <button type="button" onClick={() => void handleRunModelConnectionPreflight()} aria-label="Run provider check">
-                        Run check
-                      </button>
-                      <button type="button" onClick={() => void handleLoginCodexConnection("device")} className="settings-secondary-button" aria-label="Use device code">
-                        Use device code
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" onClick={() => void handleSaveModelConnection()}>
-                        Save provider setup
-                      </button>
-                      <button type="button" onClick={() => void handleRunModelConnectionPreflight()} aria-label="Run provider check">
-                        Run provider check
-                      </button>
-                    </>
-                  )}
-                  <button type="button" onClick={() => void handleDeleteCodexConnection()} disabled={!modelConnection} aria-label="Delete provider connection">
-                    Delete connection
-                  </button>
-                </div>
-              </article>
-            ) : null}
-          </section>
+          {renderModelProviderSetupPanel(headingId)}
         </li>
         <li className="setup-flow-step">
           <div className="setup-flow-step-copy">
@@ -2533,28 +3251,32 @@ function App({
           </div>
           <section className="settings-control" aria-label="Setup permission mode">
             <label htmlFor={`${headingId}-permission-mode`}>Permission mode</label>
-            <select
-              className="input-focus-standalone"
+            <OryntDropdown
+              ariaLabel="Permission mode"
               id={`${headingId}-permission-mode`}
+              onChange={(nextValue) => void handlePermissionModeChange(nextValue as PermissionModeOption)}
+              options={permissionModeOptions.map((option) => ({
+                description: option.helper,
+                label: option.label,
+                value: option.value,
+              }))}
+              placeholder="Choose permission mode"
               value={permissionMode}
-              onChange={(event) => void handlePermissionModeChange(event.target.value as PermissionModeOption)}
-            >
-              {permissionModeOptions.map((option) => (
-                <option value={option.value} key={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            />
             <span>{permissionModeCopy.helper}</span>
           </section>
         </li>
       </ol>
       <div className="candidate-rule-actions">
-        <button type="button" onClick={() => void handleSaveSetupSettings()}>
-          Save setup settings
+        <button type="button" onClick={() => void handleSaveSetupSettings()} disabled={isSetupSavePending} aria-busy={isSetupSavePending} aria-label="Save setup settings">
+          <LoadingButtonContent isLoading={isSetupSavePending} loadingLabel="Saving">
+            Save setup settings
+          </LoadingButtonContent>
         </button>
-        <button type="button" onClick={() => void handleCompleteWelcomeSetup()}>
-          Complete setup
+        <button type="button" onClick={() => void handleCompleteWelcomeSetup()} disabled={isSetupCompletePending} aria-busy={isSetupCompletePending} aria-label="Complete setup">
+          <LoadingButtonContent isLoading={isSetupCompletePending} loadingLabel="Completing">
+            Complete setup
+          </LoadingButtonContent>
         </button>
       </div>
     </section>
@@ -2567,7 +3289,10 @@ function App({
 
     const renderSettingsSectionContent = () => {
       switch (activeSettingsSection) {
-        case "general":
+        case "general": {
+          const retentionPolicySummary = settingsSnapshot?.retentionPolicy.summary ?? "Cleanup is manual for private beta; automatic retention is planned.";
+          const retentionPolicyStatus = settingsSnapshot?.retentionPolicy.cleanupEnabled ? "Auto cleanup" : "Manual";
+
           return (
             <section className="settings-section settings-preferences" aria-labelledby="settings-general-title">
               <section className="settings-group" aria-labelledby="settings-general-title">
@@ -2589,29 +3314,25 @@ function App({
                   />
                 </label>
                 <label className="settings-field settings-preference-row">
-                  <span>What should CodePawl call you?</span>
+                  <span>What should Orynt call you?</span>
                   <input
                     className="input-focus-standalone"
                     type="text"
-                    aria-label="What should CodePawl call you?"
+                    aria-label="What should Orynt call you?"
                     value={operatorCallSign}
                     onChange={(event) => void handleOperatorProfileChange({ callSign: event.target.value })}
                   />
                 </label>
                 <label className="settings-field settings-preference-row">
                   <span>What best describes your work?</span>
-                  <select
-                    className="input-focus-standalone settings-select"
-                    aria-label="What best describes your work?"
+                  <OryntDropdown
+                    ariaLabel="What best describes your work?"
+                    id="settings-work-type"
                     value={operatorWorkType}
-                    onChange={(event) => void handleOperatorProfileChange({ workType: event.target.value as SettingsSnapshot["operatorProfile"]["workType"] })}
-                  >
-                    {workTypeOptions.map((option) => (
-                      <option value={option.value} key={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(nextValue) => void handleOperatorProfileChange({ workType: nextValue as SettingsSnapshot["operatorProfile"]["workType"] })}
+                    options={workTypeOptions}
+                    placeholder="Choose work type"
+                  />
                 </label>
               </section>
 
@@ -2639,18 +3360,14 @@ function App({
                 </div>
                 <label className="settings-field settings-preference-row">
                   <span>Chat font</span>
-                  <select
-                    className="input-focus-standalone settings-select"
-                    aria-label="Chat font"
+                  <OryntDropdown
+                    ariaLabel="Chat font"
+                    id="settings-chat-font"
                     value={chatFontPreference}
-                    onChange={(event) => void handleUiPreferencesChange({ chatFont: event.target.value as SettingsSnapshot["uiPreferences"]["chatFont"] })}
-                  >
-                    {chatFontOptions.map((option) => (
-                      <option value={option.value} key={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(nextValue) => void handleUiPreferencesChange({ chatFont: nextValue as SettingsSnapshot["uiPreferences"]["chatFont"] })}
+                    options={chatFontOptions}
+                    placeholder="Choose chat font"
+                  />
                 </label>
                 <div className="settings-row settings-preference-row">
                   <span>Motion</span>
@@ -2674,55 +3391,43 @@ function App({
                 <h2 id="settings-voice-title">Voice</h2>
                 <label className="settings-field settings-preference-row">
                   <span>Language</span>
-                  <select
-                    className="input-focus-standalone settings-select"
-                    aria-label="Language"
+                  <OryntDropdown
+                    ariaLabel="Language"
+                    id="settings-voice-language"
                     value={voiceLanguage}
-                    onChange={(event) => void handleVoicePreferencesChange({ language: event.target.value as SettingsSnapshot["voicePreferences"]["language"] })}
-                  >
-                    {voiceLanguageOptions.map((option) => (
-                      <option value={option.value} key={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(nextValue) => void handleVoicePreferencesChange({ language: nextValue as SettingsSnapshot["voicePreferences"]["language"] })}
+                    options={voiceLanguageOptions}
+                    placeholder="Choose language"
+                  />
                 </label>
                 <label className="settings-field settings-preference-row">
                   <span>Style</span>
-                  <select
-                    className="input-focus-standalone settings-select"
-                    aria-label="Style"
+                  <OryntDropdown
+                    ariaLabel="Style"
+                    id="settings-voice-style"
                     value={voiceStyle}
-                    onChange={(event) => void handleVoicePreferencesChange({ style: event.target.value as SettingsSnapshot["voicePreferences"]["style"] })}
-                  >
-                    {voiceStyleOptions.map((option) => (
-                      <option value={option.value} key={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(nextValue) => void handleVoicePreferencesChange({ style: nextValue as SettingsSnapshot["voicePreferences"]["style"] })}
+                    options={voiceStyleOptions}
+                    placeholder="Choose voice style"
+                  />
                 </label>
                 <label className="settings-field settings-preference-row">
                   <span>Speed</span>
-                  <select
-                    className="input-focus-standalone settings-select"
-                    aria-label="Speed"
+                  <OryntDropdown
+                    ariaLabel="Speed"
+                    id="settings-voice-speed"
                     value={voiceSpeed}
-                    onChange={(event) => void handleVoicePreferencesChange({ speed: event.target.value as SettingsSnapshot["voicePreferences"]["speed"] })}
-                  >
-                    {voiceSpeedOptions.map((option) => (
-                      <option value={option.value} key={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(nextValue) => void handleVoicePreferencesChange({ speed: nextValue as SettingsSnapshot["voicePreferences"]["speed"] })}
+                    options={voiceSpeedOptions}
+                    placeholder="Choose speed"
+                  />
                 </label>
               </section>
 
-              <section className="settings-group" aria-labelledby="settings-codepawl-title">
-                <h2 id="settings-codepawl-title">CodePawl</h2>
+              <section className="settings-group" aria-labelledby="settings-orynt-title">
+                <h2 id="settings-orynt-title">Orynt</h2>
                 <div className="settings-row settings-preference-row">
-                  <span>Message labels</span>
+                  <SettingsLabelWithInfo info={messageBlockMetaDescription} infoLabel="Message labels info" label="Message labels" />
                   <button
                     className="surface-switch settings-inline-switch"
                     type="button"
@@ -2732,7 +3437,6 @@ function App({
                   >
                     <span className="surface-switch-copy">
                       <span>Show message labels</span>
-                      <small>{messageBlockMetaDescription}</small>
                     </span>
                     <span className="surface-switch-toggle" aria-hidden="true">
                       <span className="surface-switch-thumb" />
@@ -2740,23 +3444,65 @@ function App({
                   </button>
                 </div>
                 <label className="settings-field settings-preference-row">
-                  <span>Permission mode</span>
-                  <select
-                    className="input-focus-standalone settings-select"
-                    aria-label="Permission mode"
+                  <SettingsLabelWithInfo info={permissionModeCopy.helper} infoLabel="Permission mode info" label="Permission mode" />
+                  <OryntDropdown
+                    ariaLabel="Permission mode"
+                    id="settings-permission-mode"
                     value={permissionMode}
-                    onChange={(event) => void handlePermissionModeChange(event.target.value as PermissionModeOption)}
-                  >
-                    {permissionModeOptions.map((option) => (
-                      <option value={option.value} key={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(nextValue) => void handlePermissionModeChange(nextValue as PermissionModeOption)}
+                    options={permissionModeOptions.map((option) => ({
+                      description: option.helper,
+                      label: option.label,
+                      value: option.value,
+                    }))}
+                    placeholder="Choose permission mode"
+                  />
                 </label>
                 <div className="settings-row settings-preference-row">
-                  <span>Retention</span>
-                  <strong>{settingsSnapshot?.retentionPolicy.summary ?? "Cleanup is manual for private beta; automatic retention is planned."}</strong>
+                  <SettingsLabelWithInfo info={retentionPolicySummary} infoLabel="Retention info" label="Retention" />
+                  <strong>{retentionPolicyStatus}</strong>
+                </div>
+              </section>
+            </section>
+          );
+        }
+        case "model":
+          return (
+            <section className="settings-section settings-model-section" aria-labelledby="settings-model-title">
+              <section className="settings-group" aria-labelledby="settings-model-title">
+                <h2 id="settings-model-title">Model</h2>
+                <p>Select a provider, authenticate it, and choose a live model before repository runs.</p>
+              </section>
+              {renderModelProviderSetupPanel("settings-model")}
+            </section>
+          );
+        case "status":
+          return (
+            <section className="settings-section settings-status-section" aria-labelledby="settings-status-title">
+              <section className="settings-group settings-status-summary" aria-labelledby="settings-status-title">
+                <h2 id="settings-status-title">Status</h2>
+                <p>Orynt is running in repository-only private beta. Repository work is available after setup; every other executable surface stays disabled.</p>
+              </section>
+
+              <section className="settings-group settings-surface-status" aria-label="Unavailable beta surfaces">
+                <h2>Surface availability</h2>
+                <div className="settings-surface-status-list">
+                  <article className="settings-surface-status-item settings-surface-status-item-available">
+                    <div>
+                      <strong>Repository</strong>
+                      <span>Selected local directory reads, diffs, and scoped code changes are the only executable surface.</span>
+                    </div>
+                    <span className="settings-surface-status-pill settings-surface-status-pill-available">Available</span>
+                  </article>
+                  {betaUnavailableSurfaces.map((surface) => (
+                    <article className="settings-surface-status-item settings-surface-status-item-unavailable" key={surface}>
+                      <div>
+                        <strong>{surface}</strong>
+                        <span>{betaUnavailableSurfaceDescriptions[surface]}</span>
+                      </div>
+                      <span className="settings-surface-status-pill settings-surface-status-pill-unavailable">{surface} unavailable</span>
+                    </article>
+                  ))}
                 </div>
               </section>
             </section>
@@ -2844,7 +3590,7 @@ function App({
               </section>
 
               <ul className="settings-feature-list" aria-label="Plan features">
-                <li>Chat with CodePawl on this desktop preview</li>
+                <li>Chat with Orynt on this desktop preview</li>
                 <li>Create repository run drafts with approval gates</li>
                 <li>Save local run history and artifact evidence</li>
                 <li>Review memory candidates and skill drafts</li>
@@ -2986,12 +3732,12 @@ function App({
           )}
         </button>
         <label className="composer-repository-path">
-          <span>Repository</span>
+          <span>Directory</span>
           <input
             className="input-focus-control"
-            aria-label="Repository path"
+            aria-label="Directory path"
             name="repository-path"
-            placeholder="/path/to/local/git/repository"
+            placeholder="/path/to/local/directory"
             value={repositoryPath}
             onChange={(event) => setRepositoryPath(event.target.value)}
           />
@@ -3005,11 +3751,6 @@ function App({
           onChange={(event) => setComposerValue(event.target.value)}
           onKeyDown={handleComposerKeyDown}
         />
-        <div className="composer-beta-unavailable" aria-label="Unavailable beta surfaces">
-          {betaUnavailableSurfaces.map((surface) => (
-            <span key={surface}>{surface} unavailable</span>
-          ))}
-        </div>
         {composerStatusMessage ? (
           <p className="composer-codex-connection-status" role="status">
             {composerStatusMessage}
@@ -3117,10 +3858,11 @@ function App({
               type="button"
               aria-label="Send task"
               title="Send task"
-              disabled={composerValue.trim().length === 0}
+              disabled={composerValue.trim().length === 0 || isComposerSubmitPending}
+              aria-busy={isComposerSubmitPending}
               onClick={() => void submitComposerGoal()}
             >
-              <Send className="send-icon" aria-hidden="true" strokeWidth={2} />
+              {isComposerSubmitPending ? <LoadingSpinner /> : <Send className="send-icon" aria-hidden="true" strokeWidth={2} />}
             </button>
           </div>
         </div>
@@ -3186,7 +3928,7 @@ function App({
             ) : (
               <div className="thread-start-copy">
                 <h2>Ready for the next run</h2>
-                <p>{activeWorkspace.description || "Describe the repository task and CodePawl will keep the run gated, inspectable, and local-first."}</p>
+                <p>{activeWorkspace.description || "Describe the repository task and Orynt will keep the run gated, inspectable, and local-first."}</p>
               </div>
             )}
           </div>
@@ -3223,7 +3965,7 @@ function App({
       <section className={`thread-setup-warning${composerReadinessMessage ? " thread-setup-warning-error" : ""}`} role="status" aria-label="Setup required">
         <div>
           <span>{composerReadinessMessage ? "Setup blocked" : "Setup required"}</span>
-          <p>{message}</p>
+          <p className={setupLogTextClassName(composerReadinessMessage ? "error" : "warning")}>{message}</p>
         </div>
         <button type="button" onClick={handleOpenSetupDialog}>
           Open setup
@@ -3240,7 +3982,7 @@ function App({
     return (
       <ShellModal
         id="setup-dialog"
-        label="Set up CodePawl"
+        label="Set up Orynt"
         description="Repository-only private beta"
         variant="atmospheric"
         modalClassName="setup-modal"
@@ -3251,7 +3993,7 @@ function App({
           <section className="setup-dialog-intro" aria-label="Setup summary">
             <span>Repository-only beta</span>
             <p>
-              Connect a local repository, choose a model provider, and confirm conservative defaults before the first supervised run. CodePawl stays local-first and repository-scoped for this private beta.
+              Choose a local directory, choose a model provider, and confirm conservative defaults before the first supervised run. Orynt stays local-first and directory-scoped for this private beta.
             </p>
           </section>
           {renderSetupControls({
@@ -3269,7 +4011,8 @@ function App({
       <aside className="workspace-panel" id="workspace-panel">
         <div className="workspace-panel-header">
           <button className="workspace-brand" type="button" aria-label="Open Cockpit">
-            <span className="workspace-brand-wordmark">CodePawl</span>
+            <img className="workspace-brand-logo" src={lightbulbLogoOnDark} alt="" aria-hidden="true" />
+            <span className="workspace-brand-wordmark">Orynt</span>
           </button>
           <button
             className="workspace-search-toggle"
@@ -3436,7 +4179,7 @@ function App({
               </button>
               {isAccountMenuOpen ? (
                 <div className="account-menu" id="account-menu" role="menu" aria-label="Account menu" ref={accountMenuRef}>
-                  <div className="account-menu-email">operator@codepawl.local</div>
+                  <div className="account-menu-email">operator@orynt.local</div>
                   {accountMenuGroups.map((group, index) => (
                     <div className="account-menu-group" role="group" key={group.map((item) => item.id).join("-")}>
                       {group.map(renderAccountMenuItem)}
@@ -3457,6 +4200,16 @@ function App({
       {renderSettingsDialog()}
       {renderDeleteWorkspaceDialog()}
       {renderWorkspaceArchiveDialog()}
+      {notifications.length > 0 ? (
+        <div className="app-notifications" role="status" aria-live="polite" aria-label="Orynt notifications">
+          {notifications.map((notification) => (
+            <div className={`app-notification app-notification-${notification.tone}`} key={notification.id}>
+              <Check className="ui-icon" aria-hidden="true" strokeWidth={2} />
+              <span>{notification.message}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </main>
   );
 }

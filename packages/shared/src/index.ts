@@ -10,13 +10,13 @@ export * from "./agentLedger";
 export * from "./productPlans";
 
 import { createMockRunSequence } from "./runSpine";
-import { getCodePawlPlan, summarizePlanQuota } from "./productPlans";
+import { getOryntPlan, summarizePlanQuota } from "./productPlans";
 import type { PermissionMode } from "./corePolicy";
 import type { MonthlyUsageSummary } from "./agentLedger";
 import type { ArtifactRef, RunEvent, RunSummary } from "./runSpine";
 import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryProvenance, MemoryReviewSnapshot } from "./memoryContracts";
 import type { SkillDefinition, SkillRegistrySnapshot } from "./skillContracts";
-import type { CodePawlPlanConfig, PlanQuotaSummary } from "./productPlans";
+import type { OryntPlanConfig, PlanQuotaSummary } from "./productPlans";
 
 export type SurfaceKind = "repository" | "browser" | "desktop" | "files" | "terminal";
 
@@ -95,7 +95,7 @@ export type MockRunState = {
   permissionPolicy: PermissionPolicy;
   usageBudget: UsageBudget;
   usageSummary: MonthlyUsageSummary;
-  productPlan: CodePawlPlanConfig;
+  productPlan: OryntPlanConfig;
   quotaSummary: PlanQuotaSummary;
   traceSummary: TraceSummary;
   runSummary: RunSummary;
@@ -119,7 +119,7 @@ function createMockSkillRegistry(runId: string, taskId: string, memoryReview: Me
   const skillArtifact: ArtifactRef = {
     id: "mock-skill-definition",
     kind: "skill_definition",
-    uri: `codepawl-artifact://${runId}/skills/skill-package-scope.json`,
+    uri: `orynt-artifact://${runId}/skills/skill-package-scope.json`,
     label: "Candidate skill definition",
     sha256: "mock-skill-definition-sha256",
   };
@@ -212,19 +212,19 @@ function createMockMemoryReview(runId: string, taskId: string): MemoryReviewSnap
   const namespace: MemoryNamespace = {
     capabilityId: "coding-apprentice",
     workspaceId: "workspace-local-alpha",
-    repositoryPath: "/repos/codepawl",
+    repositoryPath: "/repos/orynt",
   };
   const memoryArtifact: ArtifactRef = {
     id: "mock-memory-episode",
     kind: "memory_episode",
-    uri: `codepawl-artifact://${runId}/memory/memory-store.json#episode`,
+    uri: `orynt-artifact://${runId}/memory/memory-store.json#episode`,
     label: "Episodic memory item",
     sha256: "mock-memory-episode-sha256",
   };
   const ruleArtifact: ArtifactRef = {
     id: "mock-candidate-rule",
     kind: "candidate_rule",
-    uri: `codepawl-artifact://${runId}/memory/memory-store.json#candidate-rule`,
+    uri: `orynt-artifact://${runId}/memory/memory-store.json#candidate-rule`,
     label: "Candidate project rule",
     sha256: "mock-candidate-rule-sha256",
   };
@@ -261,7 +261,7 @@ function createMockMemoryReview(runId: string, taskId: string): MemoryReviewSnap
       status: "candidate",
       title: "Keep package fixes scoped",
       rule: "Keep source-only fixes under packages/** unless the contract says otherwise.",
-      scope: { repositoryPath: "/repos/codepawl", allowedPaths: ["packages/**"], protectedPaths: [".env", "pnpm-lock.yaml"] },
+      scope: { repositoryPath: "/repos/orynt", allowedPaths: ["packages/**"], protectedPaths: [".env", "pnpm-lock.yaml"] },
       evidence: [
         {
           kind: "allowed_scope_pattern",
@@ -282,7 +282,7 @@ function createMockMemoryReview(runId: string, taskId: string): MemoryReviewSnap
       status: "candidate",
       title: "Avoid secret-bearing logs",
       rule: "Do not persist imported manual logs containing [REDACTED]; keep only redacted summaries and artifact references.",
-      scope: { repositoryPath: "/repos/codepawl", allowedPaths: ["apps/desktop/**", "packages/**"], protectedPaths: [".env", "*.pem"] },
+      scope: { repositoryPath: "/repos/orynt", allowedPaths: ["apps/desktop/**", "packages/**"], protectedPaths: [".env", "*.pem"] },
       evidence: [
         {
           kind: "command_observation",
@@ -322,7 +322,7 @@ export function createMockRunState(): MockRunState {
   const mockRun = createMockRunSequence();
   const memoryReview = createMockMemoryReview(mockRun.run.id, mockRun.run.taskId);
   const skillRegistry = createMockSkillRegistry(mockRun.run.id, mockRun.run.taskId, memoryReview);
-  const productPlan = getCodePawlPlan("managed-ai");
+  const productPlan = getOryntPlan("managed-ai");
   const quotaSummary = summarizePlanQuota({
     planId: productPlan.id,
     billingCadence: "monthly",

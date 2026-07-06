@@ -1,4 +1,4 @@
-export const CODEPAWL_ERROR_CODES = [
+export const ORYNT_ERROR_CODES = [
   "SIDECAR_SPAWN_FAILED",
   "SIDECAR_PROTOCOL_MISMATCH",
   "REPOSITORY_CONTEXT_FAILED",
@@ -13,7 +13,7 @@ export const CODEPAWL_ERROR_CODES = [
   "USER_CANCELED",
 ] as const;
 
-export type CodePawlErrorCode = (typeof CODEPAWL_ERROR_CODES)[number];
+export type OryntErrorCode = (typeof ORYNT_ERROR_CODES)[number];
 
 export type RpcRequest = {
   jsonrpc: "2.0";
@@ -27,7 +27,7 @@ export type RpcResponse = {
   id: string;
   result?: unknown;
   error?: {
-    code: CodePawlErrorCode | string;
+    code: OryntErrorCode | string;
     message: string;
     details?: unknown;
   };

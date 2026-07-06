@@ -6,18 +6,22 @@ import { createMockRunState } from "@codepawl/shared";
 import type { MockRunState } from "@codepawl/shared";
 
 import App, { getLandingUrl } from "./App";
-import { codepawl } from "./codepawlClient";
-import type { SettingsSnapshot } from "./codepawlClient";
+import { orynt } from "./oryntClient";
+import type { ModelCatalogResult, ModelConnectionReference, SettingsSnapshot } from "./oryntClient";
 
 const defaultLandingUrl = "http://127.0.0.1:5173/";
-const privateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
+const privateBetaOnboardingStorageKey = "orynt:private-beta-onboarding:v1";
+const legacyPrivateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
+const messageBlockMetaStorageKey = "orynt:message-block-meta-visible:v1";
+const legacyMessageBlockMetaStorageKey = "codepawl:message-block-meta-visible:v1";
 
 function withPreferenceSettings(
-  settings: Omit<SettingsSnapshot, "operatorProfile" | "uiPreferences" | "voicePreferences" | "modelConnection"> &
-    Partial<Pick<SettingsSnapshot, "operatorProfile" | "uiPreferences" | "voicePreferences" | "modelConnection">>,
+  settings: Omit<SettingsSnapshot, "thinkingEffort" | "operatorProfile" | "uiPreferences" | "voicePreferences" | "modelConnection"> &
+    Partial<Pick<SettingsSnapshot, "thinkingEffort" | "operatorProfile" | "uiPreferences" | "voicePreferences" | "modelConnection">>,
 ): SettingsSnapshot {
   return {
     ...settings,
+    thinkingEffort: settings.thinkingEffort ?? "medium",
     modelConnection: settings.modelConnection ?? null,
     operatorProfile: settings.operatorProfile ?? {
       fullName: "Operator",
@@ -26,7 +30,7 @@ function withPreferenceSettings(
     },
     uiPreferences: settings.uiPreferences ?? {
       appearance: "dark",
-      chatFont: "codepawl-sans",
+      chatFont: "orynt-sans",
       motion: "system",
       showMessageBlockMeta: false,
     },
@@ -36,6 +40,82 @@ function withPreferenceSettings(
       speed: "normal",
     },
   };
+}
+
+function readyModelSettings(overrides: Partial<SettingsSnapshot> = {}): SettingsSnapshot {
+  return withPreferenceSettings({
+    workspaceId: "workspace-local-alpha",
+    permissionMode: "safe",
+    executableSurfaces: ["repository"],
+    blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+    defaultRepositoryPath: "",
+    welcomeCompleted: true,
+    codexConnection: {
+      connectionId: "codex-cli",
+      label: "Local Codex CLI",
+      status: "ready",
+      lastPreflight: {
+        checkedConnectionId: "codex-cli",
+        status: "ready",
+        ready: true,
+        checkedAt: "2026-07-05T00:00:00.000Z",
+        executablePath: "/usr/local/bin/codex",
+        authMode: "chatgpt",
+        reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+        warnings: [],
+      },
+    },
+    retentionPolicy: {
+      runHistoryDays: 30,
+      artifactRetentionDays: 30,
+      cleanupEnabled: false,
+      summary: "Cleanup is manual for private beta; automatic retention is planned.",
+    },
+    modelConnection: {
+      providerId: "codex-cli",
+      providerLabel: "Codex CLI",
+      modelId: "gpt-5.5",
+      modelLabel: "GPT-5.5",
+      authMethod: "chatgptOAuth",
+      status: "ready",
+      lastPreflight: {
+        checkedProviderId: "codex-cli",
+        checkedModelId: "gpt-5.5",
+        status: "ready",
+        ready: true,
+        checkedAt: "2026-07-05T00:00:00.000Z",
+        executablePath: "/usr/local/bin/codex",
+        authMode: "chatgptOAuth",
+        reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+        warnings: [],
+      },
+    },
+    ...overrides,
+  });
+}
+
+function mockReadyModelSettings(overrides: Partial<SettingsSnapshot> = {}) {
+  vi.spyOn(orynt, "getSettings").mockResolvedValue(readyModelSettings(overrides));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function selectSetupDropdownOption(scope: HTMLElement, label: string, optionLabel: string) {
+  const dropdown = within(scope).getByRole("combobox", { name: label });
+  fireEvent.click(dropdown);
+  const listbox = within(scope).getByRole("listbox", { name: `${label} options` });
+  fireEvent.click(within(listbox).getByRole("option", { name: new RegExp(`^${escapeRegExp(optionLabel)}`) }));
+  return within(scope).getByRole("combobox", { name: label });
+}
+
+function pointerSelectSetupDropdownOption(scope: HTMLElement, label: string, optionLabel: string) {
+  const dropdown = within(scope).getByRole("combobox", { name: label });
+  fireEvent.click(dropdown);
+  const listbox = within(scope).getByRole("listbox", { name: `${label} options` });
+  fireEvent.pointerDown(within(listbox).getByRole("option", { name: new RegExp(`^${escapeRegExp(optionLabel)}`) }));
+  return within(scope).getByRole("combobox", { name: label });
 }
 
 function installLocalStorageMock() {
@@ -110,7 +190,7 @@ function dismissPrivateBetaOnboarding() {
 }
 
 function fillRepositoryPath(path = "/home/operator/project") {
-  fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+  fireEvent.change(screen.getByRole("textbox", { name: "Directory path" }), {
     target: { value: path },
   });
 }
@@ -164,7 +244,17 @@ function mockMobileViewport(matches = true) {
   });
 }
 
-describe("CodePawl desktop shell", () => {
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
+describe("Orynt desktop shell", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -178,7 +268,7 @@ describe("CodePawl desktop shell", () => {
     });
   });
 
-  it("starts the first draft thread blank with setup in a popup and only a compact chat warning", () => {
+  it("starts the first draft thread blank with setup in a popup and hides the background chat warning", () => {
     render(<App />);
 
     const thread = screen.getByRole("region", { name: "Thread conversation" });
@@ -188,15 +278,15 @@ describe("CodePawl desktop shell", () => {
     expect(within(thread).queryByRole("article", { name: "Agent response" })).not.toBeInTheDocument();
     expect(within(thread).queryByRole("article", { name: "Approval request" })).not.toBeInTheDocument();
     expect(within(thread).queryByRole("region", { name: "Setup guide" })).not.toBeInTheDocument();
-    expect(within(thread).queryByRole("heading", { name: "Set up CodePawl" })).not.toBeInTheDocument();
-    expect(within(thread).getByRole("status", { name: "Setup required" })).toBeInTheDocument();
-    expect(within(thread).getByRole("button", { name: "Open setup" })).toBeInTheDocument();
-    const setupDialog = screen.getByRole("dialog", { name: "Set up CodePawl" });
-    expect(within(setupDialog).queryByRole("heading", { name: "Set up CodePawl" })).not.toBeInTheDocument();
+    expect(within(thread).queryByRole("heading", { name: "Set up Orynt" })).not.toBeInTheDocument();
+    expect(within(thread).queryByRole("status", { name: "Setup required" })).not.toBeInTheDocument();
+    expect(within(thread).queryByRole("button", { name: "Open setup" })).not.toBeInTheDocument();
+    const setupDialog = screen.getByRole("dialog", { name: "Set up Orynt" });
+    expect(within(setupDialog).queryByRole("heading", { name: "Set up Orynt" })).not.toBeInTheDocument();
     expect(setupDialog.querySelectorAll("#setup-dialog-title")).toHaveLength(1);
     expect(within(setupDialog).queryByRole("heading", { name: "Setup controls" })).not.toBeInTheDocument();
     expect(within(setupDialog).getByRole("region", { name: "Setup controls" })).toBeInTheDocument();
-    expect(within(setupDialog).getByText(/Connect a local repository, choose a model provider/i)).toBeInTheDocument();
+    expect(within(setupDialog).getByText(/Choose a local directory, choose a model provider/i)).toBeInTheDocument();
     expect(within(thread).getByRole("textbox", { name: "Repository task message" })).toHaveValue("");
     expect(within(thread).getByRole("button", { name: "Send task" })).toBeDisabled();
   });
@@ -217,7 +307,7 @@ describe("CodePawl desktop shell", () => {
         summary: "Automatic cleanup after 14 days for runs and 21 days for artifacts.",
       },
     });
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
       ...updatedSettings,
       permissionMode: "safe",
       defaultRepositoryPath: "",
@@ -229,24 +319,60 @@ describe("CodePawl desktop shell", () => {
         summary: "Cleanup is manual for private beta; automatic retention is planned.",
       },
     }));
-    const updateSettingsSpy = vi.spyOn(codepawl, "updateSettings").mockResolvedValue(updatedSettings);
+    const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(updatedSettings);
 
     render(<App />);
 
-    const setupDialog = await screen.findByRole("dialog", { name: "Set up CodePawl" });
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     expect(within(setupDialog).queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("heading", { name: "Set up CodePawl" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("heading", { name: "Set up Orynt" })).not.toBeInTheDocument();
     expect(within(setupDialog).queryByRole("heading", { name: "Setup controls" })).not.toBeInTheDocument();
-    const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default repository path" });
+    const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
     fireEvent.change(repositoryPath, { target: { value: "/home/operator/project" } });
     fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
 
     expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/project" });
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Repository path" })).toHaveValue("/home/operator/project"));
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Directory path" })).toHaveValue("/home/operator/project"));
   });
 
-  it("detects and browses repository paths without silently saving them", async () => {
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+  it("saves the current directory path from setup when the setup directory field is empty", async () => {
+    const updatedSettings = withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe" as const,
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "/home/operator/current-project",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    });
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      ...updatedSettings,
+      defaultRepositoryPath: "",
+    }));
+    const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(updatedSettings);
+
+    render(<App />);
+
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    const setupRepositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
+    expect(setupRepositoryPath).toHaveValue("");
+
+    fillRepositoryPath("/home/operator/current-project");
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/current-project" });
+    await waitFor(() => expect(setupRepositoryPath).toHaveValue("/home/operator/current-project"));
+    expect(within(setupDialog).getByText("Local directory saved.")).toBeInTheDocument();
+  });
+
+  it("shows an inline setup save error when persistence fails", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
       executableSurfaces: ["repository"],
@@ -261,9 +387,42 @@ describe("CodePawl desktop shell", () => {
         summary: "Cleanup is manual for private beta; automatic retention is planned.",
       },
     }));
-    const detectRepositorySpy = vi.spyOn(codepawl, "detectCurrentRepositoryPath").mockResolvedValue("/home/operator/detected-repo");
-    const browseRepositorySpy = vi.spyOn(codepawl, "browseRepositoryPath").mockResolvedValue("/home/operator/browsed-repo");
-    const updateSettingsSpy = vi.spyOn(codepawl, "updateSettings").mockImplementation(async (input) =>
+    vi.spyOn(orynt, "updateSettings").mockRejectedValue(new Error("Settings store is unavailable."));
+
+    render(<App />);
+
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    fireEvent.change(within(setupDialog).getByRole("textbox", { name: "Default local directory" }), {
+      target: { value: "/home/operator/project" },
+    });
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+
+    await waitFor(() => expect(within(setupDialog).getByText("Settings store is unavailable.")).toBeInTheDocument());
+    expect(within(setupDialog).getByRole("button", { name: "Save setup settings" })).not.toBeDisabled();
+  });
+
+  it("detects and browses local directories without silently saving them", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    }));
+    const detectRepositorySpy = vi.spyOn(orynt, "detectCurrentRepositoryPath").mockResolvedValue("/home/operator/detected-repo");
+    const browseRepositorySpy = vi.spyOn(orynt, "browseRepositoryPath").mockResolvedValue({
+      status: "selected",
+      path: "/home/operator/browsed-repo",
+    });
+    const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockImplementation(async (input) =>
       withPreferenceSettings({
         workspaceId: "workspace-local-alpha",
         permissionMode: "safe",
@@ -282,8 +441,8 @@ describe("CodePawl desktop shell", () => {
     );
 
     render(<App />);
-    const setupDialog = await screen.findByRole("dialog", { name: "Set up CodePawl" });
-    const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default repository path" });
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
 
     await waitFor(() => expect(repositoryPath).toHaveValue("/home/operator/detected-repo"));
     expect(detectRepositorySpy).toHaveBeenCalled();
@@ -299,29 +458,505 @@ describe("CodePawl desktop shell", () => {
     expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/browsed-repo" });
   });
 
+  it("shows a cancellation message when native directory browsing is cancelled", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "/home/operator/existing-repo",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    }));
+    vi.spyOn(orynt, "browseRepositoryPath").mockResolvedValue({ status: "cancelled" });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
+
+    await waitFor(() => expect(repositoryPath).toHaveValue("/home/operator/existing-repo"));
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Browse" }));
+
+    await waitFor(() => expect(within(setupDialog).getByText("No local directory was selected.")).toBeInTheDocument());
+    expect(repositoryPath).toHaveValue("/home/operator/existing-repo");
+  });
+
+  it("explains that native directory browsing is unavailable in web preview", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+    }));
+    vi.spyOn(orynt, "browseRepositoryPath").mockResolvedValue({
+      status: "unavailable",
+      reason: "not-tauri",
+      message: "Native folder picker is only available in the Orynt desktop app. Open the Tauri window or paste the local path manually.",
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
+
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Browse" }));
+
+    await waitFor(() =>
+      expect(
+        within(setupDialog).getByText("Native folder picker is only available in the Orynt desktop app. Open the Tauri window or paste the local path manually."),
+      ).toBeInTheDocument(),
+    );
+    expect(repositoryPath).toHaveValue("");
+  });
+
+  it("renders dropdown option titles separately from descriptions", async () => {
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    fireEvent.click(within(setupDialog).getByRole("combobox", { name: "Permission mode" }));
+    const options = within(setupDialog).getByRole("listbox", { name: "Permission mode options" });
+    const safeOption = within(options).getByRole("option", { name: /^Safe/ });
+    const safeTitle = within(safeOption).getByText("Safe");
+    const safeDescription = within(safeOption).getByText("Ask before protected paths, destructive commands, network access, and secret access.");
+
+    expect(safeTitle).toHaveClass("orynt-dropdown-option-title");
+    expect(safeTitle).not.toHaveTextContent("Ask before protected paths");
+    expect(safeDescription).toHaveClass("orynt-dropdown-option-description");
+  });
+
+  it("reports native directory browsing unavailable outside the Tauri runtime", async () => {
+    await expect(orynt.browseRepositoryPath()).resolves.toEqual({
+      status: "unavailable",
+      reason: "not-tauri",
+      message: "Native folder picker is only available in the Orynt desktop app. Open the Tauri window or paste the local path manually.",
+    });
+  });
+
+  it("does not mock provider connections outside the Tauri runtime", async () => {
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
+
+    expect(
+      (
+        await within(setupDialog).findAllByText(
+          "Provider connections are only available in the Orynt desktop app. Open the Tauri app to authenticate providers and fetch live models.",
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(within(setupDialog).queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
   it("keeps each setup checklist item next to its related controls in one readable flow", () => {
     render(<App />);
 
-    const setupDialog = screen.getByRole("dialog", { name: "Set up CodePawl" });
+    const setupDialog = screen.getByRole("dialog", { name: "Set up Orynt" });
     const setupFlow = within(setupDialog).getByRole("list", { name: "Setup flow" });
     const steps = within(setupFlow).getAllByRole("listitem");
 
     expect(steps).toHaveLength(3);
-    expect(within(steps[0]).getByText("Choose a repository")).toBeInTheDocument();
-    expect(within(steps[0]).getByRole("textbox", { name: "Default repository path" })).toBeInTheDocument();
+    expect(within(steps[0]).getByText("Choose a local directory")).toBeInTheDocument();
+    expect(within(steps[0]).getByText("Save the local folder you want Orynt to work in.")).toBeInTheDocument();
+    const localDirectoryInput = within(steps[0]).getByRole("textbox", { name: "Default local directory" });
+    expect(localDirectoryInput).toBeInTheDocument();
+    expect(localDirectoryInput).toHaveAttribute("placeholder", "/path/to/local/directory");
     expect(within(steps[0]).getByRole("button", { name: "Detect current" })).toBeInTheDocument();
     expect(within(steps[0]).getByRole("button", { name: "Browse" })).toBeInTheDocument();
     expect(within(steps[1]).getByText("Choose model provider")).toBeInTheDocument();
-    expect(within(steps[1]).getByRole("searchbox", { name: "Search providers" })).toBeInTheDocument();
-    expect(within(steps[1]).queryByRole("searchbox", { name: "Search models" })).not.toBeInTheDocument();
+    expect(within(steps[1]).getByRole("combobox", { name: "Provider" })).toBeInTheDocument();
+    expect(within(steps[1]).queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
     expect(within(steps[1]).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    expect(within(steps[1]).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
     expect(within(steps[2]).getByText("Review advanced defaults")).toBeInTheDocument();
     expect(within(steps[2]).getByRole("combobox", { name: "Permission mode" })).toBeInTheDocument();
+    expect(within(steps[2]).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
     expect(setupDialog.querySelector(".setup-status-list")).toBeNull();
   });
 
-  it("stages provider and model choices without showing both lists at once", async () => {
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+  it("shows model-specific thinking effort after model selection and persists the chosen effort", async () => {
+    const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockImplementation(async () =>
+      withPreferenceSettings({
+        workspaceId: "workspace-local-alpha",
+        permissionMode: "safe",
+        executableSurfaces: ["repository"],
+        blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+        defaultRepositoryPath: "",
+        welcomeCompleted: false,
+        codexConnection: null,
+        retentionPolicy: {
+          runHistoryDays: 30,
+          artifactRetentionDays: 30,
+          cleanupEnabled: false,
+          summary: "Cleanup is manual for private beta; automatic retention is planned.",
+        },
+        modelConnection: null,
+      }),
+    );
+    vi.spyOn(orynt, "preflightModelProvider").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "openai-api",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [
+        {
+          id: "gpt-5.5",
+          label: "GPT-5.5",
+          ownedBy: "openai",
+          source: "openai-api",
+          supportedThinkingEfforts: ["none", "low", "medium", "high", "xhigh"],
+          defaultThinkingEffort: "medium",
+        },
+        {
+          id: "legacy-text-model",
+          label: "Legacy text model",
+          ownedBy: "team",
+          source: "openai-api",
+        },
+      ],
+    });
+
+    render(<App />);
+
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    expect(within(setupDialog).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
+
+    selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
+    const modelSelect = await within(setupDialog).findByRole("combobox", { name: "Model" });
+    expect(modelSelect).toHaveTextContent("Choose model");
+    expect(within(setupDialog).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
+
+    selectSetupDropdownOption(setupDialog, "Model", "GPT-5.5");
+    const thinkingEffort = within(setupDialog).getByRole("combobox", { name: "Thinking effort" });
+    expect(thinkingEffort).toHaveTextContent("Medium");
+
+    fireEvent.click(thinkingEffort);
+    const effortOptions = within(setupDialog).getByRole("listbox", { name: "Thinking effort options" });
+    expect(within(effortOptions).getByRole("option", { name: /None/ })).toBeInTheDocument();
+    expect(within(effortOptions).getByRole("option", { name: /X High/ })).toBeInTheDocument();
+    fireEvent.click(within(effortOptions).getByRole("option", { name: /X High/ }));
+
+    expect(within(setupDialog).getByRole("combobox", { name: "Thinking effort" })).toHaveTextContent("X High");
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ thinkingEffort: "xhigh" });
+
+    selectSetupDropdownOption(setupDialog, "Model", "Legacy text model");
+    expect(within(setupDialog).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
+  });
+
+  it("detects an existing Codex CLI login before showing live model choices", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    const preflightCodexConnectionSpy = vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue({
+      checkedConnectionId: "codex-cli",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: "chatgpt",
+      reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "codex-cli",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [
+        { id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" },
+        { id: "gpt-5.4-mini", label: "GPT-5.4 mini", description: "Live Codex model.", source: "codex-cli" },
+      ],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    const providerSelect = within(setupDialog).getByRole("combobox", { name: "Provider" });
+    expect(providerSelect).toHaveTextContent("Choose provider");
+    expect(within(setupDialog).queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Use device code" })).not.toBeInTheDocument();
+
+    selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
+
+    expect(within(setupDialog).queryByRole("listbox", { name: "Provider options" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Use device code" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("button", { name: "Check Codex CLI" })).toBeInTheDocument();
+
+    await waitFor(() => expect(preflightCodexConnectionSpy).toHaveBeenCalledTimes(1));
+    const modelSelect = await within(setupDialog).findByRole("combobox", { name: "Model" });
+    expect(modelSelect).toHaveTextContent("Choose model");
+
+    const selectedModel = selectSetupDropdownOption(setupDialog, "Model", "GPT-5.5");
+    expect(selectedModel).toHaveTextContent("GPT-5.5");
+    expect(within(setupDialog).queryByRole("listbox", { name: "Model options" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("button", { name: "Save provider setup" })).toBeInTheDocument();
+  });
+
+  it("checks Codex without closing setup or showing the background setup warning", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "/home/operator/project",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    const updateSettingsSpy = vi.spyOn(orynt, "updateSettings");
+    vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue({
+      checkedConnectionId: "codex-cli",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: "chatgpt",
+      reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "codex-cli",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [{ id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" }],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
+
+    await within(setupDialog).findByRole("combobox", { name: "Model" });
+
+    expect(screen.getByRole("dialog", { name: "Set up Orynt" })).toBeInTheDocument();
+    const thread = screen.getByRole("region", { name: "Thread conversation" });
+    expect(within(thread).queryByRole("status", { name: "Setup required" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Orynt notifications" })).toHaveTextContent("Codex CLI is installed and authenticated with ChatGPT.");
+    expect(updateSettingsSpy).not.toHaveBeenCalledWith({ welcomeCompleted: true });
+  });
+
+  it("shows animated loading feedback while fetching live provider models", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    vi.spyOn(orynt, "preflightModelProvider").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
+    const modelCatalog = createDeferred<ModelCatalogResult>();
+    vi.spyOn(orynt, "listProviderModels").mockReturnValue(modelCatalog.promise);
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
+
+    expect(await within(setupDialog).findByText("Fetching live models from the selected provider.")).toBeInTheDocument();
+    expect(setupDialog.querySelector(".loading-spinner")).not.toBeNull();
+    expect(setupDialog.querySelectorAll(".loading-skeleton-row")).toHaveLength(2);
+    expect(within(setupDialog).queryByRole("button", { name: "Save provider setup" })).not.toBeInTheDocument();
+
+    modelCatalog.resolve({
+      providerId: "openai-api",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [{ id: "gpt-5.5", label: "GPT-5.5", ownedBy: "openai", source: "openai-api" }],
+    });
+    expect(await within(setupDialog).findByRole("combobox", { name: "Model" })).toHaveTextContent("Choose model");
+    expect(within(setupDialog).queryByRole("button", { name: "Save provider setup" })).not.toBeInTheDocument();
+  });
+
+  it("closes setup dropdowns after pointer-selecting an option", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue({
+      checkedConnectionId: "codex-cli",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: "chatgpt",
+      reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "codex-cli",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [{ id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" }],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    expect(pointerSelectSetupDropdownOption(setupDialog, "Provider", "Codex CLI")).toHaveTextContent("Codex CLI");
+    expect(within(setupDialog).queryByRole("listbox", { name: "Provider options" })).not.toBeInTheDocument();
+
+    const modelDropdown = await within(setupDialog).findByRole("combobox", { name: "Model" });
+    expect(modelDropdown).toHaveTextContent("Choose model");
+
+    expect(pointerSelectSetupDropdownOption(setupDialog, "Model", "GPT-5.5")).toHaveTextContent("GPT-5.5");
+    expect(within(setupDialog).queryByRole("listbox", { name: "Model options" })).not.toBeInTheDocument();
+  });
+
+  it("closes setup dropdowns after pointer-selecting the already selected option", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(readyModelSettings({ welcomeCompleted: false }));
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    expect(pointerSelectSetupDropdownOption(setupDialog, "Provider", "Codex CLI")).toHaveTextContent("Codex CLI");
+    expect(within(setupDialog).queryByRole("listbox", { name: "Provider options" })).not.toBeInTheDocument();
+  });
+
+  it("does not show save provider setup for a stale hydrated model before live models are checked", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(readyModelSettings({ welcomeCompleted: false }));
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    expect(await within(setupDialog).findByRole("combobox", { name: "Provider" })).toHaveTextContent("Codex CLI");
+    expect(await within(setupDialog).findByRole("combobox", { name: "Model" })).toHaveTextContent("GPT-5.5");
+    expect(within(setupDialog).queryByRole("button", { name: "Save provider setup" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("button", { name: "Check Codex CLI" })).toBeInTheDocument();
+  });
+
+  it("supports keyboard selection in the setup dropdowns", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue({
+      checkedConnectionId: "codex-cli",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: "chatgpt",
+      reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "codex-cli",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [
+        { id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" },
+        { id: "gpt-5.4-mini", label: "GPT-5.4 mini", description: "Live Codex model.", source: "codex-cli" },
+      ],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    const providerDropdown = within(setupDialog).getByRole("combobox", { name: "Provider" });
+
+    fireEvent.keyDown(providerDropdown, { key: "ArrowDown" });
+    const providerOptions = within(setupDialog).getByRole("listbox", { name: "Provider options" });
+    expect(providerOptions).toBeInTheDocument();
+    fireEvent.click(within(providerOptions).getByRole("option", { name: /Codex CLI/ }));
+    expect(within(setupDialog).getByRole("combobox", { name: "Provider" })).toHaveTextContent("Codex CLI");
+    expect(within(setupDialog).queryByRole("listbox", { name: "Provider options" })).not.toBeInTheDocument();
+
+    const modelDropdown = await within(setupDialog).findByRole("combobox", { name: "Model" });
+    fireEvent.keyDown(modelDropdown, { key: "ArrowDown" });
+    fireEvent.keyDown(modelDropdown, { key: "ArrowDown" });
+    fireEvent.keyDown(modelDropdown, { key: "Enter" });
+
+    expect(within(setupDialog).getByRole("combobox", { name: "Model" })).toHaveTextContent("GPT-5.5");
+    expect(within(setupDialog).queryByRole("listbox", { name: "Model options" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("button", { name: "Check Codex CLI" })).toBeInTheDocument();
+    expect(within(setupDialog).getByRole("button", { name: "Save provider setup" })).toBeInTheDocument();
+  });
+
+  it("hydrates provider and model dropdowns and clears the model when provider changes", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
       executableSurfaces: ["repository"],
@@ -341,36 +976,62 @@ describe("CodePawl desktop shell", () => {
         modelId: "gpt-5.5",
         modelLabel: "GPT-5.5",
         authMethod: "chatgptOAuth",
-        status: "authRequired",
+        status: "ready",
         lastPreflight: null,
       },
     } as Parameters<typeof withPreferenceSettings>[0]));
+    vi.spyOn(orynt, "listProviderModels").mockImplementation(async (input) => ({
+      providerId: input.providerId,
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [
+        input.providerId === "openai-api"
+          ? { id: "gpt-5.5", label: "GPT-5.5", ownedBy: "openai", source: "openai-api" }
+          : { id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" },
+      ],
+    }));
+    vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue({
+      checkedConnectionId: "codex-cli",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: "chatgpt",
+      reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "preflightModelProvider").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
 
     render(<App />);
-    const setupDialog = await screen.findByRole("dialog", { name: "Set up CodePawl" });
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
-    expect(await within(setupDialog).findByRole("searchbox", { name: "Search models" })).toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("searchbox", { name: "Search providers" })).not.toBeInTheDocument();
-    expect(within(setupDialog).getByRole("option", { name: /GPT-5.5/ })).toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("option", { name: /OpenAI API/ })).not.toBeInTheDocument();
+    const providerSelect = await within(setupDialog).findByRole("combobox", { name: "Provider" });
+    const modelSelect = await within(setupDialog).findByRole("combobox", { name: "Model" });
 
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Change provider" }));
+    expect(providerSelect).toHaveTextContent("Codex CLI");
+    expect(modelSelect).toHaveTextContent("GPT-5.5");
+    expect(modelSelect).not.toBeDisabled();
 
-    expect(within(setupDialog).getByRole("searchbox", { name: "Search providers" })).toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("searchbox", { name: "Search models" })).not.toBeInTheDocument();
-    expect(within(setupDialog).getByRole("option", { name: /OpenAI API/ })).toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("option", { name: /GPT-5.5/ })).not.toBeInTheDocument();
+    const selectedProvider = selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
 
-    fireEvent.click(within(setupDialog).getByRole("option", { name: /OpenAI API/ }));
-
-    expect(within(setupDialog).getByRole("searchbox", { name: "Search models" })).toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("searchbox", { name: "Search providers" })).not.toBeInTheDocument();
-    expect(within(setupDialog).getByRole("option", { name: /GPT-5.5/ })).toBeInTheDocument();
+    expect(selectedProvider).toHaveTextContent("OpenAI API");
+    expect(within(setupDialog).getByRole("textbox", { name: "API key environment variable" })).toHaveValue("OPENAI_API_KEY");
+    await within(setupDialog).findByRole("combobox", { name: "Model" });
+    selectSetupDropdownOption(setupDialog, "Model", "GPT-5.5");
     expect(within(setupDialog).getByRole("textbox", { name: "API key environment variable" })).toHaveValue("OPENAI_API_KEY");
   });
 
-  it("filters staged provider and model choices and shows env-var auth for OpenAI API only", async () => {
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+  it("uses dropdown provider and model choices and shows env-var auth for OpenAI API only", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
       executableSurfaces: ["repository"],
@@ -387,7 +1048,7 @@ describe("CodePawl desktop shell", () => {
       modelConnection: null,
     }));
     const saveModelConnectionSpy = vi
-      .spyOn(codepawl, "saveModelConnection")
+      .spyOn(orynt, "saveModelConnection")
       .mockImplementation(async (input) => ({
         providerId: input.providerId,
         providerLabel: "OpenAI API",
@@ -398,7 +1059,209 @@ describe("CodePawl desktop shell", () => {
         status: "authRequired",
         lastPreflight: null,
       }));
-    vi.spyOn(codepawl, "preflightModelConnection").mockResolvedValue({
+    const preflightModelConnectionSpy = vi.spyOn(orynt, "preflightModelConnection").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "gpt-5.5",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "preflightModelProvider").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "openai-api",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [
+        { id: "gpt-5.5", label: "GPT-5.5", ownedBy: "openai", source: "openai-api" },
+        { id: "gpt-5.4-mini", label: "GPT-5.4 mini", ownedBy: "openai", source: "openai-api" },
+      ],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    const providerSelect = within(setupDialog).getByRole("combobox", { name: "Provider" });
+
+    selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
+
+    expect(providerSelect).toHaveTextContent("OpenAI API");
+    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Use device code" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByRole("textbox", { name: "API key environment variable" })).toHaveValue("OPENAI_API_KEY");
+
+    const modelSelect = await within(setupDialog).findByRole("combobox", { name: "Model" });
+    fireEvent.click(modelSelect);
+    expect(within(setupDialog).getByRole("option", { name: /GPT-5\.4 mini/ })).toBeInTheDocument();
+    fireEvent.click(modelSelect);
+    selectSetupDropdownOption(setupDialog, "Model", "GPT-5.5");
+    expect(await within(setupDialog).findByRole("textbox", { name: "API key environment variable" })).toHaveValue("OPENAI_API_KEY");
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save provider setup" }));
+
+    expect(saveModelConnectionSpy).toHaveBeenCalledWith({
+      providerId: "openai-api",
+      modelId: "gpt-5.5",
+      modelLabel: "GPT-5.5",
+      authMethod: "apiKeyEnv",
+      envKey: "OPENAI_API_KEY",
+      thinkingEffort: null,
+      supportedThinkingEfforts: null,
+      defaultThinkingEffort: null,
+    });
+    await waitFor(() => expect(preflightModelConnectionSpy).toHaveBeenCalledTimes(1));
+    expect((await within(setupDialog).findAllByText("OPENAI_API_KEY is available for OpenAI API.")).length).toBeGreaterThan(0);
+  });
+
+  it("requires explicit setup completion after the saved model connection is ready", async () => {
+    const initialSettings = withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "/home/operator/project",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    });
+    const readySettings = withPreferenceSettings({
+      ...initialSettings,
+      welcomeCompleted: false,
+      modelConnection: {
+        providerId: "openai-api",
+        providerLabel: "OpenAI API",
+        modelId: "gpt-5.5",
+        modelLabel: "GPT-5.5",
+        authMethod: "apiKeyEnv",
+        envKey: "OPENAI_API_KEY",
+        status: "ready",
+        lastPreflight: {
+          checkedProviderId: "openai-api",
+          checkedModelId: "gpt-5.5",
+          status: "ready",
+          ready: true,
+          checkedAt: "2026-07-05T00:00:00.000Z",
+          authMode: "apiKeyEnv",
+          reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+          warnings: [],
+        },
+      },
+    });
+    const completedSettings = withPreferenceSettings({
+      ...readySettings,
+      welcomeCompleted: true,
+    });
+    vi.spyOn(orynt, "getSettings").mockResolvedValueOnce(initialSettings).mockResolvedValue(readySettings);
+    const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(completedSettings);
+    vi.spyOn(orynt, "saveModelConnection").mockImplementation(async (input) => ({
+      providerId: input.providerId,
+      providerLabel: "OpenAI API",
+      modelId: input.modelId,
+      modelLabel: "GPT-5.5",
+      authMethod: "apiKeyEnv",
+      envKey: input.envKey,
+      status: "authRequired",
+      lastPreflight: null,
+    }));
+    vi.spyOn(orynt, "preflightModelProvider").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "preflightModelConnection").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "gpt-5.5",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "openai-api",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [{ id: "gpt-5.5", label: "GPT-5.5", ownedBy: "openai", source: "openai-api" }],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
+    await within(setupDialog).findByRole("combobox", { name: "Model" });
+    selectSetupDropdownOption(setupDialog, "Model", "GPT-5.5");
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save provider setup" }));
+
+    await waitFor(() => expect(within(setupDialog).getAllByText("OPENAI_API_KEY is available for OpenAI API.").length).toBeGreaterThan(0));
+    expect(updateSettingsSpy).not.toHaveBeenCalledWith({ welcomeCompleted: true });
+    expect(screen.getByRole("dialog", { name: "Set up Orynt" })).toBeInTheDocument();
+
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Complete setup" }));
+
+    await waitFor(() => expect(updateSettingsSpy).toHaveBeenCalledWith({ welcomeCompleted: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Set up Orynt" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("status", { name: "Setup required" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Orynt notifications" })).toHaveTextContent("Setup complete. Orynt is ready for repository runs.");
+  });
+
+  it("shows a busy state while saving provider setup", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    vi.spyOn(orynt, "preflightModelProvider").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "openai-api",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [{ id: "gpt-5.5", label: "GPT-5.5", ownedBy: "openai", source: "openai-api" }],
+    });
+    const saveProviderSetup = createDeferred<ModelConnectionReference>();
+    vi.spyOn(orynt, "saveModelConnection").mockReturnValue(saveProviderSetup.promise);
+    vi.spyOn(orynt, "preflightModelConnection").mockResolvedValue({
       checkedProviderId: "openai-api",
       checkedModelId: "gpt-5.5",
       status: "ready",
@@ -410,39 +1273,85 @@ describe("CodePawl desktop shell", () => {
     });
 
     render(<App />);
-    const setupDialog = await screen.findByRole("dialog", { name: "Set up CodePawl" });
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
+    await within(setupDialog).findByRole("combobox", { name: "Model" });
+    selectSetupDropdownOption(setupDialog, "Model", "GPT-5.5");
 
-    fireEvent.change(within(setupDialog).getByRole("searchbox", { name: "Search providers" }), {
-      target: { value: "openai" },
+    const saveButton = within(setupDialog).getByRole("button", { name: "Save provider setup" });
+    fireEvent.click(saveButton);
+
+    expect(saveButton).toBeDisabled();
+    expect(saveButton).toHaveAttribute("aria-busy", "true");
+    expect(saveButton).toHaveTextContent("Saving");
+    expect(saveButton.querySelector(".loading-spinner")).not.toBeNull();
+  });
+
+  it("ignores stale live model results after the selected provider changes", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    vi.spyOn(orynt, "preflightModelProvider").mockResolvedValue({
+      checkedProviderId: "openai-api",
+      checkedModelId: "",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      authMode: "apiKeyEnv",
+      reasons: ["OPENAI_API_KEY is available for OpenAI API."],
+      warnings: [],
     });
-    fireEvent.click(within(setupDialog).getByRole("option", { name: /OpenAI API/ }));
-
-    expect(within(setupDialog).queryByRole("searchbox", { name: "Search providers" })).not.toBeInTheDocument();
-    expect(within(setupDialog).getByRole("searchbox", { name: "Search models" })).toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("button", { name: "Use device code" })).not.toBeInTheDocument();
-    expect(within(setupDialog).getByRole("textbox", { name: "API key environment variable" })).toHaveValue("OPENAI_API_KEY");
-
-    fireEvent.change(within(setupDialog).getByRole("searchbox", { name: "Search models" }), {
-      target: { value: "mini" },
+    vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue({
+      checkedConnectionId: "codex-cli",
+      status: "authRequired",
+      ready: false,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: null,
+      reasons: ["No authenticated Codex CLI session was detected."],
+      warnings: [],
     });
-    expect(within(setupDialog).getByRole("option", { name: /GPT-5.4 mini/ })).toBeInTheDocument();
-    expect(within(setupDialog).queryByRole("option", { name: /GPT-5.5/ })).not.toBeInTheDocument();
-    fireEvent.change(within(setupDialog).getByRole("searchbox", { name: "Search models" }), {
-      target: { value: "5.5" },
-    });
-    fireEvent.click(within(setupDialog).getByRole("option", { name: /GPT-5.5/ }));
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save provider setup" }));
+    let resolveOpenAiModels: (catalog: ModelCatalogResult) => void = () => {};
+    vi.spyOn(orynt, "listProviderModels").mockImplementation(
+      () =>
+        new Promise<ModelCatalogResult>((resolve) => {
+          resolveOpenAiModels = resolve;
+        }),
+    );
 
-    expect(saveModelConnectionSpy).toHaveBeenCalledWith({
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+
+    selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
+    expect(await within(setupDialog).findByText("Fetching live models from the selected provider.")).toBeInTheDocument();
+
+    selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
+    resolveOpenAiModels({
       providerId: "openai-api",
-      modelId: "gpt-5.5",
-      authMethod: "apiKeyEnv",
-      envKey: "OPENAI_API_KEY",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [{ id: "gpt-live-only", label: "GPT live only", ownedBy: "openai", source: "openai-api" }],
     });
 
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Run provider check" }));
-    expect((await within(setupDialog).findAllByText("OPENAI_API_KEY is available for OpenAI API.")).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(within(setupDialog).getByRole("combobox", { name: "Provider" })).toHaveTextContent("Codex CLI");
+      expect(within(setupDialog).queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+      expect(within(setupDialog).getByText(/Orynt does not manage Codex sign-in/i)).toBeInTheDocument();
+      expect(within(setupDialog).queryByText("Choose a live model to finish provider setup.")).not.toBeInTheDocument();
+    });
   });
 
   it("renders the repository cockpit with sidebar shell actions and core control primitives", () => {
@@ -450,9 +1359,13 @@ describe("CodePawl desktop shell", () => {
 
     const sidebar = screen.getByRole("complementary");
     const brandButton = within(sidebar).getByRole("button", { name: "Open Cockpit" });
+    const brandLogo = brandButton.querySelector(".workspace-brand-logo");
     const wordmark = brandButton.querySelector(".workspace-brand-wordmark");
-    expect(brandButton.querySelector("img")).toBeNull();
-    expect(wordmark).toHaveTextContent("CodePawl");
+    expect(brandLogo?.tagName.toLowerCase()).toBe("img");
+    expect(brandLogo).toHaveAttribute("alt", "");
+    expect(brandLogo).toHaveAttribute("aria-hidden", "true");
+    expect(brandLogo).toHaveAttribute("src", expect.stringContaining("lightbulb-mark-on-dark"));
+    expect(wordmark).toHaveTextContent("Orynt");
     expect(wordmark?.children).toHaveLength(0);
     const collapsePanelButton = within(sidebar).getByRole("button", { name: "Collapse side panel" });
     expect(collapsePanelButton).toHaveAttribute("aria-controls", "workspace-panel");
@@ -489,13 +1402,13 @@ describe("CodePawl desktop shell", () => {
     fireEvent.click(accountToggle);
     expect(accountToggle).toHaveAttribute("aria-expanded", "true");
     const accountMenu = within(sidebar).getByRole("menu", { name: "Account menu" });
-    expect(within(accountMenu).getByText("operator@codepawl.local")).toBeInTheDocument();
+    expect(within(accountMenu).getByText("operator@orynt.local")).toBeInTheDocument();
     expect(within(accountMenu).getByRole("menuitem", { name: "Settings" })).toBeInTheDocument();
     expect(within(accountMenu).getByRole("menuitem", { name: "Language" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Get help" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Upgrade plan" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Get apps and extensions" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(accountMenu).getByRole("menuitem", { name: "Gift CodePawl" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(accountMenu).getByRole("menuitem", { name: "Gift Orynt" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Learn more" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Log out" })).toHaveAttribute("href", defaultLandingUrl);
 
@@ -550,7 +1463,7 @@ describe("CodePawl desktop shell", () => {
     expect(within(thread).getByText("Draft thread.")).toBeInTheDocument();
     expect(within(thread).getByRole("button", { name: "Edit thread name and description" })).toBeInTheDocument();
     expect(within(thread).queryByText("Operator")).not.toBeInTheDocument();
-    expect(within(thread).queryByText("CodePawl")).not.toBeInTheDocument();
+    expect(within(thread).queryByText("Orynt")).not.toBeInTheDocument();
     expect(within(thread).queryByText("System notice · Runtime policy")).not.toBeInTheDocument();
     expect(within(thread).queryByText("System notice · Verifier handoff")).not.toBeInTheDocument();
     const agentDetails = within(thread).getByText("Agent details").closest("details");
@@ -699,9 +1612,18 @@ describe("CodePawl desktop shell", () => {
     expect(setupPane).not.toContainElement(within(thread).getByRole("textbox", { name: "Repository task message" }));
     expect(styles).toContain("width: min(100%, 1040px);");
     expect(styles).toContain("width: min(100%, 1120px);");
-    expect(styles).toContain("max-height: 28px;");
+    expect(styles).toContain(".settings-surface-status-list");
+    expect(styles).not.toContain(".composer-beta-unavailable");
     expect(styles).not.toContain("width: min(100%, 720px);");
-    expect(styles).toContain("overflow-x: auto;");
+  });
+
+  it("defines loading animation and reduced-motion fallbacks", () => {
+    const styles = readFileSync("src/styles.css", "utf8");
+
+    expect(styles).toContain("@keyframes orynt-spin");
+    expect(styles).toContain(".loading-spinner");
+    expect(styles).toContain(".loading-skeleton-row");
+    expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.loading-spinner[\s\S]*?animation: none;/);
   });
 
   it("renders the cockpit chat surface directly and keeps settings action in the sidebar", () => {
@@ -715,11 +1637,15 @@ describe("CodePawl desktop shell", () => {
     expect(packageManifest).toContain('"lucide-react": "^1.21.0"');
     expect(appSource).toContain('from "lucide-react"');
     expect(appSource).not.toContain("function NavIcon");
+    expect(screen.getByRole("main")).toHaveClass("app-shell-modal-open");
     expect(shellClasses).toEqual(["workspace-panel", "thread thread-empty", "shell-modal-backdrop"]);
     openSettings();
+    expect(screen.getByRole("main")).toHaveClass("app-shell-modal-open");
     expect(Array.from(screen.getByRole("main").children).map((child) => child.className)).toEqual(["workspace-panel", "thread thread-empty", "shell-modal-backdrop"]);
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     expect(styles).toContain(".app-shell-settings-open");
+    expect(styles).toContain(".app-shell-modal-open");
+    expect(styles).toMatch(/\.app-shell-modal-open > :not\(\.shell-modal-backdrop\) \{[\s\S]*?filter: blur\(8px\) saturate\(0\.72\);[\s\S]*?transform: scale\(1\.01\);/);
     expect(styles).not.toContain(".app-shell-dashboard");
     expect(styles).not.toContain(".app-shell-dashboard.app-shell-settings-open");
     expect(styles).not.toContain(".app-shell-dashboard .thread");
@@ -847,6 +1773,7 @@ describe("CodePawl desktop shell", () => {
     expect(styles).toMatch(/\.shell-modal-close \{[\s\S]*?width: 38px;[\s\S]*?border-color: var\(--border\);[\s\S]*?background: rgba\(241, 241, 241, 0\.035\);/);
     expect(styles).toMatch(/\.shell-modal-close:hover,[\s\S]*?\.shell-modal-close:focus-visible \{[\s\S]*?border-color: rgba\(143, 182, 232, 0\.55\);[\s\S]*?background: rgba\(143, 182, 232, 0\.12\);[\s\S]*?color: var\(--accent-info\);/);
     const shellModalBackdropStyles = styles.match(/\.shell-modal-backdrop \{[\s\S]*?\}/)?.[0] ?? "";
+    expect(shellModalBackdropStyles).toContain("-webkit-backdrop-filter: blur(30px) saturate(0.9);");
     expect(shellModalBackdropStyles).toContain("backdrop-filter: blur(30px) saturate(0.9);");
     expect(shellModalBackdropStyles).toContain("rgba(18, 18, 18, 0.36)");
     expect(styles).toContain("repeating-radial-gradient");
@@ -883,9 +1810,15 @@ describe("CodePawl desktop shell", () => {
     expect(accountMenuDisabledItemStyles).not.toContain("pointer-events: none;");
     expect(styles).toContain("--workspace-brand-size: 20px;");
     expect(styles).toContain(".workspace-brand-wordmark");
+    expect(styles).toContain(".workspace-brand-logo");
     const brandWordmarkStyles = styles.match(/\.workspace-brand-wordmark \{[\s\S]*?\}/)?.[0] ?? "";
     expect(brandWordmarkStyles).toContain(`font-family: var(--${"font-title"});`);
-    expect(styles).not.toContain(".workspace-brand-logo");
+    const indexHtml = readFileSync("index.html", "utf8");
+    expect(indexHtml).toContain('href="/favicon.svg"');
+    expect(indexHtml).toContain('href="/favicon-light.svg"');
+    expect(indexHtml).toContain('href="/favicon-dark.svg"');
+    expect(indexHtml).toContain('media="(prefers-color-scheme: light)"');
+    expect(indexHtml).toContain('media="(prefers-color-scheme: dark)"');
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
     expect(styles).toContain(".dashboard-summary");
     expect(styles).not.toContain(".dashboard-dialog");
@@ -916,6 +1849,9 @@ describe("CodePawl desktop shell", () => {
     expect(styles).toMatch(/\.surface-switch-copy small \{[\s\S]*?color: var\(--text-muted\);/);
     expect(styles).toMatch(/\.surface-switch\[aria-checked="true"\] \.surface-switch-toggle \{[\s\S]*?background: var\(--accent-info\);/);
     expect(styles).toMatch(/\.surface-switch\[aria-checked="true"\] \.surface-switch-thumb \{[\s\S]*?transform: translateX\(16px\);/);
+    expect(styles).toContain(".settings-surface-status-list");
+    expect(styles).toContain(".settings-surface-status-item");
+    expect(styles).not.toContain(".composer-beta-unavailable");
     expect(styles).not.toContain(".thread::before");
     expect(styles).not.toContain(".thread::after");
     expect(styles).not.toContain("../../../assets/pictures/thread-bound-study-halftone.webp");
@@ -969,6 +1905,25 @@ describe("CodePawl desktop shell", () => {
     expect(styles).toMatch(/\.app-shell \{[\s\S]*?height: 100vh;[\s\S]*?height: 100dvh;[\s\S]*?overflow: hidden;/);
     expect(styles).toMatch(/\.shell-modal-header \{[\s\S]*?padding: var\(--space-panel\) var\(--space-panel\) calc\(var\(--space-control\) - 2px\);/);
     expect(styles).toMatch(/\.shell-modal-body \{[\s\S]*?--scrollbar-track: rgba\(241, 241, 241, 0\.035\);[\s\S]*?--scrollbar-thumb: rgba\(241, 241, 241, 0\.22\);[\s\S]*?gap: calc\(var\(--space-content\) \+ 2px\);[\s\S]*?min-height: 0;[\s\S]*?overflow-y: auto;[\s\S]*?overscroll-behavior: contain;[\s\S]*?padding: var\(--space-row\) var\(--space-panel\) var\(--space-panel\);/);
+    expect(styles).toMatch(/\.setup-modal \{[\s\S]*?width: 100%;[\s\S]*?max-width: 1120px;/);
+    expect(styles).toMatch(/\.setup-modal-body \{[\s\S]*?overflow-x: hidden;[\s\S]*?padding: clamp\(14px, 2\.8vw, var\(--space-panel\)\);/);
+    expect(styles).toMatch(/\.setup-dialog \{[\s\S]*?box-sizing: border-box;[\s\S]*?gap: clamp\(var\(--space-control\), 2vw, var\(--space-content\)\);[\s\S]*?width: 100%;[\s\S]*?padding: 0;/);
+    expect(styles).toMatch(/\.setup-flow-step \{[\s\S]*?padding: clamp\(var\(--space-control\), 1\.7vw, var\(--space-row\)\);/);
+    expect(styles).toMatch(/\.setup-picker-section \{[\s\S]*?display: grid;[\s\S]*?gap: clamp\(var\(--space-control\), 1\.4vw, var\(--space-row\)\);[\s\S]*?padding: clamp\(var\(--space-control\), 1\.6vw, var\(--space-row\)\);/);
+    expect(styles).toMatch(/\.setup-dialog-form\.settings-section \{[\s\S]*?max-width: none;/);
+    expect(styles).toMatch(/\.setup-dialog-form \.settings-field \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);[\s\S]*?min-height: 0;/);
+    expect(styles).toMatch(/\.setup-dialog-form \.settings-field-stacked \{[\s\S]*?padding-block: 0;/);
+    expect(styles).toMatch(/\.setup-dialog-form \.settings-field input,[\s\S]*?\.setup-dialog-form \.settings-select \{[\s\S]*?justify-self: stretch;[\s\S]*?max-width: none;/);
+    expect(styles).toMatch(/\.setup-dialog-form \.settings-field small \{[\s\S]*?grid-column: 1;/);
+    expect(styles).toMatch(/\.setup-dialog-form \.settings-input-action-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto auto;/);
+    expect(styles).toMatch(/\.orynt-dropdown \{[\s\S]*?position: relative;[\s\S]*?width: 100%;/);
+    expect(styles).toMatch(/\.orynt-dropdown-menu \{[\s\S]*?position: absolute;[\s\S]*?z-index: 34;[\s\S]*?background: var\(--thread-surface\);/);
+    expect(styles).toMatch(/\.orynt-dropdown-option-title \{[\s\S]*?white-space: nowrap;[\s\S]*?overflow-wrap: normal;[\s\S]*?word-break: normal;/);
+    expect(styles).toMatch(/\.orynt-dropdown-option-description \{[\s\S]*?overflow-wrap: normal;[\s\S]*?word-break: normal;/);
+    expect(styles).toMatch(/\.orynt-dropdown-option-highlighted \{[\s\S]*?background: var\(--message-bubble-agent\);/);
+    expect(styles).not.toMatch(/\.orynt-dropdown-option span,\s*\.orynt-dropdown-option small \{[\s\S]*?overflow-wrap: anywhere;/);
+    expect(styles).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.setup-dialog-form \.settings-input-action-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
+    expect(styles).not.toContain(".orynt-dropdown-grid");
     expect(styles).not.toMatch(/\.settings-dialog \{[\s\S]*?max-height: 100vh;/);
     expect(styles).toContain("grid-template-rows: auto minmax(0, 1fr) auto;");
     expect(styles).toContain("min-height: calc(100vh - 107px);");
@@ -1273,6 +2228,8 @@ describe("CodePawl desktop shell", () => {
     const composerScaleFullStyles = styles.match(/\.composer-scale-full \{[\s\S]*?\}/)?.[0] ?? "";
     const composerScaleFullFieldStyles = styles.match(/\.composer-scale-full \.composer-field \{[\s\S]*?\}/)?.[0] ?? "";
     const composerScaleFullTextareaStyles = styles.match(/\.composer-scale-full textarea \{[\s\S]*?\}/)?.[0] ?? "";
+    const composerRepositoryPathLabelStyles = styles.match(/\.composer-repository-path span \{[\s\S]*?\}/)?.[0] ?? "";
+    const composerRepositoryPathInputStyles = styles.match(/\.composer-repository-path input \{[\s\S]*?\}/)?.[0] ?? "";
     const composerScaleButtonStyles = styles.match(/\.composer-scale-button \{[\s\S]*?\}/)?.[0] ?? "";
     expect(composerFieldStyles).toContain("display: grid;");
     expect(composerFieldStyles).toContain("position: relative;");
@@ -1296,6 +2253,12 @@ describe("CodePawl desktop shell", () => {
     expect(composerScaleFullFieldStyles).toContain("min-height: 252px;");
     expect(composerScaleFullTextareaStyles).toContain("height: min(34vh, 220px);");
     expect(composerScaleFullTextareaStyles).toContain("min-height: 180px;");
+    expect(composerRepositoryPathLabelStyles).toContain("display: inline-flex;");
+    expect(composerRepositoryPathLabelStyles).toContain("border: 1px solid rgba(241, 241, 241, 0.14);");
+    expect(composerRepositoryPathLabelStyles).toContain("border-radius: 999px;");
+    expect(composerRepositoryPathLabelStyles).toContain("background: rgba(241, 241, 241, 0.045);");
+    expect(composerRepositoryPathLabelStyles).toContain("font-weight: 500;");
+    expect(composerRepositoryPathInputStyles).toContain("font-weight: 500;");
     expect(styles).toMatch(/\.input-focus-control:focus-visible \{[\s\S]*?outline: 0;/);
     expect(styles).toMatch(/\.composer-toolbar \{[\s\S]*?display: flex;[\s\S]*?align-items: center;[\s\S]*?justify-content: space-between;/);
     expect(composerScaleButtonStyles).toContain("display: inline-grid;");
@@ -1382,26 +2345,6 @@ describe("CodePawl desktop shell", () => {
     expect(styles).not.toContain("minmax(280px, 360px)");
   });
 
-  it("keeps the Impeccable project setup available for UI changes", () => {
-    const hooks = readFileSync("../../.codex/hooks.json", "utf8");
-    const design = readFileSync("../../.impeccable/design.json", "utf8");
-    const ignoreRules = readFileSync("../../.gitignore", "utf8");
-
-    expect(hooks).toContain("/home/nxank4/.agents/skills/impeccable/scripts/hook.mjs");
-    expect(design).toContain('"schemaVersion": 2');
-    expect(design).toContain("Outfit, ui-sans-serif, system-ui, sans-serif");
-    expect(design).toContain("Lora, Georgia, serif");
-    expect(design).not.toContain(`${"Ro"}boto Slab`);
-    expect(design).toContain('"spacingMeta"');
-    expect(design).toContain("The Purpose Spacing Rule");
-    expect(design).not.toContain(`font-family: ${"La"}to`);
-    expect(design).not.toContain(`${"Nu"}nito`);
-    expect(ignoreRules).toContain(".impeccable/config.local.json");
-    expect(ignoreRules).toContain(".impeccable/hook.cache.json");
-    expect(ignoreRules).toContain(".impeccable/audit/");
-    expect(ignoreRules).toContain(".impeccable/critique/");
-  });
-
   it("globalizes the chat composer focus treatment across text inputs", () => {
     const styles = readFileSync("src/styles.css", "utf8");
     const appSource = readFileSync("src/App.tsx", "utf8");
@@ -1425,7 +2368,8 @@ describe("CodePawl desktop shell", () => {
     expect(appSource).toContain('className="thread-header-field thread-header-description-field input-focus-control"');
     expect(appSource).toMatch(/<input[\s\S]*?className="input-focus-standalone"[\s\S]*?value=\{operatorFullName\}/);
     expect(appSource).toMatch(/<input[\s\S]*?className="input-focus-standalone"[\s\S]*?value=\{operatorCallSign\}/);
-    expect(appSource).toMatch(/<select[\s\S]*?className="input-focus-standalone settings-select"[\s\S]*?aria-label="Permission mode"/);
+    expect(appSource).toContain("<OryntDropdown");
+    expect(appSource).toContain('ariaLabel="Permission mode"');
   });
 
   it("adds new threads at the top and scopes the thread composer", () => {
@@ -1446,7 +2390,7 @@ describe("CodePawl desktop shell", () => {
     expect(within(spaces).getByRole("button", { name: "Thread options for New thread" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Repository task message" })).toHaveAttribute("placeholder", "Message New thread...");
     expect(screen.getByRole("heading", { level: 1, name: "New thread" })).toBeInTheDocument();
-    expect(screen.getAllByText("Draft thread.")).toHaveLength(1);
+    expect(screen.getAllByText("Draft thread.")).toHaveLength(2);
 
     fireEvent.click(within(spaces).getByRole("button", { name: "Draft" }));
 
@@ -1479,7 +2423,7 @@ describe("CodePawl desktop shell", () => {
     fireEvent.keyDown(descriptionInput, { key: "Enter" });
 
     expect(screen.getByRole("heading", { level: 1, name: "Engineering" })).toBeInTheDocument();
-    expect(within(thread).getByText("Repository implementation tasks.")).toBeInTheDocument();
+    expect(within(thread).getAllByText("Repository implementation tasks.")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Engineering" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("textbox", { name: "Repository task message" })).toHaveAttribute("placeholder", "Message Engineering thread...");
 
@@ -1499,10 +2443,11 @@ describe("CodePawl desktop shell", () => {
     fireEvent.change(emptyDescriptionInput, { target: { value: "Description survives empty title." } });
     fireEvent.keyDown(emptyDescriptionInput, { key: "Enter" });
     expect(screen.getByRole("heading", { level: 1, name: "Engineering" })).toBeInTheDocument();
-    expect(within(thread).getByText("Description survives empty title.")).toBeInTheDocument();
+    expect(within(thread).getAllByText("Description survives empty title.")).toHaveLength(2);
   });
 
   it("keeps each thread conversation separate and chronological", async () => {
+    mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     render(<App />);
     fillRepositoryPath();
@@ -1512,7 +2457,9 @@ describe("CodePawl desktop shell", () => {
 
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), { target: { value: "First draft message" } });
     fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+    await within(draftThread).findByText("First draft message");
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), { target: { value: "Second draft message" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send task" })).not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Send task" }));
 
     expect(await within(draftThread).findByText("Second draft message")).toBeInTheDocument();
@@ -1539,12 +2486,13 @@ describe("CodePawl desktop shell", () => {
 
   it("scopes created runs to the selected repository workspace instead of the active chat thread", async () => {
     const runState = createMockRunState();
-    const createRunSpy = vi.spyOn(codepawl, "createRun");
+    mockReadyModelSettings();
+    const createRunSpy = vi.spyOn(orynt, "createRun");
     dismissPrivateBetaOnboarding();
     render(<App initialRunState={runState} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Directory path" }), {
       target: { value: "/home/operator/project" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
@@ -1562,13 +2510,14 @@ describe("CodePawl desktop shell", () => {
     expect(createRunSpy).not.toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "thread-2" }));
   });
 
-  it("submits the selected repository path with a local repository run", async () => {
+  it("submits the selected local directory with a local repository run", async () => {
     const runState = createMockRunState();
-    const createRunSpy = vi.spyOn(codepawl, "createRun");
+    mockReadyModelSettings();
+    const createRunSpy = vi.spyOn(orynt, "createRun");
     dismissPrivateBetaOnboarding();
     render(<App initialRunState={runState} />);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Directory path" }), {
       target: { value: "/home/operator/project" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
@@ -1586,8 +2535,29 @@ describe("CodePawl desktop shell", () => {
     );
   });
 
+  it("shows send-task loading feedback while creating a repository run", async () => {
+    mockReadyModelSettings();
+    dismissPrivateBetaOnboarding();
+    const createRun = createDeferred<{ id: string }>();
+    vi.spyOn(orynt, "createRun").mockReturnValue(createRun.promise);
+    render(<App />);
+    fillRepositoryPath();
+
+    const composer = screen.getByRole("form", { name: "Thread composer" });
+    fireEvent.change(within(composer).getByRole("textbox", { name: "Repository task message" }), {
+      target: { value: "Run with loading feedback" },
+    });
+    const send = within(composer).getByRole("button", { name: "Send task" });
+    fireEvent.click(send);
+
+    await waitFor(() => expect(send).toBeDisabled());
+    expect(send).toHaveAttribute("aria-busy", "true");
+    expect(send.querySelector(".loading-spinner")).not.toBeNull();
+    expect(await screen.findByText("Run with loading feedback")).toBeInTheDocument();
+  });
+
   it("lists persisted repository runs after restart and reopens one with events and artifacts", async () => {
-    vi.spyOn(codepawl, "listPersistedRuns").mockResolvedValue([
+    vi.spyOn(orynt, "listPersistedRuns").mockResolvedValue([
       {
         runId: "run-persisted-1",
         taskId: "task-persisted",
@@ -1603,7 +2573,7 @@ describe("CodePawl desktop shell", () => {
         updatedAt: "2026-07-04T00:00:00.000Z",
       },
     ]);
-    vi.spyOn(codepawl, "openPersistedRun").mockResolvedValue({
+    vi.spyOn(orynt, "openPersistedRun").mockResolvedValue({
       runId: "run-persisted-1",
       taskId: "task-persisted",
       workspaceId: "workspace-local-alpha",
@@ -1653,7 +2623,7 @@ describe("CodePawl desktop shell", () => {
       createdAt: "2026-07-04T00:00:00.000Z",
       updatedAt: "2026-07-04T00:00:01.000Z",
     });
-    vi.spyOn(codepawl, "listArtifactEvidence").mockResolvedValue([
+    vi.spyOn(orynt, "listArtifactEvidence").mockResolvedValue([
       {
         artifactId: "contract",
         label: "Codex contract",
@@ -1668,19 +2638,19 @@ describe("CodePawl desktop shell", () => {
     const settings = openSettings();
     const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
 
-    expect(within(settingsNav).queryByRole("button", { name: "CodePawl Code" })).not.toBeInTheDocument();
+    expect(within(settingsNav).queryByRole("button", { name: "Orynt Code" })).not.toBeInTheDocument();
     expect(within(settings).queryByRole("region", { name: "Repository run history" })).not.toBeInTheDocument();
     expect(within(settings).queryByText("Reload durable repository run")).not.toBeInTheDocument();
   });
 
   it("opens persisted run artifacts through the hardened evidence viewer", async () => {
-    vi.spyOn(codepawl, "listPersistedRuns").mockResolvedValue([
+    vi.spyOn(orynt, "listPersistedRuns").mockResolvedValue([
       {
         runId: "run-persisted-evidence",
         taskId: "task-persisted",
         workspaceId: "workspace-local-alpha",
         goal: "Inspect durable evidence",
-        repositoryPath: "/repo/codepawl",
+        repositoryPath: "/repo/orynt",
         status: "pass",
         artifactManifestPath: "/app-data/artifacts/run-persisted-evidence/artifact-manifest.json",
         eventCount: 1,
@@ -1690,12 +2660,12 @@ describe("CodePawl desktop shell", () => {
         updatedAt: "2026-07-04T00:00:01.000Z",
       },
     ]);
-    vi.spyOn(codepawl, "openPersistedRun").mockResolvedValue({
+    vi.spyOn(orynt, "openPersistedRun").mockResolvedValue({
       runId: "run-persisted-evidence",
       taskId: "task-persisted",
       workspaceId: "workspace-local-alpha",
       goal: "Inspect durable evidence",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       status: "pass",
       artifactRoot: "/app-data/artifacts/run-persisted-evidence",
       artifactManifestPath: "/app-data/artifacts/run-persisted-evidence/artifact-manifest.json",
@@ -1710,7 +2680,7 @@ describe("CodePawl desktop shell", () => {
       createdAt: "2026-07-04T00:00:00.000Z",
       updatedAt: "2026-07-04T00:00:01.000Z",
     });
-    vi.spyOn(codepawl, "listArtifactEvidence").mockResolvedValue([
+    vi.spyOn(orynt, "listArtifactEvidence").mockResolvedValue([
       {
         artifactId: "artifactManifest",
         label: "Artifact manifest",
@@ -1742,7 +2712,7 @@ describe("CodePawl desktop shell", () => {
         reason: "artifact manifest entry is unsafe",
       },
     ]);
-    vi.spyOn(codepawl, "readArtifactEvidence").mockResolvedValue({
+    vi.spyOn(orynt, "readArtifactEvidence").mockResolvedValue({
       artifactId: "contract",
       label: "Contract",
       kind: "contract",
@@ -1756,7 +2726,7 @@ describe("CodePawl desktop shell", () => {
     const settings = openSettings();
     const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
 
-    expect(within(settingsNav).queryByRole("button", { name: "CodePawl Code" })).not.toBeInTheDocument();
+    expect(within(settingsNav).queryByRole("button", { name: "Orynt Code" })).not.toBeInTheDocument();
     expect(within(settings).queryByRole("region", { name: "Artifact evidence viewer" })).not.toBeInTheDocument();
     expect(within(settings).queryByText("[REDACTED_SECRET]")).not.toBeInTheDocument();
   });
@@ -1800,7 +2770,7 @@ describe("CodePawl desktop shell", () => {
         providerLabel: "Codex CLI",
         modelId: "gpt-5.5",
         modelLabel: "GPT-5.5",
-        authMethod: "chatgptOAuth",
+        authMethod: "codexCliSession",
         status: "ready",
         lastPreflight: {
           checkedProviderId: "codex-cli",
@@ -1809,69 +2779,55 @@ describe("CodePawl desktop shell", () => {
           ready: true,
           checkedAt: "2026-07-04T00:00:00.000Z",
           executablePath: "/usr/local/bin/codex",
-          authMode: "chatgptOAuth",
+          authMode: "codexCliSession",
           reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
           warnings: [],
         },
       },
     });
-    vi.spyOn(codepawl, "getSettings").mockResolvedValueOnce(initialSettings).mockResolvedValue(readySettings);
-    const loginSpy = vi.spyOn(codepawl, "loginCodexConnection").mockResolvedValue({
-      ...readyConnection,
-      status: "authRequired",
-      lastPreflight: null,
-    });
-    const saveModelConnectionSpy = vi.spyOn(codepawl, "saveModelConnection").mockResolvedValue({
+    vi.spyOn(orynt, "getSettings").mockResolvedValueOnce(initialSettings).mockResolvedValue(readySettings);
+    const preflightCodexConnectionSpy = vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue(readyConnection.lastPreflight);
+    const saveModelConnectionSpy = vi.spyOn(orynt, "saveModelConnection").mockResolvedValue({
       providerId: "codex-cli",
       providerLabel: "Codex CLI",
       modelId: "gpt-5.5",
       modelLabel: "GPT-5.5",
-      authMethod: "chatgptOAuth",
+      authMethod: "codexCliSession",
       status: "authRequired",
       lastPreflight: null,
     });
-    vi.spyOn(codepawl, "preflightModelConnection").mockResolvedValue({
-      checkedProviderId: "codex-cli",
-      checkedModelId: "gpt-5.5",
-      status: "ready",
-      ready: true,
-      checkedAt: "2026-07-04T00:00:00.000Z",
-      executablePath: "/usr/local/bin/codex",
-      authMode: "chatgptOAuth",
-      reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+    const listProviderModelsSpy = vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "codex-cli",
+      fetchedAt: "2026-07-04T00:00:00.000Z",
       warnings: [],
+      models: [
+        { id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" },
+      ],
     });
 
     render(<App />);
-    const setupDialog = screen.getByRole("dialog", { name: "Set up CodePawl" });
+    const setupDialog = screen.getByRole("dialog", { name: "Set up Orynt" });
 
     expect(within(setupDialog).queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
     expect(within(setupDialog).getByRole("region", { name: "Setup model provider" })).toBeInTheDocument();
-    expect(within(setupDialog).getByText("Select a provider, model, and authentication method before the first repository run.")).toBeInTheDocument();
+    expect(within(setupDialog).getByText("Select a provider, run its readiness check, then choose a live model before the first repository run.")).toBeInTheDocument();
     expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
-    fireEvent.click(within(setupDialog).getByRole("option", { name: /Codex CLI/ }));
+    selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
+    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
     expect(within(setupDialog).queryByLabelText("Codex access token")).not.toBeInTheDocument();
     expect(within(setupDialog).queryByRole("button", { name: "Use access token" })).not.toBeInTheDocument();
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Connect with ChatGPT" }));
 
-    expect(saveModelConnectionSpy).toHaveBeenCalledWith({
-      providerId: "codex-cli",
-      modelId: "gpt-5.5",
-      authMethod: "chatgptOAuth",
-      envKey: null,
-    });
-    await waitFor(() =>
-      expect(loginSpy).toHaveBeenCalledWith({
-        method: "chatgpt",
-      }),
-    );
+    expect(saveModelConnectionSpy).not.toHaveBeenCalled();
+    await waitFor(() => expect(preflightCodexConnectionSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listProviderModelsSpy).toHaveBeenCalledWith({ providerId: "codex-cli", envKey: null }));
 
     expect((await within(setupDialog).findAllByText("Codex CLI is installed and authenticated with ChatGPT.")).length).toBeGreaterThan(0);
+    expect(await within(setupDialog).findByRole("combobox", { name: "Model" })).toHaveTextContent("Choose model");
     expect(within(setupDialog).getByText("Ready")).toBeInTheDocument();
   });
 
   it("keeps access-token login out of the default Codex setup UI", () => {
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
       executableSurfaces: ["repository"],
@@ -1888,16 +2844,104 @@ describe("CodePawl desktop shell", () => {
     }));
 
     render(<App />);
-    const setupDialog = screen.getByRole("dialog", { name: "Set up CodePawl" });
-    fireEvent.click(within(setupDialog).getByRole("option", { name: /Codex CLI/ }));
+    const setupDialog = screen.getByRole("dialog", { name: "Set up Orynt" });
+    selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
 
     expect(within(setupDialog).queryByLabelText("Codex access token")).not.toBeInTheDocument();
     expect(within(setupDialog).queryByRole("button", { name: "Use access token" })).not.toBeInTheDocument();
-    expect(within(setupDialog).getByText("ChatGPT OAuth")).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    expect(within(setupDialog).getByText("Existing Codex CLI session")).toBeInTheDocument();
+    expect(within(setupDialog).getByText(/Orynt checks your local Codex CLI session/i)).toBeInTheDocument();
+    expect(within(setupDialog).getByText(/Orynt does not manage Codex sign-in/i)).toBeInTheDocument();
   });
 
-  it("shows first-run setup dialog and persists completion", async () => {
-    const updateSettingsSpy = vi.spyOn(codepawl, "updateSettings").mockResolvedValue(withPreferenceSettings({
+  it("checks Codex CLI without starting browser login", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    const preflightCodexConnectionSpy = vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue({
+      checkedConnectionId: "codex-cli",
+      status: "ready",
+      ready: true,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: "chatgpt",
+      reasons: ["Codex CLI is installed and authenticated with ChatGPT."],
+      warnings: [],
+    });
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "codex-cli",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      warnings: [],
+      models: [{ id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" }],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
+    expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Use device code" })).not.toBeInTheDocument();
+
+    await waitFor(() => expect(preflightCodexConnectionSpy).toHaveBeenCalledTimes(1));
+    const readyMessages = await within(setupDialog).findAllByText(/Codex CLI is installed and authenticated with ChatGPT/i);
+    expect(readyMessages.some((message) => message.classList.contains("setup-log-text-success"))).toBe(true);
+  });
+
+  it("shows external terminal guidance when Codex CLI is not authenticated", async () => {
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
+      workspaceId: "workspace-local-alpha",
+      permissionMode: "safe",
+      executableSurfaces: ["repository"],
+      blockedSurfaces: ["browser", "desktop", "files", "terminal"],
+      defaultRepositoryPath: "",
+      welcomeCompleted: false,
+      codexConnection: null,
+      retentionPolicy: {
+        runHistoryDays: 30,
+        artifactRetentionDays: 30,
+        cleanupEnabled: false,
+        summary: "Cleanup is manual for private beta; automatic retention is planned.",
+      },
+      modelConnection: null,
+    }));
+    vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue({
+      checkedConnectionId: "codex-cli",
+      status: "authRequired",
+      ready: false,
+      checkedAt: "2026-07-05T00:00:00.000Z",
+      executablePath: "/usr/local/bin/codex",
+      authMode: null,
+      reasons: ["No authenticated Codex CLI session was detected."],
+      warnings: [],
+    });
+
+    render(<App />);
+    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+    selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
+
+    await waitFor(() => {
+      const authMessages = within(setupDialog).getAllByText(/Orynt does not manage Codex sign-in/i);
+      expect(authMessages.some((message) => message.classList.contains("setup-log-text-warning"))).toBe(true);
+    });
+    expect(within(setupDialog).queryByText(/Codex login failed/i)).not.toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows first-run setup dialog and blocks completion until setup is ready", async () => {
+    const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
       executableSurfaces: ["repository"],
@@ -1914,11 +2958,11 @@ describe("CodePawl desktop shell", () => {
     }));
     const { unmount } = render(<App />);
 
-    const onboarding = screen.getByRole("dialog", { name: "Set up CodePawl" });
-    expect(within(onboarding).queryByRole("heading", { name: "Set up CodePawl" })).not.toBeInTheDocument();
+    const onboarding = screen.getByRole("dialog", { name: "Set up Orynt" });
+    expect(within(onboarding).queryByRole("heading", { name: "Set up Orynt" })).not.toBeInTheDocument();
     expect(onboarding.querySelectorAll("#setup-dialog-title")).toHaveLength(1);
     expect(within(onboarding).getByText(/Repository-only beta/i)).toBeInTheDocument();
-    expect(within(onboarding).getByText(/Choose a repository/i)).toBeInTheDocument();
+    expect(within(onboarding).getByText("Choose a local directory", { selector: "strong" })).toBeInTheDocument();
     expect(within(onboarding).getByText(/Choose model provider/i)).toBeInTheDocument();
     expect(within(onboarding).getByText(/Review advanced defaults/i)).toBeInTheDocument();
     expect(within(onboarding).getByText(/browser, desktop, files, terminal, cloud, and billing remain unavailable/i)).toBeInTheDocument();
@@ -1926,26 +2970,44 @@ describe("CodePawl desktop shell", () => {
 
     fireEvent.click(within(onboarding).getByRole("button", { name: "Complete setup" }));
 
-    expect(updateSettingsSpy).toHaveBeenCalledWith({ welcomeCompleted: true });
-    expect(window.localStorage.getItem(privateBetaOnboardingStorageKey)).toBe("dismissed");
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Set up CodePawl" })).not.toBeInTheDocument());
+    expect(updateSettingsSpy).not.toHaveBeenCalledWith({ welcomeCompleted: true });
+    expect(window.localStorage.getItem(privateBetaOnboardingStorageKey)).toBeNull();
+    expect(await within(onboarding).findByText("Select a local directory before completing setup.")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Set up Orynt" })).toBeInTheDocument();
 
     unmount();
-    render(<App />);
-
-    expect(screen.queryByRole("dialog", { name: "Set up CodePawl" })).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(privateBetaOnboardingStorageKey)).toBeNull();
   });
 
-  it("keeps setup and private-beta status out of settings", async () => {
+  it("honors legacy CodePawl onboarding dismissal state", async () => {
+    window.localStorage.setItem(legacyPrivateBetaOnboardingStorageKey, "dismissed");
+
+    render(<App />);
+
+    expect(screen.queryByRole("dialog", { name: "Set up Orynt" })).not.toBeInTheDocument();
+  });
+
+  it("moves unavailable beta surfaces from the composer into settings status", async () => {
     dismissPrivateBetaOnboarding();
     render(<App />);
 
-    const settings = openSettings();
+    const thread = screen.getByRole("region", { name: "Thread conversation" });
+    expect(within(thread).queryByLabelText("Unavailable beta surfaces")).not.toBeInTheDocument();
 
-    expect(within(settings).queryByRole("region", { name: "Private beta status checklist" })).not.toBeInTheDocument();
+    const settings = openSettings();
+    const settingsSections = within(settings).getByRole("navigation", { name: "Settings sections" });
+    expect(within(settingsSections).getByRole("button", { name: "Status" })).toBeInTheDocument();
+    fireEvent.click(within(settingsSections).getByRole("button", { name: "Status" }));
+
+    expect(within(settings).getByRole("heading", { name: "Status" })).toBeInTheDocument();
+    const betaSurfaces = within(settings).getByRole("region", { name: "Unavailable beta surfaces" });
+    expect(within(betaSurfaces).getByText("Repository")).toBeInTheDocument();
+    expect(within(betaSurfaces).getByText("Available")).toBeInTheDocument();
+    for (const surface of ["Browser", "Desktop", "Files", "Terminal", "Cloud", "Billing"]) {
+      expect(within(betaSurfaces).getByText(`${surface} unavailable`)).toBeInTheDocument();
+    }
     expect(within(settings).queryByRole("button", { name: "Setup" })).not.toBeInTheDocument();
     expect(within(settings).queryByText("Codex connection readiness")).not.toBeInTheDocument();
-    expect(within(settings).queryByText("Browser, desktop, files, terminal, cloud, and billing unavailable")).not.toBeInTheDocument();
   });
 
   it("renders local-beta billing without fake paid invoices", async () => {
@@ -1962,12 +3024,12 @@ describe("CodePawl desktop shell", () => {
     expect(within(settings).queryByText("Paid")).not.toBeInTheDocument();
   });
 
-  it("blocks repository submission until onboarding and repository path are ready", async () => {
-    const createRunSpy = vi.spyOn(codepawl, "createRun");
+  it("blocks repository submission until onboarding and directory path are ready", async () => {
+    const createRunSpy = vi.spyOn(orynt, "createRun");
     const { unmount } = render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /Dismiss set up CodePawl/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss set up Orynt/i }));
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Directory path" }), {
       target: { value: "/home/operator/project" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
@@ -1978,28 +3040,28 @@ describe("CodePawl desktop shell", () => {
     expect(await screen.findByText("Finish private beta onboarding before starting a repository run.")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Repository task message" })).toHaveValue("Run before onboarding");
     expect(screen.queryByText("Run before onboarding", { selector: ".chat-bubble p" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Set up CodePawl" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Set up Orynt" })).toBeInTheDocument();
     expect(createRunSpy).not.toHaveBeenCalled();
 
     unmount();
     dismissPrivateBetaOnboarding();
     render(<App />);
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
-      target: { value: "Run without repository path" },
+      target: { value: "Run without directory path" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Directory path" }), {
       target: { value: "   " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send task" }));
 
-    expect(await screen.findByText("Select a local git repository path before starting a repository run.")).toBeInTheDocument();
+    expect(await screen.findByText("Select a local directory before starting a run.")).toBeInTheDocument();
     expect(createRunSpy).not.toHaveBeenCalled();
   });
 
   it("blocks real repository submission when Codex connection setup is missing", async () => {
-    const createRunSpy = vi.spyOn(codepawl, "createRun");
+    const createRunSpy = vi.spyOn(orynt, "createRun");
     dismissPrivateBetaOnboarding();
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue(withPreferenceSettings({
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
       executableSurfaces: ["repository"],
@@ -2016,7 +3078,7 @@ describe("CodePawl desktop shell", () => {
     }));
 
     render(<App />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Directory path" }), {
       target: { value: "/home/operator/project" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "Repository task message" }), {
@@ -2029,6 +3091,7 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("does not reuse deleted thread ids or overwrite an existing thread conversation", async () => {
+    mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     render(<App />);
     fillRepositoryPath();
@@ -2060,6 +3123,7 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("keeps long user input inside the compact user bubble", async () => {
+    mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     render(<App />);
     fillRepositoryPath();
@@ -2191,6 +3255,7 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("centers the empty thread start composer and keeps its controls real", async () => {
+    mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     render(<App />);
 
@@ -2199,7 +3264,7 @@ describe("CodePawl desktop shell", () => {
     const thread = screen.getByRole("region", { name: "Thread conversation" });
     expect(thread).toHaveClass("thread-empty");
     expect(within(thread).getByRole("status", { name: "Setup required" })).toBeInTheDocument();
-    expect(within(thread).getByText("Select a local git repository path before starting a repository run.")).toBeInTheDocument();
+    expect(within(thread).getByText("Select a local directory before starting a run.")).toBeInTheDocument();
     expect(within(thread).getByRole("button", { name: "Open setup" })).toBeInTheDocument();
     expect(within(thread).getAllByText("Draft thread.")).toHaveLength(1);
 
@@ -2413,6 +3478,8 @@ describe("CodePawl desktop shell", () => {
     const settings = screen.getByRole("dialog", { name: "Settings" });
     const settingsSections = within(settings).getByRole("navigation", { name: "Settings sections" });
     expect(within(settingsSections).getByRole("button", { name: "General" })).toBeInTheDocument();
+    expect(within(settingsSections).getByRole("button", { name: "Model" })).toBeInTheDocument();
+    expect(within(settingsSections).getByRole("button", { name: "Status" })).toBeInTheDocument();
     expect(within(settingsSections).getByRole("button", { name: "Account" })).toBeInTheDocument();
     expect(within(settingsSections).getByRole("button", { name: "Billing" })).toBeInTheDocument();
     expect(within(settingsSections).queryByRole("button", { name: "Dashboard" })).not.toBeInTheDocument();
@@ -2456,7 +3523,7 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("closes the account menu from Escape, outside pointer, and exposes a configurable logout landing link", () => {
-    vi.stubEnv("VITE_CODEPAWL_LANDING_URL", "http://127.0.0.1:5176/");
+    vi.stubEnv("VITE_ORYNT_LANDING_URL", "http://127.0.0.1:5176/");
 
     expect(getLandingUrl()).toBe("http://127.0.0.1:5176/");
 
@@ -2485,6 +3552,7 @@ describe("CodePawl desktop shell", () => {
     const sections = within(settings).getByRole("navigation", { name: "Settings sections" });
 
     expect(within(sections).getByRole("button", { name: "General" })).toHaveAttribute("aria-current", "page");
+    expect(within(sections).getByRole("button", { name: "Model" })).toBeInTheDocument();
     expect(within(sections).getByRole("button", { name: "Account" })).toBeInTheDocument();
     expect(within(sections).getByRole("button", { name: "Billing" })).toBeInTheDocument();
     expect(within(sections).queryByRole("button", { name: "Setup" })).not.toBeInTheDocument();
@@ -2494,21 +3562,39 @@ describe("CodePawl desktop shell", () => {
     expect(within(settings).getByRole("heading", { name: "Profile" })).toBeInTheDocument();
     expect(within(settings).getByText("Avatar")).toBeInTheDocument();
     expect(within(settings).getByRole("textbox", { name: "Full name" })).toHaveValue("Operator");
-    expect(within(settings).getByRole("textbox", { name: "What should CodePawl call you?" })).toHaveValue("Operator");
-    expect(within(settings).getByRole("combobox", { name: "What best describes your work?" })).toHaveDisplayValue("Engineering");
+    expect(within(settings).getByRole("textbox", { name: "What should Orynt call you?" })).toHaveValue("Operator");
+    expect(within(settings).getByRole("combobox", { name: "What best describes your work?" })).toHaveTextContent("Engineering");
     expect(within(settings).getByRole("group", { name: "Appearance" })).toHaveTextContent("Dark");
     expect(within(settings).getByRole("group", { name: "Appearance" }).querySelectorAll("svg")).toHaveLength(3);
-    expect(within(settings).getByRole("combobox", { name: "Chat font" })).toHaveDisplayValue("CodePawl Sans");
+    expect(within(settings).getByRole("combobox", { name: "Chat font" })).toHaveTextContent("Orynt Sans");
     expect(within(settings).getByRole("group", { name: "Motion" })).toHaveTextContent("System");
-    expect(within(settings).getByRole("combobox", { name: "Language" })).toHaveDisplayValue("English");
-    expect(within(settings).getByRole("combobox", { name: "Style" })).toHaveDisplayValue("Buttery");
-    expect(within(settings).getByRole("combobox", { name: "Speed" })).toHaveDisplayValue("Normal");
-    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveDisplayValue("Safe");
+    expect(within(settings).getByRole("combobox", { name: "Language" })).toHaveTextContent("English");
+    expect(within(settings).getByRole("combobox", { name: "Style" })).toHaveTextContent("Buttery");
+    expect(within(settings).getByRole("combobox", { name: "Speed" })).toHaveTextContent("Normal");
+    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveTextContent("Safe");
+    expect(within(settings).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
     const messageLabelsSwitch = within(settings).getByRole("switch", { name: /Show message labels/ });
     expect(messageLabelsSwitch).toHaveAttribute("aria-checked", "false");
-    expect(within(messageLabelsSwitch).getByText("Show or hide compact block labels above agent and approval messages.")).toBeInTheDocument();
+    expect(within(messageLabelsSwitch).queryByText("Show or hide compact block labels above agent and approval messages.")).not.toBeInTheDocument();
     expect(within(messageLabelsSwitch).queryByText("hidden")).not.toBeInTheDocument();
     expect(messageLabelsSwitch.querySelector(".surface-switch-icon")).toBeNull();
+    expect(within(settings).queryByText("Thinking tradeoff")).not.toBeInTheDocument();
+    expect(within(settings).queryByText("Balanced reasoning for normal repository work.")).not.toBeInTheDocument();
+    expect(within(settings).getByText("Retention")).toBeInTheDocument();
+    expect(within(settings).getByText("Manual")).toBeInTheDocument();
+    expect(within(settings).queryByText("Cleanup is manual for private beta; automatic retention is planned.")).not.toBeInTheDocument();
+
+    fireEvent.focus(within(settings).getByRole("button", { name: "Retention info" }));
+    expect(within(settings).getByRole("tooltip")).toHaveTextContent("Cleanup is manual for private beta; automatic retention is planned.");
+
+    fireEvent.blur(within(settings).getByRole("button", { name: "Retention info" }));
+    fireEvent.mouseEnter(within(settings).getByRole("button", { name: "Message labels info" }));
+    expect(within(settings).getByRole("tooltip")).toHaveTextContent("Show or hide compact block labels above agent and approval messages.");
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+    expect(within(settings).getByRole("heading", { name: "Model" })).toBeInTheDocument();
+    expect(within(settings).getByRole("combobox", { name: "Provider" })).toHaveTextContent("Choose provider");
+    expect(within(settings).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
 
     fireEvent.click(within(sections).getByRole("button", { name: "Account" }));
     expect(within(settings).getByRole("heading", { name: "Account" })).toBeInTheDocument();
@@ -2529,6 +3615,7 @@ describe("CodePawl desktop shell", () => {
     fireEvent.change(search, { target: { value: "code" } });
 
     expect(within(sections).queryByRole("button", { name: "General" })).not.toBeInTheDocument();
+    expect(within(sections).getByRole("button", { name: "Model" })).toBeInTheDocument();
     expect(within(sections).queryByRole("button", { name: "Account" })).not.toBeInTheDocument();
     expect(within(sections).queryByRole("button", { name: "Billing" })).not.toBeInTheDocument();
   });
@@ -2538,6 +3625,7 @@ describe("CodePawl desktop shell", () => {
     const updatedSettings = {
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe" as const,
+      thinkingEffort: "medium" as const,
       executableSurfaces: ["repository"],
       blockedSurfaces: ["browser", "desktop", "files", "terminal"],
       defaultRepositoryPath: "/home/operator/project",
@@ -2551,7 +3639,7 @@ describe("CodePawl desktop shell", () => {
       },
       uiPreferences: {
         appearance: "system" as const,
-        chatFont: "codepawl-serif" as const,
+        chatFont: "orynt-serif" as const,
         motion: "reduced" as const,
         showMessageBlockMeta: true,
       },
@@ -2567,7 +3655,7 @@ describe("CodePawl desktop shell", () => {
         summary: "Cleanup is manual for private beta; automatic retention is planned.",
       },
     };
-    vi.spyOn(codepawl, "getSettings").mockResolvedValue({
+    vi.spyOn(orynt, "getSettings").mockResolvedValue({
       ...updatedSettings,
       operatorProfile: {
         fullName: "Operator",
@@ -2576,7 +3664,7 @@ describe("CodePawl desktop shell", () => {
       },
       uiPreferences: {
         appearance: "dark",
-        chatFont: "codepawl-sans",
+        chatFont: "orynt-sans",
         motion: "system",
         showMessageBlockMeta: false,
       },
@@ -2586,26 +3674,28 @@ describe("CodePawl desktop shell", () => {
         speed: "normal",
       },
     });
-    const updateSettingsSpy = vi.spyOn(codepawl, "updateSettings").mockResolvedValue(updatedSettings);
+    const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(updatedSettings);
 
     render(<App />);
 
     const settings = openSettings();
     fireEvent.change(await within(settings).findByRole("textbox", { name: "Full name" }), { target: { value: "Xuan An" } });
-    fireEvent.change(within(settings).getByRole("textbox", { name: "What should CodePawl call you?" }), { target: { value: "An" } });
-    fireEvent.change(within(settings).getByRole("combobox", { name: "What best describes your work?" }), { target: { value: "data-science" } });
+    fireEvent.change(within(settings).getByRole("textbox", { name: "What should Orynt call you?" }), { target: { value: "An" } });
+    selectSetupDropdownOption(settings, "What best describes your work?", "Data science");
     fireEvent.click(within(settings).getByRole("button", { name: "Use system appearance" }));
-    fireEvent.change(within(settings).getByRole("combobox", { name: "Chat font" }), { target: { value: "codepawl-serif" } });
+    selectSetupDropdownOption(settings, "Chat font", "Orynt Serif");
     fireEvent.click(within(settings).getByRole("button", { name: "Use reduced motion" }));
-    fireEvent.change(within(settings).getByRole("combobox", { name: "Speed" }), { target: { value: "slow" } });
+    selectSetupDropdownOption(settings, "Speed", "Slow");
+    selectSetupDropdownOption(settings, "Permission mode", "Ask first");
 
     expect(updateSettingsSpy).toHaveBeenCalledWith({ operatorProfile: { fullName: "Xuan An" } });
     expect(updateSettingsSpy).toHaveBeenCalledWith({ operatorProfile: { callSign: "An" } });
     expect(updateSettingsSpy).toHaveBeenCalledWith({ operatorProfile: { workType: "data-science" } });
     expect(updateSettingsSpy).toHaveBeenCalledWith({ uiPreferences: { appearance: "system" } });
-    expect(updateSettingsSpy).toHaveBeenCalledWith({ uiPreferences: { chatFont: "codepawl-serif" } });
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ uiPreferences: { chatFont: "orynt-serif" } });
     expect(updateSettingsSpy).toHaveBeenCalledWith({ uiPreferences: { motion: "reduced" } });
     expect(updateSettingsSpy).toHaveBeenCalledWith({ voicePreferences: { speed: "slow" } });
+    expect(updateSettingsSpy).toHaveBeenCalledWith({ permissionMode: "manual" });
   });
 
   it("keeps message block labels hidden by default and restores them from settings", () => {
@@ -2630,11 +3720,11 @@ describe("CodePawl desktop shell", () => {
     expect(approvalMeta).toHaveClass("message-block-meta");
     expect(approvalMeta.closest(".chat-bubble")).toBeNull();
     expect(approvalMeta.closest(".message-block")).toHaveClass("message-block-approval");
-    expect(window.localStorage.getItem("codepawl:message-block-meta-visible:v1")).toBe("true");
+    expect(window.localStorage.getItem(messageBlockMetaStorageKey)).toBe("true");
   });
 
   it("persists the message block label display preference", () => {
-    window.localStorage.setItem("codepawl:message-block-meta-visible:v1", "true");
+    window.localStorage.setItem(messageBlockMetaStorageKey, "true");
 
     render(<App seedDemoThread />);
 
@@ -2643,6 +3733,16 @@ describe("CodePawl desktop shell", () => {
     expect(within(thread).getByText("Approval request")).toHaveClass("message-block-meta");
     const settings = openSettings();
     expect(within(settings).getByRole("switch", { name: /Show message labels/ })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("restores legacy message block label preference from the CodePawl beta key", () => {
+    window.localStorage.setItem(legacyMessageBlockMetaStorageKey, "true");
+
+    render(<App seedDemoThread />);
+
+    const thread = screen.getByRole("region", { name: "Thread conversation" });
+    expect(within(thread).getByText("Agent response")).toHaveClass("message-block-meta");
+    expect(within(thread).getByText("Approval request")).toHaveClass("message-block-meta");
   });
 
   it("navigates the preference-only settings sections", () => {
@@ -2654,8 +3754,8 @@ describe("CodePawl desktop shell", () => {
     expect(within(sections).getByRole("button", { name: "General" })).toHaveAttribute("aria-current", "page");
     expect(within(sections).queryByRole("button", { name: "Capabilities" })).not.toBeInTheDocument();
     expect(within(sections).queryByRole("button", { name: "Skills" })).not.toBeInTheDocument();
-    expect(within(sections).queryByRole("button", { name: "CodePawl Code" })).not.toBeInTheDocument();
-    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveDisplayValue("Safe");
+    expect(within(sections).queryByRole("button", { name: "Orynt Code" })).not.toBeInTheDocument();
+    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveTextContent("Safe");
     expect(within(settings).queryByRole("region", { name: "Allowed surfaces" })).not.toBeInTheDocument();
 
     fireEvent.click(within(sections).getByRole("button", { name: "Billing" }));
@@ -2668,11 +3768,12 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("renders run lifecycle events streamed through the client", async () => {
+    mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     render(<App />);
 
     const input = screen.getByRole("textbox", { name: "Repository task message" });
-    fireEvent.change(screen.getByRole("textbox", { name: "Repository path" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Directory path" }), {
       target: { value: "/home/operator/project" },
     });
     fireEvent.change(input, {
@@ -2687,6 +3788,7 @@ describe("CodePawl desktop shell", () => {
   });
 
   it("sends typed cockpit tasks as unlabeled user chat bubbles", async () => {
+    mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     render(<App />);
     fillRepositoryPath();
@@ -2728,11 +3830,11 @@ describe("CodePawl desktop shell", () => {
     const settings = openSettings();
     const modeSelector = within(settings).getByRole("combobox", { name: "Permission mode" });
 
-    expect(modeSelector).toHaveDisplayValue("Safe");
+    expect(modeSelector).toHaveTextContent("Safe");
 
-    fireEvent.change(modeSelector, { target: { value: "ask-first" } });
+    selectSetupDropdownOption(settings, "Permission mode", "Ask first");
 
-    expect(modeSelector).toHaveDisplayValue("Ask first");
+    expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveTextContent("Ask first");
   });
 
   it("keeps executable surfaces out of user preferences settings", () => {
@@ -2750,6 +3852,24 @@ describe("CodePawl desktop shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve step" }));
 
     expect(await screen.findByText("Approval approved for approval-submit-1")).toBeInTheDocument();
+  });
+
+  it("shows approval loading feedback and prevents duplicate approval decisions", async () => {
+    const approval = createDeferred<void>();
+    const approveSpy = vi.spyOn(orynt, "approve").mockReturnValue(approval.promise);
+    render(<App seedDemoThread />);
+
+    const approveButton = screen.getByRole("button", { name: "Approve step" });
+    const denyButton = screen.getByRole("button", { name: "Deny step" });
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+
+    expect(approveSpy).toHaveBeenCalledTimes(1);
+    expect(approveButton).toBeDisabled();
+    expect(approveButton).toHaveAttribute("aria-busy", "true");
+    expect(approveButton).toHaveTextContent("Approving");
+    expect(approveButton.querySelector(".loading-spinner")).not.toBeNull();
+    expect(denyButton).toBeDisabled();
   });
 
   it("keeps run info and execution panels out of the compact thread UI", () => {
@@ -2796,11 +3916,11 @@ describe("CodePawl desktop shell", () => {
 
   it("does not expose memory rule and skill queues from settings", async () => {
     const runState = createMockRunState();
-    const updateRuleSpy = vi.spyOn(codepawl, "updateCandidateRuleStatus").mockResolvedValue({
+    const updateRuleSpy = vi.spyOn(orynt, "updateCandidateRuleStatus").mockResolvedValue({
       ...runState.memoryReview.candidateRules[0],
       status: "accepted",
     });
-    const promoteSkillSpy = vi.spyOn(codepawl, "promoteSkillManually").mockResolvedValue({
+    const promoteSkillSpy = vi.spyOn(orynt, "promoteSkillManually").mockResolvedValue({
       ...runState.skillRegistry.skills[0],
       status: "active",
     });

@@ -722,7 +722,7 @@ export class LocalSkillReplayPlanner implements SkillReplayPlanner {
       {
         id: `skill-replay-plan-${slug(input.skill.id)}`,
         kind: "skill_replay_plan",
-        uri: `codepawl-artifact://${input.runId}/skills/${slug(input.skill.id)}-replay-plan.json`,
+        uri: `orynt-artifact://${input.runId}/skills/${slug(input.skill.id)}-replay-plan.json`,
         label: "Skill replay dry-run plan",
       },
       ...input.skill.provenance.artifactRefs,

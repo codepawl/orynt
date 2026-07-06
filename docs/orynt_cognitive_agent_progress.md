@@ -1,4 +1,4 @@
-# CodePawl Cognitive Agent Progress
+# Orynt Cognitive Agent Progress
 
 Last updated: 2026-07-04
 
@@ -182,11 +182,11 @@ Phase 6 - Productization:
 ### 2026-07-04 - Phase 0 Discovery
 
 Added:
-- `docs/codepawl_cognitive_agent_progress.md`
+- `docs/orynt_cognitive_agent_progress.md`
 - `docs/adr/0001-brain-inspired-agent-architecture.md`
 
 Validation:
-- `git diff --check -- docs/codepawl_cognitive_agent_progress.md docs/adr/0001-brain-inspired-agent-architecture.md` passed.
+- `git diff --check -- docs/orynt_cognitive_agent_progress.md docs/adr/0001-brain-inspired-agent-architecture.md` passed.
 
 ### 2026-07-04 - Phase 1 Ledger Contracts
 
@@ -415,9 +415,8 @@ Validation:
 - `pnpm --filter @codepawl/eval-harness build` passed.
 - `git diff --check` passed.
 - Secret-pattern scan over `docs/productization` and `packages/shared/src/productPlans.ts` found no matches.
-- Rendered QA passed with Playwright against `http://127.0.0.1:1420/`: app loaded, Settings -> Dashboard rendered `Plan quota`, `Managed AI`, and `2,500 credits / month resets monthly`, with no console warnings/errors. Screenshot saved outside the repo at `/tmp/codepawl-dashboard-quota.png`.
+- Rendered QA passed with Playwright against `http://127.0.0.1:1420/`: app loaded, Settings -> Dashboard rendered `Plan quota`, `Managed AI`, and `2,500 credits / month resets monthly`, with no console warnings/errors. Screenshot saved outside the repo at `/tmp/orynt-dashboard-quota.png`.
 
 Known limits:
 - Browser-backed full end-to-end workflows are not implemented; evals are deterministic local package tests.
 - Production auth, hosted accounts, Paddle IDs/webhooks, legal terms, and live billing remain intentionally out of scope.
-- Existing unrelated design-hook findings in `apps/desktop/src/styles.css`, `apps/desktop/src/App.test.tsx`, and `.impeccable/design.json` predated this final audit and were not changed as part of the scoped roadmap work.

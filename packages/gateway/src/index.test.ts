@@ -9,7 +9,7 @@ import {
   type GatewayAdapter,
 } from "./index";
 
-const policy = createConservativeCodingApprenticePolicy("/repo/codepawl", "/tmp/codepawl-worktree");
+const policy = createConservativeCodingApprenticePolicy("/repo/orynt", "/tmp/orynt-worktree");
 
 function request(overrides: Partial<GatewayActionRequest> = {}): GatewayActionRequest {
   return {
@@ -42,7 +42,7 @@ function adapter(): GatewayAdapter {
         {
           id: `${action.id}-command-log`,
           artifactType: "command_log",
-          storageRef: `codepawl-artifact://${action.runId}/${action.id}/command-log.txt`,
+          storageRef: `orynt-artifact://${action.runId}/${action.id}/command-log.txt`,
           visibility: "user",
           metadata: { command: action.policyAction.command ?? "n/a" },
         },

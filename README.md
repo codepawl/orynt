@@ -1,6 +1,6 @@
-# CodePawl
+# Orynt
 
-CodePawl is a closed-source control cockpit for inspectable, replayable computer agents.
+Orynt is a closed-source control cockpit for inspectable, replayable computer agents from CodePawl.
 
 The current repo is in Tauri-first MVP bootstrap. The marketing site already lives in `apps/marketing-site`; the product app starts in `apps/desktop`. The current P0 is CLDSA-Lite: a supervised Coding Apprentice that delegates repository tasks to Codex inside an isolated git worktree, verifies outcomes, records append-only evidence, controls cost, and proposes candidate memory from user corrections.
 
@@ -33,7 +33,7 @@ pnpm test:desktop
 pnpm test:tauri
 pnpm release:desktop:check
 pnpm walkthrough:smoke
-CODEPAWL_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex
+ORYNT_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex
 pnpm build:desktop
 pnpm package:desktop:internal
 pnpm --filter @codepawl/desktop exec tauri dev

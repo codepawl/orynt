@@ -25,7 +25,7 @@ import {
   type SkillReplayPlan,
 } from "./index";
 
-describe("CodePawl shared product contracts", () => {
+describe("Orynt shared product contracts", () => {
   it("treats repository workspaces as the only executable P0 surface", () => {
     expect(isExecutableMvpSurface("repository")).toBe(true);
     expect(MVP_BLOCKED_SURFACES).toEqual(["browser", "desktop", "files", "terminal"]);
@@ -146,12 +146,12 @@ describe("CodePawl shared product contracts", () => {
     const memoryArtifact: ArtifactRef = {
       id: "memory-episode-artifact",
       kind: "memory_episode",
-      uri: "codepawl-artifact://run/memory/episode.json",
+      uri: "orynt-artifact://run/memory/episode.json",
       label: "Memory episode",
     };
     const episode: EpisodicMemoryItem = {
       id: "episode-1",
-      namespace: { capabilityId: "coding-apprentice", workspaceId: "workspace-1", repositoryPath: "/repo/codepawl" },
+      namespace: { capabilityId: "coding-apprentice", workspaceId: "workspace-1", repositoryPath: "/repo/orynt" },
       kind: "run_episode",
       summary: "Verifier passed after a package-only change.",
       content: { status: "pass" },
@@ -173,7 +173,7 @@ describe("CodePawl shared product contracts", () => {
       status: "candidate",
       title: "Keep package fixes scoped",
       rule: "Keep source-only fixes under packages/** unless the contract says otherwise.",
-      scope: { repositoryPath: "/repo/codepawl", allowedPaths: ["packages/**"], protectedPaths: [] },
+      scope: { repositoryPath: "/repo/orynt", allowedPaths: ["packages/**"], protectedPaths: [] },
       evidence: [{ kind: "allowed_scope_pattern", summary: "Verifier passed.", eventIds: ["run-1-event-1"], artifactRefs: [memoryArtifact], confidence: 1 }],
       provenance: episode.provenance,
       redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
@@ -200,12 +200,12 @@ describe("CodePawl shared product contracts", () => {
     const skillArtifact: ArtifactRef = {
       id: "skill-definition-artifact",
       kind: "skill_definition",
-      uri: "codepawl-artifact://run/skills/skill.json",
+      uri: "orynt-artifact://run/skills/skill.json",
       label: "Candidate skill definition",
     };
     const skill: SkillDefinition = {
       id: "skill-package-scope",
-      namespace: { capabilityId: "coding-apprentice", workspaceId: "workspace-1", repositoryPath: "/repo/codepawl" },
+      namespace: { capabilityId: "coding-apprentice", workspaceId: "workspace-1", repositoryPath: "/repo/orynt" },
       capabilityId: "coding-apprentice.repository-scope",
       title: "Keep package fixes scoped",
       summary: "Apply package-only source fixes and validate with contracts.",
@@ -264,7 +264,7 @@ describe("CodePawl shared product contracts", () => {
     const replayPlanArtifact: ArtifactRef = {
       id: "skill-replay-plan-artifact",
       kind: "skill_replay_plan",
-      uri: "codepawl-artifact://run/skills/replay-plan.json",
+      uri: "orynt-artifact://run/skills/replay-plan.json",
       label: "Skill replay dry-run plan",
     };
     const plan: SkillReplayPlan = {
@@ -480,7 +480,7 @@ describe("Run and event spine", () => {
 });
 
 describe("CorePolicy and sandbox boundary", () => {
-  const policy = createConservativeCodingApprenticePolicy("/repo/codepawl", "/tmp/codepawl-worktrees");
+  const policy = createConservativeCodingApprenticePolicy("/repo/orynt", "/tmp/orynt-worktrees");
   const engine = new ConservativePolicyEngine();
 
   it("allows safe allowlisted repository actions", () => {
@@ -536,15 +536,15 @@ describe("CorePolicy and sandbox boundary", () => {
       {
         runId: "run-123",
         taskId: "task-123",
-        repositoryPath: "/repo/codepawl",
+        repositoryPath: "/repo/orynt",
         baseRef: "HEAD",
       },
       policy,
     );
 
     expect(plan.dryRun).toBe(true);
-    expect(plan.plannedWorktreePath).toBe("/tmp/codepawl-worktrees/run-123");
-    expect(plan.commands).toEqual(["git worktree add /tmp/codepawl-worktrees/run-123 HEAD"]);
+    expect(plan.plannedWorktreePath).toBe("/tmp/orynt-worktrees/run-123");
+    expect(plan.commands).toEqual(["git worktree add /tmp/orynt-worktrees/run-123 HEAD"]);
   });
 
   it("emits policy decisions as append-only RunEvents", () => {
@@ -592,7 +592,7 @@ describe("ContextWorkspace and ResourceGovernor", () => {
       runId: "run-context",
       taskId: "task-context",
       goal: "Fix the repository task",
-      policy: createConservativeCodingApprenticePolicy("/repo/codepawl", "/tmp/codepawl-worktrees"),
+      policy: createConservativeCodingApprenticePolicy("/repo/orynt", "/tmp/orynt-worktrees"),
     });
 
     expect(snapshot.items.length).toBeLessThanOrEqual(3);

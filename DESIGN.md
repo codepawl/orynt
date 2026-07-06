@@ -1,5 +1,5 @@
 ---
-name: CodePawl
+name: Orynt
 description: Brain-like operating system for adaptive AI agents.
 style: "Dark Impressionist Minimalism"
 creativeNorthStar: "The Quiet Operator Studio"
@@ -136,23 +136,23 @@ components:
     shadow: "{effects.preview-shadow}"
 ---
 
-# Design System: CodePawl
+# Design System: Orynt
 
 ## 1. Overview
 
 **Creative North Star: “The Quiet Operator Studio”**
 
-CodePawl should feel like a dark, disciplined agent operating system placed inside a painter’s studio at night. The product is technical, supervised, adaptive, and evidence-driven, but the landing page uses impressionist atmosphere to make the system feel calm, premium, and human.
+Orynt should feel like a dark, disciplined agent operating system placed inside a painter’s studio at night. The product is technical, supervised, adaptive, and evidence-driven, but the landing page uses impressionist atmosphere to make the system feel calm, premium, and human.
 
 The visual style is **Impressionist Minimalism**: soft painterly light, blurred atmospheric depth, visible brush-wash textures, and restrained composition. It should not become decorative fantasy art. Impressionism appears as atmosphere, lighting, texture, and color temperature. Minimalism controls layout, density, hierarchy, and interface discipline.
 
 The user should understand the product quickly:
 
-CodePawl is a brain-like operating system for adaptive AI agents. It gives agents structured memory, reusable skills, verification, self-improvement loops, and safe tool use so they can perceive, remember, plan, act, verify, and improve under human supervision.
+Orynt is a brain-like operating system for adaptive AI agents from CodePawl. It gives agents structured memory, reusable skills, verification, self-improvement loops, and safe tool use so they can perceive, remember, plan, act, verify, and improve under human supervision.
 
 ## 2. Brand Character
 
-CodePawl is:
+Orynt is:
 
 - Calm, dark, and controlled.
 - Technical without looking like a raw terminal.
@@ -236,7 +236,7 @@ The palette is a dark impressionist cockpit palette. It replaces pure black with
 
 ## 5. Typography
 
-CodePawl uses a split typographic system.
+Orynt uses a split typographic system.
 
 **Display Font:** Lora with Georgia fallback
 **Body Font:** Outfit with system sans fallback
@@ -589,7 +589,7 @@ Recommended hero headline:
 
 Recommended hero body:
 
-CodePawl is a brain-like operating system for adaptive AI agents. It gives them structured memory, reusable skills, verification, self-improvement loops, and safe tool use so successful work can become reusable behavior only after review.
+Orynt is a brain-like operating system for adaptive AI agents from CodePawl. It gives them structured memory, reusable skills, verification, self-improvement loops, and safe tool use so successful work can become reusable behavior only after review.
 
 ### CTA Labels
 
@@ -758,7 +758,7 @@ Recommended background layering:
 
 A page follows this design system if a visitor can answer these questions within ten seconds:
 
-1. What is CodePawl?
+1. What is Orynt?
 2. What does it supervise?
 3. How does it keep agent work inspectable?
 4. How does the user stay in control?

@@ -65,7 +65,7 @@ function createRequest(overrides: Partial<CodexContractRequest> = {}): CodexCont
       repositoryPath,
       gitRoot: repositoryPath,
       worktreePath,
-      branchName: "codepawl/run-1-task-1",
+      branchName: "orynt/run-1-task-1",
       baseRef: "HEAD",
       currentCommit: "0123456789abcdef0123456789abcdef01234567",
       createdAt: "2026-06-26T00:00:00.000Z",
@@ -85,8 +85,8 @@ async function createImportFixture() {
   await mkdir(path.join(repositoryPath, "packages"), { recursive: true });
   await mkdir(path.join(repositoryPath, "scripts"), { recursive: true });
   await git(["init"], repositoryPath);
-  await git(["config", "user.email", "codepawl@example.test"], repositoryPath);
-  await git(["config", "user.name", "CodePawl Test"], repositoryPath);
+  await git(["config", "user.email", "orynt@example.test"], repositoryPath);
+  await git(["config", "user.name", "Orynt Test"], repositoryPath);
   await writeFile(path.join(repositoryPath, "packages", "README.md"), "initial\n");
   await writeFile(path.join(repositoryPath, "README.md"), "# Fixture\n");
   await git(["add", "README.md", "packages/README.md"], repositoryPath);
@@ -94,7 +94,7 @@ async function createImportFixture() {
   const baseCommit = await git(["rev-parse", "HEAD"], repositoryPath);
   const worktreePath = path.join(sandboxRoot, "repo-import-worktree");
   await mkdir(sandboxRoot, { recursive: true });
-  await git(["worktree", "add", "-b", "codepawl/run-import", worktreePath, "HEAD"], repositoryPath);
+  await git(["worktree", "add", "-b", "orynt/run-import", worktreePath, "HEAD"], repositoryPath);
 
   const policy = createConservativeCodingApprenticePolicy(repositoryPath, sandboxRoot);
   const sandbox: RepositorySandbox = {
@@ -104,7 +104,7 @@ async function createImportFixture() {
     repositoryPath,
     gitRoot: repositoryPath,
     worktreePath,
-    branchName: "codepawl/run-import",
+    branchName: "orynt/run-import",
     baseRef: baseCommit,
     currentCommit: baseCommit,
     createdAt: "2026-06-26T00:00:00.000Z",
@@ -186,7 +186,7 @@ function approved(planId: string, runId = "run-1"): CodexExecutionApproval {
 
 describe("LocalCodexContractAdapter", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-codex-adapter-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-codex-adapter-test-"));
   });
 
   afterEach(async () => {
@@ -520,7 +520,7 @@ console.error("authorization=Bearer-fakecodexstderr12345");
 
 describe("LocalManualCodexResultImporter", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-codex-result-import-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-codex-result-import-test-"));
   });
 
   afterEach(async () => {
@@ -623,7 +623,7 @@ describe("LocalManualCodexResultImporter", () => {
     ).rejects.toMatchObject({ code: "unsafe_path" });
   });
 
-  it("rejects sandbox paths that are not inside the CodePawl-managed worktree root", async () => {
+  it("rejects sandbox paths that are not inside the Orynt-managed worktree root", async () => {
     const fixture = await createImportFixture();
     const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
 

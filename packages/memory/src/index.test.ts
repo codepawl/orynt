@@ -19,7 +19,7 @@ let tempRoot = "";
 const namespace: MemoryNamespace = {
   capabilityId: "coding-apprentice",
   workspaceId: "workspace-memory",
-  repositoryPath: "/repo/codepawl",
+  repositoryPath: "/repo/orynt",
 };
 
 function createRunWithEvents(store = new InMemoryRunStore()) {
@@ -35,13 +35,13 @@ function createRunWithEvents(store = new InMemoryRunStore()) {
     type: "run_started",
     actor: runtime,
     payload: { summary: "Run started with apiKey=sk-testshouldberedacted123" },
-    artifacts: [{ id: "artifact-import", kind: "codex_result_bundle", uri: "codepawl-artifact://run/import.json", label: "Import bundle" }],
+    artifacts: [{ id: "artifact-import", kind: "codex_result_bundle", uri: "orynt-artifact://run/import.json", label: "Import bundle" }],
   });
   store.appendEvent(run.id, {
     type: "verification_recorded",
     actor: { kind: "verifier", id: "test-verifier" },
     payload: { summary: "Verification recorded" },
-    artifacts: [{ id: "artifact-verifier", kind: "validation_report", uri: "codepawl-artifact://run/verification.json", label: "Verification result" }],
+    artifacts: [{ id: "artifact-verifier", kind: "validation_report", uri: "orynt-artifact://run/verification.json", label: "Verification result" }],
     verdict: { status: "pass", reason: "Verification passed", confidence: 1 },
   });
   return { run, events: store.listEvents(run.id), store };
@@ -91,7 +91,7 @@ function verificationResult(overrides: Partial<VerificationResult> = {}): Verifi
       withinAllowedScope: true,
       protectedPathTouched: false,
     },
-    artifacts: [{ id: "verification-artifact", kind: "validation_report", uri: "codepawl-artifact://run/verification.json", label: "Verification result" }],
+    artifacts: [{ id: "verification-artifact", kind: "validation_report", uri: "orynt-artifact://run/verification.json", label: "Verification result" }],
     startedAt: "2026-06-26T00:00:00.000Z",
     completedAt: "2026-06-26T00:00:01.000Z",
     ...overrides,
@@ -109,10 +109,10 @@ function importBundle(overrides: Partial<CodexResultBundle> = {}): CodexResultBu
       id: "sandbox-1",
       runId: "run-1",
       taskId: "task-memory",
-      repositoryPath: "/repo/codepawl",
-      gitRoot: "/repo/codepawl",
-      worktreePath: "/tmp/codepawl-worktrees/run-1",
-      branchName: "codepawl/run-1",
+      repositoryPath: "/repo/orynt",
+      gitRoot: "/repo/orynt",
+      worktreePath: "/tmp/orynt-worktrees/run-1",
+      branchName: "orynt/run-1",
       baseRef: "HEAD",
       currentCommit: "abc123",
       createdAt: "2026-06-26T00:00:00.000Z",
@@ -128,8 +128,8 @@ function importBundle(overrides: Partial<CodexResultBundle> = {}): CodexResultBu
         id: "sandbox-policy",
         mode: "planned_worktree",
         repository: {
-          repositoryPath: "/repo/codepawl",
-          worktreePath: "/tmp/codepawl-worktrees",
+          repositoryPath: "/repo/orynt",
+          worktreePath: "/tmp/orynt-worktrees",
           baseRef: "HEAD",
           allowedPaths: ["packages/**"],
           protectedPaths: [".env", "pnpm-lock.yaml"],
@@ -141,7 +141,7 @@ function importBundle(overrides: Partial<CodexResultBundle> = {}): CodexResultBu
       },
     },
     budget: createDefaultRunBudget(),
-    artifactRoot: "/tmp/codepawl-artifacts/run-1",
+    artifactRoot: "/tmp/orynt-artifacts/run-1",
     patch: {
       baseRef: "HEAD",
       hasChanges: true,
@@ -156,7 +156,7 @@ function importBundle(overrides: Partial<CodexResultBundle> = {}): CodexResultBu
     },
     validationCommands: ["pnpm test:contracts"],
     redaction: { applied: true, redactedPaths: ["manualLog.content"], redactionCount: 1 },
-    artifacts: [{ id: "codex-result-artifact", kind: "codex_result_bundle", uri: "codepawl-artifact://run/import.json", label: "Import bundle", path: "/tmp/import.json" }],
+    artifacts: [{ id: "codex-result-artifact", kind: "codex_result_bundle", uri: "orynt-artifact://run/import.json", label: "Import bundle", path: "/tmp/import.json" }],
     createdAt: "2026-06-26T00:00:00.000Z",
     summary: {
       runId: "run-1",
@@ -175,7 +175,7 @@ function importBundle(overrides: Partial<CodexResultBundle> = {}): CodexResultBu
 
 describe("LocalJsonMemoryStore", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-memory-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-memory-test-"));
   });
 
   afterEach(async () => {
@@ -193,7 +193,7 @@ describe("LocalJsonMemoryStore", () => {
         runId: "run-1",
         taskId: "task-memory",
         eventIds: ["run-1-event-1"],
-        artifactRefs: [{ id: "artifact-1", kind: "validation_report", uri: "codepawl-artifact://run/verification.json", label: "Verification result" }],
+        artifactRefs: [{ id: "artifact-1", kind: "validation_report", uri: "orynt-artifact://run/verification.json", label: "Verification result" }],
         sources: ["verification_result"],
         sourceTimestamps: ["2026-06-26T00:00:00.000Z"],
       },
@@ -215,7 +215,7 @@ describe("LocalJsonMemoryStore", () => {
       namespace,
       title: "Do not touch lockfiles",
       rule: "Avoid editing pnpm-lock.yaml during narrow source fixes.",
-      scope: { repositoryPath: "/repo/codepawl", allowedPaths: ["packages/**"], protectedPaths: ["pnpm-lock.yaml"] },
+      scope: { repositoryPath: "/repo/orynt", allowedPaths: ["packages/**"], protectedPaths: ["pnpm-lock.yaml"] },
       evidence: [
         {
           kind: "protected_path_violation",
@@ -236,7 +236,7 @@ describe("LocalJsonMemoryStore", () => {
       namespace,
       title: "Prefer packages only",
       rule: "Keep source-only changes under packages/** unless the contract says otherwise.",
-      scope: { repositoryPath: "/repo/codepawl", allowedPaths: ["packages/**"], protectedPaths: [] },
+      scope: { repositoryPath: "/repo/orynt", allowedPaths: ["packages/**"], protectedPaths: [] },
       evidence: [{ kind: "allowed_scope_pattern", summary: "Successful run stayed under packages/**.", eventIds: ["run-2-event-1"], artifactRefs: [], confidence: 0.8 }],
       provenance: { runId: "run-2", taskId: "task-memory", eventIds: ["run-2-event-1"], artifactRefs: [], sources: ["import_summary"] },
     });
@@ -360,7 +360,7 @@ describe("LocalJsonMemoryStore", () => {
 
 describe("LocalMemoryExtractor", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-memory-extractor-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-memory-extractor-test-"));
   });
 
   afterEach(async () => {

@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import codepawlLogoLoading from "../../../assets/pictures/codepawl-logo-loading.gif";
 import App from "./App";
 
 const renderAtRoute = (path = "/") => {
@@ -38,13 +37,15 @@ describe("Orynt landing page", () => {
 
     const brandLink = screen.getByRole("link", { name: "Orynt home" });
     const logo = brandLink.querySelector(".brand-logo");
-    expect(logo?.tagName.toLowerCase()).toBe("svg");
+    expect(logo?.tagName.toLowerCase()).toBe("img");
+    expect(logo).toHaveAttribute("alt", "");
     expect(logo).toHaveAttribute("aria-hidden", "true");
-    expect(brandLink.querySelector("img")).not.toBeInTheDocument();
+    expect(logo).toHaveAttribute("src", expect.stringContaining("lightbulb-mark-on-dark"));
+    expect(brandLink.querySelector("svg")).not.toBeInTheDocument();
 
     const loadingStatus = screen.getByRole("status", { name: "Loading Orynt content" });
-    expect(loadingStatus.querySelector(".loading-screen-logo-motion")).toHaveAttribute("src", codepawlLogoLoading);
-    expect(loadingStatus.querySelector(".loading-screen-logo-static")).toBeInTheDocument();
+    expect(loadingStatus.querySelector(".loading-screen-logo")).toHaveAttribute("src", expect.stringContaining("lightbulb-mark-on-dark"));
+    expect(loadingStatus.querySelector(".loading-screen-logo-motion")).not.toBeInTheDocument();
 
     const primaryNav = screen.getByRole("navigation", { name: "Primary navigation" });
     expect(primaryNav).toBeInTheDocument();
@@ -932,11 +933,10 @@ describe("Orynt landing page", () => {
     expect(styles).not.toContain("--brain-frame-delay");
     expect(styles).not.toContain("steps(1");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(styles).toContain(".loading-screen-logo-motion");
-    expect(styles).toContain("display: none;");
-    expect(styles).toContain(".loading-screen-logo-static");
-    expect(styles).toContain("display: block;");
-    expect(styles).toContain(".brand:hover .brand-logo-dot");
+    expect(styles).toContain(".loading-screen-logo");
+    expect(styles).not.toContain(".loading-screen-logo-motion");
+    expect(styles).not.toContain(".loading-screen-logo-static");
+    expect(styles).not.toContain(".brand:hover .brand-logo-dot");
     expect(styles).toContain(".final-cta::before");
     expect(styles).toContain(".final-cta::after");
     expect(styles).toContain(".line-icon svg");
@@ -1567,15 +1567,24 @@ describe("Orynt landing page", () => {
     expect(brandHoverStyles).toContain("color: var(--mist-200)");
     expect(brandHoverStyles).not.toContain("background:");
 
-    expect(styles).toContain(".brand-logo-surface");
-    expect(styles).toContain("@keyframes brandLogoChevronUpper");
-    expect(styles).toContain("@keyframes brandLogoChevronLower");
-    expect(styles).toContain("@keyframes brandLogoConnector");
-    expect(styles).toContain("@keyframes brandLogoDot");
+    expect(styles).toContain(".brand-logo");
+    expect(styles).not.toContain(".brand-logo-surface");
+    expect(styles).not.toContain("@keyframes brandLogoChevronUpper");
+    expect(styles).not.toContain("@keyframes brandLogoChevronLower");
+    expect(styles).not.toContain("@keyframes brandLogoConnector");
+    expect(styles).not.toContain("@keyframes brandLogoDot");
     expect(styles).toContain(".loading-screen");
-    expect(styles).toContain(".loading-screen-logo-motion");
-    expect(styles).toContain(".loading-screen-logo-static");
-    expect(styles).toContain(".brand:hover .brand-logo-chevron-upper");
+    expect(styles).toContain(".loading-screen-logo");
+    expect(styles).not.toContain(".loading-screen-logo-motion");
+    expect(styles).not.toContain(".loading-screen-logo-static");
+    expect(styles).not.toContain(".brand:hover .brand-logo-chevron-upper");
+
+    const indexHtml = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
+    expect(indexHtml).toContain('href="/favicon.svg"');
+    expect(indexHtml).toContain('href="/favicon-light.svg"');
+    expect(indexHtml).toContain('href="/favicon-dark.svg"');
+    expect(indexHtml).toContain('media="(prefers-color-scheme: light)"');
+    expect(indexHtml).toContain('media="(prefers-color-scheme: dark)"');
 
     const tabletStyles = styles.slice(styles.indexOf("@media (max-width: 1120px)"), styles.indexOf("@media (max-width: 760px)"));
     expect(tabletStyles).toContain("grid-template-columns: minmax(0, 1fr) auto");

@@ -228,16 +228,13 @@ h3,
   height: 128px;
 }
 
-.loading-screen-logo-motion,
-.loading-screen-logo-static {
+.loading-screen-logo {
   grid-area: 1 / 1;
+  display: block;
   width: 128px;
   height: 128px;
-  border-radius: 16px;
-}
-
-.loading-screen-logo-static {
-  display: none;
+  object-fit: contain;
+  filter: drop-shadow(0 22px 42px rgba(0, 0, 0, 0.32));
 }
 
 .loading-screen-label {
@@ -303,59 +300,11 @@ h3,
 }
 
 .brand-logo {
+  display: block;
   width: var(--brand-logo-size, 40px);
   height: var(--brand-logo-size, 40px);
   flex: 0 0 auto;
-  border-radius: 8px;
-  border: 1px solid var(--border-strong);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--background-deep) 28%, transparent);
-  overflow: visible;
-}
-
-.brand-logo-surface {
-  fill: var(--mono-100);
-  transition: fill 180ms ease;
-}
-
-.brand-logo-stroke {
-  stroke: var(--ink-990);
-  stroke-width: 35.1886;
-  stroke-linecap: round;
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: stroke 180ms ease;
-}
-
-.brand-logo-dot {
-  fill: var(--ink-990);
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: fill 180ms ease;
-}
-
-.brand:hover .brand-logo-surface,
-.brand:focus-visible .brand-logo-surface {
-  fill: var(--mist-200);
-}
-
-.brand:hover .brand-logo-chevron-upper,
-.brand:focus-visible .brand-logo-chevron-upper {
-  animation: brandLogoChevronUpper 520ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.brand:hover .brand-logo-chevron-lower,
-.brand:focus-visible .brand-logo-chevron-lower {
-  animation: brandLogoChevronLower 520ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.brand:hover .brand-logo-connector,
-.brand:focus-visible .brand-logo-connector {
-  animation: brandLogoConnector 520ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.brand:hover .brand-logo-dot,
-.brand:focus-visible .brand-logo-dot {
-  animation: brandLogoDot 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  object-fit: contain;
 }
 
 .primary-nav,
@@ -2433,80 +2382,12 @@ h1 {
   }
 }
 
-@keyframes brandLogoChevronUpper {
-  0% {
-    transform: translate3d(-7px, -2px, 0) rotate(-9deg);
-  }
-
-  58% {
-    transform: translate3d(1px, 0, 0) rotate(2deg);
-  }
-
-  100% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-}
-
-@keyframes brandLogoChevronLower {
-  0% {
-    transform: translate3d(-7px, 2px, 0) rotate(8deg);
-  }
-
-  58% {
-    transform: translate3d(1px, 0, 0) rotate(-2deg);
-  }
-
-  100% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-}
-
-@keyframes brandLogoConnector {
-  0% {
-    transform: translate3d(-10px, 0, 0) scaleX(0.52);
-  }
-
-  62% {
-    transform: translate3d(1px, 0, 0) scaleX(1.04);
-  }
-
-  100% {
-    transform: translate3d(0, 0, 0) scaleX(1);
-  }
-}
-
-@keyframes brandLogoDot {
-  0% {
-    transform: scale(0.66);
-  }
-
-  56% {
-    transform: scale(1.12);
-  }
-
-  100% {
-    transform: scale(1);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .landing-shell::before,
   .landing-shell::after,
   .final-cta::before,
   .final-cta::after,
   .painterly-wash,
-  .brand:hover .brand-logo-chevron-upper,
-  .brand:focus-visible .brand-logo-chevron-upper,
-  .brand:hover .brand-logo-chevron-lower,
-  .brand:focus-visible .brand-logo-chevron-lower,
-  .brand:hover .brand-logo-connector,
-  .brand:focus-visible .brand-logo-connector,
-  .brand:hover .brand-logo-dot,
-  .brand:focus-visible .brand-logo-dot,
-  .brand-logo-chevron-upper,
-  .brand-logo-chevron-lower,
-  .brand-logo-connector,
-  .brand-logo-dot,
   .landing-animation-halftone,
   .landing-ascii-brain-shell,
   .landing-ascii-brain-current {
@@ -2517,14 +2398,6 @@ h1 {
   .landing-ascii-brain-current {
     opacity: 0.44;
     stroke-dashoffset: 0;
-  }
-
-  .loading-screen-logo-motion {
-    display: none;
-  }
-
-  .loading-screen-logo-static {
-    display: block;
   }
 
   .workflow-card {

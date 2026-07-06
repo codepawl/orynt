@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CODEPAWL_ERROR_CODES,
   CODEX_EXECUTION_IPC_METHODS,
   MEMORY_IPC_METHODS,
+  ORYNT_ERROR_CODES,
   RUN_IPC_METHODS,
   RUN_EVENTS,
   SETTINGS_IPC_METHODS,
@@ -14,7 +14,7 @@ import {
   isRpcResponse,
 } from "./index";
 
-describe("CodePawl IPC contracts", () => {
+describe("Orynt IPC contracts", () => {
   it("validates newline-delimited JSON-RPC request, response, and event envelopes", () => {
     expect(
       isRpcRequest({
@@ -41,11 +41,11 @@ describe("CodePawl IPC contracts", () => {
   });
 
   it("keeps the MVP runtime error vocabulary explicit", () => {
-    expect(CODEPAWL_ERROR_CODES).toContain("APPROVAL_REQUIRED");
-    expect(CODEPAWL_ERROR_CODES).toContain("BUDGET_EXCEEDED");
-    expect(CODEPAWL_ERROR_CODES).toContain("SIDECAR_PROTOCOL_MISMATCH");
-    expect(CODEPAWL_ERROR_CODES).toContain("REPOSITORY_CONTEXT_FAILED");
-    expect(CODEPAWL_ERROR_CODES).not.toContain("SHELL_EXEC_FAILED");
+    expect(ORYNT_ERROR_CODES).toContain("APPROVAL_REQUIRED");
+    expect(ORYNT_ERROR_CODES).toContain("BUDGET_EXCEEDED");
+    expect(ORYNT_ERROR_CODES).toContain("SIDECAR_PROTOCOL_MISMATCH");
+    expect(ORYNT_ERROR_CODES).toContain("REPOSITORY_CONTEXT_FAILED");
+    expect(ORYNT_ERROR_CODES).not.toContain("SHELL_EXEC_FAILED");
   });
 
   it("declares durable repository run and settings IPC methods", () => {

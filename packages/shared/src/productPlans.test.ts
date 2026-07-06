@@ -1,22 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { getCodePawlPlan, listCodePawlPlans, summarizePlanQuota } from "./productPlans";
+import { getOryntPlan, listOryntPlans, summarizePlanQuota } from "./productPlans";
 
-describe("CodePawl product plan config", () => {
+describe("Orynt product plan config", () => {
   it("defines Core BYOK, Managed AI, and Pro/Gateway without mixing BYOK and managed AI usage", () => {
-    const plans = listCodePawlPlans();
+    const plans = listOryntPlans();
 
     expect(plans.map((plan) => plan.id)).toEqual(["core-byok", "managed-ai", "pro-gateway"]);
-    expect(getCodePawlPlan("core-byok")).toMatchObject({
+    expect(getOryntPlan("core-byok")).toMatchObject({
       byokRequired: true,
       managedAiIncluded: false,
       monthlyManagedAiCredits: 0,
     });
-    expect(getCodePawlPlan("managed-ai")).toMatchObject({
+    expect(getOryntPlan("managed-ai")).toMatchObject({
       byokRequired: false,
       managedAiIncluded: true,
     });
-    expect(getCodePawlPlan("pro-gateway")).toMatchObject({
+    expect(getOryntPlan("pro-gateway")).toMatchObject({
       gatewayFeaturesIncluded: true,
       externalPaymentExecutionAllowed: false,
     });

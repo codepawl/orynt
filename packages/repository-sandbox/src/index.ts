@@ -83,7 +83,7 @@ export class GitRepositorySandboxManager implements SandboxManager {
   private readonly policyEngine = new ConservativePolicyEngine();
 
   constructor(options: GitRepositorySandboxManagerOptions = {}) {
-    this.sandboxRoot = path.resolve(options.sandboxRoot ?? path.join(tmpdir(), "codepawl", "repository-sandboxes"));
+    this.sandboxRoot = path.resolve(options.sandboxRoot ?? path.join(tmpdir(), "orynt", "repository-sandboxes"));
     this.runStore = options.runStore;
     this.actor = options.actor ?? { kind: "runtime", id: "repository-sandbox", displayName: "Repository Sandbox" };
   }
@@ -163,7 +163,7 @@ export class GitRepositorySandboxManager implements SandboxManager {
     const repoHash = shortHash(inspection.gitRoot);
     const shortCommit = inspection.currentCommit.slice(0, 12);
     const runSlug = slug(`${request.runId}-${request.taskId}-${shortCommit}`);
-    const branchName = `codepawl/${slug(request.runId)}-${slug(request.taskId)}-${shortCommit}`;
+    const branchName = `orynt/${slug(request.runId)}-${slug(request.taskId)}-${shortCommit}`;
     const worktreePath = path.join(this.sandboxRoot, `${repoSlug}-${repoHash}`, runSlug);
     const policyDecision = this.policyEngine.evaluateAction(
       {
@@ -266,7 +266,7 @@ export class GitRepositorySandboxManager implements SandboxManager {
     if (!isInsideOrEqual(path.resolve(plan.worktreePath), this.sandboxRoot)) {
       fail({
         code: "unsafe_repository_path",
-        message: "Planned worktree path is outside the CodePawl sandbox root.",
+        message: "Planned worktree path is outside the Orynt sandbox root.",
         evidence: [plan.worktreePath, this.sandboxRoot],
       });
     }

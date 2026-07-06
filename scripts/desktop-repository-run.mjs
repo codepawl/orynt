@@ -21,6 +21,19 @@ function requireString(input, key) {
   return value.trim();
 }
 
+function optionalObject(input, key) {
+  const value = input[key];
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  return undefined;
+}
+
+function optionalString(input, key) {
+  const value = input[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 async function main() {
   const input = await readJsonStdin();
   const result = await runDesktopRepositoryBeta({
@@ -31,6 +44,8 @@ async function main() {
     sandboxRoot: requireString(input, "sandboxRoot"),
     artifactRoot: requireString(input, "artifactRoot"),
     memoryRoot: typeof input.memoryRoot === "string" && input.memoryRoot.trim() ? input.memoryRoot.trim() : undefined,
+    modelConnection: optionalObject(input, "modelConnection"),
+    thinkingEffort: optionalString(input, "thinkingEffort"),
   });
 
   process.stdout.write(`${JSON.stringify(result)}\n`);

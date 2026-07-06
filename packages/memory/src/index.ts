@@ -270,7 +270,7 @@ export class LocalJsonMemoryStore implements MemoryStore {
   private readonly storePath: string;
 
   constructor(options: LocalJsonMemoryStoreOptions = {}) {
-    this.memoryRoot = path.resolve(options.memoryRoot ?? path.join(tmpdir(), "codepawl", "memory"));
+    this.memoryRoot = path.resolve(options.memoryRoot ?? path.join(tmpdir(), "orynt", "memory"));
     this.storePath = path.join(this.memoryRoot, options.storeFileName ?? "memory-store.json");
   }
 
@@ -549,7 +549,7 @@ export class LocalJsonMemoryStore implements MemoryStore {
 
 export class InMemoryMemoryStore extends LocalJsonMemoryStore {
   constructor() {
-    super({ memoryRoot: path.join(tmpdir(), "codepawl", "memory", `in-memory-${Date.now()}-${Math.random().toString(36).slice(2)}`) });
+    super({ memoryRoot: path.join(tmpdir(), "orynt", "memory", `in-memory-${Date.now()}-${Math.random().toString(36).slice(2)}`) });
   }
 }
 
@@ -628,7 +628,7 @@ export class LocalMemoryExtractor implements MemoryExtractor {
     this.actor = options.actor ?? DEFAULT_ACTOR;
     this.managedMemoryRoot =
       options.managedMemoryRoot ??
-      (options.memoryStore instanceof LocalJsonMemoryStore ? options.memoryStore.memoryRoot : path.join(tmpdir(), "codepawl", "memory"));
+      (options.memoryStore instanceof LocalJsonMemoryStore ? options.memoryStore.memoryRoot : path.join(tmpdir(), "orynt", "memory"));
   }
 
   async extractRunMemory(input: MemoryExtractionInput): Promise<MemoryExtractionResult> {

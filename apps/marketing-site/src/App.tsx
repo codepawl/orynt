@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 import brainAsciiMonochrome from "../../../assets/pictures/brain-ascii-monochrome.svg";
-import codepawlLogoLoading from "../../../assets/pictures/codepawl-logo-loading.gif";
+import lightbulbLogoOnDark from "../../../assets/pictures/lightbulb-mark-on-dark.svg";
 
 const loadingScreenMinimumMs = 650;
 const loadingScreenFallbackMs = 2400;
@@ -655,25 +655,15 @@ type BrandMarkProps = {
 
 function BrandMark({ className = "brand-logo", size = 40 }: BrandMarkProps) {
   return (
-    <svg
+    <img
       className={className}
+      src={lightbulbLogoOnDark}
+      alt=""
+      aria-hidden="true"
       width={size}
       height={size}
-      viewBox="0 0 500 500"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      focusable="false"
       style={{ "--brand-logo-size": `${size}px` } as CSSProperties}
-    >
-      <rect className="brand-logo-surface" width="500" height="500" rx="25" />
-      <g className="brand-logo-glyph">
-        <line className="brand-logo-stroke brand-logo-chevron-lower" x1="154.458" y1="245.233" x2="191.781" y2="207.909" />
-        <line className="brand-logo-stroke brand-logo-chevron-upper" x1="191.781" y1="207.909" x2="154.458" y2="170.586" />
-        <line className="brand-logo-stroke brand-logo-connector" x1="308.781" y1="207.785" x2="361.564" y2="207.785" />
-        <circle className="brand-logo-dot" cx="250.72" cy="311.591" r="26.3915" />
-      </g>
-    </svg>
+    />
   );
 }
 
@@ -737,8 +727,7 @@ function LoadingScreen({ isVisible }: { isVisible: boolean }) {
   return (
     <section className="loading-screen" role="status" aria-live="polite" aria-label="Loading Orynt content">
       <div className="loading-screen-mark" aria-hidden="true">
-        <img className="loading-screen-logo-motion" src={codepawlLogoLoading} alt="" width="128" height="128" />
-        <BrandMark className="loading-screen-logo-static" size={128} />
+        <BrandMark className="loading-screen-logo" size={128} />
       </div>
       <span className="loading-screen-label">Loading Orynt</span>
     </section>

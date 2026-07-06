@@ -545,7 +545,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     capabilityId: "coding-apprentice",
     taskId: "task-failing-unit-test",
     workspaceId: "workspace-local-alpha",
-    repositoryPath: "/repos/codepawl",
+    repositoryPath: "/repos/orynt",
     budget: createDefaultRunBudget(),
   });
 
@@ -582,7 +582,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     },
   });
 
-  const corePolicy = createConservativeCodingApprenticePolicy("/repos/codepawl", "/tmp/codepawl-worktrees");
+  const corePolicy = createConservativeCodingApprenticePolicy("/repos/orynt", "/tmp/orynt-worktrees");
   const policyEngine = new ConservativePolicyEngine();
   const sandboxManager = new DryRunSandboxManager();
   governor.checkBeforeOperation(run.id, "inspect_repository");
@@ -684,14 +684,14 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-codex-contract-md",
       kind: "codex_contract",
-      uri: `codepawl-artifact://${run.id}/codex-contract.md`,
+      uri: `orynt-artifact://${run.id}/codex-contract.md`,
       label: "Generated Codex work contract",
       sha256: "mock-codex-contract-md-sha256",
     },
     {
       id: "mock-codex-contract-metadata",
       kind: "codex_contract_metadata",
-      uri: `codepawl-artifact://${run.id}/codex-contract.metadata.json`,
+      uri: `orynt-artifact://${run.id}/codex-contract.metadata.json`,
       label: "Generated Codex contract metadata",
       sha256: "mock-codex-contract-metadata-sha256",
     },
@@ -727,7 +727,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-codex-result-import",
       kind: "codex_result_bundle",
-      uri: `codepawl-artifact://${run.id}/codex-result-import.json`,
+      uri: `orynt-artifact://${run.id}/codex-result-import.json`,
       label: "Imported manual Codex result bundle",
       sha256: "mock-codex-result-import-sha256",
     },
@@ -736,7 +736,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-verifier-input",
       kind: "verifier_input",
-      uri: `codepawl-artifact://${run.id}/verifier-input.json`,
+      uri: `orynt-artifact://${run.id}/verifier-input.json`,
       label: "Verifier input from imported Codex result",
       sha256: "mock-verifier-input-sha256",
     },
@@ -763,7 +763,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     type: "codex_manual_log_imported",
     actor: runtime,
     payload: {
-      summary: "Imported optional manual Codex log from the CodePawl-managed artifact directory",
+      summary: "Imported optional manual Codex log from the Orynt-managed artifact directory",
       malformed: false,
     },
   });
@@ -877,7 +877,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-verification-result",
       kind: "validation_report",
-      uri: `codepawl-artifact://${run.id}/verification-result.json`,
+      uri: `orynt-artifact://${run.id}/verification-result.json`,
       label: "Verification result",
       sha256: "mock-verification-result-sha256",
     },
@@ -979,14 +979,14 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-memory-episode",
       kind: "memory_episode",
-      uri: `codepawl-artifact://${run.id}/memory/memory-store.json#episode`,
+      uri: `orynt-artifact://${run.id}/memory/memory-store.json#episode`,
       label: "Episodic memory item",
       sha256: "mock-memory-episode-sha256",
     },
     {
       id: "mock-candidate-rule",
       kind: "candidate_rule",
-      uri: `codepawl-artifact://${run.id}/memory/memory-store.json#candidate-rule`,
+      uri: `orynt-artifact://${run.id}/memory/memory-store.json#candidate-rule`,
       label: "Candidate project rule",
       sha256: "mock-candidate-rule-sha256",
     },

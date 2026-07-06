@@ -272,7 +272,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
   private readonly processes = new Map<string, ChildProcessWithoutNullStreams>();
 
   constructor(options: LocalCodexContractAdapterOptions = {}) {
-    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "codepawl", "codex-artifacts"));
+    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "orynt", "codex-artifacts"));
     this.runStore = options.runStore;
     this.defaultRunId = options.runId;
     this.actor = options.actor ?? { kind: "runtime", id: "codex-adapter", displayName: "Codex Adapter" };
@@ -348,8 +348,8 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       `Work only inside sandbox path: ${request.sandbox.worktreePath}`,
       `Repository source path is context only: ${request.repository.gitRoot}`,
       "Do not access secrets, credentials, tokens, passwords, cookies, OTPs, or raw sensitive values.",
-      "Do not run network, dependency installation, git push/merge, destructive, privileged, or non-allowlisted commands without CodePawl approval.",
-      "Do not claim success; CodePawl verifier will decide success after deterministic validation.",
+      "Do not run network, dependency installation, git push/merge, destructive, privileged, or non-allowlisted commands without Orynt approval.",
+      "Do not claim success; the Orynt verifier will decide success after deterministic validation.",
       `Allowed paths: ${allowedPaths.join(", ")}`,
       `Protected paths: ${protectedPaths.join(", ")}`,
       `Blocked commands: ${blockedCommands.join(", ")}`,
@@ -396,10 +396,10 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       ]),
       "",
       "## Validation Expectations",
-      bullet(validationCommands.values.length > 0 ? validationCommands.values : ["CodePawl verifier will select deterministic validation in a later slice."]),
+      bullet(validationCommands.values.length > 0 ? validationCommands.values : ["The Orynt verifier will select deterministic validation in a later slice."]),
       "",
       "## Provider Boundary",
-      "This artifact is a safe handoff contract only. CodePawl has not executed Codex, spawned an external agent, or run arbitrary shell commands.",
+      "This artifact is a safe handoff contract only. Orynt has not executed Codex, spawned an external agent, or run arbitrary shell commands.",
       "",
     ].join("\n");
 
@@ -520,7 +520,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         : "Codex CLI is missing or unconfigured; this slice still generates reviewable contract artifacts.";
     }
     if (mode === "manual_cli") {
-      return "Manual CLI mode is a future handoff path and is not executed by CodePawl in this slice.";
+      return "Manual CLI mode is a future handoff path and is not executed by Orynt in this slice.";
     }
     if (mode === "app_server") {
       return "Codex App Server mode is reserved for the future provider runtime.";
@@ -548,7 +548,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       {
         id: `codex-execution-${slug(runId)}-${slug(taskId)}`,
         kind: "command",
-        summary: "Run local Codex CLI against generated CodePawl contract",
+        summary: "Run local Codex CLI against generated Orynt contract",
         command: "codex exec",
       },
       request.policy,
@@ -1005,7 +1005,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     const sourceRepository = path.resolve(sandbox.repositoryPath);
     const gitRoot = path.resolve(sandbox.gitRoot);
     if (!isInsideOrEqual(worktree, managedRoot)) {
-      throw new CodexExecutionFailure("unmanaged_sandbox", "Controlled Codex execution sandbox is outside the CodePawl-managed worktree root.", [
+      throw new CodexExecutionFailure("unmanaged_sandbox", "Controlled Codex execution sandbox is outside the Orynt-managed worktree root.", [
         worktree,
         managedRoot,
       ]);
@@ -1060,7 +1060,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     const resolvedRoot = path.resolve(artifactRoot);
     const managedRoot = path.resolve(this.managedArtifactRoot);
     if (!isInsideOrEqual(resolvedRoot, managedRoot)) {
-      throw new CodexAdapterFailure("artifact_path_unsafe", "Codex contract artifact path is outside the CodePawl-managed artifact root.", [
+      throw new CodexAdapterFailure("artifact_path_unsafe", "Codex contract artifact path is outside the Orynt-managed artifact root.", [
         resolvedRoot,
         managedRoot,
       ]);
@@ -1088,7 +1088,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
   private readonly actor: Actor;
 
   constructor(options: LocalManualCodexResultImporterOptions = {}) {
-    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "codepawl", "codex-artifacts"));
+    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "orynt", "codex-artifacts"));
     this.runStore = options.runStore;
     this.actor = options.actor ?? { kind: "runtime", id: "codex-result-importer", displayName: "Codex Result Importer" };
   }
@@ -1408,7 +1408,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
     const managedRoot = path.resolve(this.managedArtifactRoot);
     const resolvedWorktree = path.resolve(worktreePath);
     if (!isInsideOrEqual(resolvedRoot, managedRoot)) {
-      throw new CodexResultImporterFailure("artifact_path_unsafe", "Codex result artifact path is outside the CodePawl-managed artifact root.", [
+      throw new CodexResultImporterFailure("artifact_path_unsafe", "Codex result artifact path is outside the Orynt-managed artifact root.", [
         resolvedRoot,
         managedRoot,
       ]);
@@ -1439,7 +1439,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
     const sourceRepository = path.resolve(request.sandbox.repositoryPath);
     const gitRoot = path.resolve(request.sandbox.gitRoot);
     if (!isInsideOrEqual(worktree, managedRoot)) {
-      throw new CodexResultImporterFailure("unmanaged_sandbox", "Sandbox worktree is outside the CodePawl-managed worktree root.", [worktree, managedRoot]);
+      throw new CodexResultImporterFailure("unmanaged_sandbox", "Sandbox worktree is outside the Orynt-managed worktree root.", [worktree, managedRoot]);
     }
     if (worktree === sourceRepository || worktree === gitRoot) {
       throw new CodexResultImporterFailure("unsafe_path", "Sandbox worktree must not be the source repository or git root.", [worktree, sourceRepository, gitRoot]);
@@ -1483,7 +1483,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
     const resolvedRoot = await realpath(path.resolve(artifactRoot));
     const resolvedFile = path.resolve(filePath);
     if (!isInsideOrEqual(resolvedFile, resolvedRoot)) {
-      throw new CodexResultImporterFailure("unsafe_path", "Imported Codex result log path is outside the CodePawl-managed artifact directory.", [
+      throw new CodexResultImporterFailure("unsafe_path", "Imported Codex result log path is outside the Orynt-managed artifact directory.", [
         resolvedFile,
         resolvedRoot,
       ]);

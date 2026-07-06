@@ -28,8 +28,8 @@ async function createTempGitRepository(name = "repo") {
   const repoPath = path.join(tempRoot, name);
   await mkdir(repoPath, { recursive: true });
   await git(["init"], repoPath);
-  await git(["config", "user.email", "codepawl@example.test"], repoPath);
-  await git(["config", "user.name", "CodePawl Test"], repoPath);
+  await git(["config", "user.email", "orynt@example.test"], repoPath);
+  await git(["config", "user.name", "Orynt Test"], repoPath);
   await mkdir(path.join(repoPath, "packages"), { recursive: true });
   await mkdir(path.join(repoPath, "scripts"), { recursive: true });
   await writeFile(path.join(repoPath, "packages", "README.md"), "fixture\n");
@@ -40,7 +40,7 @@ async function createTempGitRepository(name = "repo") {
   await git(["commit", "-m", "initial"], repoPath);
 
   const worktreePath = path.join(tempRoot, `${name}-worktree`);
-  await git(["worktree", "add", "-b", "codepawl/test", worktreePath, "HEAD"], repoPath);
+  await git(["worktree", "add", "-b", "orynt/test", worktreePath, "HEAD"], repoPath);
   return { repoPath, worktreePath, commit: await git(["rev-parse", "HEAD"], worktreePath) };
 }
 
@@ -62,7 +62,7 @@ function createSandbox(repoPath: string, worktreePath: string, commit: string): 
     repositoryPath: repoPath,
     gitRoot: repoPath,
     worktreePath,
-    branchName: "codepawl/test",
+    branchName: "orynt/test",
     baseRef: "HEAD",
     currentCommit: commit,
     createdAt: "2026-06-26T00:00:00.000Z",
@@ -90,7 +90,7 @@ function policyWithAllowlist(repoPath: string, worktreePath: string, allowlist: 
 
 describe("LocalRepositoryVerifier", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-verifier-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-verifier-test-"));
   });
 
   afterEach(async () => {

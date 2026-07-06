@@ -5,8 +5,8 @@ import { spawn } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
-const outputPath = resolve(repoRoot, "assets/pictures/codepawl-logo-loading.gif");
-const frameDir = "/tmp/codepawl-logo-animation-test";
+const outputPath = resolve(repoRoot, "assets/pictures/orynt-logo-loading.gif");
+const frameDir = "/tmp/orynt-logo-animation-test";
 const canvasSize = 500;
 const frameSize = 512;
 const markBackground = "#ffffff";
@@ -154,8 +154,8 @@ await run("magick", [
   "-alpha",
   "remove",
   "+append",
-  "/tmp/codepawl-logo-animation-test-contact.png",
+  "/tmp/orynt-logo-animation-test-contact.png",
 ]);
 
 console.log(`Wrote ${outputPath}`);
-console.log("Wrote /tmp/codepawl-logo-animation-test-contact.png");
+console.log("Wrote /tmp/orynt-logo-animation-test-contact.png");

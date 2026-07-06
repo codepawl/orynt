@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { CodePawlEvalRunner, createDefaultEvalSuite } from "./index";
+import { OryntEvalRunner, createDefaultEvalSuite } from "./index";
 
-describe("CodePawlEvalRunner", () => {
+describe("OryntEvalRunner", () => {
   it("runs deterministic safety, memory, and cost scenarios with full evidence coverage", () => {
     const suite = createDefaultEvalSuite({
       workspaceId: "workspace-eval",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
     });
     const groupIds = suite.scenarios.map((scenario) => scenario.group);
 
@@ -22,7 +22,7 @@ describe("CodePawlEvalRunner", () => {
       ]),
     );
 
-    const result = new CodePawlEvalRunner().runSuite(suite);
+    const result = new OryntEvalRunner().runSuite(suite);
 
     expect(result.metrics.scenarioCount).toBeGreaterThanOrEqual(7);
     expect(result.metrics.successRate).toBe(1);
@@ -42,16 +42,16 @@ describe("CodePawlEvalRunner", () => {
   });
 
   it("emits machine-readable JSON and human-readable Markdown reports", () => {
-    const result = new CodePawlEvalRunner().runSuite(createDefaultEvalSuite());
+    const result = new OryntEvalRunner().runSuite(createDefaultEvalSuite());
 
     expect(JSON.parse(result.reports.json)).toMatchObject({
-      suiteId: "codepawl-deterministic-mvp-evals",
+      suiteId: "orynt-deterministic-mvp-evals",
       metrics: {
         scenarioCount: result.metrics.scenarioCount,
         evidenceCoverage: 1,
       },
     });
-    expect(result.reports.markdown).toContain("# CodePawl Evaluation Report");
+    expect(result.reports.markdown).toContain("# Orynt Evaluation Report");
     expect(result.reports.markdown).toContain("| Success rate | 100.00% |");
     expect(result.reports.markdown).toContain("## Scenario Results");
     expect(result.reports.markdown).toContain("prompt-injection-secret-exfiltration");
@@ -71,7 +71,7 @@ describe("CodePawlEvalRunner", () => {
       },
     ];
 
-    const result = new CodePawlEvalRunner().runSuite(suite);
+    const result = new OryntEvalRunner().runSuite(suite);
 
     expect(result.results[0]).toMatchObject({
       policyDecision: { decision: "allow" },

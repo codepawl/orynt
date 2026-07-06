@@ -158,7 +158,7 @@ export class LocalRepositoryVerifier implements Verifier {
   private readonly policyEngine = new ConservativePolicyEngine();
 
   constructor(options: LocalRepositoryVerifierOptions = {}) {
-    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "codepawl", "verification-artifacts"));
+    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "orynt", "verification-artifacts"));
     this.runStore = options.runStore;
     this.actor = options.actor ?? { kind: "verifier", id: "local-repository-verifier", displayName: "Local Repository Verifier" };
   }
@@ -529,7 +529,7 @@ export class LocalRepositoryVerifier implements Verifier {
     const resolvedRoot = path.resolve(artifactRoot);
     const managedRoot = path.resolve(this.managedArtifactRoot);
     if (!isInsideOrEqual(resolvedRoot, managedRoot)) {
-      throw new VerifierFailure("artifact_path_unsafe", "Verification artifact path is outside the CodePawl-managed artifact root.", [resolvedRoot, managedRoot]);
+      throw new VerifierFailure("artifact_path_unsafe", "Verification artifact path is outside the Orynt-managed artifact root.", [resolvedRoot, managedRoot]);
     }
     await mkdir(managedRoot, { recursive: true });
     return resolvedRoot;

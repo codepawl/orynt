@@ -8,7 +8,7 @@ Accepted for MVP implementation.
 
 ## Context
 
-CodePawl is moving from a Tauri-first local Coding Apprentice MVP toward a brain-inspired supervised computer-use agent. The roadmap requires a foundation ledger, cognitive kernel, permissioned computer-use gateway, teach/adjust memory loop, evaluation harness, and productization scaffold.
+Orynt is moving from a Tauri-first local Coding Apprentice MVP toward a brain-inspired supervised computer-use agent. The roadmap requires a foundation ledger, cognitive kernel, permissioned computer-use gateway, teach/adjust memory loop, evaluation harness, and productization scaffold.
 
 The current repository already has a strong local repository-task substrate:
 - append-only run events in `packages/shared/src/runSpine.ts`;
@@ -25,7 +25,7 @@ There is no production database, auth service, billing backend, or general brows
 
 ## Decision
 
-CodePawl will implement the roadmap as layered, testable packages around a supervised cognitive loop:
+Orynt will implement the roadmap as layered, testable packages around a supervised cognitive loop:
 
 1. Foundation ledger
    - Canonical run, event, artifact, permission, model usage, gateway usage, pricing, and summary contracts live in shared code first.

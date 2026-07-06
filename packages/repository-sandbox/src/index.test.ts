@@ -26,8 +26,8 @@ async function createTempGitRepository(name = "repo") {
   const repoPath = path.join(tempRoot, name);
   await mkdir(repoPath, { recursive: true });
   await git(["init"], repoPath);
-  await git(["config", "user.email", "codepawl@example.test"], repoPath);
-  await git(["config", "user.name", "CodePawl Test"], repoPath);
+  await git(["config", "user.email", "orynt@example.test"], repoPath);
+  await git(["config", "user.name", "Orynt Test"], repoPath);
   await writeFile(path.join(repoPath, "README.md"), "# Fixture\n");
   await git(["add", "README.md"], repoPath);
   await git(["commit", "-m", "initial"], repoPath);
@@ -46,7 +46,7 @@ function createRun(store: InMemoryRunStore) {
 
 describe("GitRepositorySandboxManager", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-repository-sandbox-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-repository-sandbox-test-"));
   });
 
   afterEach(async () => {
@@ -55,7 +55,7 @@ describe("GitRepositorySandboxManager", () => {
 
   it("inspects a clean git repository", async () => {
     const repoPath = await createTempGitRepository();
-    await git(["remote", "add", "origin", "https://example.test/codepawl.git"], repoPath);
+    await git(["remote", "add", "origin", "https://example.test/orynt.git"], repoPath);
     const policy = createConservativeCodingApprenticePolicy(repoPath, path.join(tempRoot, "sandboxes"));
     const inspection = await new GitRepositorySandboxManager().inspectRepository(
       { runId: "run-clean", taskId: "task-clean", repositoryPath: repoPath, baseRef: "HEAD" },
@@ -118,7 +118,7 @@ describe("GitRepositorySandboxManager", () => {
     const second = manager.planWorktree(request, policy, inspection);
 
     expect(first).toEqual(second);
-    expect(first.branchName).toMatch(/^codepawl\/run-123-task-abc-/);
+    expect(first.branchName).toMatch(/^orynt\/run-123-task-abc-/);
     expect(first.worktreePath).toContain(sandboxRoot);
     expect(first.policyDecision.decision).toBe("allow");
   });

@@ -4,15 +4,15 @@ Launch status: private beta draft, not live Paddle configuration.
 
 ## Product Positioning
 
-CodePawl is a supervised desktop control plane for computer-use agents. The beta focuses on local repository workflows, visible permission gates, audit evidence, usage limits, and user takeover for sensitive work.
+Orynt is a supervised desktop control plane for computer-use agents from CodePawl. The beta focuses on local repository workflows, visible permission gates, audit evidence, usage limits, and user takeover for sensitive work.
 
-Do not describe CodePawl Gateway as a payment gateway, marketplace, escrow service, checkout provider, or autonomous purchasing system. Gateway means the permission and evidence layer that routes computer-use actions.
+Do not describe Orynt Gateway as a payment gateway, marketplace, escrow service, checkout provider, or autonomous purchasing system. Gateway means the permission and evidence layer that routes computer-use actions.
 
 ## Plans
 
 ### Core BYOK
 
-Paddle product name: CodePawl Core BYOK
+Paddle product name: Orynt Core BYOK
 
 Short description: Local supervised agent workflows for users who connect their own model provider keys.
 
@@ -24,9 +24,9 @@ Included:
 
 ### Managed AI
 
-Paddle product name: CodePawl Managed AI
+Paddle product name: Orynt Managed AI
 
-Short description: CodePawl with included managed AI credits and the same local permission controls.
+Short description: Orynt with included managed AI credits and the same local permission controls.
 
 Included:
 - Everything in Core BYOK.
@@ -36,7 +36,7 @@ Included:
 
 ### Pro/Gateway
 
-Paddle product name: CodePawl Pro Gateway
+Paddle product name: Orynt Pro Gateway
 
 Short description: Higher supervised action quotas and audit controls for operators testing broader computer-use workflows.
 

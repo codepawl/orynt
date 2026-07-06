@@ -99,7 +99,7 @@ describe("Agent ledger and cost tracking", () => {
       runId: run.id,
       eventId: "event-2",
       artifactType: "command_log",
-      storageRef: "codepawl-artifact://agent-run-1/command-log.txt",
+      storageRef: "orynt-artifact://agent-run-1/command-log.txt",
       sha256: "abc123",
       visibility: "admin",
       createdAt: "2026-07-04T01:00:02.000Z",

@@ -2,11 +2,6 @@ node_modules/
 dist/
 target/
 .codex/hooks.json
-.impeccable/config.local.json
-.impeccable/hook.cache.json
-.impeccable/audit/
-.impeccable/critique/
-apps/*/.impeccable/live/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
