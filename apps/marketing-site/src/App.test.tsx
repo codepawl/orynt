@@ -69,7 +69,7 @@ describe("Orynt landing page", () => {
     expect(screen.getByRole("link", { name: "Download Orynt" })).toHaveAttribute("href", "/access");
     expect(screen.getByRole("link", { name: "Start here" })).toHaveAttribute("href", "/docs");
     expect(screen.getAllByRole("link", { name: "Start Here" })).toHaveLength(2);
-    expect(screen.getAllByRole("link", { name: "Learn More" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Read Docs" })).toHaveLength(2);
     expect(screen.queryByRole("link", { name: "View plans" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Review workflow" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Start free trial" })).not.toBeInTheDocument();
@@ -426,7 +426,7 @@ describe("Orynt landing page", () => {
         "href",
         "/pricing",
       );
-      expect(within(actions as HTMLElement).getByRole("link", { name: "Learn More" })).toHaveAttribute(
+      expect(within(actions as HTMLElement).getByRole("link", { name: "Read Docs" })).toHaveAttribute(
         "href",
         "/docs",
       );
@@ -965,21 +965,17 @@ describe("Orynt landing page", () => {
     expect(screen.queryByText("swipe")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /swipe/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Loop back to first workflow step" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Previous workflow step" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Next workflow step" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Previous workflow step" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next workflow step" })).not.toBeInTheDocument();
     const workflowTrack = screen.getByLabelText("Workflow steps");
-    const workflowTimeline = workflowTrack.closest(".workflow-timeline");
-    const workflowHitZones = workflowTimeline?.querySelector(".workflow-carousel-hit-zones");
     const perceiveStep = screen.getByRole("heading", { level: 3, name: "Perceive" }).closest("article");
     expect(perceiveStep).toHaveAttribute("aria-current", "step");
     expect(perceiveStep).toHaveAttribute("data-focus", "active");
     expect(document.querySelectorAll(".workflow-card")).toHaveLength(6);
     expect(document.querySelectorAll(".workflow-card[aria-hidden='true']")).toHaveLength(0);
     expect(screen.queryByRole("heading", { level: 3, name: "Perceive again" })).not.toBeInTheDocument();
-    expect(workflowHitZones).toBeInTheDocument();
-    expect(workflowHitZones?.querySelectorAll(".workflow-carousel-hit-zone")).toHaveLength(2);
-    expect(perceiveStep?.querySelector(".workflow-carousel-hit-zones")).not.toBeInTheDocument();
-    expect(workflowHitZones?.closest("article")).not.toBeInTheDocument();
+    expect(document.querySelector(".workflow-carousel-hit-zones")).not.toBeInTheDocument();
+    expect(document.querySelector(".workflow-carousel-hit-zone")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article")).toHaveAttribute(
       "data-focus",
       "near",
@@ -993,26 +989,26 @@ describe("Orynt landing page", () => {
       "ghost",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Next workflow step" }));
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article")).toHaveAttribute(
       "aria-current",
       "step",
     );
-    expect(screen.getByRole("button", { name: "Previous workflow step" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Next workflow step" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Previous workflow step" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next workflow step" })).not.toBeInTheDocument();
 
     advanceWorkflowNavigationCooldown();
-    fireEvent.click(screen.getByRole("button", { name: "Previous workflow step" }));
+    fireEvent.keyDown(workflowTrack, { key: "ArrowLeft" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Perceive" }).closest("article")).toHaveAttribute(
       "aria-current",
       "step",
     );
-    expect(screen.getByRole("button", { name: "Previous workflow step" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Previous workflow step" })).not.toBeInTheDocument();
 
     advanceWorkflowNavigationCooldown();
-    fireEvent.click(screen.getByRole("button", { name: "Previous workflow step" }));
+    fireEvent.keyDown(workflowTrack, { key: "ArrowLeft" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Improve" }).closest("article")).toHaveAttribute(
       "aria-current",
@@ -1020,7 +1016,7 @@ describe("Orynt landing page", () => {
     );
 
     advanceWorkflowNavigationCooldown();
-    fireEvent.click(screen.getByRole("button", { name: "Next workflow step" }));
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Perceive" }).closest("article")).toHaveAttribute(
       "aria-current",
@@ -1030,7 +1026,7 @@ describe("Orynt landing page", () => {
 
     advanceWorkflowNavigationCooldown();
     for (let step = 0; step < 5; step += 1) {
-      fireEvent.click(screen.getByRole("button", { name: "Next workflow step" }));
+      fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
       advanceWorkflowNavigationCooldown();
     }
 
@@ -1045,7 +1041,7 @@ describe("Orynt landing page", () => {
     const rememberStep = screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article");
     expect(rememberStep).toHaveAttribute("aria-current", "step");
     expect(screen.queryByText("swipe")).not.toBeInTheDocument();
-    expect(rememberStep?.querySelector(".workflow-carousel-hit-zones")).not.toBeInTheDocument();
+    expect(document.querySelector(".workflow-carousel-hit-zones")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Perceive" }).closest("article")).toHaveAttribute(
       "data-focus",
       "near",
@@ -1122,8 +1118,8 @@ describe("Orynt landing page", () => {
       "aria-current",
       "step",
     );
-    expect(screen.getByRole("button", { name: "Previous workflow step" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Next workflow step" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Previous workflow step" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next workflow step" })).not.toBeInTheDocument();
     advanceWorkflowNavigationCooldown();
     fireEvent.pointerDown(workflowTrack, { button: 0, clientX: 260, clientY: 120, pointerId: 4 });
     fireEvent.pointerUp(workflowTrack, { clientX: 150, clientY: 122, pointerId: 4 });
@@ -1143,17 +1139,16 @@ describe("Orynt landing page", () => {
     expect(styles).not.toContain(".feature-grid");
     expect(styles).not.toContain(".feature-card");
     const workflowTimelineStyles = styles.match(/\.workflow-timeline \{[\s\S]*?\}/)?.[0] ?? "";
-    const workflowHitZoneLayerStyles = styles.match(/\.workflow-carousel-hit-zones \{[\s\S]*?\}/)?.[0] ?? "";
-    const workflowHitZoneStyles = styles.match(/\.workflow-carousel-hit-zone \{[\s\S]*?\}/)?.[0] ?? "";
     const workflowTrackStyles = styles.match(/\.workflow-track \{[\s\S]*?\}/)?.[0] ?? "";
     const workflowCardStyles = styles.match(/\.workflow-card \{[\s\S]*?\}/)?.[0] ?? "";
     const workflowIconStyles = Array.from(styles.matchAll(/\.workflow-icon \{[\s\S]*?\}/g)).map((match) => match[0]);
     const workflowIconPlacementStyles = workflowIconStyles.find((rule) => rule.includes("grid-column: 2;")) ?? "";
     expect(styles).toContain(".workflow-timeline");
     expect(styles).toContain(".workflow-track");
-    expect(styles).toContain(".workflow-card-hitbox");
-    expect(styles).toContain(".workflow-carousel-hit-zones");
-    expect(styles).toContain(".workflow-carousel-hit-zone");
+    expect(styles).toContain(".workflow-card:focus-visible");
+    expect(styles).not.toContain(".workflow-card-hitbox");
+    expect(styles).not.toContain(".workflow-carousel-hit-zones");
+    expect(styles).not.toContain(".workflow-carousel-hit-zone");
     expect(styles).toContain(".workflow-loop-arrow-button");
     expect(styles).not.toContain(".workflow-loop-trail");
     expect(styles).not.toContain(".workflow-loop-trail-head");
@@ -1176,18 +1171,6 @@ describe("Orynt landing page", () => {
     expect(workflowTimelineStyles).toContain("overflow: hidden;");
     expect(workflowTimelineStyles).toContain("--workflow-card-width: clamp(320px, 82%, 520px);");
     expect(workflowTimelineStyles).toContain("--workflow-track-edge-padding:");
-    expect(workflowHitZoneLayerStyles).toContain("position: absolute;");
-    expect(workflowHitZoneLayerStyles).toContain("pointer-events: none;");
-    expect(workflowHitZoneLayerStyles).toContain(
-      "grid-template-columns: minmax(56px, 1fr) var(--workflow-card-width) minmax(56px, 1fr);",
-    );
-    expect(styles).toContain(
-      "grid-template-columns: minmax(52px, 1fr) var(--workflow-card-width) minmax(52px, 1fr);",
-    );
-    expect(workflowHitZoneStyles).toContain("pointer-events: auto;");
-    expect(workflowHitZoneStyles).toContain("background: transparent;");
-    expect(workflowHitZoneStyles).toContain("border: 0;");
-    expect(workflowHitZoneStyles).not.toContain("border-radius:");
     expect(workflowTrackStyles).toContain("overflow-x: hidden;");
     expect(workflowTrackStyles).toContain("scroll-snap-type: x mandatory;");
     expect(workflowTrackStyles).toContain("touch-action: pan-y;");
@@ -1234,12 +1217,11 @@ describe("Orynt landing page", () => {
     vi.useFakeTimers();
     render(<App />);
 
-    const nextWorkflowStep = screen.getByRole("button", { name: "Next workflow step" });
     const workflowTrack = screen.getByLabelText("Workflow steps");
 
-    fireEvent.click(nextWorkflowStep);
-    fireEvent.click(nextWorkflowStep);
-    fireEvent.click(nextWorkflowStep);
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
     fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article")).toHaveAttribute(
@@ -1250,7 +1232,7 @@ describe("Orynt landing page", () => {
     act(() => {
       vi.advanceTimersByTime(499);
     });
-    fireEvent.click(nextWorkflowStep);
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
     expect(screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article")).toHaveAttribute(
       "aria-current",
       "step",
@@ -1259,7 +1241,7 @@ describe("Orynt landing page", () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    fireEvent.click(nextWorkflowStep);
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
     expect(screen.getByRole("heading", { level: 3, name: "Plan" }).closest("article")).toHaveAttribute(
       "aria-current",
       "step",
@@ -1283,11 +1265,10 @@ describe("Orynt landing page", () => {
           vi.advanceTimersByTime(500);
         });
       };
-      const nextWorkflowStep = screen.getByRole("button", { name: "Next workflow step" });
-      const previousWorkflowStep = screen.getByRole("button", { name: "Previous workflow step" });
+      const workflowTrack = screen.getByLabelText("Workflow steps");
 
       for (let step = 0; step < 5; step += 1) {
-        fireEvent.click(nextWorkflowStep);
+        fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
         advanceWorkflowNavigationCooldown();
       }
 
@@ -1315,7 +1296,7 @@ describe("Orynt landing page", () => {
 
       advanceWorkflowNavigationCooldown();
       scrollTo.mockClear();
-      fireEvent.click(previousWorkflowStep);
+      fireEvent.keyDown(workflowTrack, { key: "ArrowLeft" });
 
       expect(screen.getByRole("heading", { level: 3, name: "Improve" }).closest("article")).toHaveAttribute(
         "aria-current",
@@ -1362,10 +1343,10 @@ describe("Orynt landing page", () => {
         });
       };
       const primaryNav = screen.getByRole("navigation", { name: "Primary navigation" });
-      const nextWorkflowStep = screen.getByRole("button", { name: "Next workflow step" });
+      const workflowTrack = screen.getByLabelText("Workflow steps");
 
       for (let step = 0; step < 5; step += 1) {
-        fireEvent.click(nextWorkflowStep);
+        fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
         advanceWorkflowNavigationCooldown();
       }
 
@@ -1612,7 +1593,7 @@ describe("Orynt landing page", () => {
       "href",
       "/pricing",
     );
-    expect(within(actions as HTMLElement).getByRole("link", { name: "Learn More" })).toHaveAttribute("href", "/docs");
+    expect(within(actions as HTMLElement).getByRole("link", { name: "Read Docs" })).toHaveAttribute("href", "/docs");
 
     const styles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
     const finalCtaStart = styles.indexOf(".final-cta {\n  display: grid");

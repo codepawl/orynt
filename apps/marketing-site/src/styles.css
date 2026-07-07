@@ -370,7 +370,8 @@ h3,
 .button-primary,
 .button.primary {
   border-color: rgba(255, 255, 255, 0.58);
-  background: linear-gradient(180deg, var(--mono-100), var(--mono-300));
+  background-color: var(--mono-100);
+  background-image: linear-gradient(180deg, var(--mono-100), var(--mono-300));
   color: var(--mono-950);
 }
 
@@ -834,39 +835,6 @@ h1 {
   text-align: left;
 }
 
-.workflow-carousel-hit-zones {
-  position: absolute;
-  inset: 18px 0 30px;
-  z-index: 4;
-  display: grid;
-  grid-template-columns: minmax(56px, 1fr) var(--workflow-card-width) minmax(56px, 1fr);
-  pointer-events: none;
-}
-
-.workflow-carousel-hit-zone {
-  height: 100%;
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.workflow-carousel-hit-zone-previous {
-  grid-column: 1;
-}
-
-.workflow-carousel-hit-zone-next {
-  grid-column: 3;
-}
-
-.workflow-carousel-hit-zone:focus-visible {
-  outline: 2px solid var(--accent-info);
-  outline-offset: -6px;
-}
-
 .workflow-loop-arrow-button {
   position: absolute;
   top: calc(18px + 96px);
@@ -939,6 +907,7 @@ h1 {
   min-height: 192px;
   padding: 0 4px 0 0;
   scroll-snap-align: center;
+  cursor: pointer;
   transform: scale(0.96);
   transition:
     filter 260ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -946,23 +915,7 @@ h1 {
     transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.workflow-card-hitbox {
-  position: absolute;
-  inset: -8px;
-  z-index: 3;
-  display: block;
-  width: calc(100% + 16px);
-  height: calc(100% + 16px);
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.workflow-card-hitbox:focus-visible {
+.workflow-card:focus-visible {
   outline: 2px solid var(--accent-info);
   outline-offset: 4px;
 }
@@ -2643,10 +2596,6 @@ h1 {
   .workflow-loop-arrow-button {
     top: calc(18px + 102px);
     left: calc(100% - 34px);
-  }
-
-  .workflow-carousel-hit-zones {
-    grid-template-columns: minmax(52px, 1fr) var(--workflow-card-width) minmax(52px, 1fr);
   }
 
   .workflow-card {

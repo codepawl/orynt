@@ -1072,6 +1072,15 @@ function App() {
     selectWorkflowIndex(index);
   };
 
+  const handleWorkflowCardKeyDown = (event: KeyboardEvent<HTMLElement>, index: number) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    selectWorkflowIndex(index);
+  };
+
   const handleWorkflowNavButtonPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     event.preventDefault();
@@ -1220,7 +1229,7 @@ function App() {
             onNavigate={navigateToRoute}
             primaryHref="/pricing"
             primaryLabel="Start Here"
-            secondaryLabel="Learn More"
+            secondaryLabel="Read Docs"
           />
         </div>
 
@@ -1277,17 +1286,16 @@ function App() {
                   className="workflow-card"
                   key={item.step}
                   aria-current={isActiveWorkflowCard ? "step" : undefined}
+                  aria-label={`Focus ${item.title} workflow step`}
                   data-focus={getWorkflowFocusState(index, activeWorkflowIndex)}
+                  onClick={() => handleWorkflowCardClick(index)}
+                  onKeyDown={(event) => handleWorkflowCardKeyDown(event, index)}
+                  role="button"
+                  tabIndex={0}
                   ref={(node) => {
                     workflowCardRefs.current[index] = node;
                   }}
                 >
-                  <button
-                    className="workflow-card-hitbox"
-                    type="button"
-                    aria-label={`Focus ${item.title} workflow step`}
-                    onClick={() => handleWorkflowCardClick(index)}
-                  />
                   <span className="step-number">{formatWorkflowStep(item.step)}</span>
                   <span className="workflow-icon" aria-hidden="true">
                     <item.icon aria-hidden="true" />
@@ -1299,22 +1307,6 @@ function App() {
                 </article>
               );
             })}
-          </div>
-          <div className="workflow-carousel-hit-zones" aria-label="Workflow carousel navigation">
-            <button
-              className="workflow-carousel-hit-zone workflow-carousel-hit-zone-previous"
-              type="button"
-              aria-label="Previous workflow step"
-              onPointerDown={handleWorkflowNavButtonPointerDown}
-              onClick={(event) => handleWorkflowNavButtonClick(event, -1)}
-            />
-            <button
-              className="workflow-carousel-hit-zone workflow-carousel-hit-zone-next"
-              type="button"
-              aria-label="Next workflow step"
-              onPointerDown={handleWorkflowNavButtonPointerDown}
-              onClick={(event) => handleWorkflowNavButtonClick(event, 1)}
-            />
           </div>
           {isWorkflowAtLoopEnd ? (
             <button
@@ -1340,7 +1332,7 @@ function App() {
           primaryHref="/pricing"
           primaryLabel="Start Here"
           secondaryHref="/docs"
-          secondaryLabel="Learn More"
+          secondaryLabel="Read Docs"
         />
       </section>
         </>
