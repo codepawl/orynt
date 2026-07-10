@@ -241,7 +241,20 @@ export function createConservativeCodingApprenticePolicy(
     repositoryPath,
     worktreePath,
     baseRef: "HEAD",
-    allowedPaths: ["apps/**", "packages/**", ".codex/**", "README.md", "PRODUCT.md"],
+    allowedPaths: [
+      "apps/**",
+      "packages/**",
+      "src/**",
+      "server/**",
+      "api/**",
+      "public/**",
+      "tests/**",
+      ".codex/**",
+      "README.md",
+      "PRODUCT.md",
+      "package.json",
+      "index.html",
+    ],
     protectedPaths: DEFAULT_FILE_WRITE_POLICY.protectedGlobs,
   };
 

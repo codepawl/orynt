@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { InMemoryRunStore, type RunEvent } from "@codepawl/shared";
 
 import { LocalCodingApprenticeDemoOrchestrator, runDesktopRepositoryBeta } from "./index";
 
@@ -48,6 +49,80 @@ if (outputIndex >= 0) {
 }
 fs.writeFileSync(path.join(cwd, "packages", "value.txt"), "controlled codex pass\\n");
 console.log("fake codex finished");
+`,
+  );
+  await chmod(fakeCodex, 0o755);
+  return binDir;
+}
+
+async function createFailingFakeCodexBinary() {
+  const binDir = path.join(tempRoot, "failing-bin");
+  const fakeCodex = path.join(binDir, "codex");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    fakeCodex,
+    `#!/usr/bin/env node
+console.log('{"type":"thread.started","thread_id":"thread-failing-auth"}');
+console.error('HTTP error: 401 Unauthorized');
+process.exit(1);
+`,
+  );
+  await chmod(fakeCodex, 0o755);
+  return binDir;
+}
+
+async function createReadOnlyFakeCodexBinary() {
+  const binDir = path.join(tempRoot, "read-only-bin");
+  const fakeCodex = path.join(binDir, "codex");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    fakeCodex,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+let contract = "";
+process.stdin.on("data", (chunk) => { contract += chunk; });
+process.stdin.on("end", () => {
+  const outputIndex = process.argv.indexOf("--output-last-message");
+  if (contract.includes("Create a complete runnable implementation")) {
+    console.error("read-only prompt was incorrectly framed as an implementation task");
+    process.exit(1);
+  }
+  if (!contract.includes("read-only repository analysis task")) {
+    console.error("missing read-only repository contract guidance");
+    process.exit(2);
+  }
+  if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Read-only codebase summary completed\\n");
+  console.log("read-only fake codex completed");
+});
+`,
+  );
+  await chmod(fakeCodex, 0o755);
+  return binDir;
+}
+
+async function createFakeFullstackCodexBinary() {
+  const binDir = path.join(tempRoot, "fullstack-bin");
+  const fakeCodex = path.join(binDir, "codex");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    fakeCodex,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cwd = process.cwd();
+if (!fs.existsSync(path.join(cwd, ".codex", "orynt-beta-verify.mjs"))) {
+  console.error("missing verifier script before execution");
+  process.exit(2);
+}
+fs.mkdirSync(path.join(cwd, "src"), { recursive: true });
+fs.mkdirSync(path.join(cwd, "server"), { recursive: true });
+fs.writeFileSync(path.join(cwd, "package.json"), JSON.stringify({ scripts: { start: "node server/index.js", test: "node .codex/orynt-beta-verify.mjs" } }, null, 2));
+fs.writeFileSync(path.join(cwd, "index.html"), "<div id=app>Orynt fullstack app</div>\\n<script type=module src=/src/main.js></script>\\n");
+fs.writeFileSync(path.join(cwd, "src", "main.js"), "document.querySelector('#app').textContent = 'Orynt fullstack dashboard';\\n");
+fs.writeFileSync(path.join(cwd, "server", "index.js"), "import http from 'node:http';\\nhttp.createServer((req,res)=>res.end(JSON.stringify({ok:true}))).listen(3000);\\n");
+const outputIndex = process.argv.indexOf("--output-last-message");
+if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Fake fullstack Codex completed\\n");
+console.log("fake fullstack codex finished");
 `,
   );
   await chmod(fakeCodex, 0o755);
@@ -141,6 +216,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
 
   it("runs the desktop repository sidecar and writes the beta artifact manifest", async () => {
     const repositoryPath = await createFixtureRepository("desktop-repo");
+    const streamedEvents: RunEvent[] = [];
     const result = await runDesktopRepositoryBeta({
       goal: "Run the desktop beta repository smoke",
       taskId: "task-desktop-repository-smoke",
@@ -158,6 +234,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
         envKey: "ORYNT_TEST_OPENAI_API_KEY",
       },
       thinkingEffort: "high",
+      onRunEvent: (event) => streamedEvents.push(event),
     });
 
     const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
@@ -176,6 +253,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     };
 
     expect(result.status).toBe("pass");
+    expect(result.runId).toMatch(/^run-desktop-[a-f0-9]{10}-1$/);
     expect(result.eventCount).toBeGreaterThan(0);
     expect(manifest).toMatchObject({
       runId: result.runId,
@@ -209,6 +287,160 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       },
     });
     expect(manifest.eventTypes).toContain("run_finished");
+    expect(streamedEvents.map((event) => event.type)).toContain("run_started");
+    expect(streamedEvents.at(-1)?.type).toBe("run_finished");
+  });
+
+  it("accepts a selected subdirectory by resolving the git repository root", async () => {
+    const repositoryPath = await createFixtureRepository("desktop-nested-repo");
+    const selectedDirectory = path.join(repositoryPath, "packages");
+    const result = await runDesktopRepositoryBeta({
+      goal: "Run from a selected repository subdirectory",
+      taskId: "task-desktop-nested-repository-smoke",
+      workspaceId: "workspace-desktop",
+      repositoryPath: selectedDirectory,
+      sandboxRoot: path.join(tempRoot, "desktop-nested-sandboxes"),
+      artifactRoot: path.join(tempRoot, "desktop-nested-artifacts"),
+      memoryRoot: path.join(tempRoot, "desktop-nested-memory"),
+      modelConnection: {
+        providerId: "openai-api",
+        providerLabel: "OpenAI API",
+        modelId: "gpt-5.5",
+        modelLabel: "GPT-5.5",
+        authMethod: "apiKeyEnv",
+        envKey: "ORYNT_TEST_OPENAI_API_KEY",
+      },
+      thinkingEffort: "medium",
+    });
+
+    const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
+      repositoryPath: string;
+      status: string;
+    };
+
+    expect(result.status).toBe("pass");
+    expect(manifest).toMatchObject({
+      repositoryPath,
+      status: "pass",
+    });
+  });
+
+  it("enables controlled Codex execution for the selected Codex CLI provider", async () => {
+    const repositoryPath = await createFixtureRepository("desktop-codex-repo");
+    const codexPathEnv = await createFakeCodexBinary();
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${codexPathEnv}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const result = await runDesktopRepositoryBeta({
+        goal: "Use the selected Codex model for the desktop repository run",
+        taskId: "task-desktop-codex-repository-smoke",
+        workspaceId: "workspace-desktop",
+        repositoryPath,
+        sandboxRoot: path.join(tempRoot, "desktop-codex-sandboxes"),
+        artifactRoot: path.join(tempRoot, "desktop-codex-artifacts"),
+        memoryRoot: path.join(tempRoot, "desktop-codex-memory"),
+        modelConnection: {
+          providerId: "codex-cli",
+          providerLabel: "Codex CLI",
+          modelId: "gpt-5.5",
+          modelLabel: "GPT-5.5",
+          authMethod: "codexCliSession",
+        },
+        thinkingEffort: "high",
+      });
+      const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as { eventTypes: string[] };
+
+      expect(result.status).toBe("pass");
+      expect(manifest.eventTypes).toEqual(
+        expect.arrayContaining([
+          "codex_execution_started",
+          "codex_execution_output_recorded",
+          "codex_execution_finished",
+          "codex_execution_result_ready",
+        ]),
+      );
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
+  it("treats read-only codebase prompts as inspection runs instead of implementation tasks", async () => {
+    const repositoryPath = await createFixtureRepository("desktop-read-codebase-repo");
+    const codexPathEnv = await createReadOnlyFakeCodexBinary();
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${codexPathEnv}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const result = await runDesktopRepositoryBeta({
+        goal: "đọc codebase của repo này",
+        taskId: "task-desktop-read-codebase",
+        workspaceId: "workspace-desktop",
+        repositoryPath,
+        sandboxRoot: path.join(tempRoot, "desktop-read-codebase-sandboxes"),
+        artifactRoot: path.join(tempRoot, "desktop-read-codebase-artifacts"),
+        memoryRoot: path.join(tempRoot, "desktop-read-codebase-memory"),
+        modelConnection: {
+          providerId: "codex-cli",
+          providerLabel: "Codex CLI",
+          modelId: "gpt-5.5",
+          modelLabel: "GPT-5.5",
+          authMethod: "codexCliSession",
+        },
+        thinkingEffort: "high",
+      });
+      const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
+        eventTypes: string[];
+        artifacts: { contract: string; verifierInput: string; redactedLog: string | null };
+      };
+      const contract = await readFile(manifest.artifacts.contract, "utf8");
+      const verifierInput = JSON.parse(await readFile(manifest.artifacts.verifierInput, "utf8")) as { config: { requireChangedFiles: boolean } };
+      const lastMessage = manifest.artifacts.redactedLog ? await readFile(manifest.artifacts.redactedLog, "utf8") : "";
+
+      expect(result.status).toBe("pass");
+      expect(contract).toContain("read-only repository analysis task");
+      expect(contract).not.toContain("Create a complete runnable implementation");
+      expect(verifierInput.config.requireChangedFiles).toBe(false);
+      expect(lastMessage).toContain("Read-only codebase summary completed");
+      expect(manifest.eventTypes).toContain("codex_execution_finished");
+      expect(manifest.eventTypes).toContain("verification_passed");
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
+  it("can complete a fullstack web app task through the selected Codex CLI path", async () => {
+    const repositoryPath = await createFixtureRepository("desktop-fullstack-repo");
+    const codexPathEnv = await createFakeFullstackCodexBinary();
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${codexPathEnv}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const result = await runDesktopRepositoryBeta({
+        goal: "Create a complex fullstack tech web app with frontend dashboard and backend API",
+        taskId: "task-desktop-fullstack-web",
+        workspaceId: "workspace-desktop",
+        repositoryPath,
+        sandboxRoot: path.join(tempRoot, "desktop-fullstack-sandboxes"),
+        artifactRoot: path.join(tempRoot, "desktop-fullstack-artifacts"),
+        memoryRoot: path.join(tempRoot, "desktop-fullstack-memory"),
+        modelConnection: {
+          providerId: "codex-cli",
+          providerLabel: "Codex CLI",
+          modelId: "gpt-5.5",
+          modelLabel: "GPT-5.5",
+          authMethod: "codexCliSession",
+        },
+        thinkingEffort: "high",
+      });
+      const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
+        eventTypes: string[];
+        artifacts: { redactedLog: string | null };
+      };
+
+      expect(result.status).toBe("pass");
+      expect(manifest.eventTypes).toContain("verification_passed");
+      expect(manifest.artifacts.redactedLog).toContain("codex-execution-last-message.redacted.md");
+    } finally {
+      process.env.PATH = previousPath;
+    }
   });
 
   it("uses selected provider metadata in repository run ledger and contract context", async () => {
@@ -293,6 +525,41 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
         "verification_started",
       ]),
     );
+  });
+
+  it("fails fast instead of importing stdout when controlled Codex execution exits non-zero", async () => {
+    const repositoryPath = await createFixtureRepository("desktop-codex-fail-repo");
+    const codexPathEnv = await createFailingFakeCodexBinary();
+    const runStore = new InMemoryRunStore({ runIdPrefix: "codex-fail" });
+    const orchestrator = new LocalCodingApprenticeDemoOrchestrator({ runStore });
+
+    await expect(
+      orchestrator.runDemo(
+        demoRequest(repositoryPath, {
+          enableControlledCodexExecution: true,
+          codexPathEnv,
+          createExecutionApproval: ({ plan, run }) => ({
+            id: `approval-${plan.id}`,
+            runId: run.id,
+            planId: plan.id,
+            status: "approved",
+            approvedBy: "operator",
+            reason: "Test approves controlled Codex execution.",
+            approvedAt: "2026-07-04T02:00:00.000Z",
+          }),
+        }),
+      ),
+    ).rejects.toThrow("Controlled Codex execution failed");
+
+    const run = runStore.getRun("run-codex-fail-1");
+    const eventTypes = runStore.listEvents("run-codex-fail-1").map((event) => event.type);
+    expect(run?.status).toBe("failed");
+    expect(eventTypes).toContain("codex_execution_failed");
+    expect(eventTypes).not.toContain("codex_execution_result_ready");
+    expect(eventTypes).not.toContain("codex_result_import_requested");
+    expect(eventTypes).not.toContain("codex_result_imported");
+    expect(eventTypes).not.toContain("verification_started");
+    expect(eventTypes).not.toContain("run_finished");
   });
 
   it("records controlled run usage in the canonical agent ledger", async () => {

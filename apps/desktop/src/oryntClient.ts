@@ -137,6 +137,19 @@ export type CodexConnectionReference = {
   lastPreflight?: CodexConnectionPreflightResult | null;
 };
 
+export type CodexLoginMethod = "browser" | "deviceCode";
+
+export type CodexLoginLaunchInput = {
+  method: CodexLoginMethod;
+};
+
+export type CodexLoginLaunchResult = {
+  method: CodexLoginMethod;
+  command: string;
+  message: string;
+  loginUrl?: string | null;
+};
+
 export type ModelProviderId = "codex-cli" | "openai-api";
 export type ModelAuthMethod = "codexCliSession" | "chatgptOAuth" | "deviceCode" | "accessToken" | "apiKeyEnv";
 export type ModelConnectionStatus = "missing" | "authRequired" | "ready" | "failed";
@@ -917,6 +930,15 @@ export const orynt = {
     const tauri = await loadTauriApi();
     if (tauri) {
       return tauri.core.invoke<CodexConnectionPreflightResult>("codex_connection_preflight");
+    }
+
+    return nativeProviderUnavailable();
+  },
+
+  async launchCodexLogin(input: CodexLoginLaunchInput): Promise<CodexLoginLaunchResult> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<CodexLoginLaunchResult>("codex_connection_login", { input });
     }
 
     return nativeProviderUnavailable();

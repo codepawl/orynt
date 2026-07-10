@@ -46,6 +46,9 @@ async function main() {
     memoryRoot: typeof input.memoryRoot === "string" && input.memoryRoot.trim() ? input.memoryRoot.trim() : undefined,
     modelConnection: optionalObject(input, "modelConnection"),
     thinkingEffort: optionalString(input, "thinkingEffort"),
+    onRunEvent: (event) => {
+      process.stderr.write(`ORYNT_RUN_EVENT ${JSON.stringify(event)}\n`);
+    },
   });
 
   process.stdout.write(`${JSON.stringify(result)}\n`);

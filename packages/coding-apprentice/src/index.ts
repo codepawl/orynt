@@ -1,6 +1,8 @@
-import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import {
   DeterministicCognitiveKernel,
@@ -28,6 +30,7 @@ import {
   type CodexExecutionResult,
   type CodexResultBundle,
   type CorePolicy,
+  type CreateRunInput,
   type CandidateRule,
   type EpisodicMemoryItem,
   type MemoryExtractionResult,
@@ -39,7 +42,10 @@ import {
   type Run,
   type RunBudget,
   type RunEvent,
+  type RunEventDraft,
+  type RunStatus,
   type RunStore,
+  type RunSummary,
   type SemanticMemoryItem,
   type SkillInvocationPlan,
   type VerificationPlan,
@@ -48,6 +54,8 @@ import {
   type VerificationStatus,
 } from "@codepawl/shared";
 import { LocalRepositoryVerifier } from "@codepawl/verifier";
+
+const execFileAsync = promisify(execFile);
 
 export type ManualDemoChangeResult = {
   manualLogPath?: string;
@@ -90,6 +98,7 @@ export type CodingApprenticeDemoRequest = {
   validationTranscriptPath?: string;
   userNotes?: string;
   enableControlledCodexExecution?: boolean;
+  readOnlyRepositoryRun?: boolean;
   codexPathEnv?: string;
   createExecutionApproval?: (context: {
     run: Run;
@@ -142,6 +151,7 @@ export type DesktopRepositoryRunRequest = {
   memoryRoot?: string;
   modelConnection?: DesktopModelConnectionReference | null;
   thinkingEffort?: DesktopThinkingEffort | string | null;
+  onRunEvent?: (event: RunEvent) => void;
 };
 
 export type DesktopRepositoryRunOutput = {
@@ -152,6 +162,84 @@ export type DesktopRepositoryRunOutput = {
   eventCount: number;
   events: RunEvent[];
 };
+
+class ForwardingRunStore implements RunStore {
+  constructor(
+    private readonly inner: RunStore,
+    private readonly onRunEvent: (event: RunEvent) => void,
+  ) {}
+
+  createRun(input: CreateRunInput): Run {
+    return this.inner.createRun(input);
+  }
+
+  appendEvent<TPayload>(runId: string, event: RunEventDraft<TPayload>): RunEvent<TPayload> {
+    const appended = this.inner.appendEvent<TPayload>(runId, event);
+    this.onRunEvent(appended);
+    return appended;
+  }
+
+  listEvents(runId: string): RunEvent[] {
+    return this.inner.listEvents(runId);
+  }
+
+  getRun(runId: string): Run | undefined {
+    return this.inner.getRun(runId);
+  }
+
+  updateRunStatus(runId: string, status: RunStatus): Run {
+    return this.inner.updateRunStatus(runId, status);
+  }
+
+  summarizeRun(runId: string): RunSummary {
+    return this.inner.summarizeRun(runId);
+  }
+}
+
+function desktopRepositoryVerifierScript(): string {
+  return `import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+const root = process.cwd();
+const changedMarkers = ["README.md", "PRODUCT.md", "package.json", "index.html", "src", "server", "api", "public", "apps", "packages"];
+const changed = changedMarkers.filter((entry) => existsSync(path.join(root, entry)));
+if (changed.length === 0) {
+  throw new Error("Orynt verifier expected repository task files to exist.");
+}
+
+if (existsSync(path.join(root, "package.json"))) {
+  const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+  if (!pkg.scripts || Object.keys(pkg.scripts).length === 0) {
+    throw new Error("package.json must define at least one runnable script.");
+  }
+}
+
+const hasFrontend = ["index.html", "src", "apps"].some((entry) => existsSync(path.join(root, entry)));
+const hasBackend = ["server", "api", "packages"].some((entry) => existsSync(path.join(root, entry)));
+if (existsSync(path.join(root, "package.json")) && (!hasFrontend || !hasBackend)) {
+  throw new Error("Fullstack repository tasks with package.json need frontend and backend/API files.");
+}
+
+console.log("Orynt beta repository smoke passed", JSON.stringify({ changed, hasFrontend, hasBackend }));
+`;
+}
+
+function isReadOnlyRepositoryGoal(goal: string): boolean {
+  const normalized = goal.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  const readOnlyPatterns = [
+    /\b(read|inspect|explore|analy[sz]e|summari[sz]e|explain|review|understand|map)\b.*\b(repo|repository|codebase|project)\b/,
+    /\b(repo|repository|codebase|project)\b.*\b(read|inspect|explore|analy[sz]e|summari[sz]e|explain|review|understand|map)\b/,
+    /(đọc|doc|xem|khảo sát|khao sat|phân tích|phan tich|tóm tắt|tom tat|giải thích|giai thich|review).*\b(repo|repository|codebase)\b/,
+    /\b(repo|repository|codebase)\b.*(đọc|doc|xem|khảo sát|khao sat|phân tích|phan tich|tóm tắt|tom tat|giải thích|giai thich|review)/,
+    /(đọc|doc|xem|khảo sát|khao sat|phân tích|phan tich|tóm tắt|tom tat|giải thích|giai thich|review).*(mã nguồn|ma nguon|dự án|du an)/,
+    /(mã nguồn|ma nguon|dự án|du an).*(đọc|doc|xem|khảo sát|khao sat|phân tích|phan tich|tóm tắt|tom tat|giải thích|giai thich|review)/,
+  ];
+  const writeIntentPattern = /\b(build|create|implement|fix|repair|change|modify|update|add|remove|delete|refactor|migrate|generate|scaffold|write|sửa|sua|tạo|tao|thêm|them|xóa|xoa|đổi|doi|cập nhật|cap nhat)\b/;
+  return readOnlyPatterns.some((pattern) => pattern.test(normalized)) && !writeIntentPattern.test(normalized);
+}
 
 export type LocalCodingApprenticeDemoOrchestratorOptions = {
   runStore?: RunStore;
@@ -166,12 +254,18 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
     await mkdir(request.memoryRoot, { recursive: true });
   }
 
+  const repositoryPath = await resolveGitRepositoryRoot(request.repositoryPath);
   let redactedLogPath = "";
-  const result = await new LocalCodingApprenticeDemoOrchestrator().runDemo({
+  const useControlledCodexExecution = request.modelConnection?.providerId === "codex-cli";
+  const readOnlyRepositoryRun = isReadOnlyRepositoryGoal(request.goal);
+  const runIdPrefix = `desktop-${randomUUID().replaceAll("-", "").slice(0, 10)}`;
+  const innerRunStore = new InMemoryRunStore({ runIdPrefix });
+  const runStore = request.onRunEvent ? new ForwardingRunStore(innerRunStore, request.onRunEvent) : innerRunStore;
+  const result = await new LocalCodingApprenticeDemoOrchestrator({ runStore }).runDemo({
     goal: request.goal,
     taskId: request.taskId,
     workspaceId: request.workspaceId,
-    repositoryPath: request.repositoryPath,
+    repositoryPath,
     sandboxRoot: request.sandboxRoot,
     artifactRoot: request.artifactRoot,
     memoryRoot: request.memoryRoot,
@@ -179,22 +273,38 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
     thinkingEffort: request.thinkingEffort,
     validationCommands: ["node .codex/orynt-beta-verify.mjs"],
     allowedVerificationCommands: ["node .codex/orynt-beta-verify.mjs"],
-    enableControlledCodexExecution: false,
-    applyManualChange: async ({ sandbox, artifactRoot: runArtifactRoot }) => {
-      const readmePath = path.join(sandbox.worktreePath, "README.md");
-      const verifyScriptPath = path.join(sandbox.worktreePath, ".codex", "orynt-beta-verify.mjs");
-      const manualLogPath = path.join(runArtifactRoot, "manual-result.log");
-      redactedLogPath = path.join(runArtifactRoot, "manual-result.redacted.log");
-      await mkdir(path.dirname(verifyScriptPath), { recursive: true });
-      await appendFile(readmePath, `\nOrynt supervised beta run\n\n- Goal: ${request.goal}\n`, "utf8");
-      await writeFile(verifyScriptPath, "console.log('Orynt beta repository smoke passed');\n", "utf8");
-      await writeFile(manualLogPath, `Manual repository-scoped beta result for: ${request.goal}\n`, "utf8");
-      await writeFile(redactedLogPath, `Manual repository-scoped beta result for: ${request.goal}\n`, "utf8");
-      return { manualLogPath };
-    },
+    enableControlledCodexExecution: useControlledCodexExecution,
+    readOnlyRepositoryRun,
+    codexPathEnv: process.env.PATH,
+    createExecutionApproval: useControlledCodexExecution
+      ? ({ plan, run }) => ({
+          id: `desktop-approval-${plan.id}`,
+          runId: run.id,
+          planId: plan.id,
+          status: "approved",
+          approvedBy: "desktop-operator",
+          reason: "Operator submitted a repository-scoped Codex CLI run from Orynt desktop.",
+          approvedAt: new Date().toISOString(),
+        })
+      : undefined,
+    applyManualChange: useControlledCodexExecution
+      ? undefined
+      : async ({ sandbox, artifactRoot: runArtifactRoot }) => {
+          const readmePath = path.join(sandbox.worktreePath, "README.md");
+          const verifyScriptPath = path.join(sandbox.worktreePath, ".codex", "orynt-beta-verify.mjs");
+          const manualLogPath = path.join(runArtifactRoot, "manual-result.log");
+          redactedLogPath = path.join(runArtifactRoot, "manual-result.redacted.log");
+          await mkdir(path.dirname(verifyScriptPath), { recursive: true });
+          await appendFile(readmePath, `\nOrynt supervised beta run\n\n- Goal: ${request.goal}\n`, "utf8");
+          await writeFile(verifyScriptPath, desktopRepositoryVerifierScript(), "utf8");
+          await writeFile(manualLogPath, `Manual repository-scoped beta result for: ${request.goal}\n`, "utf8");
+          await writeFile(redactedLogPath, `Manual repository-scoped beta result for: ${request.goal}\n`, "utf8");
+          return { manualLogPath };
+        },
   });
 
   const runArtifactRoot = result.contractArtifact.artifactRoot;
+  redactedLogPath = result.codexExecutionResult?.lastMessagePath ?? redactedLogPath;
   const eventLogPath = path.join(runArtifactRoot, "run-events.json");
   const skillPlanPath = path.join(runArtifactRoot, "skill-invocation-plan.json");
   const manifestPath = path.join(runArtifactRoot, "artifact-manifest.json");
@@ -279,6 +389,20 @@ function unique(values: string[]): string[] {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+async function resolveGitRepositoryRoot(repositoryPath: string): Promise<string> {
+  const resolved = path.resolve(repositoryPath);
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", resolved, "rev-parse", "--show-toplevel"], {
+      maxBuffer: 2_000_000,
+      timeout: 30_000,
+    });
+    const gitRoot = String(stdout).trim();
+    return gitRoot ? path.resolve(gitRoot) : resolved;
+  } catch {
+    return resolved;
+  }
 }
 
 function createDemoPolicy(request: CodingApprenticeDemoRequest): CorePolicy {
@@ -372,6 +496,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
     });
 
     const policy = createDemoPolicy(request);
+    const readOnlyRepositoryRun = Boolean(request.readOnlyRepositoryRun);
     const sandboxManager = new GitRepositorySandboxManager({
       sandboxRoot: request.sandboxRoot,
       runStore: this.runStore,
@@ -414,18 +539,28 @@ export class LocalCodingApprenticeDemoOrchestrator {
       },
     });
 
+    if ((request.validationCommands ?? []).includes("node .codex/orynt-beta-verify.mjs")) {
+      const verifyScriptPath = path.join(sandbox.worktreePath, ".codex", "orynt-beta-verify.mjs");
+      await mkdir(path.dirname(verifyScriptPath), { recursive: true });
+      await writeFile(verifyScriptPath, desktopRepositoryVerifierScript(), "utf8");
+    }
+
     const codexAdapter = new LocalCodexContractAdapter({
       managedArtifactRoot,
       runStore: this.runStore,
       pathEnv: request.codexPathEnv,
     });
+    const useControlledCodexExecution = Boolean(request.enableControlledCodexExecution);
     const contract = codexAdapter.createContract({
       runId: run.id,
       taskId: run.taskId,
       goal: request.goal,
       context: [
-        "Local Coding Apprentice demo flow.",
+        "Local Coding Apprentice repository run.",
         `Repository: ${inspection.gitRoot}`,
+        useControlledCodexExecution
+          ? "Orynt will execute the selected Codex CLI model in the sandbox after explicit approval and will verify the result separately."
+          : "Orynt will import only managed manual artifacts for this run.",
         ...(request.modelConnection
           ? [
               `Selected model provider: ${request.modelConnection.providerLabel} (${request.modelConnection.providerId}).`,
@@ -434,14 +569,43 @@ export class LocalCodingApprenticeDemoOrchestrator {
           : []),
         ...(request.thinkingEffort ? [`Thinking effort: ${request.thinkingEffort}.`] : []),
       ],
-      constraints: ["Do not execute Codex automatically.", "Import only managed manual artifacts.", "Verifier owns final success verdict."],
-      doneWhen: ["Manual result is imported.", "Verifier input is created.", "Verifier records final evidence."],
+      constraints: useControlledCodexExecution
+        ? readOnlyRepositoryRun
+          ? [
+              "Execute only inside the Orynt-created sandbox.",
+              "This is a read-only repository analysis task: inspect and summarize the codebase; do not edit files unless the user explicitly asks for changes.",
+              "Return a useful final answer with repository structure, important entry points, and next-step recommendations.",
+              "Verifier owns final success verdict.",
+            ]
+          : [
+              "Execute only inside the Orynt-created sandbox.",
+              "Create a complete runnable implementation, not a plan or placeholder.",
+              "For fullstack web tasks, include package.json scripts, frontend files, backend/API files, and README instructions.",
+              "Verifier owns final success verdict.",
+            ]
+        : ["Do not execute Codex automatically.", "Import only managed manual artifacts.", "Verifier owns final success verdict."],
+      doneWhen: useControlledCodexExecution
+        ? readOnlyRepositoryRun
+          ? [
+              "Repository has been inspected without modifying source files.",
+              "Final answer explains the codebase structure and relevant implementation entry points.",
+              "Verifier records final evidence from repository inspection and the local smoke script.",
+            ]
+          : [
+              "Requested repository task is implemented in the sandbox.",
+              "Verifier input is created.",
+              "Verifier records final evidence from changed files and the local smoke script.",
+            ]
+        : ["Manual result is imported.", "Verifier input is created.", "Verifier records final evidence."],
       repository: inspection,
       sandbox,
       policy,
       budget,
       validationCommands: request.validationCommands ?? [],
       artifactRoot: runArtifactRoot,
+      executionMode: useControlledCodexExecution ? "manual_cli" : "contract_only",
+      modelId: request.modelConnection?.modelId,
+      modelLabel: request.modelConnection?.modelLabel,
     });
     const contractArtifact = await codexAdapter.writeContractArtifact(contract, runArtifactRoot);
 
@@ -467,7 +631,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
         artifactRoot: runArtifactRoot,
         config: {
           defaultCommands: [],
-          requireChangedFiles: true,
+          requireChangedFiles: !readOnlyRepositoryRun,
           artifactRoot: runArtifactRoot,
         },
       });
@@ -514,6 +678,29 @@ export class LocalCodingApprenticeDemoOrchestrator {
         requestCount: 1,
         createdAt: codexExecutionResult.completedAt,
       });
+      if (codexExecutionResult.status !== "finished") {
+        const failureSummary = codexAdapter.summarizeExecution(codexExecutionResult);
+        this.runStore.updateRunStatus(run.id, "failed");
+        this.agentLedger.appendEvent(run.id, {
+          id: `${run.id}-ledger-event-codex-execution-failed`,
+          eventType: "run.failed",
+          payloadJson: {
+            summary: failureSummary,
+            executionPlanId: codexExecutionPlan.id,
+            executionResultId: codexExecutionResult.id,
+            failureReasons: codexExecutionResult.failureReasons,
+          },
+          visibility: "user",
+          createdAt: codexExecutionResult.completedAt,
+        });
+        this.agentLedger.completeRun(run.id, {
+          endedAt: codexExecutionResult.completedAt,
+          retryCount: 0,
+          finalSummary: failureSummary,
+          failureReason: failureSummary,
+        });
+        throw new Error(failureSummary);
+      }
       this.agentLedger.appendEvent(run.id, {
         id: `${run.id}-ledger-event-action-executed`,
         eventType: "action.executed",
@@ -560,7 +747,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
     verifierInput.config = {
       ...verifierInput.config,
       defaultCommands: [],
-      requireChangedFiles: true,
+      requireChangedFiles: !readOnlyRepositoryRun,
       artifactRoot: runArtifactRoot,
     };
     const verifierInputPath = path.join(runArtifactRoot, "verifier-input.json");

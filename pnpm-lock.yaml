@@ -187,6 +187,9 @@ importers:
 
   packages/eval-harness:
     dependencies:
+      '@codepawl/coding-apprentice':
+        specifier: workspace:*
+        version: link:../coding-apprentice
       '@codepawl/shared':
         specifier: workspace:*
         version: link:../shared

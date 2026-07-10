@@ -207,6 +207,23 @@ function redactExecutionText(value: string, maxBytes: number): { value: string; 
   };
 }
 
+function previewExecutionText(value: string, maxChars = 1200): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed.length > maxChars ? `${trimmed.slice(0, maxChars).trimEnd()}\n[TRUNCATED]` : trimmed;
+}
+
+function visibleModelResponseText(value: string): { value?: string; redactionCount: number } {
+  const redacted = redactImportText(value);
+  const trimmed = redacted.value.trim();
+  return {
+    value: trimmed || undefined,
+    redactionCount: redacted.redactionCount,
+  };
+}
+
 function safeExecutionEnv(): NodeJS.ProcessEnv {
   const names = ["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "CODEX_HOME"];
   const env: NodeJS.ProcessEnv = {};
@@ -335,6 +352,8 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     const constraints = redactStringList(request.constraints);
     const doneWhen = redactStringList(request.doneWhen);
     const validationCommands = redactStringList(request.validationCommands);
+    const executionMode = request.executionMode ?? "contract_only";
+    const selectedModelId = request.modelId?.trim();
     const redactionApplied = goal.redacted || context.redacted || constraints.redacted || doneWhen.redacted || validationCommands.redacted;
     const contractId = `codex-contract-${slug(request.runId)}-${slug(request.taskId)}-${shortHash(
       `${request.runId}:${request.taskId}:${request.sandbox.worktreePath}:${goal.value}`,
@@ -360,8 +379,8 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       "# Codex Work Contract",
       "",
       `Contract ID: ${contractId}`,
-      `Provider: ${CONTRACT_PROVIDER.name}`,
-      "Execution mode: contract_only",
+      `Provider: ${executionMode === "contract_only" ? CONTRACT_PROVIDER.name : LOCAL_CLI_PROVIDER.name}`,
+      `Execution mode: ${executionMode}`,
       "",
       "## Goal",
       goal.value,
@@ -370,6 +389,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       bullet([
         `Run ID: ${request.runId}`,
         `Task ID: ${request.taskId}`,
+        ...(selectedModelId ? [`Selected model: ${request.modelLabel ?? selectedModelId} (${selectedModelId})`] : []),
         `Sandbox path: ${request.sandbox.worktreePath}`,
         `Sandbox branch: ${request.sandbox.branchName}`,
         `Repository root: ${request.repository.gitRoot}`,
@@ -398,8 +418,14 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       "## Validation Expectations",
       bullet(validationCommands.values.length > 0 ? validationCommands.values : ["The Orynt verifier will select deterministic validation in a later slice."]),
       "",
-      "## Provider Boundary",
-      "This artifact is a safe handoff contract only. Orynt has not executed Codex, spawned an external agent, or run arbitrary shell commands.",
+      "## Execution Instructions",
+      executionMode === "contract_only"
+        ? "This artifact is a safe handoff contract only. Orynt has not executed Codex, spawned an external agent, or run arbitrary shell commands."
+        : [
+            "Implement the requested repository task directly in the sandbox.",
+            "Prefer a complete, runnable vertical slice over placeholders. For fullstack web tasks, include a frontend entry, backend/API code, package.json scripts, and README run instructions.",
+            "Do not stop after planning or scaffolding. Write the files needed for the app to run locally and for the Orynt verifier command to pass.",
+          ].join("\n"),
       "",
     ].join("\n");
 
@@ -407,22 +433,24 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       id: contractId,
       runId: request.runId,
       taskId: request.taskId,
-      provider: CONTRACT_PROVIDER,
-      executionMode: "contract_only",
+      provider: executionMode === "contract_only" ? CONTRACT_PROVIDER : LOCAL_CLI_PROVIDER,
+      executionMode,
       goal: goal.value,
       markdown,
       metadata: {
         id: contractId,
         runId: request.runId,
         taskId: request.taskId,
-        providerId: CONTRACT_PROVIDER.id,
-        executionMode: "contract_only",
+        providerId: executionMode === "contract_only" ? CONTRACT_PROVIDER.id : LOCAL_CLI_PROVIDER.id,
+        executionMode,
         repository: request.repository,
         sandbox: request.sandbox,
         allowedPaths,
         protectedPaths,
         blockedCommands,
         validationCommands: validationCommands.values,
+        modelId: selectedModelId,
+        modelLabel: selectedModelId ? request.modelLabel ?? selectedModelId : undefined,
         budget: request.budget,
         redactionApplied,
         createdAt,
@@ -596,8 +624,13 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         "exec",
         "--json",
         "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "-c",
+        "model_reasoning_summary=auto",
         "--sandbox",
         "workspace-write",
+        ...(request.contract.metadata.modelId ? ["-m", request.contract.metadata.modelId] : []),
         "-C",
         request.sandbox.worktreePath,
         "--output-last-message",
@@ -762,7 +795,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
 
     const stdout = redactExecutionText(outcome.stdout, plan.executionPolicy.maxOutputBytes);
     const stderr = redactExecutionText(outcome.stderr, plan.executionPolicy.maxOutputBytes);
-    const lastMessage = await this.readOptionalLastMessage(plan.lastMessagePath, plan.executionPolicy.maxOutputBytes);
+    const lastMessage = await this.readOptionalLastMessage(plan.lastMessagePath);
     const redactedPaths: string[] = [];
     let redactionCount = 0;
     if (stdout.redactionCount > 0) {
@@ -823,25 +856,37 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       summary: "",
     };
     result.summary = this.summarizeExecution(result);
+    const lastMessagePreview = lastMessage.value || undefined;
     const resultJson = `${JSON.stringify(result, null, 2)}\n`;
-    const artifacts = [
+    const artifacts: CodexExecutionResult["artifacts"] = [
       {
         id: `${result.id}-stdout`,
-        kind: "codex_execution_log" as const,
+        kind: "codex_execution_log",
         uri: `file://${plan.stdoutPath}`,
         label: "Redacted Codex stdout",
         sha256: sha256(stdout.value),
       },
       {
         id: `${result.id}-stderr`,
-        kind: "codex_execution_log" as const,
+        kind: "codex_execution_log",
         uri: `file://${plan.stderrPath}`,
         label: "Redacted Codex stderr",
         sha256: sha256(stderr.value),
       },
+      ...(lastMessage.path
+        ? [
+            {
+              id: `${result.id}-last-message`,
+              kind: "summary" as const,
+              uri: `file://${plan.lastMessagePath}`,
+              label: "Codex final model response",
+              sha256: sha256(lastMessage.value),
+            },
+          ]
+        : []),
       {
         id: `${result.id}-json`,
-        kind: "codex_execution_result" as const,
+        kind: "codex_execution_result",
         uri: `file://${plan.resultPath}`,
         label: "Controlled Codex execution result",
         sha256: sha256(resultJson),
@@ -857,6 +902,9 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         summary: "Controlled Codex execution output recorded and redacted",
         planId: plan.id,
         redaction: result.redaction,
+        stdoutSummary: previewExecutionText(stdout.value, 600),
+        stderrSummary: previewExecutionText(stderr.value, 600),
+        lastMessagePreview,
       },
       artifacts,
     });
@@ -869,19 +917,22 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         planId: plan.id,
         exitCode: result.exitCode,
         failureReasons: result.failureReasons,
+        lastMessagePreview,
       },
       artifacts: result.artifacts,
     });
-    this.runStore?.appendEvent(plan.runId, {
-      type: "codex_execution_result_ready",
-      actor: this.actor,
-      payload: {
-        summary: "Controlled Codex execution result is ready for import; verification remains a separate stage",
-        resultId: result.id,
-        importReady: true,
-      },
-      artifacts: result.artifacts,
-    });
+    if (result.status === "finished") {
+      this.runStore?.appendEvent(plan.runId, {
+        type: "codex_execution_result_ready",
+        actor: this.actor,
+        payload: {
+          summary: "Controlled Codex execution result is ready for import; verification remains a separate stage",
+          resultId: result.id,
+          importReady: true,
+        },
+        artifacts: result.artifacts,
+      });
+    }
 
     return result;
   }
@@ -958,7 +1009,56 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       processRef.pid = child.pid;
       this.processes.set(processRef.id, child);
       let stdout = "";
+      let stdoutJsonlBuffer = "";
       let stderr = "";
+      const lastStreamedItemText = new Map<string, string>();
+      const emitCodexStreamItem = (line: string) => {
+        let event: unknown;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          return;
+        }
+        if (typeof event !== "object" || event === null || !("type" in event)) {
+          return;
+        }
+        const eventRecord = event as { type?: unknown; item?: unknown };
+        if (eventRecord.type !== "item.started" && eventRecord.type !== "item.updated" && eventRecord.type !== "item.completed") {
+          return;
+        }
+        if (typeof eventRecord.item !== "object" || eventRecord.item === null) {
+          return;
+        }
+        const item = eventRecord.item as { id?: unknown; type?: unknown; text?: unknown };
+        if (item.type !== "reasoning" && item.type !== "agent_message") {
+          return;
+        }
+        if (typeof item.id !== "string" || typeof item.text !== "string" || !item.text.trim()) {
+          return;
+        }
+        const previousText = lastStreamedItemText.get(item.id);
+        if (previousText === item.text) {
+          return;
+        }
+        lastStreamedItemText.set(item.id, item.text);
+        const textPreview = item.type === "agent_message" ? visibleModelResponseText(item.text).value : previewExecutionText(item.text, 1_200);
+        if (!textPreview) {
+          return;
+        }
+        this.runStore?.appendEvent(plan.runId, {
+          type: item.type === "reasoning" ? "codex_reasoning_summary" : "codex_agent_message",
+          actor: this.actor,
+          payload: {
+            summary: item.type === "reasoning" ? textPreview : "Codex agent response streamed",
+            planId: plan.id,
+            processId: processRef.id,
+            itemId: item.id,
+            streamEventType: eventRecord.type,
+            status: eventRecord.type.replace("item.", ""),
+            ...(item.type === "agent_message" ? { message: textPreview } : { text: textPreview }),
+          },
+        });
+      };
       let settled = false;
       let timedOut = false;
       const timer = setTimeout(() => {
@@ -967,16 +1067,34 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       }, plan.executionPolicy.timeoutMs);
 
       child.stdout.on("data", (chunk) => {
-        stdout += String(chunk);
+        const text = String(chunk);
+        stdout += text;
+        stdoutJsonlBuffer += text;
+        const lines = stdoutJsonlBuffer.split(/\r?\n/);
+        stdoutJsonlBuffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed) {
+            emitCodexStreamItem(trimmed);
+          }
+        }
       });
       child.stderr.on("data", (chunk) => {
         stderr += String(chunk);
       });
+      const flushBufferedStdoutEvent = () => {
+        const trimmed = stdoutJsonlBuffer.trim();
+        if (trimmed) {
+          emitCodexStreamItem(trimmed);
+        }
+        stdoutJsonlBuffer = "";
+      };
       child.on("error", (error) => {
         if (settled) {
           return;
         }
         settled = true;
+        flushBufferedStdoutEvent();
         clearTimeout(timer);
         this.processes.delete(processRef.id);
         resolve({ stdout, stderr: `${stderr}${error.message}`, exitCode: 1, timedOut });
@@ -986,6 +1104,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
           return;
         }
         settled = true;
+        flushBufferedStdoutEvent();
         clearTimeout(timer);
         this.processes.delete(processRef.id);
         resolve({ stdout, stderr, exitCode: code, timedOut });
@@ -1042,13 +1161,13 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     }
   }
 
-  private async readOptionalLastMessage(filePath: string, maxBytes: number): Promise<{ path?: string; value: string; redactionCount: number }> {
+  private async readOptionalLastMessage(filePath: string): Promise<{ path?: string; value: string; redactionCount: number }> {
     try {
       const content = await readFile(filePath, "utf8");
-      const redacted = redactExecutionText(content, maxBytes);
+      const redacted = visibleModelResponseText(content);
       return {
         path: filePath,
-        value: redacted.value,
+        value: redacted.value ?? "",
         redactionCount: redacted.redactionCount,
       };
     } catch {

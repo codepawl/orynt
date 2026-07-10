@@ -23,6 +23,16 @@ test("internal desktop beta packaging contract is wired", async () => {
   assert.equal(tauriConfig.bundle.createUpdaterArtifacts, false);
 });
 
+test("Fedora desktop dev launcher hydrates KDE session environment", async () => {
+  const launcher = await readText("scripts/dev-desktop-fedora.sh");
+
+  assert.match(launcher, /XDG_RUNTIME_DIR:=\/run\/user\/\$USER_ID/);
+  assert.match(launcher, /WAYLAND_DISPLAY=wayland-0/);
+  assert.match(launcher, /DBUS_SESSION_BUS_ADDRESS="unix:path=\/run\/user\/\$USER_ID\/bus"/);
+  assert.match(launcher, /XAUTHORITY="\/run\/user\/\$USER_ID\/\$\(basename "\$XAUTH_CANDIDATE"\)"/);
+  assert.match(launcher, /ORYNT_GDK_BACKEND:-\$DEFAULT_GDK_BACKEND/);
+});
+
 test("internal desktop beta docs describe release stance and smoke gates", async () => {
   const readme = await readText("README.md");
   const releaseNotes = await readText("docs/productization/private-beta-release-notes.md");

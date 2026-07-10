@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -9,6 +9,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use thiserror::Error;
+
+const DEFAULT_REPOSITORY_PATH_ENV: &str = "ORYNT_DEFAULT_REPOSITORY_PATH";
 
 #[derive(Debug, Default)]
 pub struct AppState {
@@ -287,6 +289,28 @@ pub struct CodexConnectionSaveInput {
 pub struct CodexConnectionSetupInput {
     connection_id: String,
     label: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CodexLoginMethod {
+    Browser,
+    DeviceCode,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLoginLaunchInput {
+    method: CodexLoginMethod,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLoginLaunchResult {
+    method: CodexLoginMethod,
+    command: String,
+    message: String,
+    login_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -1296,7 +1320,7 @@ fn apply_settings_update(
     }
 
     if let Some(default_repository_path) = input.default_repository_path {
-        settings.default_repository_path = default_repository_path.trim().to_string();
+        settings.default_repository_path = normalize_default_repository_path(&default_repository_path)?;
     }
 
     if let Some(welcome_completed) = input.welcome_completed {
@@ -1427,6 +1451,23 @@ fn apply_settings_update(
     }
 
     Ok(settings)
+}
+
+fn apply_default_repository_path_env_override(
+    mut settings: SettingsSnapshot,
+    env_repository_path: Option<&str>,
+) -> SettingsSnapshot {
+    let Some(env_repository_path) = env_repository_path else {
+        return settings;
+    };
+    if env_repository_path.trim().is_empty() {
+        return settings;
+    }
+    if let Ok(default_repository_path) = normalize_default_repository_path(env_repository_path) {
+        settings.default_repository_path = default_repository_path;
+    }
+
+    settings
 }
 
 struct ArtifactEvidenceSpec {
@@ -1822,10 +1863,33 @@ fn executable_path_on_path(path_env: &str, executable_name: &str) -> Option<Path
     None
 }
 
+fn real_user_home() -> Option<PathBuf> {
+    let user_name = std::env::var("USER").ok()?;
+    let passwd = fs::read_to_string("/etc/passwd").ok()?;
+    passwd.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        let name = fields.next()?;
+        if name != user_name {
+            return None;
+        }
+        fields.nth(4).map(PathBuf::from)
+    })
+}
+
+fn apply_real_user_home_env(command: &mut Command) {
+    if let Some(home) = real_user_home() {
+        command.env("HOME", &home);
+        command.env("XDG_CONFIG_HOME", home.join(".config"));
+        command.env("XDG_DATA_HOME", home.join(".local/share"));
+    }
+}
+
 fn codex_command_output(path_env: &str, args: &[&str]) -> Result<std::process::Output, AppError> {
     let executable_path = executable_path_on_path(path_env, "codex")
         .ok_or_else(|| AppError::Validation("Codex CLI was not found on PATH.".into()))?;
-    Command::new(executable_path)
+    let mut command = Command::new(executable_path);
+    apply_real_user_home_env(&mut command);
+    command
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1833,6 +1897,112 @@ fn codex_command_output(path_env: &str, args: &[&str]) -> Result<std::process::O
         .map_err(|error| AppError::Validation(format!("could not start Codex CLI: {error}")))?
         .wait_with_output()
         .map_err(|error| AppError::Validation(format!("could not read Codex CLI output: {error}")))
+}
+
+fn terminal_executable_on_path(path_env: &str) -> Option<(String, String)> {
+    [
+        "konsole",
+        "gnome-terminal",
+        "x-terminal-emulator",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "xfce4-terminal",
+        "xterm",
+    ]
+    .into_iter()
+    .find_map(|terminal| {
+        executable_path_on_path(path_env, terminal)
+            .map(|path| (terminal.to_string(), path.to_string_lossy().to_string()))
+    })
+}
+
+fn launch_codex_terminal_login(
+    path_env: &str,
+    method: CodexLoginMethod,
+    codex_args: &[&str],
+    manual_command: &str,
+    terminal_missing_message: &str,
+    spawn_error_prefix: &str,
+    success_message: &str,
+) -> Result<CodexLoginLaunchResult, AppError> {
+    executable_path_on_path(path_env, "codex")
+        .ok_or_else(|| AppError::Validation("Codex CLI was not found on PATH.".into()))?;
+    let (terminal, terminal_path) = terminal_executable_on_path(path_env).ok_or_else(|| {
+        AppError::Validation(terminal_missing_message.into())
+    })?;
+    let mut command = Command::new(&terminal_path);
+    apply_real_user_home_env(&mut command);
+    command.env("PATH", path_env);
+    match terminal.as_str() {
+        "konsole" => {
+            command.args(["--new-tab", "-e", "codex"]);
+            command.args(codex_args);
+        }
+        "gnome-terminal" => {
+            command.args(["--", "codex"]);
+            command.args(codex_args);
+        }
+        "wezterm" => {
+            command.args(["start", "--", "codex"]);
+            command.args(codex_args);
+        }
+        "xfce4-terminal" => {
+            command.args(["--command"]);
+            command.arg(format!("codex {}", codex_args.join(" ")));
+        }
+        _ => {
+            command.args(["-e", "codex"]);
+            command.args(codex_args);
+        }
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| AppError::Validation(format!("{spawn_error_prefix}: {error}")))?;
+
+    Ok(CodexLoginLaunchResult {
+        method,
+        command: manual_command.into(),
+        message: success_message.into(),
+        login_url: None,
+    })
+}
+
+fn launch_codex_browser_login(path_env: &str) -> Result<CodexLoginLaunchResult, AppError> {
+    launch_codex_terminal_login(
+        path_env,
+        CodexLoginMethod::Browser,
+        &["login"],
+        "codex login",
+        "No supported terminal app was found. Run codex login manually in a terminal.",
+        "could not open Codex login terminal",
+        "Opened Codex login in a terminal.",
+    )
+}
+
+fn launch_codex_device_code_login(path_env: &str) -> Result<CodexLoginLaunchResult, AppError> {
+    launch_codex_terminal_login(
+        path_env,
+        CodexLoginMethod::DeviceCode,
+        &["login", "--device-auth"],
+        "codex login --device-auth",
+        "No supported terminal app was found. Run codex login --device-auth manually in a terminal.",
+        "could not open Codex device-code terminal",
+        "Opened Codex device-code login in a terminal.",
+    )
+}
+
+fn launch_codex_login(
+    input: CodexLoginLaunchInput,
+    path_env: &str,
+) -> Result<CodexLoginLaunchResult, AppError> {
+    match input.method {
+        CodexLoginMethod::Browser => launch_codex_browser_login(path_env),
+        CodexLoginMethod::DeviceCode => launch_codex_device_code_login(path_env),
+    }
 }
 
 fn codex_output_text(output: &std::process::Output) -> String {
@@ -1903,7 +2073,7 @@ fn preflight_codex_connection(
                 executable_path: Some(executable_path.to_string_lossy().to_string()),
                 auth_mode: None,
                 reasons: vec![
-                    "No authenticated Codex CLI session was detected. Orynt does not manage Codex sign-in. Run codex login in a terminal, complete sign-in, then return and click Check Codex CLI again.".into(),
+                    "No authenticated Codex CLI session was detected. Run codex login in a terminal, or open Codex login from setup, then check again.".into(),
                 ],
                 warnings: vec![],
             };
@@ -1917,7 +2087,7 @@ fn preflight_codex_connection(
                 executable_path: Some(executable_path.to_string_lossy().to_string()),
                 auth_mode: None,
                 reasons: vec![
-                    "No authenticated Codex CLI session was detected. Orynt does not manage Codex sign-in. Run codex login in a terminal, complete sign-in, then return and click Check Codex CLI again.".into(),
+                    "No authenticated Codex CLI session was detected. Run codex login in a terminal, or open Codex login from setup, then check again.".into(),
                 ],
                 warnings: vec![],
             };
@@ -2434,6 +2604,23 @@ fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
     Ok(())
 }
 
+fn find_git_repository_root(start: &Path) -> Option<PathBuf> {
+    let mut current = if start.is_file() {
+        start.parent()?.to_path_buf()
+    } else {
+        start.to_path_buf()
+    };
+    loop {
+        let marker = current.join(".git");
+        if marker.is_dir() || marker.is_file() {
+            return Some(current);
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
+}
+
 fn validate_repository_path(repository_path: Option<&str>) -> Result<PathBuf, AppError> {
     let repository_path = repository_path
         .map(str::trim)
@@ -2444,13 +2631,28 @@ fn validate_repository_path(repository_path: Option<&str>) -> Result<PathBuf, Ap
     let canonical = Path::new(repository_path).canonicalize().map_err(|_| {
         AppError::Validation("repositoryPath must point to a selected local directory".into())
     })?;
-    if !canonical.is_dir() || canonical.parent().is_none() {
+    let directory = if canonical.is_file() {
+        canonical.parent().map(Path::to_path_buf).ok_or_else(|| {
+            AppError::Validation("repositoryPath must point to a selected local directory".into())
+        })?
+    } else {
+        canonical
+    };
+    if !directory.is_dir() || directory.parent().is_none() {
         return Err(AppError::Validation(
             "repositoryPath must point to a selected local directory".into(),
         ));
     }
 
-    Ok(canonical)
+    Ok(find_git_repository_root(&directory).unwrap_or(directory))
+}
+
+fn normalize_default_repository_path(repository_path: &str) -> Result<String, AppError> {
+    let trimmed = repository_path.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    validate_repository_path(Some(trimmed)).map(|path| path.to_string_lossy().to_string())
 }
 
 fn detect_current_local_directory(start: &Path) -> Option<PathBuf> {
@@ -2461,11 +2663,18 @@ fn detect_current_local_directory(start: &Path) -> Option<PathBuf> {
         canonical
     };
 
-    if directory.is_dir() && directory.parent().is_some() {
-        Some(directory)
+    let selected = find_git_repository_root(&directory).unwrap_or(directory);
+    if selected.is_dir() && selected.parent().is_some() {
+        Some(selected)
     } else {
         None
     }
+}
+
+fn detect_default_repository_path(current_dir: &Path, env_repository_path: Option<&str>) -> Option<PathBuf> {
+    env_repository_path
+        .and_then(|repository_path| validate_repository_path(Some(repository_path)).ok())
+        .or_else(|| detect_current_local_directory(current_dir))
 }
 
 fn is_desktop_repository_runner_root(root: &Path) -> bool {
@@ -2736,18 +2945,53 @@ fn run_desktop_repository_sidecar(
         })?;
     }
 
-    let output = child.wait_with_output().map_err(|error| {
+    let stdout = child.stdout.take().ok_or_else(|| {
+        AppError::RepositoryRun("repository runner stdout was unavailable".into())
+    })?;
+    let stderr = child.stderr.take().ok_or_else(|| {
+        AppError::RepositoryRun("repository runner stderr was unavailable".into())
+    })?;
+    let stdout_thread = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut reader = BufReader::new(stdout);
+        let _ = reader.read_to_end(&mut bytes);
+        bytes
+    });
+    let app_for_events = app.clone();
+    let stderr_thread = std::thread::spawn(move || {
+        let mut stderr_text = String::new();
+        for line in BufReader::new(stderr).lines() {
+            let Ok(line) = line else {
+                continue;
+            };
+            if let Some(event_json) = line.strip_prefix("ORYNT_RUN_EVENT ") {
+                if let Ok(event) = serde_json::from_str::<serde_json::Value>(event_json) {
+                    let _ = app_for_events.emit("run_event", event);
+                }
+            } else {
+                stderr_text.push_str(&line);
+                stderr_text.push('\n');
+            }
+        }
+        stderr_text
+    });
+
+    let status = child.wait().map_err(|error| {
         AppError::RepositoryRun(format!("repository runner did not finish: {error}"))
     })?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = stdout_thread.join().map_err(|_| {
+        AppError::RepositoryRun("repository runner stdout reader failed".into())
+    })?;
+    let stderr = stderr_thread.join().map_err(|_| {
+        AppError::RepositoryRun("repository runner stderr reader failed".into())
+    })?;
+    if !status.success() {
         return Err(AppError::RepositoryRun(stderr.trim().to_string()));
     }
 
-    let output: DesktopRepositoryRunOutput =
-        serde_json::from_slice(&output.stdout).map_err(|error| {
-            AppError::RepositoryRun(format!("could not parse repository runner output: {error}"))
-        })?;
+    let output: DesktopRepositoryRunOutput = serde_json::from_slice(&stdout).map_err(|error| {
+        AppError::RepositoryRun(format!("could not parse repository runner output: {error}"))
+    })?;
     if output.event_count != output.events.len()
         || output.status.trim().is_empty()
         || output.artifact_root.trim().is_empty()
@@ -3776,7 +4020,12 @@ async fn codex_execution_blocked_preview(
 
 #[tauri::command]
 async fn settings_get(app: AppHandle) -> Result<SettingsSnapshot, AppError> {
-    persistence_store(&app).load_settings()
+    let settings = persistence_store(&app).load_settings()?;
+    let env_repository_path = std::env::var(DEFAULT_REPOSITORY_PATH_ENV).ok();
+    Ok(apply_default_repository_path_env_override(
+        settings,
+        env_repository_path.as_deref(),
+    ))
 }
 
 #[tauri::command]
@@ -3795,7 +4044,9 @@ async fn repository_detect_current_path() -> Result<Option<String>, AppError> {
     let current_dir = std::env::current_dir().map_err(|error| {
         AppError::Validation(format!("could not read current directory: {error}"))
     })?;
-    Ok(detect_current_local_directory(&current_dir).map(|path| path.to_string_lossy().to_string()))
+    let env_repository_path = std::env::var(DEFAULT_REPOSITORY_PATH_ENV).ok();
+    Ok(detect_default_repository_path(&current_dir, env_repository_path.as_deref())
+        .map(|path| path.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
@@ -3828,6 +4079,13 @@ async fn codex_connection_preflight(
     reference.last_preflight = Some(result.clone());
     store.save_codex_connection_record(reference)?;
     Ok(result)
+}
+
+#[tauri::command]
+async fn codex_connection_login(
+    input: CodexLoginLaunchInput,
+) -> Result<CodexLoginLaunchResult, AppError> {
+    launch_codex_login(input, &(std::env::var("PATH").unwrap_or_default()))
 }
 
 #[tauri::command]
@@ -3923,6 +4181,7 @@ pub fn run() {
             model_connection_delete,
             codex_connection_save,
             codex_connection_preflight,
+            codex_connection_login,
             codex_connection_delete,
             trace_export
         ])
@@ -3939,10 +4198,33 @@ mod tests {
     use super::*;
 
     fn local_directory_path(label: &str) -> String {
-        let mut directory_path = std::env::temp_dir();
+        let mut directory_path = test_temp_parent();
         directory_path.push(format!("orynt-tauri-test-{label}-{}", unique_suffix()));
         std::fs::create_dir_all(&directory_path).expect("create test local directory");
         directory_path.to_string_lossy().to_string()
+    }
+
+    fn test_temp_parent() -> PathBuf {
+        let mut candidates = vec![std::env::temp_dir()];
+        #[cfg(unix)]
+        candidates.extend([PathBuf::from("/var/tmp"), PathBuf::from("/dev/shm")]);
+
+        candidates
+            .into_iter()
+            .find(|candidate| {
+                if !candidate.is_dir() || find_git_repository_root(candidate).is_some() {
+                    return false;
+                }
+                let probe = candidate.join(format!(".orynt-tauri-test-probe-{}", unique_suffix()));
+                match std::fs::create_dir(&probe) {
+                    Ok(()) => {
+                        let _ = std::fs::remove_dir(&probe);
+                        true
+                    }
+                    Err(_) => false,
+                }
+            })
+            .unwrap_or_else(std::env::temp_dir)
     }
 
     fn unique_suffix() -> u128 {
@@ -4003,12 +4285,65 @@ mod tests {
     }
 
     #[test]
+    fn validate_repository_path_resolves_selected_subdirectory_to_git_root() {
+        let repository = PathBuf::from(local_directory_path("nested-repository-root"));
+        let nested = repository.join("apps").join("desktop").join("src-tauri");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested selected directory");
+
+        assert_eq!(
+            validate_repository_path(Some(&nested.to_string_lossy())).expect("valid nested repository path"),
+            repository.canonicalize().expect("canonical repository root")
+        );
+    }
+
+    #[test]
+    fn validate_repository_path_resolves_selected_file_to_parent_directory() {
+        let directory = PathBuf::from(local_directory_path("selected-file-parent"));
+        let file_path = directory.join("task.txt");
+        std::fs::write(&file_path, "task").expect("write test file");
+
+        assert_eq!(
+            validate_repository_path(Some(&file_path.to_string_lossy())).expect("valid selected file path"),
+            directory.canonicalize().expect("canonical file parent")
+        );
+    }
+
+    #[test]
+    fn validate_repository_path_resolves_selected_git_file_to_git_root() {
+        let repository = PathBuf::from(local_directory_path("selected-git-file-root"));
+        let nested = repository.join("apps").join("desktop");
+        let file_path = nested.join("task.txt");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested directory");
+        std::fs::write(&file_path, "task").expect("write test file");
+
+        assert_eq!(
+            validate_repository_path(Some(&file_path.to_string_lossy())).expect("valid selected git file path"),
+            repository.canonicalize().expect("canonical git root")
+        );
+    }
+
+    #[test]
     fn detect_current_local_directory_returns_canonical_directory() {
         let directory = PathBuf::from(local_directory_path("detect-directory"));
 
         assert_eq!(
             detect_current_local_directory(&directory),
             directory.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_current_local_directory_resolves_nested_git_directory_to_root() {
+        let repository = PathBuf::from(local_directory_path("detect-nested-repository-root"));
+        let nested = repository.join("apps").join("desktop").join("src-tauri");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested selected directory");
+
+        assert_eq!(
+            detect_current_local_directory(&nested),
+            repository.canonicalize().ok()
         );
     }
 
@@ -4021,6 +4356,42 @@ mod tests {
         assert_eq!(
             detect_current_local_directory(&file_path),
             directory.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_default_repository_path_prefers_env_repository_path() {
+        let current_directory = PathBuf::from(local_directory_path("detect-current-directory"));
+        let repository = PathBuf::from(local_directory_path("detect-env-repository"));
+
+        assert_eq!(
+            detect_default_repository_path(&current_directory, Some(&repository.to_string_lossy())),
+            repository.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_default_repository_path_resolves_nested_env_repository_path_to_git_root() {
+        let current_directory = PathBuf::from(local_directory_path("detect-current-directory-nested"));
+        let repository = PathBuf::from(local_directory_path("detect-env-nested-repository-root"));
+        let nested = repository.join("apps").join("desktop").join("src-tauri");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested selected directory");
+
+        assert_eq!(
+            detect_default_repository_path(&current_directory, Some(&nested.to_string_lossy())),
+            repository.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_default_repository_path_falls_back_when_env_repository_path_is_invalid() {
+        let current_directory = PathBuf::from(local_directory_path("detect-current-directory-fallback"));
+        let missing_repository = current_directory.join("missing");
+
+        assert_eq!(
+            detect_default_repository_path(&current_directory, Some(&missing_repository.to_string_lossy())),
+            current_directory.canonicalize().ok()
         );
     }
 
@@ -4047,17 +4418,13 @@ mod tests {
     }
 
     #[test]
-    fn validate_create_run_rejects_file_repository_path() {
+    fn validate_create_run_accepts_file_repository_path_as_parent_directory() {
         let directory = PathBuf::from(local_directory_path("file-path"));
         let file_path = directory.join("task.txt");
         std::fs::write(&file_path, "task").expect("write test file");
         let input = valid_run_input_json(Some(&file_path.to_string_lossy()));
 
-        let error = validate_create_run(&input).expect_err("file path is unsafe");
-        assert_eq!(
-            error.to_string(),
-            "repositoryPath must point to a selected local directory"
-        );
+        assert!(validate_create_run(&input).is_ok());
     }
 
     #[test]
@@ -4428,6 +4795,7 @@ mod tests {
     #[test]
     fn settings_update_preserves_codex_connection_and_persists_setup_fields() {
         let mut settings = default_settings_snapshot();
+        let default_repository = PathBuf::from(local_directory_path("settings-default-repository"));
         let codex_connection = CodexConnectionReference {
             connection_id: "codex-cli".into(),
             label: "Local Codex CLI".into(),
@@ -4453,7 +4821,7 @@ mod tests {
             SettingsUpdateInput {
                 permission_mode: Some("manual".into()),
                 thinking_effort: Some("high".into()),
-                default_repository_path: Some("/home/operator/project".into()),
+                default_repository_path: Some(default_repository.to_string_lossy().to_string()),
                 welcome_completed: Some(true),
                 executable_surfaces: Some(vec!["repository".into(), "browser".into()]),
                 retention_policy: Some(RetentionPolicyUpdateInput {
@@ -4483,7 +4851,14 @@ mod tests {
 
         assert_eq!(updated.permission_mode, "manual");
         assert_eq!(updated.thinking_effort, "high");
-        assert_eq!(updated.default_repository_path, "/home/operator/project");
+        assert_eq!(
+            updated.default_repository_path,
+            default_repository
+                .canonicalize()
+                .expect("canonical default repository")
+                .to_string_lossy()
+                .to_string()
+        );
         assert!(updated.welcome_completed);
         assert_eq!(updated.executable_surfaces, vec!["repository"]);
         assert_eq!(
@@ -4517,6 +4892,134 @@ mod tests {
         assert_eq!(updated.voice_preferences.language, "english");
         assert_eq!(updated.voice_preferences.style, "buttery");
         assert_eq!(updated.voice_preferences.speed, "slow");
+    }
+
+    #[test]
+    fn settings_update_normalizes_file_default_repository_path_to_parent_directory() {
+        let settings = default_settings_snapshot();
+        let default_repository = PathBuf::from(local_directory_path("settings-file-parent"));
+        let file_path = default_repository.join("notes.txt");
+        std::fs::write(&file_path, "notes").expect("write settings file path");
+
+        let updated = apply_settings_update(
+            settings,
+            SettingsUpdateInput {
+                permission_mode: None,
+                thinking_effort: None,
+                default_repository_path: Some(file_path.to_string_lossy().to_string()),
+                welcome_completed: None,
+                executable_surfaces: None,
+                retention_policy: None,
+                operator_profile: None,
+                ui_preferences: None,
+                voice_preferences: None,
+            },
+        )
+        .expect("settings update accepts existing file path");
+
+        assert_eq!(
+            updated.default_repository_path,
+            default_repository
+                .canonicalize()
+                .expect("canonical default repository")
+                .to_string_lossy()
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn settings_update_rejects_missing_default_repository_path() {
+        let settings = default_settings_snapshot();
+        let missing_repository = PathBuf::from(local_directory_path("settings-missing-parent"))
+            .join("missing")
+            .join("project");
+
+        let error = apply_settings_update(
+            settings,
+            SettingsUpdateInput {
+                permission_mode: None,
+                thinking_effort: None,
+                default_repository_path: Some(missing_repository.to_string_lossy().to_string()),
+                welcome_completed: None,
+                executable_surfaces: None,
+                retention_policy: None,
+                operator_profile: None,
+                ui_preferences: None,
+                voice_preferences: None,
+            },
+        )
+        .expect_err("missing repository path should not be persisted");
+
+        assert_eq!(
+            error.to_string(),
+            "repositoryPath must point to a selected local directory"
+        );
+    }
+
+    #[test]
+    fn settings_env_override_replaces_stale_saved_default_for_session() {
+        let mut settings = default_settings_snapshot();
+        settings.default_repository_path =
+            "/home/nxank4/Code/personal/orynt/apps/desktop/src-tauri".into();
+        let dev_repository = PathBuf::from(local_directory_path("settings-dev-env-repository"));
+
+        let updated = apply_default_repository_path_env_override(
+            settings,
+            Some(&dev_repository.to_string_lossy()),
+        );
+
+        assert_eq!(
+            updated.default_repository_path,
+            dev_repository
+                .canonicalize()
+                .expect("canonical dev repository")
+                .to_string_lossy()
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn settings_env_override_keeps_saved_default_when_env_is_invalid_or_blank() {
+        fn saved_default_settings() -> SettingsSnapshot {
+            let mut settings = default_settings_snapshot();
+            settings.default_repository_path = "/home/operator/saved-project".into();
+            settings
+        }
+        let missing_repository = PathBuf::from(local_directory_path("settings-dev-env-invalid"))
+            .join("missing");
+
+        let invalid = apply_default_repository_path_env_override(
+            saved_default_settings(),
+            Some(&missing_repository.to_string_lossy()),
+        );
+        let blank = apply_default_repository_path_env_override(saved_default_settings(), Some("   "));
+        let absent = apply_default_repository_path_env_override(saved_default_settings(), None);
+
+        assert_eq!(invalid.default_repository_path, "/home/operator/saved-project");
+        assert_eq!(blank.default_repository_path, "/home/operator/saved-project");
+        assert_eq!(absent.default_repository_path, "/home/operator/saved-project");
+    }
+
+    #[test]
+    fn settings_env_override_resolves_nested_git_path_to_git_root() {
+        let mut settings = default_settings_snapshot();
+        settings.default_repository_path = "/home/operator/saved-project".into();
+        let repository = PathBuf::from(local_directory_path("settings-dev-env-git-root"));
+        let nested = repository.join("apps").join("desktop").join("src-tauri");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested directory");
+
+        let updated =
+            apply_default_repository_path_env_override(settings, Some(&nested.to_string_lossy()));
+
+        assert_eq!(
+            updated.default_repository_path,
+            repository
+                .canonicalize()
+                .expect("canonical git root")
+                .to_string_lossy()
+                .to_string()
+        );
     }
 
     #[test]
@@ -5052,13 +5555,64 @@ mod tests {
         assert_eq!(
             result.reasons,
             vec![
-                "No authenticated Codex CLI session was detected. Orynt does not manage Codex sign-in. Run codex login in a terminal, complete sign-in, then return and click Check Codex CLI again."
+                "No authenticated Codex CLI session was detected. Run codex login in a terminal, or open Codex login from setup, then check again."
             ]
         );
         assert_eq!(
             std::fs::read_to_string(args_capture_path).expect("read device args"),
             "login status\n"
         );
+    }
+
+    #[test]
+    fn codex_browser_login_delegates_to_codex_cli_terminal_flow() {
+        let root = temp_store_root("codex-browser-login-terminal");
+        let bin_dir = root.join("bin");
+        let terminal_capture_path = root.join("terminal-args.txt");
+        std::fs::create_dir_all(&bin_dir).expect("create fake bin dir");
+
+        let codex_path = bin_dir.join("codex");
+        std::fs::write(
+            &codex_path,
+            "#!/bin/sh\nprintf '%s\\n' 'https://auth.openai.com/oauth/authorize?state=headless-wrong'\nexit 0\n",
+        )
+        .expect("write fake codex");
+
+        let terminal_path = bin_dir.join("konsole");
+        std::fs::write(
+            &terminal_path,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nexit 0\n",
+                terminal_capture_path.display()
+            ),
+        )
+        .expect("write fake terminal");
+
+        for path in [&codex_path, &terminal_path] {
+            let mut permissions = std::fs::metadata(path).expect("fake binary metadata").permissions();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                permissions.set_mode(0o755);
+            }
+            std::fs::set_permissions(path, permissions).expect("chmod fake binary");
+        }
+
+        let result = launch_codex_browser_login(&bin_dir.to_string_lossy()).expect("launch codex login");
+
+        assert_eq!(result.method, CodexLoginMethod::Browser);
+        assert_eq!(result.command, "codex login");
+        assert_eq!(result.message, "Opened Codex login in a terminal.");
+        assert_eq!(result.login_url, None);
+        let captured_terminal_args = (0..20)
+            .find_map(|_| {
+                std::fs::read_to_string(&terminal_capture_path).ok().or_else(|| {
+                    std::thread::sleep(Duration::from_millis(10));
+                    None
+                })
+            })
+            .expect("terminal args captured");
+        assert_eq!(captured_terminal_args, "--new-tab -e codex login\n");
     }
 
     #[test]

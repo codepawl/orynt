@@ -15,6 +15,7 @@ export type CodexProvider = {
 export type CodexAdapterStatus = {
   provider: CodexProvider;
   available: boolean;
+  authenticated?: boolean;
   executionMode: CodexExecutionMode;
   executablePath?: string;
   detectedAt: string;
@@ -34,6 +35,9 @@ export type CodexContractRequest = {
   budget: RunBudget;
   validationCommands: string[];
   artifactRoot: string;
+  executionMode?: CodexExecutionMode;
+  modelId?: string;
+  modelLabel?: string;
 };
 
 export type CodexContract = {
@@ -56,6 +60,8 @@ export type CodexContract = {
     protectedPaths: string[];
     blockedCommands: string[];
     validationCommands: string[];
+    modelId?: string;
+    modelLabel?: string;
     budget: RunBudget;
     redactionApplied: boolean;
     createdAt: string;
@@ -81,6 +87,7 @@ export type CodexExecutionFailureReason =
   | "approval_denied"
   | "approval_mismatch"
   | "codex_missing"
+  | "codex_auth_missing"
   | "policy_blocked"
   | "budget_exceeded"
   | "sandbox_missing"

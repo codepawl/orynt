@@ -518,3 +518,5 @@ function riskForDecision(decision: PolicyDecision): AgentRiskLevel {
   }
   return "review";
 }
+
+export * from "./repoOpsBench";

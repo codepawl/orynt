@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createMockRunState, MVP_BLOCKED_SURFACES } from "@codepawl/shared";
+import { getLandingUrl } from "./landingUrl";
 import {
   Archive,
   Blocks,
@@ -17,7 +18,9 @@ import {
   EllipsisVertical,
   ExternalLink,
   FolderPlus,
+  FolderOpen,
   GitBranch,
+  Gauge,
   Globe2,
   Gift,
   Info,
@@ -51,9 +54,9 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import type { CandidateRule, MemoryReviewSnapshot, MockRunState, SkillDefinition, SkillRegistrySnapshot, SkillReplayPlan, SurfaceKind } from "@codepawl/shared";
+import { runEventTaskPhase, type CandidateRule, type MemoryReviewSnapshot, type MockRunState, type RunEvent, type SkillDefinition, type SkillRegistrySnapshot, type SkillReplayPlan, type SurfaceKind } from "@codepawl/shared";
 import type { LucideIcon } from "lucide-react";
-import type { FocusEvent, FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { CSSProperties, FocusEvent, FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import lightbulbLogoOnDark from "../../../assets/pictures/lightbulb-mark-on-dark.svg";
 
@@ -62,6 +65,7 @@ import type {
   ArtifactEvidenceContent,
   ArtifactEvidenceStatus,
   ArtifactEvidenceSummary,
+  CodexLoginMethod,
   CodexConnectionPreflightResult,
   CodexConnectionReference,
   ModelAuthMethod,
@@ -84,12 +88,33 @@ type Workspace = {
   archived?: boolean;
 };
 
+type ThreadMessageDetailKind = "thinking" | "tool" | "command" | "model" | "memory" | "done" | "system" | "error";
+
+type AgentResponseSource = {
+  citation: number;
+  domain: string;
+  excerpt: string;
+  title: string;
+  url?: string;
+};
+
 type ThreadMessage = {
   id: string;
   role: "user" | "system" | "agent" | "approval";
   content?: string;
   label?: string;
   showContext?: boolean;
+  detailKind?: ThreadMessageDetailKind;
+  runId?: string;
+  detailItems?: string[];
+  sources?: AgentResponseSource[];
+};
+
+type ThreadStateSnapshot = {
+  workspaces: Workspace[];
+  threadMessagesByWorkspace: Record<string, ThreadMessage[]>;
+  nextWorkspaceThreadIndex: number;
+  activeWorkspaceId: string;
 };
 
 type AgentResponseRating = "good" | "bad";
@@ -107,17 +132,42 @@ type AgentResponseTextSelection = {
   text: string;
 };
 
-type MockAgentSource = {
-  citation: number;
-  domain: string;
-  excerpt: string;
-  title: string;
-  url: string;
-};
 
 const initialWorkspaces = [
-  { id: "draft", label: "Draft", description: "Draft thread.", badge: "46" },
+  { id: "draft", label: "New task", description: "", badge: "new" },
 ] satisfies Workspace[];
+
+type ThreadStartCopy = {
+  title: string;
+  description: string;
+};
+
+const threadStartCopyOptions: ThreadStartCopy[] = [
+  {
+    title: "Start a supervised task",
+    description: "Describe the outcome. Orynt plans the task, acts through the available surface, and keeps evidence attached for review.",
+  },
+  {
+    title: "Tell Orynt what to do",
+    description: "Give the task, constraints, and success signal. This beta can act only inside the selected local directory.",
+  },
+  {
+    title: "Plan, act, verify",
+    description: "Orynt keeps action attempts scoped, records the run log, and separates generated output from verification evidence.",
+  },
+  {
+    title: "Keep actions reviewable",
+    description: "Every risky task step stays approval-gated, traceable, and backed by artifacts you can reopen later.",
+  },
+  {
+    title: "Use the current surface",
+    description: "The product model is task-first; the current beta surface is a selected local directory with explicit approval.",
+  },
+];
+
+function randomThreadStartCopy(): ThreadStartCopy {
+  return threadStartCopyOptions[Math.floor(Math.random() * threadStartCopyOptions.length)] ?? threadStartCopyOptions[0];
+}
 
 const surfaceLabels: Record<SurfaceKind, string> = {
   repository: "Repository",
@@ -145,16 +195,48 @@ const betaUnavailableSurfaceDescriptions: Record<(typeof betaUnavailableSurfaces
   Cloud: "Hosted cloud runs are not enabled for this local-first beta.",
   Billing: "Billing actions stay disabled while this release uses local beta access.",
 };
-const renderedRunEventTypes = new Set([
-  "run_started",
-  "sandbox_created",
-  "codex_contract_created",
-  "codex_result_imported",
-  "verification_passed",
-  "verification_failed",
-  "memory_extraction_finished",
-  "run_finished",
-]);
+const renderedRunEventTypes: Partial<Record<RunEvent["type"], true>> = {
+  run_started: true,
+  goal_received: true,
+  sandbox_create_requested: true,
+  sandbox_create_allowed: true,
+  sandbox_created: true,
+  codex_detected: true,
+  codex_missing: true,
+  codex_contract_requested: true,
+  codex_contract_created: true,
+  codex_manual_next_step: true,
+  codex_execution_planned: true,
+  codex_execution_approval_required: true,
+  codex_execution_approved: true,
+  codex_execution_started: true,
+  codex_reasoning_summary: true,
+  codex_agent_message: true,
+  codex_execution_output_recorded: true,
+  codex_execution_finished: true,
+  codex_execution_failed: true,
+  codex_execution_blocked: true,
+  codex_execution_result_ready: true,
+  codex_result_import_requested: true,
+  codex_sandbox_diff_inspected: true,
+  codex_manual_log_imported: true,
+  codex_result_redacted: true,
+  codex_result_imported: true,
+  verification_planned: true,
+  verification_policy_checked: true,
+  verification_started: true,
+  verification_command_started: true,
+  verification_command_finished: true,
+  verification_diff_checked: true,
+  verification_recorded: true,
+  verification_passed: true,
+  verification_failed: true,
+  memory_extraction_started: true,
+  memory_episode_written: true,
+  candidate_rule_proposed: true,
+  memory_extraction_finished: true,
+  run_finished: true,
+};
 
 const permissionModeOptions = [
   { value: "safe", label: "Safe", helper: "Ask before protected paths, destructive commands, network access, and secret access." },
@@ -170,6 +252,192 @@ const thinkingEffortOptions = [
   { value: "high", label: "High", helper: "Deeper planning for complex or risky changes." },
   { value: "xhigh", label: "X High", helper: "Maximum available reasoning effort for the selected model." },
 ] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function payloadString(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function payloadNumber(payload: Record<string, unknown>, key: string): number | null {
+  const value = payload[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function compactValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value.trim() || null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const values = value.map((item) => compactValue(item)).filter((item): item is string => Boolean(item));
+    return values.length > 0 ? values.join(", ") : null;
+  }
+  return null;
+}
+
+function truncateUiText(value: string, limit = 420): string {
+  const normalized = value.replace(/\s+\n/g, "\n").trim();
+  return normalized.length > limit ? `${normalized.slice(0, limit).trimEnd()}…` : normalized;
+}
+
+function formatElapsedClock(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function formatDurationMs(durationMs: number | null): string | null {
+  if (durationMs === null) {
+    return null;
+  }
+  return durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${Math.max(0, Math.round(durationMs))}ms`;
+}
+
+function runEventKind(type: RunEvent["type"]): ThreadMessageDetailKind {
+  if (type === "codex_reasoning_summary") {
+    return "thinking";
+  }
+  if (type.startsWith("codex_execution") || type.startsWith("codex_contract") || type.startsWith("codex_result") || type === "codex_manual_next_step" || type === "codex_agent_message") {
+    return "model";
+  }
+  if (type.startsWith("verification_command")) {
+    return "command";
+  }
+  if (type.startsWith("sandbox") || type.startsWith("verification") || type === "codex_sandbox_diff_inspected") {
+    return "tool";
+  }
+  if (type.startsWith("memory") || type.startsWith("candidate_rule")) {
+    return "memory";
+  }
+  if (type === "run_finished") {
+    return "done";
+  }
+  return "thinking";
+}
+
+const runEventKindLabels: Record<ThreadMessageDetailKind, string> = {
+  thinking: "Thinking",
+  tool: "Tool",
+  command: "Command",
+  model: "Model",
+  memory: "Memory",
+  done: "Done",
+  system: "System",
+  error: "Error",
+};
+
+function formatRunEventTitle(type: RunEvent["type"]): string {
+  return type.replaceAll("_", " ");
+}
+
+function formatTaskRunPhaseLabel(type: RunEvent["type"]): string {
+  const phase = runEventTaskPhase(type);
+  return phase[0].toUpperCase() + phase.slice(1);
+}
+
+function runEventDetailItems(event: RunEvent): string[] {
+  const payload = isRecord(event.payload) ? event.payload : {};
+  const details: string[] = [];
+  const actor = event.actor.displayName ?? event.actor.id;
+  if (actor) {
+    details.push(`Actor: ${actor}`);
+  }
+  const commandRecord = isRecord(payload.command) ? payload.command : {};
+  const evidenceRecord = isRecord(payload.evidence) ? payload.evidence : {};
+  const command =
+    payloadString(payload, "command") ??
+    payloadString(payload, "displayName") ??
+    payloadString(commandRecord, "displayName") ??
+    payloadString(commandRecord, "command") ??
+    payloadString(evidenceRecord, "command") ??
+    payloadString(evidenceRecord, "label");
+  if (command) {
+    details.push(`Command: ${truncateUiText(command, 240)}`);
+  }
+  const argv = compactValue(payload.argv);
+  if (argv) {
+    details.push(`Args: ${truncateUiText(argv, 260)}`);
+  }
+  const status = payloadString(payload, "status");
+  if (status) {
+    details.push(`Status: ${status}`);
+  }
+  const exitCode = payloadNumber(payload, "exitCode") ?? payloadNumber(evidenceRecord, "exitCode");
+  if (exitCode !== null) {
+    details.push(`Exit code: ${exitCode}`);
+  }
+  const duration = formatDurationMs(payloadNumber(payload, "durationMs") ?? payloadNumber(evidenceRecord, "durationMs"));
+  if (duration) {
+    details.push(`Duration: ${duration}`);
+  }
+  const stdout = payloadString(payload, "stdout") ?? payloadString(payload, "stdoutSummary") ?? payloadString(evidenceRecord, "stdout");
+  if (stdout) {
+    details.push(`stdout: ${truncateUiText(stdout)}`);
+  }
+  const stderr = payloadString(payload, "stderr") ?? payloadString(payload, "stderrSummary") ?? payloadString(evidenceRecord, "stderr");
+  if (stderr) {
+    details.push(`stderr: ${truncateUiText(stderr)}`);
+  }
+  const modelResponse = payloadString(payload, "lastMessagePreview");
+  if (modelResponse) {
+    details.push(`Model response: ${truncateUiText(modelResponse, 700)}`);
+  }
+  const failureReasons = compactValue(payload.failureReasons);
+  if (failureReasons) {
+    details.push(`Failure reasons: ${failureReasons}`);
+  }
+  if (event.safety?.reasons.length) {
+    details.push(`Policy: ${event.safety.reasons.join("; ")}`);
+  }
+  if (event.verdict) {
+    details.push(`Verdict: ${event.verdict.status} — ${event.verdict.reason}`);
+  }
+  if (event.artifacts.length > 0) {
+    details.push(`Artifacts: ${event.artifacts.map((artifact) => artifact.label).join(", ")}`);
+  }
+  if (event.redaction.applied) {
+    details.push(`Redaction: ${event.redaction.redactedPaths.join(", ") || "applied"}`);
+  }
+  return details;
+}
+
+function runEventToThreadMessage(event: RunEvent): ThreadMessage {
+  const payload = isRecord(event.payload) ? event.payload : {};
+  const summary = payloadString(payload, "summary") ?? formatRunEventTitle(event.type);
+  const kind = runEventKind(event.type);
+  return {
+    id: event.id,
+    runId: event.runId,
+    role: "system",
+    detailKind: kind,
+    content: `${formatTaskRunPhaseLabel(event.type)}: ${formatRunEventTitle(event.type)} — ${summary}`,
+    detailItems: runEventDetailItems(event),
+  };
+}
+
+function isRepositoryHarnessCompletionFallbackMessage(message: ThreadMessage): boolean {
+  return (
+    message.role === "agent" &&
+    Boolean(message.runId) &&
+    message.id.includes("agent-run-complete") &&
+    (message.content ?? "").startsWith("Repository harness run completed for ")
+  );
+}
+
+function isInternalAgentRunMessage(message: ThreadMessage): boolean {
+  return isRepositoryHarnessCompletionFallbackMessage(message);
+}
+
+function noFinalModelResponseContent(runId?: string): string {
+  const runReference = runId ? ` for run ${runId}` : "";
+  return `I finished the repository run${runReference}, but it did not return a final model response. Open Agent details or the persisted evidence to inspect the run events, artifacts, and verification output.`;
+}
 
 function toUiPermissionMode(mode: SettingsSnapshot["permissionMode"]): PermissionModeOption {
   if (mode === "manual") {
@@ -245,16 +513,35 @@ function codexConnectionStatusLabel(reference: CodexConnectionReference | null |
 
 function codexConnectionStatusMessage(reference: CodexConnectionReference | null | undefined): string {
   if (!reference) {
-    return "Codex connection is required before real repository runs.";
+    return "Codex connection is required before real supervised tasks.";
   }
-  return reference.lastPreflight?.reasons[0] ?? "Run the Codex CLI provider check before real repository runs.";
+  return reference.lastPreflight?.reasons[0] ?? "Run the Codex CLI provider check before real supervised tasks.";
 }
 
 function messageFromUnknownError(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    const message = error.message;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
   return fallback;
+}
+
+function repositoryRunnerErrorMessage(error: unknown): string {
+  const rawMessage = messageFromUnknownError(error, "Unknown repository runner error.").replace(/\s+/g, " ").trim();
+  const withoutStack = rawMessage.replace(/\s+at\s+[A-Za-z_$][\w$.[\]<>]*(?:\s|\().*$/s, "").trim();
+  return withoutStack.replace(/^repository run failed:\s*/i, "").replace(/^Error:\s*/i, "") || "Unknown repository runner error.";
+}
+
+function isRepositoryPathSelectionError(message: string): boolean {
+  return message === "repositoryPath must point to a selected local directory";
 }
 
 type SetupNoticeTone = "info" | "success" | "warning" | "error";
@@ -299,7 +586,7 @@ function codexPreflightSetupMessage(result: CodexConnectionPreflightResult, fall
     return result.reasons[0] ?? fallback;
   }
   if (result.status === "authRequired") {
-    return "No authenticated Codex CLI session was detected. Orynt does not manage Codex sign-in. Run codex login in a terminal, complete sign-in, then return and click Check Codex CLI again.";
+    return "No authenticated Codex CLI session was detected. Open Codex login here to run `codex login` in a terminal, or run it manually, then return to setup.";
   }
   return result.reasons[0] ?? fallback;
 }
@@ -333,9 +620,9 @@ function modelConnectionStatusLabel(reference: ModelConnectionReference | null |
 
 function modelConnectionStatusMessage(reference: ModelConnectionReference | null | undefined): string {
   if (!reference) {
-    return "Choose a provider and run the provider check before real repository runs.";
+    return "Choose a provider and run the provider check before real supervised tasks.";
   }
-  return reference.lastPreflight?.reasons[0] ?? "Save provider setup and run the provider check before real repository runs.";
+  return reference.lastPreflight?.reasons[0] ?? "Save provider setup and run the provider check before real supervised tasks.";
 }
 
 function artifactStatusLabel(status: ArtifactEvidenceStatus): string {
@@ -368,7 +655,9 @@ const messageBlockMetaStorageKey = "orynt:message-block-meta-visible:v1";
 const legacyMessageBlockMetaStorageKey = "codepawl:message-block-meta-visible:v1";
 const privateBetaOnboardingStorageKey = "orynt:private-beta-onboarding:v1";
 const legacyPrivateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
-const defaultLandingUrl = "http://127.0.0.1:5173/";
+const threadStateStorageKey = "orynt:thread-state:v1";
+const modelsDevProviderCatalogStoragePrefix = "orynt:models-dev-provider-catalog:v1:";
+const modelsDevCatalogMaxAgeMs = 7 * 24 * 60 * 60 * 1000;
 const mobileWorkspaceMediaQuery = "(max-width: 720px)";
 
 function readPrivateBetaOnboardingDismissed() {
@@ -399,35 +688,6 @@ function readMobileWorkspaceViewport() {
   }
   return window.matchMedia(mobileWorkspaceMediaQuery).matches;
 }
-
-export function getLandingUrl() {
-  const configuredUrl = import.meta.env.VITE_ORYNT_LANDING_URL?.trim();
-  return configuredUrl || defaultLandingUrl;
-}
-
-const mockAgentSources = [
-  {
-    citation: 1,
-    domain: "platform.openai.com",
-    excerpt: "Reference material for model behavior, tool use, and response grounding.",
-    title: "OpenAI Docs",
-    url: "https://platform.openai.com/docs",
-  },
-  {
-    citation: 2,
-    domain: "docs.github.com",
-    excerpt: "Repository workflow guidance used as a mock citation for branch and review behavior.",
-    title: "Model behavior reference",
-    url: "https://docs.github.com/en",
-  },
-  {
-    citation: 3,
-    domain: "developer.mozilla.org",
-    excerpt: "Browser interaction semantics represented here as a local source mock.",
-    title: "Interaction semantics note",
-    url: "https://developer.mozilla.org/en-US/docs/Web/Accessibility",
-  },
-] satisfies MockAgentSource[];
 
 const workTypeOptions: Array<{ value: SettingsSnapshot["operatorProfile"]["workType"]; label: string }> = [
   { value: "engineering", label: "Engineering" },
@@ -492,23 +752,186 @@ type OryntDropdownOption = {
   value: string;
 };
 
+type OryntDropdownPlacement = "dropdown" | "dropup";
+
+type CachedProviderModelCatalog = {
+  fetchedAt: string;
+  models: ModelCatalogOption[];
+  providerId: ModelProviderId;
+};
+
+type ModelsDevProvider = {
+  models?: Record<string, ModelsDevModel>;
+};
+
+type ModelsDevModel = {
+  description?: string;
+  id?: string;
+  last_updated?: string;
+  modalities?: {
+    output?: string[];
+  };
+  name?: string;
+  owned_by?: string;
+  reasoning?: boolean;
+  release_date?: string;
+};
+
+const dropdownMenuGap = 8;
+const dropdownViewportPadding = 12;
+
 const setupProviderOptions: SetupProviderOption[] = [
   {
     id: "codex-cli",
     label: "Codex CLI",
-    description: "Detects an existing local Codex CLI session without changing Codex credentials.",
+    description: "Uses your local Codex CLI session.",
     authMethods: ["codexCliSession"],
     defaultAuthMethod: "codexCliSession",
   },
   {
     id: "openai-api",
     label: "OpenAI API",
-    description: "Usage-based OpenAI Platform access through a local environment variable.",
+    description: "Uses OPENAI_API_KEY from your environment.",
     authMethods: ["apiKeyEnv"],
     defaultAuthMethod: "apiKeyEnv",
     defaultEnvKey: "OPENAI_API_KEY",
   },
 ];
+
+function modelsDevProviderIdForSetupProvider(_providerId: ModelProviderId): string {
+  return "openai";
+}
+
+function modelsDevCacheKey(providerId: ModelProviderId): string {
+  return `${modelsDevProviderCatalogStoragePrefix}${providerId}`;
+}
+
+function readCachedProviderModelCatalog(providerId: ModelProviderId): CachedProviderModelCatalog | null {
+  try {
+    const raw = window.localStorage.getItem(modelsDevCacheKey(providerId));
+    if (!raw) {
+      return null;
+    }
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || parsed.providerId !== providerId || typeof parsed.fetchedAt !== "string" || !Array.isArray(parsed.models)) {
+      return null;
+    }
+    const fetchedAtMs = Date.parse(parsed.fetchedAt);
+    if (!Number.isFinite(fetchedAtMs) || Date.now() - fetchedAtMs > modelsDevCatalogMaxAgeMs) {
+      return null;
+    }
+    return parsed as CachedProviderModelCatalog;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedProviderModelCatalog(providerId: ModelProviderId, models: ModelCatalogOption[]): CachedProviderModelCatalog {
+  const cached = {
+    fetchedAt: new Date().toISOString(),
+    models,
+    providerId,
+  } satisfies CachedProviderModelCatalog;
+  try {
+    window.localStorage.setItem(modelsDevCacheKey(providerId), JSON.stringify(cached));
+  } catch {
+    // Cache writes are an optimization only.
+  }
+  return cached;
+}
+
+function modelsDevModelSupportsRepositoryRuns(modelId: string, model: ModelsDevModel): boolean {
+  const normalizedId = modelId.trim().toLowerCase();
+  if (!normalizedId) {
+    return false;
+  }
+  if (model.modalities?.output && !model.modalities.output.includes("text")) {
+    return false;
+  }
+  return ![
+    "audio-",
+    "babbage",
+    "dall-e",
+    "embedding",
+    "image-",
+    "omni-moderation",
+    "text-embedding-",
+    "tts-",
+    "whisper-",
+  ].some((prefix) => normalizedId.startsWith(prefix));
+}
+
+function modelsDevThinkingEffortsForModel(modelId: string): Pick<ModelCatalogOption, "supportedThinkingEfforts" | "defaultThinkingEffort"> {
+  if (modelId === "gpt-5.5") {
+    return { supportedThinkingEfforts: ["none", "low", "medium", "high", "xhigh"], defaultThinkingEffort: "medium" };
+  }
+  if (modelId === "gpt-5.5-pro") {
+    return { supportedThinkingEfforts: ["medium", "high", "xhigh"], defaultThinkingEffort: "high" };
+  }
+  if (["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.2"].includes(modelId)) {
+    return { supportedThinkingEfforts: ["none", "low", "medium", "high", "xhigh"], defaultThinkingEffort: "none" };
+  }
+  if (modelId === "gpt-5.4-pro") {
+    return { supportedThinkingEfforts: ["medium", "high", "xhigh"], defaultThinkingEffort: "medium" };
+  }
+  if (modelId === "gpt-5.1") {
+    return { supportedThinkingEfforts: ["none", "low", "medium", "high"], defaultThinkingEffort: "none" };
+  }
+  if (modelId === "gpt-5") {
+    return { supportedThinkingEfforts: ["minimal", "low", "medium", "high"], defaultThinkingEffort: "medium" };
+  }
+  if (modelId === "gpt-5-pro") {
+    return { supportedThinkingEfforts: ["high"], defaultThinkingEffort: "high" };
+  }
+  return { supportedThinkingEfforts: null, defaultThinkingEffort: null };
+}
+
+function modelsDevProviderToOptions(providerId: ModelProviderId, provider: ModelsDevProvider): ModelCatalogOption[] {
+  const models = Object.entries(provider.models ?? {})
+    .filter(([modelId, model]) => modelsDevModelSupportsRepositoryRuns(modelId, model))
+    .map(([modelId, model]) => {
+      const thinkingEfforts = modelsDevThinkingEffortsForModel(modelId);
+      return {
+        id: model.id?.trim() || modelId,
+        label: model.name?.trim() || modelId,
+        description: model.description ?? null,
+        ownedBy: model.owned_by ?? null,
+        source: providerId,
+        ...thinkingEfforts,
+        releaseDate: model.release_date ?? model.last_updated ?? "",
+      };
+    })
+    .sort((left, right) => right.releaseDate.localeCompare(left.releaseDate) || left.label.localeCompare(right.label));
+
+  return models.map(({ releaseDate: _releaseDate, ...model }) => model);
+}
+
+async function fetchModelsDevProviderCatalog(providerId: ModelProviderId): Promise<CachedProviderModelCatalog | null> {
+  if (typeof fetch !== "function") {
+    return null;
+  }
+  try {
+    const response = await fetch("https://models.dev/api.json", { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      return null;
+    }
+    const catalog: unknown = await response.json();
+    if (!isRecord(catalog)) {
+      return null;
+    }
+    const provider = catalog[modelsDevProviderIdForSetupProvider(providerId)];
+    if (!isRecord(provider)) {
+      return null;
+    }
+    const models = modelsDevProviderToOptions(providerId, provider as ModelsDevProvider);
+    if (models.length === 0) {
+      return null;
+    }
+    return writeCachedProviderModelCatalog(providerId, models);
+  } catch {
+    return null;
+  }
+}
 
 function setupProviderById(providerId: ModelProviderId | null | undefined): SetupProviderOption | null {
   return setupProviderOptions.find((provider) => provider.id === providerId) ?? null;
@@ -519,6 +942,42 @@ function setupModelById(models: SetupModelOption[], modelId: string | null | und
     return null;
   }
   return models.find((model) => model.id === modelId) ?? null;
+}
+
+function dropdownBoundaryForTrigger(trigger: HTMLElement) {
+  let top = dropdownViewportPadding;
+  let bottom = window.innerHeight - dropdownViewportPadding;
+  let ancestor = trigger.parentElement;
+
+  while (ancestor && ancestor !== document.documentElement) {
+    const style = window.getComputedStyle(ancestor);
+    const overflow = `${style.overflow} ${style.overflowY}`;
+    if (/(auto|scroll|hidden|clip)/.test(overflow)) {
+      const rect = ancestor.getBoundingClientRect();
+      top = Math.max(top, rect.top + dropdownViewportPadding);
+      bottom = Math.min(bottom, rect.bottom - dropdownViewportPadding);
+    }
+    ancestor = ancestor.parentElement;
+  }
+
+  if (bottom <= top) {
+    return { top: dropdownViewportPadding, bottom: window.innerHeight - dropdownViewportPadding };
+  }
+
+  return { top, bottom };
+}
+
+function resolveOryntDropdownLayout(trigger: HTMLElement, menu: HTMLElement): { maxHeight: number; placement: OryntDropdownPlacement } {
+  const triggerRect = trigger.getBoundingClientRect();
+  const boundary = dropdownBoundaryForTrigger(trigger);
+  const spaceBelow = boundary.bottom - triggerRect.bottom - dropdownMenuGap;
+  const spaceAbove = triggerRect.top - boundary.top - dropdownMenuGap;
+  const desiredHeight = Math.max(72, Math.min(menu.scrollHeight || 260, window.innerHeight - dropdownViewportPadding * 2));
+  const placement = spaceBelow >= desiredHeight || spaceBelow >= spaceAbove ? "dropdown" : "dropup";
+  const availableSpace = placement === "dropdown" ? spaceBelow : spaceAbove;
+  const maxHeight = Math.max(72, Math.min(desiredHeight, availableSpace));
+
+  return { maxHeight: Math.round(maxHeight), placement };
 }
 
 function OryntDropdown({
@@ -538,8 +997,12 @@ function OryntDropdown({
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const placementFrameRef = useRef<number | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedValue, setHighlightedValue] = useState<string>("");
+  const [menuPlacement, setMenuPlacement] = useState<OryntDropdownPlacement>("dropdown");
+  const [menuMaxHeight, setMenuMaxHeight] = useState<number | null>(null);
   const selectedOption = options.find((option) => option.value === value) ?? null;
   const displayLabel = selectedOption?.label ?? placeholder;
   const listboxId = `${id}-listbox`;
@@ -564,6 +1027,57 @@ function OryntDropdown({
       setHighlightedValue(value || options[0]?.value || "");
     }
   }, [isOpen, options, value]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setMenuMaxHeight(null);
+      return undefined;
+    }
+
+    const updatePlacement = () => {
+      if (!triggerRef.current || !menuRef.current) {
+        return;
+      }
+      const nextLayout = resolveOryntDropdownLayout(triggerRef.current, menuRef.current);
+      setMenuPlacement((current) => (current === nextLayout.placement ? current : nextLayout.placement));
+      setMenuMaxHeight((current) => (current === nextLayout.maxHeight ? current : nextLayout.maxHeight));
+    };
+
+    const schedulePlacementUpdate = () => {
+      if (placementFrameRef.current !== null) {
+        return;
+      }
+      placementFrameRef.current = window.requestAnimationFrame(() => {
+        placementFrameRef.current = null;
+        updatePlacement();
+      });
+    };
+
+    updatePlacement();
+    window.addEventListener("resize", schedulePlacementUpdate, { passive: true });
+    window.addEventListener("scroll", schedulePlacementUpdate, { capture: true, passive: true });
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(schedulePlacementUpdate);
+      if (rootRef.current) {
+        resizeObserver.observe(rootRef.current);
+      }
+      if (menuRef.current) {
+        resizeObserver.observe(menuRef.current);
+      }
+    }
+
+    return () => {
+      window.removeEventListener("resize", schedulePlacementUpdate);
+      window.removeEventListener("scroll", schedulePlacementUpdate, { capture: true });
+      resizeObserver?.disconnect();
+      if (placementFrameRef.current !== null) {
+        window.cancelAnimationFrame(placementFrameRef.current);
+        placementFrameRef.current = null;
+      }
+    };
+  }, [isOpen, options.length]);
 
   const selectOption = (nextValue: string) => {
     setHighlightedValue(nextValue);
@@ -637,7 +1151,15 @@ function OryntDropdown({
         <ChevronsUpDown className="orynt-dropdown-icon" aria-hidden="true" />
       </button>
       {isOpen ? (
-        <div className="orynt-dropdown-menu" id={listboxId} role="listbox" aria-label={`${ariaLabel} options`}>
+        <div
+          className={`orynt-dropdown-menu orynt-dropdown-menu-${menuPlacement}`}
+          data-placement={menuPlacement}
+          id={listboxId}
+          ref={menuRef}
+          role="listbox"
+          aria-label={`${ariaLabel} options`}
+          style={menuMaxHeight ? { maxHeight: `${menuMaxHeight}px` } : undefined}
+        >
           {options.map((option) => {
             const isSelected = option.value === value;
             const isHighlighted = option.value === highlightedValue;
@@ -754,7 +1276,6 @@ function resolveComposerMenuPlacement(trigger: HTMLElement, estimatedMenuHeight:
 type ShellModalProps = {
   bodyClassName?: string;
   children: ReactNode;
-  description?: string;
   id: string;
   label: string;
   modalClassName?: string;
@@ -782,6 +1303,7 @@ type ChatBubbleProps = {
 type MessageBlockProps = {
   align?: ChatBubbleAlign;
   children: ReactNode;
+  messageId?: string;
   meta?: string;
   role: ThreadMessage["role"];
   showMeta?: boolean;
@@ -802,6 +1324,291 @@ function titleCaseStatus(status: string): string {
 
 function normalizeSelectedText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+function isLocalGreetingPrompt(prompt: string): boolean {
+  return /^(hi|hello|hey|yo|sup|howdy|say\s+(?:hi|hello))[.!?\s]*$/i.test(prompt.trim());
+}
+
+function isLocalSmokeTestPrompt(prompt: string): boolean {
+  return /^(?:test|testing|smoke\s*test|ping)(?:\s+(?:nè|ne|nha|nhé|nhe|thử|thu|xem|coi|lại|lai|đi|di))*[.!?\s]*$/iu.test(normalizeSelectedText(prompt));
+}
+
+function localShortPromptResponse(prompt: string): string | null {
+  if (isLocalGreetingPrompt(prompt)) {
+    return "Hi — send a repository task when you want me to inspect or change the selected project.";
+  }
+  if (isLocalSmokeTestPrompt(prompt)) {
+    return "Test received — send a repository task when you want me to inspect or change the selected project.";
+  }
+  return null;
+}
+
+function safeMarkdownLinkHref(rawHref: string): string | null {
+  const href = rawHref.trim();
+  if (!href) {
+    return null;
+  }
+  if (href.startsWith("#") || href.startsWith("/")) {
+    return href;
+  }
+  return /^(https?:|mailto:)/i.test(href) ? href : null;
+}
+
+function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let index = 0;
+  let textBuffer = "";
+
+  const flushText = () => {
+    if (textBuffer) {
+      nodes.push(textBuffer);
+      textBuffer = "";
+    }
+  };
+
+  const readDelimited = (marker: string) => {
+    if (!text.startsWith(marker, index)) {
+      return false;
+    }
+    const end = text.indexOf(marker, index + marker.length);
+    if (end <= index + marker.length - 1) {
+      return false;
+    }
+    const value = text.slice(index + marker.length, end);
+    flushText();
+    const key = `${keyPrefix}-${nodes.length}`;
+    if (marker === "`") {
+      nodes.push(<code key={key}>{value}</code>);
+    } else if (marker === "~~") {
+      nodes.push(<del key={key}>{renderMarkdownInline(value, key)}</del>);
+    } else if (marker === "**" || marker === "__") {
+      nodes.push(<strong key={key}>{renderMarkdownInline(value, key)}</strong>);
+    } else {
+      nodes.push(<em key={key}>{renderMarkdownInline(value, key)}</em>);
+    }
+    index = end + marker.length;
+    return true;
+  };
+
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "\\" && index + 1 < text.length) {
+      textBuffer += text[index + 1];
+      index += 2;
+      continue;
+    }
+    if (char === "[") {
+      const labelEnd = text.indexOf("](", index + 1);
+      const hrefEnd = labelEnd >= 0 ? text.indexOf(")", labelEnd + 2) : -1;
+      if (labelEnd > index && hrefEnd > labelEnd) {
+        const href = safeMarkdownLinkHref(text.slice(labelEnd + 2, hrefEnd));
+        if (href) {
+          flushText();
+          const key = `${keyPrefix}-${nodes.length}`;
+          nodes.push(
+            <a key={key} href={href} target={href.startsWith("#") || href.startsWith("/") ? undefined : "_blank"} rel={href.startsWith("#") || href.startsWith("/") ? undefined : "noreferrer"}>
+              {renderMarkdownInline(text.slice(index + 1, labelEnd), key)}
+            </a>,
+          );
+          index = hrefEnd + 1;
+          continue;
+        }
+      }
+    }
+    if (readDelimited("**") || readDelimited("__") || readDelimited("~~") || readDelimited("`") || readDelimited("*") || readDelimited("_")) {
+      continue;
+    }
+    textBuffer += char;
+    index += 1;
+  }
+  flushText();
+  return nodes;
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function isMarkdownTableDivider(line: string): boolean {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function markdownLineStartsBlock(line: string, nextLine?: string): boolean {
+  return (
+    /^#{1,6}\s+/.test(line) ||
+    /^```/.test(line) ||
+    /^-{3,}\s*$/.test(line.trim()) ||
+    /^>\s?/.test(line) ||
+    /^\s*[-*+]\s+/.test(line) ||
+    /^\s*\d+[.)]\s+/.test(line) ||
+    Boolean(nextLine && line.includes("|") && isMarkdownTableDivider(nextLine))
+  );
+}
+
+function renderMarkdownContent(markdown: string): ReactNode[] {
+  const normalized = markdown.replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  const blocks: ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    const fence = line.match(/^```\s*([\w-]+)?\s*$/);
+    if (fence) {
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !/^```\s*$/.test(lines[index])) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) {
+        index += 1;
+      }
+      blocks.push(
+        <pre className="agent-response-code-block" key={`md-${blocks.length}`}>
+          <code className={fence[1] ? `language-${fence[1]}` : undefined}>{codeLines.join("\n")}</code>
+        </pre>,
+      );
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      const headingContent = renderMarkdownInline(heading[2].trim(), `md-${blocks.length}`);
+      blocks.push(
+        heading[1].length === 1 ? (
+          <h1 key={`md-${blocks.length}`}>{headingContent}</h1>
+        ) : heading[1].length === 2 ? (
+          <h2 key={`md-${blocks.length}`}>{headingContent}</h2>
+        ) : heading[1].length === 3 ? (
+          <h3 key={`md-${blocks.length}`}>{headingContent}</h3>
+        ) : heading[1].length === 4 ? (
+          <h4 key={`md-${blocks.length}`}>{headingContent}</h4>
+        ) : heading[1].length === 5 ? (
+          <h5 key={`md-${blocks.length}`}>{headingContent}</h5>
+        ) : (
+          <h6 key={`md-${blocks.length}`}>{headingContent}</h6>
+        ),
+      );
+      index += 1;
+      continue;
+    }
+
+    if (/^-{3,}\s*$/.test(line.trim())) {
+      blocks.push(<div className="agent-response-rule" key={`md-${blocks.length}`} role="separator" />);
+      index += 1;
+      continue;
+    }
+
+    if (line.includes("|") && index + 1 < lines.length && isMarkdownTableDivider(lines[index + 1])) {
+      const headers = splitMarkdownTableRow(line);
+      index += 2;
+      const rows: string[][] = [];
+      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+        rows.push(splitMarkdownTableRow(lines[index]));
+        index += 1;
+      }
+      blocks.push(
+        <div className="agent-response-table-scroll" key={`md-${blocks.length}`}>
+          <table>
+            <thead>
+              <tr>
+                {headers.map((header, headerIndex) => (
+                  <th key={`h-${headerIndex}`}>{renderMarkdownInline(header, `md-${blocks.length}-h-${headerIndex}`)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={`r-${rowIndex}`}>
+                  {headers.map((_, cellIndex) => (
+                    <td key={`c-${cellIndex}`}>{renderMarkdownInline(row[cellIndex] ?? "", `md-${blocks.length}-r-${rowIndex}-c-${cellIndex}`)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      const quoteLines: string[] = [];
+      while (index < lines.length && /^>\s?/.test(lines[index])) {
+        quoteLines.push(lines[index].replace(/^>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(<blockquote key={`md-${blocks.length}`}>{renderMarkdownContent(quoteLines.join("\n"))}</blockquote>);
+      continue;
+    }
+
+    const unorderedListMatch = line.match(/^\s*[-*+]\s+(.+)$/);
+    if (unorderedListMatch) {
+      const items: Array<{ checked?: boolean; content: string }> = [];
+      while (index < lines.length) {
+        const item = lines[index].match(/^\s*[-*+]\s+(.+)$/);
+        if (!item) {
+          break;
+        }
+        const task = item[1].match(/^\[([ xX])]\s+(.+)$/);
+        items.push(task ? { checked: task[1].toLowerCase() === "x", content: task[2] } : { content: item[1] });
+        index += 1;
+      }
+      blocks.push(
+        <ul key={`md-${blocks.length}`} className={items.some((item) => item.checked !== undefined) ? "agent-response-task-list" : undefined}>
+          {items.map((item, itemIndex) => (
+            <li key={itemIndex}>
+              {item.checked !== undefined ? <input aria-label={item.checked ? "Completed task" : "Incomplete task"} checked={item.checked} disabled type="checkbox" /> : null}
+              <span>{renderMarkdownInline(item.content, `md-${blocks.length}-li-${itemIndex}`)}</span>
+            </li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    const orderedListMatch = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (orderedListMatch) {
+      const items: string[] = [];
+      while (index < lines.length) {
+        const item = lines[index].match(/^\s*\d+[.)]\s+(.+)$/);
+        if (!item) {
+          break;
+        }
+        items.push(item[1]);
+        index += 1;
+      }
+      blocks.push(
+        <ol key={`md-${blocks.length}`}>
+          {items.map((item, itemIndex) => (
+            <li key={itemIndex}>{renderMarkdownInline(item, `md-${blocks.length}-li-${itemIndex}`)}</li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
+    const paragraphLines: string[] = [line.trim()];
+    index += 1;
+    while (index < lines.length && lines[index].trim() && !markdownLineStartsBlock(lines[index], lines[index + 1])) {
+      paragraphLines.push(lines[index].trim());
+      index += 1;
+    }
+    blocks.push(<p key={`md-${blocks.length}`}>{renderMarkdownInline(paragraphLines.join(" "), `md-${blocks.length}`)}</p>);
+  }
+
+  return blocks.length > 0 ? blocks : [<p key="md-empty">{markdown}</p>];
 }
 
 function summarizeCandidateRuleStatuses(candidateRules: CandidateRule[]): MemoryReviewSnapshot["summary"]["candidateRuleStatusCounts"] {
@@ -850,7 +1657,51 @@ function updateSkillRegistrySkill(snapshot: SkillRegistrySnapshot, updatedSkill:
 }
 
 function formatThreadComposerPlaceholder(label: string): string {
-  return label.toLowerCase().includes("thread") ? `Message ${label}...` : `Message ${label} thread...`;
+  return label === "New task" ? "Describe what Orynt should do..." : `Describe the next task for ${label}...`;
+}
+
+function threadTitleFromPrompt(prompt: string): string {
+  return truncateUiText(prompt.replace(/\s+/g, " ").trim(), 48);
+}
+
+function agentResponseText(message: ThreadMessage): string {
+  return message.content?.trim() ?? "";
+}
+
+function defaultAgentResponseSources(message: ThreadMessage): AgentResponseSource[] {
+  const content = message.content?.trim();
+  return [
+    {
+      citation: 1,
+      domain: "Current thread",
+      excerpt: content ? truncateUiText(content, 320) : "This response was generated in the active Orynt thread.",
+      title: message.label ?? "Agent response",
+    },
+  ];
+}
+
+function agentResponseSources(message: ThreadMessage): AgentResponseSource[] {
+  return message.sources?.length ? message.sources : defaultAgentResponseSources(message);
+}
+
+async function writeClipboardText(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+  try {
+    document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
 }
 
 function createInitialThreadMessages(): Record<string, ThreadMessage[]> {
@@ -879,6 +1730,138 @@ function createDemoThreadMessages(runState: MockRunState): Record<string, Thread
       { id: "draft-approval", role: "approval" },
     ],
   };
+}
+
+function createInitialThreadState(): ThreadStateSnapshot {
+  return {
+    workspaces: [...initialWorkspaces],
+    threadMessagesByWorkspace: createInitialThreadMessages(),
+    nextWorkspaceThreadIndex: 2,
+    activeWorkspaceId: "draft",
+  };
+}
+
+function createDemoThreadState(runState: MockRunState): ThreadStateSnapshot {
+  return {
+    workspaces: [...initialWorkspaces],
+    threadMessagesByWorkspace: createDemoThreadMessages(runState),
+    nextWorkspaceThreadIndex: 2,
+    activeWorkspaceId: "draft",
+  };
+}
+
+function sanitizePersistedThreadMessage(value: unknown): ThreadMessage | null {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.role !== "string") {
+    return null;
+  }
+  if (value.role !== "user" && value.role !== "system" && value.role !== "agent" && value.role !== "approval") {
+    return null;
+  }
+  return {
+    id: value.id,
+    role: value.role,
+    ...(typeof value.content === "string" ? { content: value.content } : {}),
+    ...(typeof value.label === "string" ? { label: value.label } : {}),
+    ...(typeof value.showContext === "boolean" ? { showContext: value.showContext } : {}),
+    ...(typeof value.runId === "string" ? { runId: value.runId } : {}),
+    ...(typeof value.detailKind === "string" &&
+    (value.detailKind === "thinking" ||
+      value.detailKind === "tool" ||
+      value.detailKind === "command" ||
+      value.detailKind === "model" ||
+      value.detailKind === "memory" ||
+      value.detailKind === "done" ||
+      value.detailKind === "system")
+      ? { detailKind: value.detailKind }
+      : {}),
+    ...(Array.isArray(value.detailItems) && value.detailItems.every((item) => typeof item === "string")
+      ? { detailItems: value.detailItems }
+      : {}),
+  };
+}
+
+function sanitizePersistedWorkspace(value: unknown): Workspace | null {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.label !== "string") {
+    return null;
+  }
+  return {
+    id: value.id,
+    label: value.label,
+    description: typeof value.description === "string" ? value.description : "",
+    badge: typeof value.badge === "string" ? value.badge : "saved",
+    ...(typeof value.archived === "boolean" ? { archived: value.archived } : {}),
+  };
+}
+
+function readPersistedThreadState(): ThreadStateSnapshot | null {
+  try {
+    const raw = window.localStorage.getItem(threadStateStorageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || !Array.isArray(parsed.workspaces) || !isRecord(parsed.threadMessagesByWorkspace)) {
+      return null;
+    }
+    const messagesByWorkspace: Record<string, ThreadMessage[]> = {};
+    for (const [workspaceId, messages] of Object.entries(parsed.threadMessagesByWorkspace)) {
+      if (!Array.isArray(messages)) {
+        continue;
+      }
+      const safeMessages = messages.map(sanitizePersistedThreadMessage).filter((message): message is ThreadMessage => message !== null);
+      if (safeMessages.length > 0) {
+        messagesByWorkspace[workspaceId] = safeMessages;
+      }
+    }
+    const workspaces = parsed.workspaces
+      .map(sanitizePersistedWorkspace)
+      .filter((workspace): workspace is Workspace => workspace !== null && (messagesByWorkspace[workspace.id]?.length ?? 0) > 0);
+    if (workspaces.length === 0) {
+      return null;
+    }
+    const activeWorkspaceId =
+      typeof parsed.activeWorkspaceId === "string" && workspaces.some((workspace) => workspace.id === parsed.activeWorkspaceId)
+        ? parsed.activeWorkspaceId
+        : workspaces[0].id;
+    return {
+      workspaces,
+      threadMessagesByWorkspace: messagesByWorkspace,
+      nextWorkspaceThreadIndex: typeof parsed.nextWorkspaceThreadIndex === "number" && Number.isFinite(parsed.nextWorkspaceThreadIndex)
+        ? Math.max(2, Math.floor(parsed.nextWorkspaceThreadIndex))
+        : 2,
+      activeWorkspaceId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedThreadState(state: ThreadStateSnapshot): void {
+  try {
+    const savedWorkspaces = state.workspaces.filter((workspace) => (state.threadMessagesByWorkspace[workspace.id]?.length ?? 0) > 0);
+    if (savedWorkspaces.length === 0) {
+      window.localStorage.removeItem(threadStateStorageKey);
+      return;
+    }
+    const savedMessages = savedWorkspaces.reduce<Record<string, ThreadMessage[]>>((messages, workspace) => {
+      messages[workspace.id] = state.threadMessagesByWorkspace[workspace.id] ?? [];
+      return messages;
+    }, {});
+    const activeWorkspaceId = savedWorkspaces.some((workspace) => workspace.id === state.activeWorkspaceId)
+      ? state.activeWorkspaceId
+      : savedWorkspaces[0].id;
+    window.localStorage.setItem(
+      threadStateStorageKey,
+      JSON.stringify({
+        workspaces: savedWorkspaces,
+        threadMessagesByWorkspace: savedMessages,
+        nextWorkspaceThreadIndex: state.nextWorkspaceThreadIndex,
+        activeWorkspaceId,
+      }),
+    );
+  } catch {
+    // Local persistence is a convenience; the active in-memory thread should keep working.
+  }
 }
 
 function ChatBubble({
@@ -913,41 +1896,50 @@ function ChatBubble({
   );
 }
 
-function MessageBlock({ align = "start", children, meta, role, showMeta = false }: MessageBlockProps) {
+function MessageBlock({ align = "start", children, messageId, meta, role, showMeta = false }: MessageBlockProps) {
   const blockClassName = [`message-block`, `message-block-${role}`, `message-block-align-${align}`].join(" ");
 
   return (
-    <div className={blockClassName}>
+    <div className={blockClassName} data-message-id={messageId}>
       {meta && showMeta ? <span className="message-block-meta">{meta}</span> : null}
       {children}
     </div>
   );
 }
 
-const mockAgentSubtasks = ["Inspect connector approval", "Confirm verifier evidence", "Keep result import separate"];
-
 function AgentDetails({ messages }: { messages: ThreadMessage[] }) {
   if (messages.length === 0) {
     return null;
   }
 
-  const noticeCount = `${messages.length} ${messages.length === 1 ? "notice" : "notices"}`;
+  const traceEventCount = `${messages.length} ${messages.length === 1 ? "trace event" : "trace events"}`;
+  const latestNotice = messages.at(-1);
+  const latestNoticeLabel = latestNotice?.detailKind ? runEventKindLabels[latestNotice.detailKind] : "Notice";
+  const latestNoticePreview = latestNotice?.content ? truncateUiText(latestNotice.content, 140) : `${latestNoticeLabel} is streaming`;
 
   return (
-    <details className="agent-details" open>
+    <details className="agent-details">
       <summary>
-        <span>Agent details</span>
-        <strong>{noticeCount}</strong>
+        <span className="agent-details-summary-copy">
+          <span className="agent-details-summary-title">
+            <span>Agent details</span>
+            <strong>{traceEventCount}</strong>
+          </span>
+          <small>Latest: {latestNoticePreview}</small>
+        </span>
       </summary>
       <ol className="agent-details-list" aria-label="Agent details">
-        {messages.map((message, index) => (
-          <li className="agent-details-item" key={message.id}>
-            <p className="agent-details-row">{message.content}</p>
-            {index === 0 ? (
-              <ol className="agent-details-subtask-list" aria-label="Mock subtasks">
-                {mockAgentSubtasks.map((subtask) => (
-                  <li className="agent-details-subtask-item" key={subtask}>
-                    <p className="agent-details-subtask-row">{subtask}</p>
+        {messages.map((message) => (
+          <li className={`agent-details-item agent-details-item-${message.detailKind ?? "system"}`} key={message.id}>
+            <p className="agent-details-row">
+              <span>{message.detailKind ? runEventKindLabels[message.detailKind] : "Notice"}</span>
+              <strong>{message.content}</strong>
+            </p>
+            {message.detailItems?.length ? (
+              <ol className="agent-details-subtask-list" aria-label={`${message.content ?? "Agent event"} details`}>
+                {message.detailItems.map((detail) => (
+                  <li className="agent-details-subtask-item" key={detail}>
+                    <p className="agent-details-subtask-row">{detail}</p>
                   </li>
                 ))}
               </ol>
@@ -959,7 +1951,7 @@ function AgentDetails({ messages }: { messages: ThreadMessage[] }) {
   );
 }
 
-function ShellModal({ bodyClassName, children, description, id, label, modalClassName, onClose, variant = "plain" }: ShellModalProps) {
+function ShellModal({ bodyClassName, children, id, label, modalClassName, onClose, variant = "plain" }: ShellModalProps) {
   const titleId = `${id}-title`;
   const closeLabel = `Dismiss ${label.toLowerCase()}`;
   const shellModalClassName = [variant === "atmospheric" ? "shell-modal shell-modal-atmospheric" : "shell-modal", modalClassName].filter(Boolean).join(" ");
@@ -984,7 +1976,6 @@ function ShellModal({ bodyClassName, children, description, id, label, modalClas
         <header className="shell-modal-header">
           <div>
             <strong id={titleId}>{label}</strong>
-            {description ? <span>{description}</span> : null}
           </div>
           <button className="shell-modal-close" type="button" aria-label={closeLabel} title={closeLabel} onClick={onClose}>
             <X className="ui-icon" aria-hidden="true" strokeWidth={2} />
@@ -1016,6 +2007,10 @@ function App({
   seedDemoThread?: boolean;
 } = {}) {
   const runState = useMemo(() => initialRunState ?? createMockRunState(), [initialRunState]);
+  const initialThreadState = useMemo(
+    () => (seedDemoThread ? createDemoThreadState(runState) : readPersistedThreadState() ?? createInitialThreadState()),
+    [runState, seedDemoThread],
+  );
   const [approvalStatus, setApprovalStatus] = useState("Waiting for operator approval");
   const [currentRunId, setCurrentRunId] = useState<string | null>(initialSelectedRunId === undefined ? runState.traceSummary.runId : initialSelectedRunId);
   const [memoryReview, setMemoryReview] = useState<MemoryReviewSnapshot>(runState.memoryReview);
@@ -1030,6 +2025,8 @@ function App({
   const [codexConnectionMessage, setCodexConnectionMessage] = useState("");
   const [modelConnectionMessage, setModelConnectionMessage] = useState("");
   const [modelConnectionMessageTone, setModelConnectionMessageTone] = useState<SetupNoticeTone>("info");
+  const [codexLoginBackupUrl, setCodexLoginBackupUrl] = useState<string | null>(null);
+  const [codexManualLoginActionsRevealed, setCodexManualLoginActionsRevealed] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<ModelProviderId | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -1054,12 +2051,15 @@ function App({
   const [composerValue, setComposerValue] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [composerScaleMode, setComposerScaleMode] = useState<"normal" | "full">("normal");
-  const [threadMessagesByWorkspace, setThreadMessagesByWorkspace] = useState<Record<string, ThreadMessage[]>>(() =>
-    seedDemoThread ? createDemoThreadMessages(runState) : createInitialThreadMessages(),
+  const [composerSubmittedAtMs, setComposerSubmittedAtMs] = useState<number | null>(null);
+  const [generatingElapsedSeconds, setGeneratingElapsedSeconds] = useState(0);
+  const [pendingMessageScrollId, setPendingMessageScrollId] = useState<string | null>(null);
+  const [threadMessagesByWorkspace, setThreadMessagesByWorkspace] = useState<Record<string, ThreadMessage[]>>(
+    initialThreadState.threadMessagesByWorkspace,
   );
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(() => [...initialWorkspaces]);
-  const [nextWorkspaceThreadIndex, setNextWorkspaceThreadIndex] = useState(2);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState("draft");
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(initialThreadState.workspaces);
+  const [nextWorkspaceThreadIndex, setNextWorkspaceThreadIndex] = useState(initialThreadState.nextWorkspaceThreadIndex);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(initialThreadState.activeWorkspaceId);
   const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState("");
   const [isWorkspaceSearchOpen, setIsWorkspaceSearchOpen] = useState(false);
   const [openWorkspaceMenuId, setOpenWorkspaceMenuId] = useState<string | null>(null);
@@ -1105,6 +2105,8 @@ function App({
   const [composerMetaMenuPlacement, setComposerMetaMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
   const [isComposerAttachmentMenuOpen, setIsComposerAttachmentMenuOpen] = useState(false);
   const [composerAttachmentMenuPlacement, setComposerAttachmentMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
+  const [composerQuickDialog, setComposerQuickDialog] = useState<"model" | "effort" | null>(null);
+  const [composerQuickMenuPlacement, setComposerQuickMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
   const [surfaceToggles, setSurfaceToggles] = useState<SurfaceToggleState>(() => ({
     repository: true,
     browser: !MVP_BLOCKED_SURFACES.includes("browser"),
@@ -1119,7 +2121,13 @@ function App({
   const composerMetaMenuRef = useRef<HTMLDivElement>(null);
   const composerAttachmentButtonRef = useRef<HTMLButtonElement>(null);
   const composerAttachmentMenuRef = useRef<HTMLDivElement>(null);
+  const composerModelButtonRef = useRef<HTMLButtonElement>(null);
+  const composerEffortButtonRef = useRef<HTMLButtonElement>(null);
+  const composerQuickMenuRef = useRef<HTMLDivElement>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
   const modelCatalogRequestIdRef = useRef(0);
+  const codexSetupAutoCheckKeyRef = useRef<string | null>(null);
+  const codexManualLoginActionsRevealedRef = useRef(false);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   const nextNotificationIdRef = useRef(1);
   const setupAutoCompleteInFlightRef = useRef(false);
@@ -1166,16 +2174,35 @@ function App({
   const isSetupDetectPending = isPendingAction("setup:detect-directory");
   const isSetupBrowsePending = isPendingAction("setup:browse-directory");
   const isModelConnectionSavePending = isPendingAction("model-connection:save");
-  const isModelConnectionDeletePending = isPendingAction("model-connection:delete");
   const isSelectedProviderCheckPending = selectedProvider ? isPendingAction(`provider-check:${selectedProvider.id}`) || isPendingAction(`model-connection:preflight:${selectedProvider.id}`) : false;
   const isSelectedProviderModelFetchPending = selectedProvider ? isPendingAction(`model-fetch:${selectedProvider.id}`) : false;
+  const isCodexBrowserLoginPending = isPendingAction("codex-login:browser");
+  const isCodexDeviceCodeLoginPending = isPendingAction("codex-login:deviceCode");
+  const isCodexLoginPending = isCodexBrowserLoginPending || isCodexDeviceCodeLoginPending;
+  const isCodexProviderSelected = selectedProvider?.id === "codex-cli";
+  const isCodexAutoCheckPending = isCodexProviderSelected && !codexManualLoginActionsRevealed && (isSelectedProviderCheckPending || isSelectedProviderModelFetchPending);
+  const isSelectedProviderLiveCatalogReady = Boolean(selectedProvider && modelCatalogProviderId === selectedProvider.id && modelCatalogStatus === "ready" && modelCatalogIsLive);
   const canSaveSelectedModelConnection = Boolean(selectedProvider && selectedModel && modelCatalogStatus === "ready" && modelCatalogIsLive && !isSelectedProviderCheckPending && !isSelectedProviderModelFetchPending);
-  const selectedProviderDescription = selectedProvider?.description ?? "Choose a provider before selecting a model.";
-  const selectedModelDescription = selectedModel?.description ?? (selectedProvider ? "Live model choices loaded for the selected provider." : "Choose a provider to enable model choices.");
+  const shouldShowProviderSetupActions = Boolean(
+    selectedProvider &&
+      (selectedProvider.id !== "codex-cli" ||
+        isCodexAutoCheckPending ||
+        !isSelectedProviderLiveCatalogReady ||
+        canSaveSelectedModelConnection),
+  );
   const selectedModelThinkingEffortOptions = thinkingEffortOptionsForModel(selectedModel);
   const selectedModelSupportsThinkingEffort = selectedModelThinkingEffortOptions.length > 0;
   const selectedModelThinkingEffort = resolveThinkingEffortForModel(selectedModel, thinkingEffort);
   const selectedModelThinkingEffortCopy = thinkingEffortOptions.find((option) => option.value === selectedModelThinkingEffort) ?? thinkingEffortCopy;
+  const composerModelLabel = modelConnection?.modelLabel ?? selectedModel?.label ?? "Choose model";
+  const composerSupportedThinkingEfforts =
+    modelConnection?.supportedThinkingEfforts?.filter((effort): effort is ThinkingEffortOption => thinkingEffortOptions.some((option) => option.value === effort)) ?? [];
+  const composerThinkingEffortOptions =
+    selectedModelThinkingEffortOptions.length > 0
+      ? selectedModelThinkingEffortOptions
+      : composerSupportedThinkingEfforts.length > 0
+        ? thinkingEffortOptions.filter((option) => composerSupportedThinkingEfforts.includes(option.value))
+        : thinkingEffortOptions;
   const activeConnectionMessage = modelConnectionMessage || codexConnectionMessage || modelConnectionStatusMessage(modelConnection);
   const setupModelBlockerMessage = (() => {
     if (isModelConnectionReady) {
@@ -1192,14 +2219,16 @@ function App({
     }
     return "Choose a provider, run its readiness check, and save provider setup before starting a run.";
   })();
+  const savedRepositoryPath = settingsSnapshot?.defaultRepositoryPath.trim() ?? "";
+  const effectiveRepositoryPath = repositoryPath.trim() || savedRepositoryPath || setupRepositoryPath.trim();
   const setupWarningMessage = showSetupDialog
     ? ""
-    : !repositoryPath.trim()
+    : !effectiveRepositoryPath
       ? "Select a local directory before starting a run."
       : !isModelConnectionReady
         ? setupModelBlockerMessage
         : !hasDismissedPrivateBetaOnboarding
-          ? "Complete setup before starting a repository run."
+          ? "Complete setup before starting a task."
           : "";
   const composerStatusMessage = composerReadinessMessage || setupWarningMessage ? "" : !isModelConnectionReady ? activeConnectionMessage : "";
 
@@ -1229,7 +2258,7 @@ function App({
       setHasDismissedPrivateBetaOnboarding(true);
       setShowSetupDialog(false);
       setComposerReadinessMessage("");
-      pushNotification("success", "Setup complete. Orynt is ready for repository runs.");
+      pushNotification("success", "Setup complete. Orynt is ready for supervised tasks.");
       return settings;
     } catch (error) {
       setupAutoCompleteInFlightRef.current = false;
@@ -1333,13 +2362,13 @@ function App({
     setPersistedRuns(runs);
   };
 
-  const refreshSettingsSnapshot = async () => {
+  const refreshSettingsSnapshot = async ({ closeCompletedSetup = true }: { closeCompletedSetup?: boolean } = {}) => {
     const settings = await orynt.getSettings();
     applySettingsSnapshot(settings);
     if (settings.defaultRepositoryPath && !repositoryPath.trim()) {
       setRepositoryPath(settings.defaultRepositoryPath);
     }
-    if (settings.welcomeCompleted) {
+    if (settings.welcomeCompleted && closeCompletedSetup) {
       setHasDismissedPrivateBetaOnboarding(true);
       setShowSetupDialog(false);
     }
@@ -1349,6 +2378,44 @@ function App({
   useEffect(() => {
     activeWorkspaceIdRef.current = activeWorkspaceId;
   }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (seedDemoThread) {
+      return;
+    }
+    writePersistedThreadState({
+      workspaces,
+      threadMessagesByWorkspace,
+      nextWorkspaceThreadIndex,
+      activeWorkspaceId,
+    });
+  }, [activeWorkspaceId, nextWorkspaceThreadIndex, seedDemoThread, threadMessagesByWorkspace, workspaces]);
+
+  useEffect(() => {
+    const textarea = composerTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    if (composerScaleMode === "full") {
+      textarea.style.height = "";
+      return;
+    }
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 24), 144)}px`;
+  }, [composerScaleMode, composerValue]);
+
+  useEffect(() => {
+    if (!isComposerSubmitPending || composerSubmittedAtMs === null) {
+      setGeneratingElapsedSeconds(0);
+      return undefined;
+    }
+    const syncElapsed = () => {
+      setGeneratingElapsedSeconds(Math.max(0, Math.floor((Date.now() - composerSubmittedAtMs) / 1000)));
+    };
+    syncElapsed();
+    const timer = window.setInterval(syncElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [composerSubmittedAtMs, isComposerSubmitPending]);
 
   useEffect(() => {
     if (notifications.length === 0) {
@@ -1416,10 +2483,9 @@ function App({
         const summary = (event.payload as { summary?: unknown }).summary;
         setApprovalStatus(typeof summary === "string" ? summary : event.type.replaceAll("_", " "));
       }
-      if (renderedRunEventTypes.has(event.type)) {
-        const summary = (event.payload as { summary?: unknown }).summary;
-        const content = typeof summary === "string" ? `run_event: ${event.type} - ${summary}` : `run_event: ${event.type}`;
+      if (renderedRunEventTypes[event.type]) {
         const threadId = activeWorkspaceIdRef.current;
+        const runEventMessage = runEventToThreadMessage(event);
         setThreadMessagesByWorkspace((current) => {
           const currentMessages = current[threadId] ?? [];
           if (currentMessages.some((message) => message.id === event.id)) {
@@ -1427,14 +2493,7 @@ function App({
           }
           return {
             ...current,
-            [threadId]: [
-              ...currentMessages,
-              {
-                id: event.id,
-                role: "system",
-                content,
-              },
-            ],
+            [threadId]: [...currentMessages, runEventMessage],
           };
         });
       }
@@ -1515,22 +2574,61 @@ function App({
       if (!mounted || !path) {
         return;
       }
-      setSetupRepositoryPath((current) => current || path);
-      setRepositoryPath((current) => current || path);
+      const detectedPath = path.trim();
+      if (!detectedPath) {
+        return;
+      }
+      setSetupRepositoryPath((current) => current || detectedPath);
+      setRepositoryPath((current) => current || detectedPath);
       setSetupRepositoryMessage("Detected the current local directory.");
       setSetupRepositoryMessageTone("success");
+      void orynt
+        .updateSettings({ defaultRepositoryPath: detectedPath })
+        .then((settings) => {
+          if (!mounted) {
+            return;
+          }
+          applySettingsSnapshot(settings);
+          setSetupRepositoryPath(settings.defaultRepositoryPath);
+          setRepositoryPath((current) => current || settings.defaultRepositoryPath);
+        })
+        .catch(() => {
+          if (!mounted) {
+            return;
+          }
+          setSetupRepositoryMessage("Detected the current local directory. Save setup settings to persist it.");
+          setSetupRepositoryMessageTone("warning");
+        });
     });
 
     return () => {
       mounted = false;
     };
-  }, [hasAttemptedRepositoryAutoDetect, settingsSnapshot, setupRepositoryPath, shouldHydrateClientState]);
+  }, [settingsSnapshot, setupRepositoryPath, shouldHydrateClientState]);
 
   useEffect(() => {
     if (isWorkspaceSearchOpen) {
       workspaceSearchInputRef.current?.focus();
     }
   }, [isWorkspaceSearchOpen]);
+
+  useLayoutEffect(() => {
+    if (!pendingMessageScrollId) {
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const message = Array.from(document.querySelectorAll<HTMLElement>("[data-message-id]")).find(
+        (element) => element.dataset.messageId === pendingMessageScrollId,
+      );
+      if (message && typeof message.scrollIntoView === "function") {
+        message.scrollIntoView({ block: "start", inline: "nearest", behavior: "smooth" });
+      }
+      setPendingMessageScrollId(null);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [pendingMessageScrollId, threadMessagesByWorkspace]);
 
   useEffect(() => {
     if (!isAccountMenuOpen) {
@@ -1568,7 +2666,7 @@ function App({
   }, [isAccountMenuOpen]);
 
   useEffect(() => {
-    if (!isComposerMetaMenuOpen && !isComposerAttachmentMenuOpen) {
+    if (!isComposerMetaMenuOpen && !isComposerAttachmentMenuOpen && !composerQuickDialog) {
       return;
     }
 
@@ -1581,13 +2679,17 @@ function App({
         composerMetaButtonRef.current?.contains(target) ||
         composerMetaMenuRef.current?.contains(target) ||
         composerAttachmentButtonRef.current?.contains(target) ||
-        composerAttachmentMenuRef.current?.contains(target)
+        composerAttachmentMenuRef.current?.contains(target) ||
+        composerModelButtonRef.current?.contains(target) ||
+        composerEffortButtonRef.current?.contains(target) ||
+        composerQuickMenuRef.current?.contains(target)
       ) {
         return;
       }
 
       setIsComposerMetaMenuOpen(false);
       setIsComposerAttachmentMenuOpen(false);
+      setComposerQuickDialog(null);
     };
 
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -1597,6 +2699,15 @@ function App({
 
       setIsComposerMetaMenuOpen(false);
       setIsComposerAttachmentMenuOpen(false);
+      setComposerQuickDialog(null);
+      if (composerQuickDialog === "model") {
+        composerModelButtonRef.current?.focus();
+        return;
+      }
+      if (composerQuickDialog === "effort") {
+        composerEffortButtonRef.current?.focus();
+        return;
+      }
       if (isComposerAttachmentMenuOpen) {
         composerAttachmentButtonRef.current?.focus();
         return;
@@ -1611,6 +2722,12 @@ function App({
       if (isComposerAttachmentMenuOpen && composerAttachmentButtonRef.current) {
         setComposerAttachmentMenuPlacement(resolveComposerMenuPlacement(composerAttachmentButtonRef.current, composerAttachmentMenuEstimatedHeight));
       }
+      if (composerQuickDialog) {
+        const quickButton = composerQuickDialog === "model" ? composerModelButtonRef.current : composerEffortButtonRef.current;
+        if (quickButton) {
+          setComposerQuickMenuPlacement(resolveComposerMenuPlacement(quickButton, composerQuickDialog === "model" ? 520 : 380));
+        }
+      }
     };
 
     document.addEventListener("pointerdown", handlePointerDown);
@@ -1622,7 +2739,7 @@ function App({
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("resize", handleResize);
     };
-  }, [isComposerAttachmentMenuOpen, isComposerMetaMenuOpen]);
+  }, [composerQuickDialog, isComposerAttachmentMenuOpen, isComposerMetaMenuOpen]);
 
   useEffect(() => {
     try {
@@ -1641,16 +2758,18 @@ function App({
       if (!mounted) {
         return;
       }
+      const safeEpisodes = Array.isArray(episodes) ? episodes : [];
+      const safeCandidateRules = Array.isArray(candidateRules) ? candidateRules : [];
       setMemoryReview((current) => ({
         ...current,
-        latestEpisode: episodes[0],
-        episodes,
-        candidateRules,
+        latestEpisode: safeEpisodes[0],
+        episodes: safeEpisodes,
+        candidateRules: safeCandidateRules,
         summary: {
           ...current.summary,
-          episodeCount: episodes.length,
-          candidateRuleCount: candidateRules.filter((rule) => rule.status === "candidate").length,
-          candidateRuleStatusCounts: summarizeCandidateRuleStatuses(candidateRules),
+          episodeCount: safeEpisodes.length,
+          candidateRuleCount: safeCandidateRules.filter((rule) => rule.status === "candidate").length,
+          candidateRuleStatusCounts: summarizeCandidateRuleStatuses(safeCandidateRules),
         },
       }));
     });
@@ -1667,20 +2786,52 @@ function App({
     }
 
     if (!hasDismissedPrivateBetaOnboarding) {
-      setComposerReadinessMessage("Finish private beta onboarding before starting a repository run.");
+      setComposerReadinessMessage("Finish private beta onboarding before starting a task.");
       setShowSetupDialog(true);
       return;
     }
 
-    if (!repositoryPath.trim()) {
+    if (!effectiveRepositoryPath) {
       setComposerReadinessMessage("Select a local directory before starting a run.");
       setShowSetupDialog(true);
       return;
     }
 
+    const localResponse = localShortPromptResponse(goal);
+    if (localResponse) {
+      const threadId = activeWorkspace.id;
+      const userMessageId = `${threadId}-user-${(threadMessagesByWorkspace[threadId]?.length ?? 0) + 1}`;
+      if (activeWorkspace.label === "New task" && (threadMessagesByWorkspace[threadId]?.length ?? 0) === 0) {
+        const title = threadTitleFromPrompt(goal);
+        setWorkspaces((current) => current.map((space) => (space.id === threadId ? { ...space, label: title, description: "" } : space)));
+      }
+      setThreadMessagesByWorkspace((current) => {
+        const currentMessages = current[threadId] ?? [];
+        const nextMessageIndex = currentMessages.length + 1;
+        const userMessage: ThreadMessage = {
+          id: `${threadId}-user-${nextMessageIndex}`,
+          role: "user",
+          content: goal,
+        };
+        const responseMessage: ThreadMessage = {
+          id: `${threadId}-agent-local-${nextMessageIndex + 1}`,
+          role: "agent",
+          label: "Agent response",
+          content: localResponse,
+        };
+        return {
+          ...current,
+          [threadId]: [...currentMessages, userMessage, responseMessage],
+        };
+      });
+      setPendingMessageScrollId(userMessageId);
+      setComposerValue("");
+      return;
+    }
+
     const currentSettings = settingsSnapshot ?? (await refreshSettingsSnapshot());
+    const currentModelConnection = modelConnectionFromSettings(currentSettings);
     if (!modelConnectionIsReady(currentSettings)) {
-      const currentModelConnection = modelConnectionFromSettings(currentSettings);
       const message = modelConnectionStatusMessage(currentModelConnection);
       setModelConnectionMessage(message);
       setModelConnectionMessageTone(currentModelConnection?.status === "failed" || currentModelConnection?.status === "missing" ? "error" : "warning");
@@ -1690,12 +2841,20 @@ function App({
     }
     setComposerReadinessMessage("");
 
-    await withPendingAction("composer-submit", async () => {
+    setComposerSubmittedAtMs(Date.now());
+    setGeneratingElapsedSeconds(0);
+    try {
+      await withPendingAction("composer-submit", async () => {
       const threadId = activeWorkspace.id;
+      const userMessageId = `${threadId}-user-${(threadMessagesByWorkspace[threadId]?.length ?? 0) + 1}`;
+      if (activeWorkspace.label === "New task" && (threadMessagesByWorkspace[threadId]?.length ?? 0) === 0) {
+        const title = threadTitleFromPrompt(goal);
+        setWorkspaces((current) => current.map((space) => (space.id === threadId ? { ...space, label: title, description: "" } : space)));
+      }
       setThreadMessagesByWorkspace((current) => {
         const currentMessages = current[threadId] ?? [];
         const nextMessage: ThreadMessage = {
-          id: `${threadId}-user-${currentMessages.length + 1}`,
+          id: userMessageId,
           role: "user",
           content: goal,
         };
@@ -1704,25 +2863,167 @@ function App({
           [threadId]: [...currentMessages, nextMessage],
         };
       });
+      setPendingMessageScrollId(userMessageId);
       setComposerValue("");
-
-      const run = await orynt.createRun({
-        goal,
-        capabilityId: "coding-apprentice",
-        taskId: runState.activeTask.id,
-        workspaceId: runState.workspace.id,
-        repositoryPath: repositoryPath.trim(),
-        budget: {
-          maxSteps: runState.runSummary.run.budget.maxSteps,
-          maxWallTimeMs: runState.runSummary.run.budget.maxWallTimeMs,
-          maxModelTokens: runState.runSummary.run.budget.maxModelTokens,
-          maxUsd: runState.usageBudget.runLimitUsd,
-          stopOnBudgetExceeded: true,
-        },
+      try {
+        let preflightFailureMessage: string | null = null;
+        let preflightFailureTone: SetupNoticeTone = "warning";
+        try {
+          const preflight = await orynt.preflightModelConnection();
+          const preflightedModelConnection: ModelConnectionReference = {
+            ...currentModelConnection!,
+            status: preflight.status,
+            lastPreflight: preflight,
+          };
+          applySettingsSnapshot({ ...currentSettings, modelConnection: preflightedModelConnection });
+          if (!preflight.ready) {
+            preflightFailureMessage = modelConnectionStatusMessage(preflightedModelConnection);
+            preflightFailureTone = preflight.status === "failed" || preflight.status === "missing" ? "error" : "warning";
+          }
+        } catch (error) {
+          preflightFailureMessage = messageFromUnknownError(error, "Provider check failed before starting the repository run.");
+          preflightFailureTone = "error";
+        }
+        if (preflightFailureMessage) {
+          setModelConnectionMessage(preflightFailureMessage);
+          setModelConnectionMessageTone(preflightFailureTone);
+          setComposerReadinessMessage(preflightFailureMessage);
+          setShowSetupDialog(true);
+          throw new Error(`Provider check failed before starting the repository run. ${preflightFailureMessage}`);
+        }
+        const run = await orynt.createRun({
+          goal,
+          capabilityId: "coding-apprentice",
+          taskId: runState.activeTask.id,
+          workspaceId: runState.workspace.id,
+          repositoryPath: effectiveRepositoryPath,
+          budget: {
+            maxSteps: runState.runSummary.run.budget.maxSteps,
+            maxWallTimeMs: runState.runSummary.run.budget.maxWallTimeMs,
+            maxModelTokens: runState.runSummary.run.budget.maxModelTokens,
+            maxUsd: runState.usageBudget.runLimitUsd,
+            stopOnBudgetExceeded: true,
+          },
+        });
+        setCurrentRunId(run.id);
+        let runOutcomeDetail = "Open persisted evidence from the run list to inspect events, artifacts, verification, memory, and replay outputs.";
+        let finalModelResponse: string | null = null;
+        try {
+          const persistedRun = await orynt.openPersistedRun(run.id);
+          const eventTypes = persistedRun.events.map((event) => event.type);
+          finalModelResponse =
+            persistedRun.events
+              .slice()
+              .reverse()
+              .map((event) => (isRecord(event.payload) ? payloadString(event.payload, "lastMessagePreview") : null))
+              .find((message): message is string => Boolean(message?.trim())) ?? null;
+          if (eventTypes.includes("codex_execution_started") && eventTypes.includes("codex_execution_finished")) {
+            runOutcomeDetail = "Codex CLI execution ran under the selected model connection, then Orynt imported, verified, and persisted the result. Open persisted evidence from the run list to inspect the execution log, artifacts, verification, memory, and replay outputs.";
+          } else if (!eventTypes.includes("codex_execution_started")) {
+            runOutcomeDetail = "Repository harness completed without controlled Codex execution events; open persisted evidence from the run list to inspect artifacts and verify whether this was a manual harness path.";
+          }
+        } catch {
+          // Persisted evidence may still be refreshing; keep the completion message useful.
+        }
+        setThreadMessagesByWorkspace((current) => {
+          const currentMessages = current[threadId] ?? [];
+          const completionSources: AgentResponseSource[] = [
+            {
+              citation: 1,
+              domain: "Orynt run store",
+              excerpt: `Run ${run.id} for repository ${effectiveRepositoryPath} completed with persisted evidence.`,
+              title: "Persisted repository run",
+            },
+            {
+              citation: 2,
+              domain: "User request",
+              excerpt: truncateUiText(goal, 320),
+              title: "Original task",
+            },
+          ];
+          const outcomeMessages: ThreadMessage[] = finalModelResponse
+            ? [
+                {
+                  id: `${threadId}-agent-run-complete-${run.id}-${currentMessages.length + 1}`,
+                  runId: run.id,
+                  role: "agent",
+                  label: "Agent response",
+                  content: finalModelResponse,
+                  sources: completionSources,
+                },
+              ]
+            : [
+                {
+                  id: `${threadId}-run-complete-${run.id}-${currentMessages.length + 1}`,
+                  runId: run.id,
+                  role: "system",
+                  detailKind: "done",
+                  content: `Repository harness run completed for ${goal}.`,
+                  detailItems: [`Run ID: ${run.id}`, runOutcomeDetail],
+                },
+                {
+                  id: `${threadId}-agent-run-no-final-response-${run.id}-${currentMessages.length + 2}`,
+                  runId: run.id,
+                  role: "agent",
+                  label: "Agent response",
+                  content: noFinalModelResponseContent(run.id),
+                  sources: completionSources,
+                },
+              ];
+          return {
+            ...current,
+            [threadId]: [...currentMessages, ...outcomeMessages],
+          };
+        });
+        await refreshPersistedRuns();
+      } catch (error) {
+        const runnerMessage = repositoryRunnerErrorMessage(error);
+        if (isRepositoryPathSelectionError(runnerMessage)) {
+          setComposerReadinessMessage("Select a local directory before starting a run.");
+          setSetupRepositoryMessage("Select a local directory before starting a run.");
+          setSetupRepositoryMessageTone("warning");
+          setShowSetupDialog(true);
+          return;
+        }
+        setThreadMessagesByWorkspace((current) => {
+          const currentMessages = current[threadId] ?? [];
+          const failureDetailMessage: ThreadMessage = {
+            id: `${threadId}-run-failed-${currentMessages.length + 1}`,
+            role: "system",
+            detailKind: "error",
+            content: `Error: repository run failed — ${runnerMessage}`,
+            detailItems: [runnerMessage],
+          };
+          const outcomeMessage: ThreadMessage = {
+            id: `${threadId}-agent-run-failed-${currentMessages.length + 2}`,
+            role: "agent",
+            label: "Agent response",
+            content: `Repository harness run failed before Orynt received usable output. ${runnerMessage}`,
+            sources: [
+              {
+                citation: 1,
+                domain: "Repository runner",
+                excerpt: runnerMessage,
+                title: "Runner error",
+              },
+              {
+                citation: 2,
+                domain: "User request",
+                excerpt: truncateUiText(goal, 320),
+                title: "Original task",
+              },
+            ],
+          };
+          return {
+            ...current,
+            [threadId]: [...currentMessages, failureDetailMessage, outcomeMessage],
+          };
+        });
+      }
       });
-      setCurrentRunId(run.id);
-      await refreshPersistedRuns();
-    });
+    } finally {
+      setComposerSubmittedAtMs(null);
+    }
   };
 
   const handleTaskSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1910,12 +3211,17 @@ function App({
         const defaultRepositoryPath = setupRepositoryPath.trim() || repositoryPath.trim();
         setSetupRepositoryPath(defaultRepositoryPath);
         setRepositoryPath(defaultRepositoryPath);
+        const savedModelConnection = canSaveSelectedModelConnection ? await saveSelectedModelConnectionWithPreflight() : null;
         const settings = await orynt.updateSettings({ defaultRepositoryPath });
-        applySettingsSnapshot(settings);
-        setSetupRepositoryPath(settings.defaultRepositoryPath);
-        setRepositoryPath(settings.defaultRepositoryPath);
-        setSetupRepositoryMessage(settings.defaultRepositoryPath ? "Local directory saved." : "Local directory cleared.");
-        setSetupRepositoryMessageTone(settings.defaultRepositoryPath ? "success" : "info");
+        const nextSettings = savedModelConnection && !settings.modelConnection ? { ...settings, modelConnection: savedModelConnection } : settings;
+        applySettingsSnapshot(nextSettings);
+        setSetupRepositoryPath(nextSettings.defaultRepositoryPath);
+        setRepositoryPath(nextSettings.defaultRepositoryPath);
+        setSetupRepositoryMessage(nextSettings.defaultRepositoryPath ? "Local directory saved." : "Local directory cleared.");
+        setSetupRepositoryMessageTone(nextSettings.defaultRepositoryPath ? "success" : "info");
+        if (nextSettings.defaultRepositoryPath && modelConnectionIsReady(nextSettings)) {
+          await completeReadySetup();
+        }
       });
     } catch (error) {
       setSetupRepositoryMessage(messageFromUnknownError(error, "Setup settings could not be saved."));
@@ -1987,19 +3293,66 @@ function App({
     });
   };
 
+  const handleBrowseComposerRepositoryPath = async () => {
+    await withPendingAction("composer:browse-directory", async () => {
+      const browseResult = await orynt.browseRepositoryPath(repositoryPath || setupRepositoryPath || settingsSnapshot?.defaultRepositoryPath);
+      if (browseResult.status === "cancelled") {
+        pushNotification("info", "Directory selection cancelled.");
+        return;
+      }
+      if (browseResult.status === "unavailable") {
+        pushNotification("warning", browseResult.message);
+        return;
+      }
+      setRepositoryPath(browseResult.path);
+      setComposerReadinessMessage("");
+      pushNotification("success", "Directory updated.");
+    });
+  };
+
   const loadProviderModels = async (providerId: ModelProviderId, envKey = apiKeyEnvName, requestId = ++modelCatalogRequestIdRef.current) => {
     return withPendingAction(`model-fetch:${providerId}`, async () => {
-      setModelCatalogProviderId(providerId);
-      setModelCatalogOptions([]);
-      setModelCatalogStatus("loading");
-      setModelCatalogIsLive(false);
-      setModelCatalogMessage("Fetching live models from the selected provider.");
-      setModelCatalogMessageTone("info");
+      let hasFallbackCatalog = false;
+      let liveFetchFinished = false;
+      const applyFallbackCatalog = (catalog: CachedProviderModelCatalog, message: string, tone: SetupNoticeTone = "info") => {
+        if (requestId !== modelCatalogRequestIdRef.current || catalog.models.length === 0) {
+          return;
+        }
+        hasFallbackCatalog = true;
+        setModelCatalogProviderId(providerId);
+        setModelCatalogOptions(catalog.models);
+        setSelectedModelId((currentModelId) => (catalog.models.some((model) => model.id === currentModelId) ? currentModelId : null));
+        setModelCatalogStatus("ready");
+        setModelCatalogIsLive(false);
+        setModelCatalogMessage(message);
+        setModelCatalogMessageTone(tone);
+      };
+
+      const cachedCatalog = readCachedProviderModelCatalog(providerId);
+      if (cachedCatalog) {
+        applyFallbackCatalog(cachedCatalog, "Cached models shown. Refreshing live availability.");
+      } else {
+        setModelCatalogProviderId(providerId);
+        setModelCatalogOptions([]);
+        setModelCatalogStatus("loading");
+        setModelCatalogIsLive(false);
+        setModelCatalogMessage("Fetching live models from the selected provider.");
+        setModelCatalogMessageTone("info");
+      }
+
+      const modelsDevRefresh = fetchModelsDevProviderCatalog(providerId).then((catalog) => {
+        if (!catalog || liveFetchFinished) {
+          return;
+        }
+        applyFallbackCatalog(catalog, "Models.dev catalog shown. Refreshing live availability.");
+      });
+
       try {
         const catalog = await orynt.listProviderModels({
           providerId,
           envKey: providerId === "openai-api" ? envKey.trim() || "OPENAI_API_KEY" : null,
         });
+        liveFetchFinished = true;
         if (requestId !== modelCatalogRequestIdRef.current) {
           return catalog;
         }
@@ -2012,18 +3365,28 @@ function App({
           setModelCatalogMessage("No available models found for this provider.");
           setModelCatalogMessageTone("warning");
         } else {
+          writeCachedProviderModelCatalog(providerId, catalog.models);
           setSelectedModelId((currentModelId) => (catalog.models.some((model) => model.id === currentModelId) ? currentModelId : null));
           setModelCatalogStatus("ready");
           setModelCatalogIsLive(true);
-          setModelCatalogMessage("Live models loaded.");
-          setModelCatalogMessageTone("success");
+          setModelCatalogMessage("");
+          setModelCatalogMessageTone("info");
         }
         return catalog;
       } catch (error) {
+        await modelsDevRefresh;
+        liveFetchFinished = true;
         if (requestId !== modelCatalogRequestIdRef.current) {
           return null;
         }
         const message = messageFromUnknownError(error, "Could not fetch live models.");
+        if (hasFallbackCatalog) {
+          setModelCatalogMessage(`Cached models shown; live refresh failed: ${message}`);
+          setModelCatalogMessageTone("warning");
+          setModelConnectionMessage(message);
+          setModelConnectionMessageTone("warning");
+          return null;
+        }
         setSelectedModelId(null);
         setModelCatalogOptions([]);
         setModelCatalogStatus("error");
@@ -2038,7 +3401,11 @@ function App({
   };
 
   const preflightSelectedProviderAndLoadModels = async (provider: SetupProviderOption, envKey = apiKeyEnvName) => {
+    const preservedThinkingEffort = thinkingEffort;
     await withPendingAction(`provider-check:${provider.id}`, async () => {
+      if (provider.id === "codex-cli" && codexManualLoginActionsRevealedRef.current) {
+        return;
+      }
       const requestId = ++modelCatalogRequestIdRef.current;
       setModelCatalogProviderId(null);
       setModelCatalogOptions([]);
@@ -2046,15 +3413,19 @@ function App({
       setModelCatalogIsLive(false);
       setModelCatalogMessage("");
       setModelCatalogMessageTone("info");
-      setModelConnectionMessage(provider.id === "codex-cli" ? "Checking Codex CLI before fetching live models." : "Checking provider before fetching live models.");
+      setModelConnectionMessage(provider.id === "codex-cli" ? "Checking local Codex CLI identity with `codex login status`. No browser login is being started." : "Checking provider before fetching live models.");
       setModelConnectionMessageTone("info");
       try {
       if (provider.id === "codex-cli") {
         const result: CodexConnectionPreflightResult = await orynt.preflightCodexConnection();
+        if (codexManualLoginActionsRevealedRef.current) {
+          return;
+        }
         if (requestId !== modelCatalogRequestIdRef.current) {
           return;
         }
-        const settings = await refreshSettingsSnapshot();
+        const settings = await refreshSettingsSnapshot({ closeCompletedSetup: false });
+        setThinkingEffort(preservedThinkingEffort);
         if (requestId !== modelCatalogRequestIdRef.current) {
           return;
         }
@@ -2105,53 +3476,28 @@ function App({
     });
   };
 
-  const handleRunCodexConnectionPreflight = async () => {
-    if (!selectedProvider || selectedProvider.id !== "codex-cli") {
-      setModelConnectionMessage("Choose the Codex CLI provider before running the provider check.");
-      setModelConnectionMessageTone("warning");
+  useEffect(() => {
+    if (!showSetupDialog || selectedProviderId !== "codex-cli") {
+      codexSetupAutoCheckKeyRef.current = null;
       return;
     }
-    await withPendingAction("provider-check:codex-cli", async () => {
-      try {
-        const result: CodexConnectionPreflightResult = await orynt.preflightCodexConnection();
-        const settings = await refreshSettingsSnapshot();
-        setSelectedProviderId("codex-cli");
-        const codexConnection: CodexConnectionReference = {
-          ...(settings.codexConnection ?? { connectionId: "codex-cli", label: "Local Codex CLI" }),
-          status: result.status,
-          lastPreflight: result,
-        };
-        setSettingsSnapshot({ ...settings, codexConnection });
-        const message = codexPreflightSetupMessage(result, codexConnectionStatusLabel(codexConnection));
-        setCodexConnectionMessage(message);
-        setModelConnectionMessage(message);
-        setModelConnectionMessageTone(preflightTone(result.ready, result.status));
-        if (result.ready) {
-          pushNotification("success", message);
-          await loadProviderModels("codex-cli");
-        }
-      } catch (error) {
-        const message = messageFromUnknownError(error, "Codex provider check failed.");
-        setCodexConnectionMessage(message);
-        setModelConnectionMessage(message);
-        setModelConnectionMessageTone("error");
-      }
-    });
-  };
+    if (isSelectedProviderCheckPending || isSelectedProviderModelFetchPending) {
+      return;
+    }
+    if (modelCatalogProviderId === "codex-cli" && modelCatalogIsLive) {
+      return;
+    }
 
-  const handleDeleteCodexConnection = async () => {
-    if (!modelConnection) {
+    const autoCheckKey = `${settingsSnapshot?.modelConnection?.modelId ?? "none"}:${settingsSnapshot?.modelConnection?.status ?? "none"}`;
+    if (codexSetupAutoCheckKeyRef.current === autoCheckKey) {
       return;
     }
-    await withPendingAction("model-connection:delete", async () => {
-      await orynt.deleteModelConnection();
-      const settings = await refreshSettingsSnapshot();
-      setSettingsSnapshot(settings);
-      setCodexConnectionMessage(codexConnectionStatusMessage(settings.codexConnection));
-      setModelConnectionMessage(modelConnectionStatusMessage(modelConnectionFromSettings(settings)));
-      setModelConnectionMessageTone("info");
-    });
-  };
+    codexSetupAutoCheckKeyRef.current = autoCheckKey;
+    const provider = setupProviderById("codex-cli");
+    if (provider) {
+      void preflightSelectedProviderAndLoadModels(provider, provider.defaultEnvKey ?? "OPENAI_API_KEY");
+    }
+  }, [isSelectedProviderCheckPending, isSelectedProviderModelFetchPending, modelCatalogIsLive, modelCatalogProviderId, selectedProviderId, settingsSnapshot?.modelConnection?.modelId, settingsSnapshot?.modelConnection?.status, showSetupDialog]);
 
   const handleSelectSetupProvider = (providerId: ModelProviderId | "") => {
     modelCatalogRequestIdRef.current += 1;
@@ -2167,6 +3513,9 @@ function App({
       setModelCatalogMessageTone("info");
       setModelConnectionMessage("");
       setModelConnectionMessageTone("info");
+      setCodexLoginBackupUrl(null);
+      setCodexManualLoginActionsRevealed(false);
+      codexManualLoginActionsRevealedRef.current = false;
       return;
     }
     const provider = setupProviderById(providerId);
@@ -2184,7 +3533,26 @@ function App({
     setModelCatalogMessageTone("info");
     setModelConnectionMessage("");
     setModelConnectionMessageTone("info");
+    setCodexLoginBackupUrl(null);
+    setCodexManualLoginActionsRevealed(false);
+    codexManualLoginActionsRevealedRef.current = false;
     void preflightSelectedProviderAndLoadModels(provider, provider.defaultEnvKey ?? "OPENAI_API_KEY");
+  };
+
+  const handleSkipCodexAutoCheck = () => {
+    modelCatalogRequestIdRef.current += 1;
+    codexManualLoginActionsRevealedRef.current = true;
+    setCodexManualLoginActionsRevealed(true);
+    setSelectedModelId(null);
+    setModelCatalogProviderId(null);
+    setModelCatalogOptions([]);
+    setModelCatalogStatus("idle");
+    setModelCatalogIsLive(false);
+    setModelCatalogMessage("");
+    setModelCatalogMessageTone("info");
+    setCodexLoginBackupUrl(null);
+    setModelConnectionMessage("Auto-check skipped. Use Codex CLI login options below, then check again.");
+    setModelConnectionMessageTone("info");
   };
 
   const handleSelectSetupModel = (modelId: string) => {
@@ -2195,32 +3563,42 @@ function App({
     }
     setModelConnectionMessage("");
     setModelConnectionMessageTone("info");
+    setCodexLoginBackupUrl(null);
   };
 
-  const saveSelectedModelConnectionWithPreflight = async () => {
-    if (!selectedProvider || !selectedModel) {
+  const saveSelectedModelConnectionWithPreflight = async (override?: { provider?: SetupProviderOption | null; model?: SetupModelOption | null; thinkingEffort?: ThinkingEffort }) => {
+    const provider = override?.provider ?? selectedProvider;
+    const model = override?.model ?? selectedModel;
+    if (!provider || !model) {
       setModelConnectionMessage("Authenticate the provider and choose a live model to continue setup.");
       setModelConnectionMessageTone("warning");
       return null;
     }
+    const modelThinkingEffortOptions = thinkingEffortOptionsForModel(model);
+    const modelSupportsThinkingEffort = modelThinkingEffortOptions.length > 0;
+    const modelThinkingEffort = override?.thinkingEffort ?? resolveThinkingEffortForModel(model, thinkingEffort);
     const savedConnection = await orynt.saveModelConnection({
-      providerId: selectedProvider.id,
-      modelId: selectedModel.id,
-      modelLabel: selectedModel.label,
-      authMethod: selectedProvider.id === "openai-api" ? "apiKeyEnv" : "codexCliSession",
-      envKey: selectedProvider.id === "openai-api" ? apiKeyEnvName.trim() || "OPENAI_API_KEY" : null,
-      thinkingEffort: selectedModelSupportsThinkingEffort ? selectedModelThinkingEffort : null,
-      supportedThinkingEfforts: selectedModel.supportedThinkingEfforts ?? null,
-      defaultThinkingEffort: selectedModel.defaultThinkingEffort ?? null,
+      providerId: provider.id,
+      modelId: model.id,
+      modelLabel: model.label,
+      authMethod: provider.id === "openai-api" ? "apiKeyEnv" : "codexCliSession",
+      envKey: provider.id === "openai-api" ? apiKeyEnvName.trim() || "OPENAI_API_KEY" : null,
+      thinkingEffort: modelSupportsThinkingEffort ? modelThinkingEffort : null,
+      supportedThinkingEfforts: model.supportedThinkingEfforts ?? null,
+      defaultThinkingEffort: model.defaultThinkingEffort ?? null,
     });
     const result: ModelConnectionPreflightResult = await orynt.preflightModelConnection();
-    const settings = await refreshSettingsSnapshot();
+    const settings = await orynt.getSettings();
     const connection: ModelConnectionReference = {
       ...(settings.modelConnection ?? savedConnection),
       status: result.status,
       lastPreflight: result,
     };
-    setSettingsSnapshot({ ...settings, modelConnection: connection });
+    const nextSettings = { ...settings, modelConnection: connection };
+    applySettingsSnapshot(nextSettings);
+    if (nextSettings.defaultRepositoryPath && !repositoryPath.trim()) {
+      setRepositoryPath(nextSettings.defaultRepositoryPath);
+    }
     const message = result.reasons[0] ?? modelConnectionStatusLabel(connection);
     setModelConnectionMessage(message);
     setModelConnectionMessageTone(preflightTone(result.ready, result.status));
@@ -2257,11 +3635,32 @@ function App({
     });
   };
 
+  const handleLaunchCodexLogin = async (method: CodexLoginMethod) => {
+    await withPendingAction(`codex-login:${method}`, async () => {
+      try {
+        const result = await orynt.launchCodexLogin({ method });
+        setCodexLoginBackupUrl(result.loginUrl ?? null);
+        setModelConnectionMessage(
+          result.loginUrl
+            ? `${result.message} If the browser page did not open, use the backup link below.`
+            : `${result.message} Complete sign-in there, then return to setup.`,
+        );
+        setModelConnectionMessageTone("info");
+        pushNotification("info", result.message);
+      } catch (error) {
+        setCodexLoginBackupUrl(null);
+        setModelConnectionMessage(messageFromUnknownError(error, "Could not open Codex login."));
+        setModelConnectionMessageTone("error");
+      }
+    });
+  };
+
   const hasSelectedRun = currentRunId !== null;
   const visibleWorkspaces = workspaces.filter((space) => !space.archived);
   const archivedWorkspaces = workspaces.filter((space) => space.archived);
   const deleteWorkspace = deleteWorkspaceId ? workspaces.find((space) => space.id === deleteWorkspaceId) : undefined;
   const activeWorkspace = visibleWorkspaces.find((space) => space.id === activeWorkspaceId) ?? visibleWorkspaces[0] ?? workspaces[0];
+  const threadStartCopy = useMemo(() => randomThreadStartCopy(), [activeWorkspace.id]);
   const activeThreadMessages = threadMessagesByWorkspace[activeWorkspace.id] ?? [];
   const activeAgentResponseSourcesMessage = openAgentResponseSourcesId
     ? activeThreadMessages.find((message) => message.role === "agent" && message.id === openAgentResponseSourcesId)
@@ -2288,8 +3687,8 @@ function App({
   ].join(" ");
   const workspacePanelToggleLabel = isMobileWorkspaceViewport
     ? isMobileWorkspaceDrawerOpen
-      ? "Close threads"
-      : "Open threads"
+      ? "Close tasks"
+      : "Open tasks"
     : isWorkspacePanelCollapsed
       ? "Expand side panel"
       : "Collapse side panel";
@@ -2305,11 +3704,23 @@ function App({
   };
 
   const handleCreateWorkspace = () => {
+    const currentMessages = threadMessagesByWorkspace[activeWorkspace.id] ?? [];
+    if (activeWorkspace.label === "New task" && currentMessages.length === 0) {
+      setComposerValue("");
+      setWorkspaceSearchQuery("");
+      setIsWorkspaceSearchOpen(false);
+      setOpenWorkspaceMenuId(null);
+      setOpenAgentResponseSourcesId(null);
+      setDeleteWorkspaceId(null);
+      setEditingThreadHeaderId(null);
+      setIsMobileWorkspaceDrawerOpen(false);
+      return;
+    }
     const nextIndex = nextWorkspaceThreadIndex;
     const newSpace: Workspace = {
       id: `thread-${nextIndex}`,
-      label: "New thread",
-      description: "Draft thread.",
+      label: "New task",
+      description: "",
       badge: "new",
     };
     setNextWorkspaceThreadIndex((current) => current + 1);
@@ -2325,44 +3736,86 @@ function App({
     setIsMobileWorkspaceDrawerOpen(false);
   };
 
-  const handleCopyAgentResponse = (messageId: string) => {
-    setCopiedAgentResponseId((current) => (current === messageId ? null : messageId));
+  const previousUserGoalForAgentResponse = (messageId: string): string => {
+    const messageIndex = activeThreadMessages.findIndex((message) => message.id === messageId);
+    const searchLimit = messageIndex === -1 ? activeThreadMessages.length : messageIndex;
+    for (let index = searchLimit - 1; index >= 0; index -= 1) {
+      const candidate = activeThreadMessages[index];
+      if (candidate?.role === "user" && candidate.content?.trim()) {
+        return candidate.content.trim();
+      }
+    }
+    return "";
+  };
+
+  const handleCopyAgentResponse = async (message: ThreadMessage) => {
+    const text = agentResponseText(message);
+    if (!text.trim()) {
+      pushNotification("warning", "There is no response text to copy.");
+      return;
+    }
+    try {
+      await writeClipboardText(text);
+      setCopiedAgentResponseId(message.id);
+      pushNotification("success", "Agent response copied.");
+    } catch (error) {
+      pushNotification("error", messageFromUnknownError(error, "Could not copy response."));
+    }
   };
 
   const handleRateAgentResponse = (messageId: string, rating: AgentResponseRating) => {
-    setAgentResponseRatings((current) => {
-      if (current[messageId] === rating) {
+    const currentRating = agentResponseRatings[messageId];
+    if (currentRating === rating) {
+      setAgentResponseRatings((current) => {
         const { [messageId]: _removedRating, ...remainingRatings } = current;
         return remainingRatings;
-      }
+      });
+      pushNotification("info", "Response rating removed.");
+      return;
+    }
 
-      return {
-        ...current,
-        [messageId]: rating,
-      };
-    });
-  };
-
-  const handleShareAgentResponse = (messageId: string) => {
-    setSharedAgentResponseId((current) => (current === messageId ? null : messageId));
-  };
-
-  const handleTryAgentResponseAgain = (message: ThreadMessage) => {
-    const retryIndex = nextAgentRetryIndex;
-    const retryMessage: ThreadMessage = {
-      id: `${activeWorkspace.id}-agent-retry-${retryIndex}`,
-      role: "agent",
-      label: message.label ?? "Agent response",
-      content: `Regenerated mock response for ${message.content ?? "the previous answer"}`,
-      showContext: false,
-    };
-    setNextAgentRetryIndex((current) => current + 1);
-    setThreadMessagesByWorkspace((current) => ({
+    setAgentResponseRatings((current) => ({
       ...current,
-      [activeWorkspace.id]: [...(current[activeWorkspace.id] ?? []), retryMessage],
+      [messageId]: rating,
     }));
+    pushNotification("success", rating === "good" ? "Marked response as useful." : "Marked response as not useful.");
+  };
+
+  const handleShareAgentResponse = async (message: ThreadMessage) => {
+    const text = agentResponseText(message);
+    if (!text.trim()) {
+      pushNotification("warning", "There is no response text to share.");
+      return;
+    }
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: message.label ?? "Orynt agent response",
+          text,
+        });
+        pushNotification("success", "Share sheet opened.");
+      } else {
+        await writeClipboardText(text);
+        pushNotification("success", "Share text copied.");
+      }
+      setSharedAgentResponseId(message.id);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      pushNotification("error", messageFromUnknownError(error, "Could not share response."));
+    }
+  };
+
+  const handleResendAgentResponse = (message: ThreadMessage) => {
+    const retryGoal = previousUserGoalForAgentResponse(message.id);
+    if (!retryGoal) {
+      pushNotification("warning", "No original user request was found to resend.");
+      return;
+    }
     setOpenAgentResponseMenuId(null);
     setOpenAgentResponseSourcesId(null);
+    void submitComposerGoal(retryGoal);
   };
 
   const handleBranchAgentResponse = (message: ThreadMessage) => {
@@ -2377,8 +3830,9 @@ function App({
       id: `${branchSpace.id}-agent-1`,
       role: "agent",
       label: message.label ?? "Agent response",
-      content: `Branched from ${message.content ?? "agent response"}`,
+      content: message.content ? `Branched from response:\n\n${message.content}` : "Branched from agent response.",
       showContext: false,
+      sources: agentResponseSources(message),
     };
     setNextWorkspaceThreadIndex((current) => current + 1);
     setWorkspaces((current) => [branchSpace, ...current]);
@@ -2405,8 +3859,22 @@ function App({
     setOpenAgentResponseMenuId(null);
   };
 
-  const handleToggleReadAloud = (messageId: string) => {
-    setReadingAgentResponseId((current) => (current === messageId ? null : messageId));
+  const handleToggleReadAloud = (message: ThreadMessage) => {
+    if (!("speechSynthesis" in window)) {
+      pushNotification("warning", "Read aloud is not available in this window.");
+      return;
+    }
+    if (readingAgentResponseId === message.id) {
+      window.speechSynthesis.cancel();
+      setReadingAgentResponseId(null);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(agentResponseText(message));
+    utterance.onend = () => setReadingAgentResponseId((current) => (current === message.id ? null : current));
+    utterance.onerror = () => setReadingAgentResponseId((current) => (current === message.id ? null : current));
+    setReadingAgentResponseId(message.id);
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleAgentResponseTextSelection = (messageId: string) => {
@@ -2644,11 +4112,54 @@ function App({
     setShowSettingsSidebar((current) => !current);
   };
 
+  const handleOpenComposerQuickDialog = (dialog: "model" | "effort") => {
+    const quickButton = dialog === "model" ? composerModelButtonRef.current : composerEffortButtonRef.current;
+    if (quickButton) {
+      setComposerQuickMenuPlacement(resolveComposerMenuPlacement(quickButton, dialog === "model" ? 520 : 380));
+    }
+    setIsComposerAttachmentMenuOpen(false);
+    setIsComposerMetaMenuOpen(false);
+    setComposerQuickDialog((current) => (current === dialog ? null : dialog));
+  };
+
+  const handleSaveComposerModel = async (provider: SetupProviderOption, model: SetupModelOption) => {
+    const nextThinkingEffort = resolveThinkingEffortForModel(model, thinkingEffort);
+    setSelectedModelId(model.id);
+    setThinkingEffort(nextThinkingEffort);
+    setModelConnectionMessage("");
+    setModelConnectionMessageTone("info");
+    if (modelConnection?.providerId === provider.id && modelConnection.modelId === model.id) {
+      setComposerQuickDialog(null);
+      return;
+    }
+    await withPendingAction("model-connection:save", async () => {
+      try {
+        const connection = await saveSelectedModelConnectionWithPreflight({ provider, model, thinkingEffort: nextThinkingEffort });
+        if (connection) {
+          setComposerQuickDialog(null);
+        }
+      } catch (error) {
+        setModelConnectionMessage(messageFromUnknownError(error, "Provider setup save failed."));
+        setModelConnectionMessageTone("error");
+      }
+    });
+  };
+
+  const handleAdjustComposerThinkingEffort = async (effort: ThinkingEffortOption) => {
+    await handleThinkingEffortChange(effort);
+  };
+
+  const handleSelectComposerThinkingEffortAndClose = async (effort: ThinkingEffortOption) => {
+    await handleThinkingEffortChange(effort);
+    setComposerQuickDialog(null);
+  };
+
   const handleToggleComposerMetaMenu = () => {
     if (composerMetaButtonRef.current) {
       setComposerMetaMenuPlacement(resolveComposerMenuPlacement(composerMetaButtonRef.current, composerPermissionMenuEstimatedHeight));
     }
     setIsComposerAttachmentMenuOpen(false);
+    setComposerQuickDialog(null);
     setIsComposerMetaMenuOpen((current) => !current);
   };
 
@@ -2662,11 +4173,140 @@ function App({
       setComposerAttachmentMenuPlacement(resolveComposerMenuPlacement(composerAttachmentButtonRef.current, composerAttachmentMenuEstimatedHeight));
     }
     setIsComposerMetaMenuOpen(false);
+    setComposerQuickDialog(null);
     setIsComposerAttachmentMenuOpen((current) => !current);
   };
 
   const handleSelectComposerAttachmentOption = () => {
     setIsComposerAttachmentMenuOpen(false);
+  };
+
+  const renderComposerModelDialog = () => {
+    if (composerQuickDialog !== "model") {
+      return null;
+    }
+
+    return (
+      <div
+        className={`composer-quick-dropdown composer-model-dropdown composer-quick-dropdown-${composerQuickMenuPlacement}`}
+        id="composer-model-menu"
+        role="menu"
+        aria-label="Change model"
+        ref={composerQuickMenuRef}
+      >
+          <section className="composer-quick-section" aria-label="Model choices">
+            <div className="composer-quick-section-header">
+              <span>Model</span>
+              <button
+                className="composer-quick-link-button"
+                type="button"
+                disabled={!selectedProvider || isSelectedProviderCheckPending || isSelectedProviderModelFetchPending}
+                onClick={() => selectedProvider && void preflightSelectedProviderAndLoadModels(selectedProvider)}
+              >
+                {isSelectedProviderCheckPending || isSelectedProviderModelFetchPending ? (
+                  <LoaderCircle className="composer-option-icon composer-option-icon-spin" aria-hidden="true" strokeWidth={2} />
+                ) : (
+                  <RotateCcw className="composer-option-icon" aria-hidden="true" strokeWidth={2} />
+                )}
+                <span>{isSelectedProviderCheckPending || isSelectedProviderModelFetchPending ? "Loading" : "Refresh"}</span>
+              </button>
+            </div>
+            <div className="composer-model-options" role="listbox" aria-label="Model">
+              {selectedProvider && activeModelCatalogOptions.length > 0 ? (
+                activeModelCatalogOptions.map((model) => {
+                  const isSelectedModel = selectedModelId === model.id;
+                  return (
+                    <button
+                      className="composer-option-card composer-model-option"
+                      type="button"
+                      role="option"
+                      aria-selected={isSelectedModel}
+                      key={model.id}
+                      onClick={() => selectedProvider && void handleSaveComposerModel(selectedProvider, model)}
+                    >
+                      <Code2 className="composer-option-icon" aria-hidden="true" strokeWidth={2} />
+                      <span>
+                        <strong>{model.label}</strong>
+                        <small>{model.description ?? model.id}</small>
+                      </span>
+                      {isSelectedModel ? <Check className="composer-option-check" aria-hidden="true" strokeWidth={2} /> : null}
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="composer-quick-empty">{selectedProvider ? "Refresh to load live model choices." : "Choose a provider first."}</p>
+              )}
+            </div>
+          </section>
+      </div>
+    );
+  };
+
+  const renderComposerThinkingEffortDialog = () => {
+    if (composerQuickDialog !== "effort") {
+      return null;
+    }
+    const activeComposerThinkingEffort =
+      composerThinkingEffortOptions.find((option) => option.value === thinkingEffort) ?? composerThinkingEffortOptions.find((option) => option.value === selectedModelThinkingEffort) ?? composerThinkingEffortOptions[0];
+    const activeComposerThinkingEffortIndex = Math.max(
+      0,
+      composerThinkingEffortOptions.findIndex((option) => option.value === activeComposerThinkingEffort.value),
+    );
+    const effortProgress =
+      composerThinkingEffortOptions.length > 1
+        ? (activeComposerThinkingEffortIndex / (composerThinkingEffortOptions.length - 1)) * 100
+        : 0;
+
+    return (
+      <div
+        className={`composer-effort-popover composer-effort-popover-${composerQuickMenuPlacement}`}
+        id="composer-effort-menu"
+        role="menu"
+        aria-label="Change thinking effort"
+        ref={composerQuickMenuRef}
+      >
+          <div
+            className="composer-effort-options"
+            data-selected-effort={activeComposerThinkingEffort.value}
+            style={{ "--composer-effort-progress": `${effortProgress}%` } as CSSProperties}
+          >
+            <input
+              className="composer-effort-slider"
+              type="range"
+              min={0}
+              max={Math.max(0, composerThinkingEffortOptions.length - 1)}
+              step={1}
+              value={activeComposerThinkingEffortIndex}
+              aria-label="Thinking effort"
+              aria-valuetext={activeComposerThinkingEffort.label}
+              onChange={(event) => {
+                const option = composerThinkingEffortOptions[Number(event.currentTarget.value)];
+                if (option) {
+                  void handleAdjustComposerThinkingEffort(option.value);
+                }
+              }}
+            />
+            <div className="composer-effort-ticks" aria-label="Thinking effort options">
+              {composerThinkingEffortOptions.map((option) => {
+                const isSelectedEffort = option.value === activeComposerThinkingEffort.value;
+                return (
+                  <button
+                    className="composer-effort-tick"
+                    type="button"
+                    data-effort={option.value}
+                    data-selected={isSelectedEffort}
+                    aria-pressed={isSelectedEffort}
+                    key={option.value}
+                    onClick={() => void handleSelectComposerThinkingEffortAndClose(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+      </div>
+    );
   };
 
   const renderDeleteWorkspaceDialog = () => {
@@ -2675,7 +4315,7 @@ function App({
     }
 
     return (
-      <ShellModal id="workspace-delete-dialog" label="Delete thread" description={deleteWorkspace.label} onClose={() => setDeleteWorkspaceId(null)}>
+      <ShellModal id="workspace-delete-dialog" label="Delete thread" onClose={() => setDeleteWorkspaceId(null)}>
         <div className="workspace-delete-dialog">
           <p>
             Delete <strong>{deleteWorkspace.label}</strong> and its local messages.
@@ -2699,7 +4339,7 @@ function App({
     }
 
     return (
-      <ShellModal id="workspace-archive-dialog" label="Archive" description="Archived threads" onClose={() => setShowWorkspaceArchive(false)}>
+      <ShellModal id="workspace-archive-dialog" label="Archive" onClose={() => setShowWorkspaceArchive(false)}>
         <div className="workspace-archive-dialog">
           {archivedWorkspaces.length > 0 ? (
             archivedWorkspaces.map((space) => (
@@ -2749,7 +4389,7 @@ function App({
   const renderThreadMessage = (message: ThreadMessage) => {
     if (message.role === "user") {
       return (
-        <MessageBlock role="user" align="end" key={message.id}>
+        <MessageBlock role="user" align="end" key={message.id} messageId={message.id}>
           <ChatBubble tone="user" align="end" width="compact">
             <p>{message.content}</p>
           </ChatBubble>
@@ -2759,7 +4399,7 @@ function App({
 
     if (message.role === "system") {
       return (
-        <MessageBlock role="system" key={message.id}>
+        <MessageBlock role="system" key={message.id} messageId={message.id}>
           <p className="system-notice-text">{message.content}</p>
         </MessageBlock>
       );
@@ -2788,7 +4428,7 @@ function App({
           aria-label={isCopied ? "Copied response" : "Copy response"}
           aria-pressed={isCopied}
           title={isCopied ? "Copied" : "Copy"}
-          onClick={() => handleCopyAgentResponse(message.id)}
+          onClick={() => void handleCopyAgentResponse(message)}
         >
           {isCopied ? <Check className="ui-icon" aria-hidden="true" strokeWidth={2} /> : <Copy className="ui-icon" aria-hidden="true" strokeWidth={2} />}
         </button>
@@ -2818,11 +4458,11 @@ function App({
           aria-label={isShared ? "Shared response" : "Share response"}
           aria-pressed={isShared}
           title={isShared ? "Shared" : "Share"}
-          onClick={() => handleShareAgentResponse(message.id)}
+          onClick={() => void handleShareAgentResponse(message)}
         >
           {isShared ? <Check className="ui-icon" aria-hidden="true" strokeWidth={2} /> : <Share className="ui-icon" aria-hidden="true" strokeWidth={2} />}
         </button>
-        <button className="agent-response-action-button" type="button" aria-label="Try again" title="Try again" onClick={() => handleTryAgentResponseAgain(message)}>
+        <button className="agent-response-action-button" type="button" aria-label="Resend task" title="Resend" onClick={() => handleResendAgentResponse(message)}>
           <RotateCcw className="ui-icon" aria-hidden="true" strokeWidth={2} />
         </button>
         <button
@@ -2860,7 +4500,7 @@ function App({
                 role="menuitem"
                 aria-pressed={isReading}
                 onClick={() => {
-                  handleToggleReadAloud(message.id);
+                  handleToggleReadAloud(message);
                   setOpenAgentResponseMenuId(null);
                 }}
               >
@@ -2879,27 +4519,32 @@ function App({
     if (!activeAgentResponseSourcesMessage) {
       return null;
     }
+    const sources = agentResponseSources(activeAgentResponseSourcesMessage);
 
     return (
       <section className="agent-response-sources-panel" id="agent-response-sources-panel" aria-label="Sources">
         <header>
           <div>
             <strong>Sources</strong>
-            <span>Mock web citations</span>
+            <span>Current response context</span>
           </div>
           <button type="button" aria-label="Close sources" title="Close sources" onClick={() => setOpenAgentResponseSourcesId(null)}>
             <X className="ui-icon" aria-hidden="true" strokeWidth={2} />
           </button>
         </header>
         <ol>
-          {mockAgentSources.map((source) => (
-            <li key={source.url}>
+          {sources.map((source) => (
+            <li key={`${source.citation}-${source.title}`}>
               <span className="agent-response-source-citation">{source.citation}</span>
               <div>
-                <a className="agent-response-source-link" href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title} source`}>
-                  {source.title}
-                  <ExternalLink className="ui-icon" aria-hidden="true" strokeWidth={2} />
-                </a>
+                {source.url ? (
+                  <a className="agent-response-source-link" href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title} source`}>
+                    {source.title}
+                    <ExternalLink className="ui-icon" aria-hidden="true" strokeWidth={2} />
+                  </a>
+                ) : (
+                  <strong className="agent-response-source-link">{source.title}</strong>
+                )}
                 <small>{source.domain}</small>
                 <p>{source.excerpt}</p>
               </div>
@@ -2927,7 +4572,7 @@ function App({
             onMouseUp={() => handleAgentResponseTextSelection(message.id)}
             onKeyUp={() => handleAgentResponseTextSelection(message.id)}
           >
-            <p>{message.content}</p>
+            {renderMarkdownContent(message.content ?? "")}
           </div>
           {agentResponseSelection?.messageId === message.id ? (
             <div className="agent-response-selection-popover" role="toolbar" aria-label="Selected text actions">
@@ -2946,13 +4591,86 @@ function App({
     </div>
   );
 
+  const renderAgentGeneratingMessage = () => {
+    const runCheckpoints = activeThreadMessages.filter((message) => message.role === "system" && message.detailKind);
+    const latestCheckpoint = runCheckpoints.at(-1);
+    const checkpointLabel = latestCheckpoint
+      ? `Checkpoint ${runCheckpoints.length}: ${truncateUiText(latestCheckpoint.content ?? (latestCheckpoint.detailKind ? runEventKindLabels[latestCheckpoint.detailKind] : "Run event"), 120)}`
+      : "Checkpoint 0: waiting for run log";
+
+    return (
+      <div className="agent-thinking-status" role="status" aria-label="Agent is generating response" aria-live="polite" key="agent-generating-response">
+        <div className="agent-thinking-status-title">
+          <LoadingSpinner />
+          <span>Generating response</span>
+          <span className="agent-generating-timer" aria-label={`Elapsed ${formatElapsedClock(generatingElapsedSeconds)}`}>
+            {formatElapsedClock(generatingElapsedSeconds)}
+          </span>
+          <span className="agent-generating-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
+        <span className="agent-generating-checkpoint" aria-label={checkpointLabel}>
+          {checkpointLabel}
+        </span>
+      </div>
+    );
+  };
+
   const renderThreadMessages = () => {
     const renderedMessages: ReactNode[] = [];
     let pendingSystemMessages: ThreadMessage[] = [];
 
+    const renderStandaloneSystemMessages = (messages: ThreadMessage[], keyPrefix: string) => {
+      const detailMessages = messages.filter((systemMessage) => systemMessage.detailKind);
+      const noticeMessages = messages.filter((systemMessage) => !systemMessage.detailKind);
+      const standaloneMessages = noticeMessages.map((systemMessage) => renderThreadMessage(systemMessage));
+      if (detailMessages.length > 0) {
+        let latestCompletionDetail: ThreadMessage | null = null;
+        for (let index = detailMessages.length - 1; index >= 0; index -= 1) {
+          const systemMessage = detailMessages[index];
+          if (systemMessage.detailKind === "done" && (systemMessage.content ?? "").startsWith("Repository harness run completed for ")) {
+            latestCompletionDetail = systemMessage;
+            break;
+          }
+        }
+        standaloneMessages.push(
+          <div className="agent-run-block" key={`${keyPrefix}-agent-details-${detailMessages.map((message) => message.id).join("-")}`}>
+            <AgentDetails messages={detailMessages} />
+          </div>,
+        );
+        if (latestCompletionDetail) {
+          standaloneMessages.push(
+            renderAgentMessage({
+              id: `${latestCompletionDetail.id}-no-final-response`,
+              runId: latestCompletionDetail.runId,
+              role: "agent",
+              label: "Agent response",
+              content: noFinalModelResponseContent(latestCompletionDetail.runId),
+            }),
+          );
+        }
+      }
+      return standaloneMessages;
+    };
+
     activeThreadMessages.forEach((message) => {
       if (message.role === "system") {
         pendingSystemMessages = [...pendingSystemMessages, message];
+        return;
+      }
+
+      if (isInternalAgentRunMessage(message)) {
+        pendingSystemMessages = [
+          ...pendingSystemMessages,
+          {
+            ...message,
+            role: "system",
+            detailKind: message.detailKind ?? (isRepositoryHarnessCompletionFallbackMessage(message) ? "done" : "model"),
+          },
+        ];
         return;
       }
 
@@ -2963,15 +4681,19 @@ function App({
       }
 
       if (pendingSystemMessages.length > 0) {
-        renderedMessages.push(...pendingSystemMessages.map((systemMessage) => renderThreadMessage(systemMessage)));
+        renderedMessages.push(...renderStandaloneSystemMessages(pendingSystemMessages, `before-${message.id}`));
         pendingSystemMessages = [];
       }
 
       renderedMessages.push(renderThreadMessage(message));
     });
 
-    if (pendingSystemMessages.length > 0) {
-      renderedMessages.push(...pendingSystemMessages.map((systemMessage) => renderThreadMessage(systemMessage)));
+    if (pendingSystemMessages.length > 0 && !isComposerSubmitPending) {
+      renderedMessages.push(...renderStandaloneSystemMessages(pendingSystemMessages, "trailing"));
+    }
+
+    if (isComposerSubmitPending) {
+      renderedMessages.push(renderAgentGeneratingMessage());
     }
 
     return renderedMessages;
@@ -2990,7 +4712,6 @@ function App({
               options={[
                 { value: "", label: "Choose provider" },
                 ...setupProviderOptions.map((provider) => ({
-                  description: provider.description,
                   label: provider.label,
                   value: provider.id,
                 })),
@@ -2998,7 +4719,6 @@ function App({
               placeholder="Choose provider"
               value={selectedProviderId ?? ""}
             />
-            <small>{selectedProviderDescription}</small>
           </label>
         </section>
       </div>
@@ -3012,12 +4732,21 @@ function App({
             <strong>{modelConnectionStatusLabel(modelConnection)}</strong>
           </div>
           <p className={setupLogTextClassName(modelConnectionMessage ? modelConnectionMessageTone : modelCatalogStatus === "ready" ? "success" : "info")}>
-            {modelConnectionMessage ||
+            {isCodexAutoCheckPending ? (
+              <span className="loading-button-content">
+                <LoadingSpinner />
+                <span>{modelConnectionMessage || "Checking local Codex CLI identity with `codex login status`."}</span>
+              </span>
+            ) : (
+              modelConnectionMessage ||
               (modelCatalogStatus === "ready"
-                ? "Choose a live model to finish provider setup."
+                ? modelCatalogIsLive
+                  ? "Choose a live model to finish provider setup."
+                  : "Cached model choices are visible while live availability refreshes."
                 : selectedProvider.id === "codex-cli"
-                  ? "Check Codex CLI to fetch live models."
-                  : "Run the provider check to fetch live models.")}
+                  ? "Checking Codex CLI automatically."
+                  : "Run the provider check to fetch live models.")
+            )}
           </p>
           {selectedProvider.id === "openai-api" ? (
             <label className="settings-field">
@@ -3045,54 +4774,62 @@ function App({
           ) : (
             <div className="settings-callout">
               <strong>Existing Codex CLI session</strong>
-              <span>Orynt checks your local Codex CLI session and does not start browser, device-code, or access-token login from the app.</span>
-              <span>Orynt does not manage Codex sign-in. If no session is detected, run codex login in your terminal, complete sign-in, then return here and click Check Codex CLI again.</span>
+              <span>Auto-detect checks the local session with `codex login status`. If sign-in is missing, run `codex login` in a terminal here or manually, then check again.</span>
             </div>
           )}
-          <div className="candidate-rule-actions">
-            {selectedProvider.id === "codex-cli" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void handleRunCodexConnectionPreflight()}
-                  disabled={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending}
-                  aria-busy={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending}
-                  aria-label="Check Codex CLI"
-                >
-                  <LoadingButtonContent isLoading={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} loadingLabel={isSelectedProviderModelFetchPending ? "Fetching" : "Checking"}>
-                    Check Codex CLI
-                  </LoadingButtonContent>
-                </button>
-                {canSaveSelectedModelConnection ? (
-                  <button type="button" onClick={() => void handleSaveModelConnection()} disabled={isModelConnectionSavePending} aria-busy={isModelConnectionSavePending} aria-label="Save provider setup">
-                    <LoadingButtonContent isLoading={isModelConnectionSavePending} loadingLabel="Saving">
-                      Save provider setup
+          {shouldShowProviderSetupActions ? (
+            <div className="candidate-rule-actions">
+              {selectedProvider.id === "codex-cli" ? (
+                <>
+                  {isCodexAutoCheckPending ? (
+                    <button type="button" onClick={handleSkipCodexAutoCheck} aria-label="Skip auto check">
+                      Skip auto check
+                    </button>
+                  ) : !isSelectedProviderLiveCatalogReady ? (
+                    <>
+                      <button type="button" onClick={() => void handleLaunchCodexLogin("browser")} disabled={isCodexLoginPending} aria-busy={isCodexBrowserLoginPending} aria-label="Open Codex login">
+                        <LoadingButtonContent isLoading={isCodexBrowserLoginPending} loadingLabel="Opening">
+                          Open Codex login
+                        </LoadingButtonContent>
+                      </button>
+                      <button type="button" onClick={() => void handleLaunchCodexLogin("deviceCode")} disabled={isCodexLoginPending} aria-busy={isCodexDeviceCodeLoginPending} aria-label="Use device code">
+                        <LoadingButtonContent isLoading={isCodexDeviceCodeLoginPending} loadingLabel="Opening">
+                          Use device code
+                        </LoadingButtonContent>
+                      </button>
+                    </>
+                  ) : null}
+                  {canSaveSelectedModelConnection ? (
+                    <button type="button" onClick={() => void handleSaveModelConnection()} disabled={isModelConnectionSavePending} aria-busy={isModelConnectionSavePending} aria-label="Save provider setup">
+                      <LoadingButtonContent isLoading={isModelConnectionSavePending} loadingLabel="Saving">
+                        Save provider setup
+                      </LoadingButtonContent>
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => void handleRunModelConnectionPreflight()} disabled={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} aria-busy={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} aria-label="Run provider check">
+                    <LoadingButtonContent isLoading={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} loadingLabel={isSelectedProviderModelFetchPending ? "Fetching" : "Checking"}>
+                      Run provider check
                     </LoadingButtonContent>
                   </button>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <button type="button" onClick={() => void handleRunModelConnectionPreflight()} disabled={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} aria-busy={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} aria-label="Run provider check">
-                  <LoadingButtonContent isLoading={isSelectedProviderCheckPending || isSelectedProviderModelFetchPending} loadingLabel={isSelectedProviderModelFetchPending ? "Fetching" : "Checking"}>
-                    Run provider check
-                  </LoadingButtonContent>
-                </button>
-                {canSaveSelectedModelConnection ? (
-                  <button type="button" onClick={() => void handleSaveModelConnection()} disabled={isModelConnectionSavePending} aria-busy={isModelConnectionSavePending} aria-label="Save provider setup">
-                    <LoadingButtonContent isLoading={isModelConnectionSavePending} loadingLabel="Saving">
-                      Save provider setup
-                    </LoadingButtonContent>
-                  </button>
-                ) : null}
-              </>
-            )}
-            <button type="button" onClick={() => void handleDeleteCodexConnection()} disabled={!modelConnection || isModelConnectionDeletePending} aria-busy={isModelConnectionDeletePending} aria-label="Delete provider connection">
-              <LoadingButtonContent isLoading={isModelConnectionDeletePending} loadingLabel="Deleting">
-                Delete connection
-              </LoadingButtonContent>
-            </button>
-          </div>
+                  {canSaveSelectedModelConnection ? (
+                    <button type="button" onClick={() => void handleSaveModelConnection()} disabled={isModelConnectionSavePending} aria-busy={isModelConnectionSavePending} aria-label="Save provider setup">
+                      <LoadingButtonContent isLoading={isModelConnectionSavePending} loadingLabel="Saving">
+                        Save provider setup
+                      </LoadingButtonContent>
+                    </button>
+                  ) : null}
+                </>
+              )}
+            </div>
+          ) : null}
+          {selectedProvider.id === "codex-cli" && codexLoginBackupUrl ? (
+            <p className="setup-log-text setup-log-text-info">
+              Backup link: <a href={codexLoginBackupUrl} target="_blank" rel="noreferrer">{codexLoginBackupUrl}</a>
+            </p>
+          ) : null}
         </article>
       ) : null}
       {selectedProvider && modelCatalogStatus === "loading" ? (
@@ -3156,7 +4893,6 @@ function App({
               options={[
                 { value: "", label: "Choose model" },
                 ...activeModelCatalogOptions.map((model) => ({
-                  description: model.description ?? model.ownedBy ?? undefined,
                   label: model.label,
                   value: model.id,
                 })),
@@ -3164,7 +4900,6 @@ function App({
               placeholder="Choose model"
               value={selectedModelId ?? ""}
             />
-            <small>{selectedModelDescription}</small>
           </label>
           {selectedModelSupportsThinkingEffort ? (
             <label className="settings-field settings-field-stacked">
@@ -3183,6 +4918,7 @@ function App({
               />
             </label>
           ) : null}
+          {modelCatalogMessage ? <p className={setupLogTextClassName(modelCatalogMessageTone)}>{modelCatalogMessage}</p> : null}
         </section>
       ) : null}
     </section>
@@ -3203,7 +4939,7 @@ function App({
         <li className="setup-flow-step">
           <div className="setup-flow-step-copy">
             <strong>Choose a local directory</strong>
-            <span>{repositoryPath.trim() || settingsSnapshot?.defaultRepositoryPath ? "Local directory selected." : "Save the local folder you want Orynt to work in."}</span>
+            <span>{repositoryPath.trim() || settingsSnapshot?.defaultRepositoryPath ? "Selected." : "Pick the repo folder."}</span>
           </div>
           <label className="settings-field">
             <span>Default local directory</span>
@@ -3240,14 +4976,14 @@ function App({
         <li className="setup-flow-step">
           <div className="setup-flow-step-copy">
             <strong>Choose model provider</strong>
-            <span>{modelConnection ? modelConnectionStatusMessage(modelConnection) : "Select a provider, run its readiness check, then choose a live model before the first repository run."}</span>
+            <span>{modelConnection ? modelConnectionStatusMessage(modelConnection) : "Select provider and model."}</span>
           </div>
           {renderModelProviderSetupPanel(headingId)}
         </li>
         <li className="setup-flow-step">
           <div className="setup-flow-step-copy">
             <strong>Review advanced defaults</strong>
-            <span>Repository is the only executable surface; browser, desktop, files, terminal, cloud, and billing remain unavailable.</span>
+            <span>Repository-only execution.</span>
           </div>
           <section className="settings-control" aria-label="Setup permission mode">
             <label htmlFor={`${headingId}-permission-mode`}>Permission mode</label>
@@ -3532,7 +5268,6 @@ function App({
 
               <section className="settings-group" aria-labelledby="settings-trusted-devices-title">
                 <h2 id="settings-trusted-devices-title">Trusted devices</h2>
-                <p>Devices that can control your local machine through remote sessions.</p>
                 <table className="settings-table" aria-label="Trusted devices">
                   <thead>
                     <tr>
@@ -3715,7 +5450,7 @@ function App({
   };
 
   const renderComposer = (variant: "start" | "inline") => (
-    <form className={`composer composer-${variant} composer-scale-${composerScaleMode}`} aria-label="Thread composer" onSubmit={(event) => void handleTaskSubmit(event)}>
+    <form className={`composer composer-${variant} composer-scale-${composerScaleMode}`} aria-label="Task composer" onSubmit={(event) => void handleTaskSubmit(event)}>
       <div className="composer-field input-focus-shell">
         <button
           className="composer-scale-button"
@@ -3731,22 +5466,33 @@ function App({
             <Maximize2 className="ui-icon" aria-hidden="true" strokeWidth={2} />
           )}
         </button>
-        <label className="composer-repository-path">
-          <span>Directory</span>
-          <input
-            className="input-focus-control"
+        <div className="composer-repository-path">
+          <button
+            className="composer-directory-button"
+            type="button"
+            aria-label="Change directory"
+            title="Change directory"
+            onClick={() => void handleBrowseComposerRepositoryPath()}
+            disabled={isComposerSubmitPending || isPendingAction("composer:browse-directory")}
+          >
+            <FolderOpen className="ui-icon" aria-hidden="true" strokeWidth={2} />
+          </button>
+          <output
+            id={`composer-repository-path-${variant}`}
+            className={`composer-directory-path-view${repositoryPath.trim() ? "" : " composer-directory-path-view-empty"}`}
             aria-label="Directory path"
-            name="repository-path"
-            placeholder="/path/to/local/directory"
-            value={repositoryPath}
-            onChange={(event) => setRepositoryPath(event.target.value)}
-          />
-        </label>
+            title={repositoryPath.trim() || "No directory selected"}
+          >
+            {repositoryPath.trim() || "/path/to/local/directory"}
+          </output>
+        </div>
         <textarea
+          ref={composerTextareaRef}
           className="input-focus-control"
-          aria-label="Repository task message"
+          aria-label="Task for Orynt"
           name="composer-goal"
           placeholder={formatThreadComposerPlaceholder(activeWorkspace.label)}
+          rows={1}
           value={composerValue}
           onChange={(event) => setComposerValue(event.target.value)}
           onKeyDown={handleComposerKeyDown}
@@ -3770,6 +5516,33 @@ function App({
               onClick={handleToggleComposerAttachmentMenu}
             >
               <Plus className="ui-icon" aria-hidden="true" strokeWidth={2} />
+            </button>
+            <button
+              ref={composerModelButtonRef}
+              className="composer-model-button"
+              type="button"
+              aria-label={`Change model. Current model: ${composerModelLabel}.`}
+              title="Change model"
+              aria-haspopup="menu"
+              aria-expanded={composerQuickDialog === "model"}
+              aria-controls={composerQuickDialog === "model" ? "composer-model-menu" : undefined}
+              onClick={() => handleOpenComposerQuickDialog("model")}
+            >
+              <Cpu className="ui-icon" aria-hidden="true" strokeWidth={2} />
+              <span>{composerModelLabel}</span>
+            </button>
+            <button
+              ref={composerEffortButtonRef}
+              className="composer-model-button composer-effort-button"
+              type="button"
+              aria-label={`Change thinking effort. Current effort: ${thinkingEffortCopy.label}.`}
+              aria-haspopup="menu"
+              aria-expanded={composerQuickDialog === "effort"}
+              aria-controls={composerQuickDialog === "effort" ? "composer-effort-menu" : undefined}
+              onClick={() => handleOpenComposerQuickDialog("effort")}
+            >
+              <Gauge className="ui-icon" aria-hidden="true" strokeWidth={2} />
+              <span>{thinkingEffortCopy.label}</span>
             </button>
             {isComposerAttachmentMenuOpen ? (
               <div
@@ -3814,6 +5587,8 @@ function App({
                 ))}
               </div>
             ) : null}
+            {renderComposerModelDialog()}
+            {renderComposerThinkingEffortDialog()}
           </div>
           <div className="composer-actions">
             <button
@@ -3827,7 +5602,8 @@ function App({
               title="Permission mode"
               onClick={handleToggleComposerMetaMenu}
             >
-              {permissionModeCopy.label}
+              <Shield className="ui-icon" aria-hidden="true" strokeWidth={2} />
+              <span>{permissionModeCopy.label}</span>
             </button>
             {isComposerMetaMenuOpen ? (
               <div
@@ -3858,7 +5634,7 @@ function App({
               type="button"
               aria-label="Send task"
               title="Send task"
-              disabled={composerValue.trim().length === 0 || isComposerSubmitPending}
+              disabled={composerValue.trim().length === 0 || !effectiveRepositoryPath || isComposerSubmitPending}
               aria-busy={isComposerSubmitPending}
               onClick={() => void submitComposerGoal()}
             >
@@ -3877,7 +5653,7 @@ function App({
     children: ReactNode;
     showComposer?: boolean;
   }) => (
-    <section className={`thread${showComposer && isActiveThreadEmpty ? " thread-empty" : ""}`} aria-label="Thread conversation">
+    <section className={`thread${showComposer && isActiveThreadEmpty ? " thread-empty" : ""}`} aria-label="Task conversation">
       <header className="thread-header">
         {editingThreadHeaderId === activeWorkspace.id ? (
           <div className="thread-header-title thread-header-title-editing" onBlur={handleThreadHeaderEditBlur}>
@@ -3885,7 +5661,7 @@ function App({
               <span className="thread-header-field-label">Title</span>
               <input
                 className="thread-header-field thread-header-name-field input-focus-control"
-                aria-label="Thread name"
+                aria-label="Task name"
                 type="text"
                 value={threadHeaderTitleValue}
                 autoFocus
@@ -3897,7 +5673,7 @@ function App({
               <span className="thread-header-field-label">Description</span>
               <input
                 className="thread-header-field thread-header-description-field input-focus-control"
-                aria-label="Thread description"
+                aria-label="Task description"
                 type="text"
                 value={threadHeaderDescriptionValue}
                 placeholder="Description"
@@ -3911,7 +5687,7 @@ function App({
             className="thread-header-title thread-header-title-editable"
             role="button"
             tabIndex={0}
-            aria-label="Edit thread name and description"
+            aria-label="Edit task name and description"
             onClick={handleStartThreadHeaderEdit}
             onKeyDown={handleStartThreadHeaderEditKeyDown}
           >
@@ -3927,8 +5703,8 @@ function App({
               renderSetupReadinessNotice()
             ) : (
               <div className="thread-start-copy">
-                <h2>Ready for the next run</h2>
-                <p>{activeWorkspace.description || "Describe the repository task and Orynt will keep the run gated, inspectable, and local-first."}</p>
+                <h2>{threadStartCopy.title}</h2>
+                <p>{threadStartCopy.description}</p>
               </div>
             )}
           </div>
@@ -3983,7 +5759,6 @@ function App({
       <ShellModal
         id="setup-dialog"
         label="Set up Orynt"
-        description="Repository-only private beta"
         variant="atmospheric"
         modalClassName="setup-modal"
         bodyClassName="setup-modal-body"
@@ -3993,7 +5768,7 @@ function App({
           <section className="setup-dialog-intro" aria-label="Setup summary">
             <span>Repository-only beta</span>
             <p>
-              Choose a local directory, choose a model provider, and confirm conservative defaults before the first supervised run. Orynt stays local-first and directory-scoped for this private beta.
+              Choose where Orynt may act, choose a model provider, and confirm conservative defaults before the first supervised task. This beta is limited to the selected local directory, with approval gates and evidence before anything is applied.
             </p>
           </section>
           {renderSetupControls({
@@ -4019,8 +5794,8 @@ function App({
             type="button"
             aria-controls="workspace-thread-search"
             aria-expanded={shouldShowWorkspaceSearch}
-            aria-label="Search threads"
-            title="Search threads"
+            aria-label="Search tasks"
+            title="Search tasks"
             onClick={handleToggleWorkspaceSearch}
           >
             <Search className="ui-icon" aria-hidden="true" strokeWidth={2} />
@@ -4043,7 +5818,7 @@ function App({
         </div>
 
         {isMobileWorkspaceViewport && isMobileWorkspaceDrawerOpen ? (
-          <button className="workspace-drawer-backdrop" type="button" aria-label="Close thread drawer" onClick={() => setIsMobileWorkspaceDrawerOpen(false)} />
+          <button className="workspace-drawer-backdrop" type="button" aria-label="Close task drawer" onClick={() => setIsMobileWorkspaceDrawerOpen(false)} />
         ) : null}
         <div className="workspace-drawer" id="workspace-drawer" hidden={isMobileWorkspaceViewport && !isMobileWorkspaceDrawerOpen}>
           <div className="workspace-controls">
@@ -4053,8 +5828,8 @@ function App({
                   ref={workspaceSearchInputRef}
                   className="input-focus-control"
                   type="text"
-                  aria-label="Search threads"
-                  placeholder="Search threads"
+                  aria-label="Search tasks"
+                  placeholder="Search tasks"
                   value={workspaceSearchQuery}
                   onChange={(event) => setWorkspaceSearchQuery(event.target.value)}
                   onKeyDown={(event) => {
@@ -4066,14 +5841,14 @@ function App({
                 />
               </label>
             ) : null}
-            <button className="workspace-create-button" type="button" title="Create thread" onClick={handleCreateWorkspace}>
+            <button className="workspace-create-button" type="button" aria-label="Create new task" title="New task" onClick={handleCreateWorkspace}>
               <span className="workspace-create-icon" aria-hidden="true">
                 <Plus className="ui-icon" strokeWidth={2} />
               </span>
-              <span>Create</span>
+              <span>New task</span>
             </button>
           </div>
-          <nav aria-label="Threads">
+          <nav aria-label="Tasks">
             {filteredWorkspaces.map((space) => {
               const isActiveWorkspace = activeWorkspace.id === space.id;
               const isWorkspaceMenuOpen = openWorkspaceMenuId === space.id;
@@ -4088,7 +5863,7 @@ function App({
                   {isRenamingWorkspace ? (
                     <input
                       className="workspace-rename-input input-focus-standalone"
-                      aria-label={`Rename ${space.label} thread`}
+                      aria-label={`Rename ${space.label} task`}
                       type="text"
                       value={workspaceRenameValue}
                       autoFocus
@@ -4109,11 +5884,11 @@ function App({
                   <button
                     className="workspace-options"
                     type="button"
-                    aria-label={`Thread options for ${space.label}`}
+                    aria-label={`Task options for ${space.label}`}
                     aria-haspopup="menu"
                     aria-expanded={isWorkspaceMenuOpen}
                     aria-controls={`workspace-options-${space.id}`}
-                    title={`Thread options for ${space.label}`}
+                    title={`Task options for ${space.label}`}
                     onClick={(event) => {
                       event.stopPropagation();
                       handleToggleWorkspaceMenu(space.id);
@@ -4127,7 +5902,7 @@ function App({
                       className="workspace-menu"
                       id={`workspace-options-${space.id}`}
                       role="menu"
-                      aria-label={`Thread options for ${space.label}`}
+                      aria-label={`Task options for ${space.label}`}
                       onDoubleClick={(event) => event.stopPropagation()}
                     >
                       <button role="menuitem" type="button" onClick={() => handleStartRenameWorkspace(space)}>

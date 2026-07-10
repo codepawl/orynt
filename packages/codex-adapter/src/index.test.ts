@@ -202,11 +202,31 @@ describe("LocalCodexContractAdapter", () => {
     expect(contract.markdown).toContain("## Constraints");
     expect(contract.markdown).toContain("## Done when");
     expect(contract.markdown).toContain(`Sandbox path: ${request.sandbox.worktreePath}`);
-    expect(contract.markdown).toContain("Allowed paths: apps/**, packages/**, .codex/**, README.md, PRODUCT.md");
+    expect(contract.markdown).toContain("Allowed paths: apps/**, packages/**, src/**, server/**, api/**, public/**, tests/**, .codex/**, README.md, PRODUCT.md, package.json, index.html");
     expect(contract.markdown).toContain("Blocked commands: git push, git merge, git branch -D, rm -rf, sudo, credential, secret");
     expect(contract.markdown).toContain("Max model tokens: 120000");
     expect(contract.markdown).toContain("- pnpm test:contracts");
     expect(contract.metadata.validationCommands).toEqual(["pnpm test:contracts", "pnpm build:desktop"]);
+  });
+
+  it("generates executable local CLI contracts for controlled repository tasks", () => {
+    const request = createRequest({
+      executionMode: "manual_cli",
+      goal: "Create a complex fullstack tech web app with a frontend dashboard and backend API.",
+      constraints: ["Keep changes inside the repository sandbox."],
+      doneWhen: ["The app has package.json scripts.", "The app has frontend and backend/API files."],
+      validationCommands: ["node .codex/orynt-beta-verify.mjs"],
+    });
+
+    const contract = new LocalCodexContractAdapter({ managedArtifactRoot: path.join(tempRoot, "artifacts") }).createContract(request);
+
+    expect(contract.executionMode).toBe("manual_cli");
+    expect(contract.markdown).toContain("Execution mode: manual_cli");
+    expect(contract.markdown).toContain("Create a complex fullstack tech web app");
+    expect(contract.markdown).toContain("Implement the requested repository task directly in the sandbox");
+    expect(contract.markdown).toContain("node .codex/orynt-beta-verify.mjs");
+    expect(contract.markdown).not.toContain("This artifact is a safe handoff contract only. Orynt has not executed Codex");
+    expect(contract.metadata.executionMode).toBe("manual_cli");
   });
 
   it("redacts secret-like values from generated markdown and metadata", () => {
@@ -297,10 +317,10 @@ describe("LocalCodexContractAdapter", () => {
     ]);
   });
 
-  it("blocks controlled execution until the matching approval is granted", async () => {
+  it("plans controlled execution with isolated config and selected model", async () => {
     const store = new InMemoryRunStore();
     const run = createRun(store);
-    const request = createRequest({ runId: run.id });
+    const request = createRequest({ runId: run.id, executionMode: "manual_cli", modelId: "gpt-5.5", modelLabel: "GPT-5.5" });
     await mkdir(request.sandbox.worktreePath, { recursive: true });
     const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
 console.log("fake codex should not run without approval");
@@ -318,6 +338,7 @@ console.log("fake codex should not run without approval");
       verifierPlan: createVerificationPlan(request),
     });
 
+    expect(plan.argv).toEqual(expect.arrayContaining(["--ignore-user-config", "--ignore-rules", "-m", "gpt-5.5"]));
     await expect(adapter.executeApprovedContract(plan, { ...approved(plan.id, run.id), status: "pending" })).rejects.toMatchObject({
       code: "approval_missing",
     });
@@ -462,9 +483,12 @@ const cwd = process.cwd();
 const stdin = fs.readFileSync(0, "utf8");
 const outputIndex = process.argv.indexOf("--output-last-message");
 if (outputIndex >= 0) {
-  fs.writeFileSync(process.argv[outputIndex + 1], "token=sk-fakelastmessagesecret123\\n");
+  const longFinalResponse = "Implemented final model response for regression coverage.\\n" + "Long visible response line. ".repeat(100) + "\\nFinal visible sentence after preview limit.\\ntoken=«redacted:sk-…»\\n";
+  fs.writeFileSync(process.argv[outputIndex + 1], longFinalResponse);
 }
 fs.writeFileSync(path.join(cwd, "packages", "fake-codex.txt"), "changed by fake codex\\n");
+process.stdout.write(JSON.stringify({ type: "item.updated", item: { id: "reason-1", type: "reasoning", text: "I inspected the repository and found the target file." } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "item.completed", item: { id: "message-1", type: "agent_message", text: "Changed packages/fake-codex.txt and verified it. " + "Streamed agent response remains visible. ".repeat(180) + "Streamed sentinel after six thousand chars." } }) + "\\n");
 console.log("token=sk-fakecodexsecret123 contract=" + stdin.includes("Codex Work Contract"));
 console.error("authorization=Bearer-fakecodexstderr12345");
 `);
@@ -494,7 +518,18 @@ console.error("authorization=Bearer-fakecodexstderr12345");
     expect(result.stdoutSummary).not.toContain("sk-fakecodexsecret123");
     expect(result.stderrSummary).not.toContain("Bearer fakecodexstderr12345");
     expect(result.redaction.applied).toBe(true);
-    expect(result.artifacts.map((item) => item.kind)).toEqual(expect.arrayContaining(["codex_execution_log", "codex_execution_result"]));
+    expect(result.lastMessagePath).toBe(path.join(request.artifactRoot, "codex-execution-last-message.redacted.md"));
+    if (!result.lastMessagePath) {
+      throw new Error("Expected controlled Codex execution to persist the final model response.");
+    }
+    const lastMessage = await readFile(result.lastMessagePath, "utf8");
+    expect(lastMessage).toContain("Implemented final model response for regression coverage.");
+    expect(lastMessage).not.toContain("sk-fakelastmessagesecret123");
+    expect(result.artifacts.map((item) => item.kind)).toEqual(expect.arrayContaining(["codex_execution_log", "codex_execution_result", "summary"]));
+    expect(result.artifacts.find((item) => item.label === "Codex final model response")).toMatchObject({
+      kind: "summary",
+      uri: `file://${result.lastMessagePath}`,
+    });
     expect(await readFile(path.join(request.sandbox.worktreePath, "packages", "fake-codex.txt"), "utf8")).toContain("changed by fake codex");
     expect(importRequest).toMatchObject({
       runId: run.id,
@@ -503,13 +538,56 @@ console.error("authorization=Bearer-fakecodexstderr12345");
       artifactRoot: request.artifactRoot,
       validationCommands: request.validationCommands,
     });
-    expect(importRequest.manualLogPath).toBe(result.lastMessagePath ?? result.stdoutPath);
-    expect(store.listEvents(run.id).map((event) => event.type)).toEqual(
+    expect(importRequest.manualLogPath).toBe(result.lastMessagePath);
+    const events = store.listEvents(run.id);
+    const outputRecordedEvent = events.find((event) => event.type === "codex_execution_output_recorded");
+    const executionFinishedEvent = events.find((event) => event.type === "codex_execution_finished");
+    expect(outputRecordedEvent?.payload).toMatchObject({
+      lastMessagePreview: expect.stringContaining("Implemented final model response for regression coverage."),
+    });
+    expect(outputRecordedEvent?.payload).toMatchObject({
+      lastMessagePreview: expect.stringContaining("Final visible sentence after preview limit."),
+    });
+    expect(executionFinishedEvent?.payload).toMatchObject({
+      lastMessagePreview: expect.stringContaining("Implemented final model response for regression coverage."),
+    });
+    expect(executionFinishedEvent?.payload).toMatchObject({
+      lastMessagePreview: expect.stringContaining("Final visible sentence after preview limit."),
+    });
+    expect(String((outputRecordedEvent?.payload as { lastMessagePreview?: string } | undefined)?.lastMessagePreview ?? "")).not.toContain("[TRUNCATED]");
+    expect(String((executionFinishedEvent?.payload as { lastMessagePreview?: string } | undefined)?.lastMessagePreview ?? "")).not.toContain("[TRUNCATED]");
+    expect(JSON.stringify(outputRecordedEvent?.payload)).not.toContain("sk-fakelastmessagesecret123");
+    expect(JSON.stringify(executionFinishedEvent?.payload)).not.toContain("sk-fakelastmessagesecret123");
+    const reasoningEvent = events.find((event) => event.type === "codex_reasoning_summary");
+    const agentMessageEvent = events.find((event) => event.type === "codex_agent_message");
+    expect(reasoningEvent?.payload).toMatchObject({
+      summary: "I inspected the repository and found the target file.",
+      text: "I inspected the repository and found the target file.",
+      status: "updated",
+    });
+    expect(agentMessageEvent?.payload).toMatchObject({
+      summary: "Codex agent response streamed",
+      message: expect.stringContaining("Changed packages/fake-codex.txt and verified it."),
+      status: "completed",
+    });
+    expect(agentMessageEvent?.payload).toMatchObject({
+      message: expect.stringContaining("Streamed sentinel after six thousand chars."),
+    });
+    expect(JSON.stringify(agentMessageEvent?.payload)).not.toContain("[TRUNCATED]");
+    expect(outputRecordedEvent?.artifacts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "summary", label: "Codex final model response" })]),
+    );
+    expect(executionFinishedEvent?.artifacts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "summary", label: "Codex final model response" })]),
+    );
+    expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         "codex_execution_planned",
         "codex_execution_approval_required",
         "codex_execution_approved",
         "codex_execution_started",
+        "codex_reasoning_summary",
+        "codex_agent_message",
         "codex_execution_output_recorded",
         "codex_execution_finished",
         "codex_execution_result_ready",

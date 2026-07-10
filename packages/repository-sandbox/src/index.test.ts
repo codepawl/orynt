@@ -106,21 +106,32 @@ describe("GitRepositorySandboxManager", () => {
     ).rejects.toMatchObject({ details: { code: "unsafe_repository_path" } });
   });
 
-  it("generates deterministic worktree plans", async () => {
+  it("generates unique worktree plans under the sandbox root", async () => {
     const repoPath = await createTempGitRepository();
     const sandboxRoot = path.join(tempRoot, "sandboxes");
     const policy = createConservativeCodingApprenticePolicy(repoPath, sandboxRoot);
     const manager = new GitRepositorySandboxManager({ sandboxRoot });
     const request = { runId: "run-123", taskId: "task-abc", repositoryPath: repoPath, baseRef: "HEAD" };
     const inspection = await manager.inspectRepository(request, policy);
+    const shortCommit = inspection.currentCommit.slice(0, 12);
+    const expectedBranchPrefix = `orynt/run-123-task-abc-${shortCommit}-`;
+    const expectedWorktreePrefix = `run-123-task-abc-${shortCommit}-`;
 
     const first = manager.planWorktree(request, policy, inspection);
     const second = manager.planWorktree(request, policy, inspection);
 
-    expect(first).toEqual(second);
-    expect(first.branchName).toMatch(/^orynt\/run-123-task-abc-/);
-    expect(first.worktreePath).toContain(sandboxRoot);
-    expect(first.policyDecision.decision).toBe("allow");
+    expect(first.branchName).toMatch(new RegExp(`^${expectedBranchPrefix}`));
+    expect(second.branchName).toMatch(new RegExp(`^${expectedBranchPrefix}`));
+    expect(path.basename(first.worktreePath)).toMatch(new RegExp(`^${expectedWorktreePrefix}`));
+    expect(path.basename(second.worktreePath)).toMatch(new RegExp(`^${expectedWorktreePrefix}`));
+    expect(first.branchName).not.toBe(second.branchName);
+    expect(first.worktreePath).not.toBe(second.worktreePath);
+    for (const plan of [first, second]) {
+      const relativeWorktreePath = path.relative(sandboxRoot, plan.worktreePath);
+      expect(relativeWorktreePath).not.toMatch(/^\.\.(?:\/|$)/);
+      expect(path.isAbsolute(relativeWorktreePath)).toBe(false);
+      expect(plan.policyDecision.decision).toBe("allow");
+    }
   });
 
   it("creates a policy-gated git worktree", async () => {

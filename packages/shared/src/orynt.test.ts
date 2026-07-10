@@ -4,6 +4,7 @@ import {
   InMemoryRunStore,
   MVP_BLOCKED_SURFACES,
   RUN_EVENT_TYPES,
+  TASK_RUN_PHASES,
   BoundedContextWorkspace,
   ConservativePolicyEngine,
   ConservativeResourceGovernor,
@@ -15,6 +16,7 @@ import {
   createMockRunSequence,
   createMockRunState,
   isExecutableMvpSurface,
+  runEventTaskPhase,
   validateRunEvent,
   type ArtifactRef,
   type CandidateRule,
@@ -126,6 +128,19 @@ describe("Orynt shared product contracts", () => {
         "codex_execution_result_ready",
       ]),
     );
+  });
+
+  it("maps adapter-specific events onto a surface-independent task lifecycle", () => {
+    expect(TASK_RUN_PHASES).toEqual(["observe", "plan", "act", "verify", "summarize", "approval", "apply"]);
+
+    expect(runEventTaskPhase("goal_received")).toBe("observe");
+    expect(runEventTaskPhase("context_packet_created")).toBe("plan");
+    expect(runEventTaskPhase("codex_execution_started")).toBe("act");
+    expect(runEventTaskPhase("verification_started")).toBe("verify");
+    expect(runEventTaskPhase("memory_extraction_finished")).toBe("summarize");
+    expect(runEventTaskPhase("approval_required")).toBe("approval");
+    expect(runEventTaskPhase("codex_result_imported")).toBe("apply");
+    expect(runEventTaskPhase("run_finished")).toBe("summarize");
   });
 
   it("declares memory extraction events and artifact refs as canonical contracts", () => {
@@ -361,6 +376,17 @@ describe("Run and event spine", () => {
     });
   }
 
+  it("keeps unscoped run ids stable while applying normalized scoped prefixes", () => {
+    const unscopedStore = new InMemoryRunStore();
+
+    expect(createRun(unscopedStore).id).toBe("run-1");
+    expect(createRun(unscopedStore).id).toBe("run-2");
+
+    const scopedStore = new InMemoryRunStore({ runIdPrefix: "Desktop ABC" });
+
+    expect(createRun(scopedStore).id).toBe("run-desktop-abc-1");
+  });
+
   it("appends immutable ordered events without letting callers mutate stored history", () => {
     const store = new InMemoryRunStore();
     const run = createRun(store);
@@ -482,6 +508,20 @@ describe("Run and event spine", () => {
 describe("CorePolicy and sandbox boundary", () => {
   const policy = createConservativeCodingApprenticePolicy("/repo/orynt", "/tmp/orynt-worktrees");
   const engine = new ConservativePolicyEngine();
+
+  it("allows fullstack web app files in repository sandboxes", () => {
+    expect(policy.sandbox.repository.allowedPaths).toEqual(
+      expect.arrayContaining([
+        "package.json",
+        "index.html",
+        "src/**",
+        "server/**",
+        "api/**",
+        "public/**",
+        "tests/**",
+      ]),
+    );
+  });
 
   it("allows safe allowlisted repository actions", () => {
     const decision = engine.evaluateAction(
