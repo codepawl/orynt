@@ -294,6 +294,8 @@ describe("Orynt desktop shell", () => {
     expect(setupDialog.querySelectorAll("#setup-dialog-title")).toHaveLength(1);
     expect(within(setupDialog).queryByRole("heading", { name: "Setup controls" })).not.toBeInTheDocument();
     expect(within(setupDialog).getByRole("region", { name: "Setup controls" })).toBeInTheDocument();
+    expect(within(setupDialog).getByRole("button", { name: "Complete setup" })).toBeInTheDocument();
+    expect(within(setupDialog).queryByRole("button", { name: "Save setup settings" })).not.toBeInTheDocument();
     expect(within(setupDialog).getByText(/Choose where Orynt may act, choose a model provider/i)).toBeInTheDocument();
     expect(within(setupDialog).getByText(/This beta is limited to the selected local directory/i)).toBeInTheDocument();
     expect(within(thread).getByRole("form", { name: "Task composer" })).toBeInTheDocument();
@@ -339,13 +341,13 @@ describe("Orynt desktop shell", () => {
     expect(within(setupDialog).queryByRole("heading", { name: "Setup controls" })).not.toBeInTheDocument();
     const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
     fireEvent.change(repositoryPath, { target: { value: "/home/operator/project" } });
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Complete setup" }));
 
     expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/project" });
     await waitFor(() => expect(screen.getByLabelText("Directory path")).toHaveTextContent("/home/operator/project"));
   });
 
-  it("saves the current directory path from setup when the setup directory field is empty", async () => {
+  it("persists the current directory path when the setup directory field is empty", async () => {
     const updatedSettings = withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe" as const,
@@ -374,11 +376,10 @@ describe("Orynt desktop shell", () => {
     expect(setupRepositoryPath).toHaveValue("");
 
     await fillRepositoryPath("/home/operator/current-project");
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Complete setup" }));
 
     expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/current-project" });
     await waitFor(() => expect(setupRepositoryPath).toHaveValue("/home/operator/current-project"));
-    expect(within(setupDialog).getByText("Local directory saved.")).toBeInTheDocument();
   });
 
   it("shows an inline setup save error when persistence fails", async () => {
@@ -405,10 +406,10 @@ describe("Orynt desktop shell", () => {
     fireEvent.change(within(setupDialog).getByRole("textbox", { name: "Default local directory" }), {
       target: { value: "/home/operator/project" },
     });
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Complete setup" }));
 
     await waitFor(() => expect(within(setupDialog).getByText("Settings store is unavailable.")).toBeInTheDocument());
-    expect(within(setupDialog).getByRole("button", { name: "Save setup settings" })).not.toBeDisabled();
+    expect(within(setupDialog).getByRole("button", { name: "Complete setup" })).not.toBeDisabled();
   });
 
   it("detects, persists, and browses local directories without silently replacing them", async () => {
@@ -464,7 +465,7 @@ describe("Orynt desktop shell", () => {
     expect(browseRepositorySpy).toHaveBeenCalledWith("/home/operator/detected-repo");
     expect(updateSettingsSpy).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Complete setup" }));
     expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/browsed-repo" });
   });
 
@@ -623,21 +624,26 @@ describe("Orynt desktop shell", () => {
     expect(effortButton.querySelector("small")).toBeNull();
 
     fireEvent.click(modelButton);
-    const modelMenu = await screen.findByRole("menu", { name: "Change model" });
+    let modelMenu = await screen.findByRole("dialog", { name: "Choose model" });
     expect(modelButton).toHaveAttribute("aria-expanded", "true");
     expect(within(modelMenu).queryByText("Run model")).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("heading", { name: "Change model" })).not.toBeInTheDocument();
+    expect(within(modelMenu).queryByRole("heading", { name: "Choose model" })).not.toBeInTheDocument();
     expect(within(modelMenu).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
     expect(within(modelMenu).queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(within(modelMenu).queryByRole("radiogroup", { name: "Model provider" })).not.toBeInTheDocument();
     expect(within(modelMenu).queryByRole("textbox", { name: "API key environment variable" })).not.toBeInTheDocument();
     expect(within(modelMenu).queryByText("Provider")).not.toBeInTheDocument();
     expect(within(modelMenu).queryByRole("radio", { name: /Codex CLI/ })).not.toBeInTheDocument();
-    expect(within(modelMenu).getByRole("listbox", { name: "Model" })).toBeInTheDocument();
+    expect(within(modelMenu).queryByRole("listbox", { name: "Model" })).not.toBeInTheDocument();
     expect(within(modelMenu).queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
-    fireEvent.click(within(modelMenu).getByRole("button", { name: "Refresh" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose model" })).not.toBeInTheDocument());
+    expect(modelButton).toHaveFocus();
+    fireEvent.click(modelButton);
+    modelMenu = await screen.findByRole("dialog", { name: "Choose model" });
+    fireEvent.click(within(modelMenu).getByRole("button", { name: "Refresh available models" }));
     await waitFor(() => expect(listProviderModelsSpy).toHaveBeenCalledWith({ providerId: "codex-cli", envKey: null }));
-    fireEvent.click(await within(modelMenu).findByRole("option", { name: /GPT-5\.5 Turbo/ }));
+    fireEvent.click(await within(modelMenu).findByRole("button", { name: /GPT-5\.5 Turbo/ }));
     await waitFor(() =>
       expect(saveModelConnectionSpy).toHaveBeenCalledWith({
         providerId: "codex-cli",
@@ -650,7 +656,7 @@ describe("Orynt desktop shell", () => {
         defaultThinkingEffort: null,
       }),
     );
-    await waitFor(() => expect(screen.queryByRole("menu", { name: "Change model" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose model" })).not.toBeInTheDocument());
 
     fireEvent.click(effortButton);
     const effortMenu = await screen.findByRole("menu", { name: "Change thinking effort" });
@@ -658,20 +664,41 @@ describe("Orynt desktop shell", () => {
     expect(within(effortMenu).queryByText("Reasoning")).not.toBeInTheDocument();
     expect(within(effortMenu).queryByRole("heading", { name: "Thinking effort" })).not.toBeInTheDocument();
     expect(within(effortMenu).queryByRole("radiogroup", { name: "Thinking effort" })).not.toBeInTheDocument();
-    const effortSlider = within(effortMenu).getByRole("slider", { name: "Thinking effort" });
-    expect(effortSlider).toHaveAttribute("aria-valuetext", "Medium");
+    const effortOptions = within(effortMenu).getAllByRole("menuitemradio");
+    expect(effortOptions).toHaveLength(6);
+    expect(within(effortMenu).getByRole("menuitemradio", { name: "Medium" })).toHaveAttribute("aria-checked", "true");
+    expect(within(effortMenu).getByRole("menuitemradio", { name: "High" })).toHaveAttribute("aria-checked", "false");
     expect(within(effortMenu).queryByText("Deeper planning for complex or risky changes.")).not.toBeInTheDocument();
-    expect(effortMenu.querySelector(".composer-option-icon")).toBeNull();
-    expect(effortMenu.querySelector(".composer-option-check")).toBeNull();
-    expect(within(effortMenu).getByRole("button", { name: "High" })).toHaveAttribute("data-effort", "high");
-    fireEvent.change(effortSlider, { target: { value: "4" } });
-    fireEvent.pointerUp(effortSlider);
+    expect(effortMenu.querySelector(".composer-effort-select")).toBeNull();
+    expect(effortMenu.querySelector(".composer-effort-slider")).toBeNull();
+    fireEvent.click(within(effortMenu).getByRole("menuitemradio", { name: "High" }));
 
     expect(updateSettingsSpy).toHaveBeenCalledWith({ thinkingEffort: "high" });
-    expect(screen.getByRole("menu", { name: "Change thinking effort" })).toBeInTheDocument();
-    fireEvent.click(within(effortMenu).getByRole("button", { name: "Low" }));
-    expect(updateSettingsSpy).toHaveBeenCalledWith({ thinkingEffort: "low" });
     await waitFor(() => expect(screen.queryByRole("menu", { name: "Change thinking effort" })).not.toBeInTheDocument());
+  });
+
+  it("retains the persisted model when a live catalog is empty", async () => {
+    const settings = readyModelSettings();
+    vi.spyOn(orynt, "getSettings").mockResolvedValue(settings);
+    dismissPrivateBetaOnboarding();
+    vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue(settings.codexConnection!.lastPreflight!);
+    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
+      providerId: "codex-cli",
+      fetchedAt: "2026-07-05T00:00:00.000Z",
+      source: "live",
+      warnings: ["The provider returned no selectable models."],
+      models: [],
+    });
+
+    render(<App />);
+
+    const composer = screen.getByRole("form", { name: "Task composer" });
+    const modelButton = within(composer).getByRole("button", { name: /Change model/ });
+    fireEvent.click(modelButton);
+    const modelPicker = await screen.findByRole("dialog", { name: "Choose model" });
+    fireEvent.click(within(modelPicker).getByRole("button", { name: "Refresh available models" }));
+
+    expect(await within(modelPicker).findByRole("button", { name: /GPT-5\.5/ })).toHaveTextContent("Unavailable to verify.");
   });
 
   it("persists the current composer thinking effort when switching to another supported model", async () => {
@@ -720,16 +747,24 @@ describe("Orynt desktop shell", () => {
     await waitFor(() => expect(effortButton).toHaveTextContent("Medium"));
     fireEvent.click(effortButton);
     const effortMenu = await screen.findByRole("menu", { name: "Change thinking effort" });
-    fireEvent.click(within(effortMenu).getByRole("button", { name: "High" }));
+    const effortOptions = within(effortMenu).getAllByRole("menuitemradio");
+    expect(effortOptions).toHaveLength(3);
+    expect(within(effortMenu).getByRole("menuitemradio", { name: "Low" })).toHaveAttribute("aria-checked", "false");
+    expect(within(effortMenu).getByRole("menuitemradio", { name: "Medium" })).toHaveAttribute("aria-checked", "true");
+    expect(within(effortMenu).getByRole("menuitemradio", { name: "High" })).toHaveAttribute("aria-checked", "false");
+    expect(within(effortMenu).queryByRole("menuitemradio", { name: "Minimal" })).not.toBeInTheDocument();
+    expect(within(effortMenu).queryByRole("menuitemradio", { name: "None" })).not.toBeInTheDocument();
+    expect(within(effortMenu).queryByRole("menuitemradio", { name: "X High" })).not.toBeInTheDocument();
+    fireEvent.click(within(effortMenu).getByRole("menuitemradio", { name: "High" }));
 
     expect(updateSettingsSpy).toHaveBeenCalledWith({ thinkingEffort: "high" });
     await waitFor(() => expect(effortButton).toHaveTextContent("High"));
 
     const modelButton = within(composer).getByRole("button", { name: /Change model/ });
     fireEvent.click(modelButton);
-    const modelMenu = await screen.findByRole("menu", { name: "Change model" });
-    fireEvent.click(within(modelMenu).getByRole("button", { name: "Refresh" }));
-    fireEvent.click(await within(modelMenu).findByRole("option", { name: /GPT-5\.5 Deep/ }));
+    const modelMenu = await screen.findByRole("dialog", { name: "Choose model" });
+    fireEvent.click(within(modelMenu).getByRole("button", { name: "Refresh available models" }));
+    fireEvent.click(await within(modelMenu).findByRole("button", { name: /GPT-5\.5 Deep/ }));
 
     await waitFor(() =>
       expect(saveModelConnectionSpy).toHaveBeenCalledWith(
@@ -1108,7 +1143,7 @@ describe("Orynt desktop shell", () => {
     expect(setupDialog).toHaveTextContent(/Auto-check skipped/i);
   });
 
-  it("saves selected Codex provider setup from Save setup settings without clearing selectors", async () => {
+  it("completes selected Codex provider setup without clearing selectors", async () => {
     const initialSettings = withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
@@ -1175,7 +1210,7 @@ describe("Orynt desktop shell", () => {
     selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
     await within(setupDialog).findByRole("combobox", { name: "Model" });
     selectSetupDropdownOption(setupDialog, "Model", "GPT-5.5");
-    fireEvent.click(within(setupDialog).getByRole("button", { name: "Save setup settings" }));
+    fireEvent.click(within(setupDialog).getByRole("button", { name: "Complete setup" }));
 
     await waitFor(() => expect(saveModelConnectionSpy).toHaveBeenCalledWith({
       providerId: "codex-cli",
@@ -2793,9 +2828,8 @@ describe("Orynt desktop shell", () => {
     const composerMetaButtonStyles = styles.match(/\.composer-meta-button \{[\s\S]*?\}/)?.[0] ?? "";
     const composerModelButtonStyles = styles.match(/\.composer-model-button \{[\s\S]*?\}/)?.[0] ?? "";
     const composerEffortPopoverStyles = styles.match(/\.composer-effort-popover \{[\s\S]*?\}/)?.[0] ?? "";
-    const composerEffortOptionsStyles = styles.match(/\.composer-effort-options \{[\s\S]*?\}/)?.[0] ?? "";
-    const composerEffortSliderStyles = styles.match(/\.composer-effort-slider \{[\s\S]*?\}/)?.[0] ?? "";
-    const composerEffortTicksStyles = styles.match(/\.composer-effort-ticks \{[\s\S]*?\}/)?.[0] ?? "";
+    const composerEffortMenuOptionsStyles = styles.match(/\.composer-effort-menu-options \{[\s\S]*?\}/)?.[0] ?? "";
+    const composerEffortMenuOptionStyles = styles.match(/\.composer-effort-menu-option \{[\s\S]*?\}/)?.[0] ?? "";
     const composerMetaButtonIconStyles = styles.match(/\.composer-meta-button \.ui-icon \{[\s\S]*?\}/)?.[0] ?? "";
     const composerToolbarStyles = styles.match(/\.composer-toolbar \{[\s\S]*?\}/)?.[0] ?? "";
     const composerScaleButtonStyles = styles.match(/\.composer-scale-button \{[\s\S]*?\}/)?.[0] ?? "";
@@ -2868,15 +2902,24 @@ describe("Orynt desktop shell", () => {
     expect(composerModelButtonStyles).toContain("min-height: var(--composer-control-size);");
     expect(composerModelButtonStyles).toContain("padding: 0 var(--composer-control-gap);");
     expect(appSource).toContain("composer-effort-popover composer-effort-popover-${composerQuickMenuPlacement}");
-    expect(appSource).not.toContain("composer-quick-dropdown composer-effort-dropdown");
+    expect(appSource).toContain('className="composer-effort-menu-options"');
+    expect(appSource).toContain('className="composer-effort-menu-option"');
+    expect(appSource).toContain('role="menuitemradio"');
+    expect(appSource).not.toContain("<select");
+    expect(appSource).not.toContain('type="range"');
     expect(composerEffortPopoverStyles).toContain("overflow: visible;");
-    expect(composerEffortPopoverStyles).toContain("width: min(292px, calc(100vw - 48px));");
-    expect(composerEffortOptionsStyles).toContain("--composer-effort-progress: 50%;");
-    expect(composerEffortOptionsStyles).toContain("min-width: 0;");
-    expect(composerEffortSliderStyles).toContain("position: relative;");
-    expect(composerEffortSliderStyles).toContain("z-index: 2;");
-    expect(composerEffortSliderStyles).toContain("touch-action: pan-x;");
-    expect(composerEffortTicksStyles).toContain("z-index: 1;");
+    expect(composerEffortPopoverStyles).toContain("left: var(--composer-effort-anchor-x, 50%);");
+    expect(composerEffortPopoverStyles).toContain("transform: translateX(-50%);");
+    expect(composerEffortPopoverStyles).toContain("width: min(240px, calc(100vw - 24px));");
+    expect(composerEffortMenuOptionsStyles).toContain("display: grid;");
+    expect(composerEffortMenuOptionsStyles).toContain("gap: 4px;");
+    expect(composerEffortMenuOptionStyles).toContain("width: 100%;");
+    expect(composerEffortMenuOptionStyles).toContain("min-height: 42px;");
+    expect(composerEffortMenuOptionStyles).toContain("text-align: left;");
+    expect(composerEffortMenuOptionStyles).toContain("cursor: pointer;");
+    expect(styles).not.toContain(".composer-effort-select");
+    expect(styles).not.toContain(".composer-effort-slider");
+    expect(styles).not.toContain("--composer-effort-count");
     expect(composerMetaButtonStyles).toContain("gap: calc(var(--composer-control-gap) - 2px);");
     expect(composerMetaButtonIconStyles).toContain("width: 14px;");
     expect(appSource).toContain('<Shield className="ui-icon" aria-hidden="true" strokeWidth={2} />');
@@ -3502,6 +3545,17 @@ describe("Orynt desktop shell", () => {
     expect(within(agentDetails).queryByText(/run_event/)).not.toBeInTheDocument();
   });
 
+  it("renders a UXRay preview fixture with a final agent response instead of the blank task state", () => {
+    render(<App seedUxrayAgentResponse />);
+
+    expect(screen.queryByRole("dialog", { name: "Set up Orynt" })).not.toBeInTheDocument();
+    const outcome = screen.getByRole("article", { name: "Agent response" });
+    expect(outcome).toHaveTextContent("Implemented the response rendering repair");
+    expect(within(outcome).getByRole("heading", { name: "Verification" })).toBeInTheDocument();
+    expect(within(outcome).getAllByRole("listitem")).toHaveLength(5);
+    expect(outcome.querySelector(".agent-response-content > ol")).not.toBeNull();
+  });
+
   it("renders final agent responses as markdown instead of raw markdown text", async () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
@@ -3526,7 +3580,9 @@ describe("Orynt desktop shell", () => {
           payload: {
             summary: "Controlled Codex execution output recorded",
             lastMessagePreview:
-              "## Done\n\n**Bold result** with `inline code`.\n\n- First item\n- Second item\n\n[Docs](https://example.com)\n\n" +
+              "## Done\n\n**Bold result** with `inline code`.\n\n- First item\n- Second item\n\n" +
+              "1. Install workspace dependencies.\n2. Run contract tests:\n   - `pnpm test:contracts`\n   - `pnpm --filter @codepawl/coding-apprentice test`\n4. Run the full local smoke walkthrough.\n\n" +
+              "[Docs](https://example.com)\n\nLocal file: [`oryntClient.ts`](/home/operator/project/apps/desktop/src/oryntClient.ts)\n\n" +
               "Full final response line. ".repeat(100) +
               "Tail after former truncation sentinel.",
           },
@@ -3557,8 +3613,17 @@ describe("Orynt desktop shell", () => {
     expect(within(outcome).getByRole("heading", { name: "Done" })).toBeInTheDocument();
     expect(within(outcome).getByText("Bold result").tagName).toBe("STRONG");
     expect(within(outcome).getByText("inline code").tagName).toBe("CODE");
-    expect(within(outcome).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(outcome).getAllByRole("listitem")).toHaveLength(7);
+    const orderedSteps = outcome.querySelector(".agent-response-content > ol");
+    expect(orderedSteps).not.toBeNull();
+    expect(orderedSteps?.children).toHaveLength(3);
+    expect(orderedSteps?.children[1]?.querySelector(":scope > ul")).not.toBeNull();
+    expect(orderedSteps?.children[2]).toHaveProperty("value", 4);
     expect(within(outcome).getByRole("link", { name: "Docs" })).toHaveAttribute("href", "https://example.com");
+    const localFileReference = within(outcome).getByText("oryntClient.ts");
+    expect(localFileReference.tagName).toBe("CODE");
+    expect(localFileReference.closest("a")).toBeNull();
+    expect(outcome).not.toHaveTextContent("/home/operator/project/apps/desktop/src/oryntClient.ts");
     expect(outcome).toHaveTextContent("Tail after former truncation sentinel.");
     expect(outcome).not.toHaveTextContent("[TRUNCATED]");
     expect(outcome).not.toHaveTextContent("**Bold result**");

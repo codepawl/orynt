@@ -1348,7 +1348,7 @@ function safeMarkdownLinkHref(rawHref: string): string | null {
   if (!href) {
     return null;
   }
-  if (href.startsWith("#") || href.startsWith("/")) {
+  if (href.startsWith("#")) {
     return href;
   }
   return /^(https?:|mailto:)/i.test(href) ? href : null;
@@ -1401,15 +1401,23 @@ function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
       const labelEnd = text.indexOf("](", index + 1);
       const hrefEnd = labelEnd >= 0 ? text.indexOf(")", labelEnd + 2) : -1;
       if (labelEnd > index && hrefEnd > labelEnd) {
-        const href = safeMarkdownLinkHref(text.slice(labelEnd + 2, hrefEnd));
+        const rawHref = text.slice(labelEnd + 2, hrefEnd).trim();
+        const href = safeMarkdownLinkHref(rawHref);
         if (href) {
           flushText();
           const key = `${keyPrefix}-${nodes.length}`;
           nodes.push(
-            <a key={key} href={href} target={href.startsWith("#") || href.startsWith("/") ? undefined : "_blank"} rel={href.startsWith("#") || href.startsWith("/") ? undefined : "noreferrer"}>
+            <a key={key} href={href} target={href.startsWith("#") ? undefined : "_blank"} rel={href.startsWith("#") ? undefined : "noreferrer"}>
               {renderMarkdownInline(text.slice(index + 1, labelEnd), key)}
             </a>,
           );
+          index = hrefEnd + 1;
+          continue;
+        }
+        if (rawHref.startsWith("/") || /^file:/i.test(rawHref)) {
+          flushText();
+          const key = `${keyPrefix}-${nodes.length}`;
+          nodes.push(<span key={key}>{renderMarkdownInline(text.slice(index + 1, labelEnd), key)}</span>);
           index = hrefEnd + 1;
           continue;
         }
@@ -1448,6 +1456,85 @@ function markdownLineStartsBlock(line: string, nextLine?: string): boolean {
     /^\s*\d+[.)]\s+/.test(line) ||
     Boolean(nextLine && line.includes("|") && isMarkdownTableDivider(nextLine))
   );
+}
+
+type MarkdownListItem = {
+  checked?: boolean;
+  content: string;
+  indent: number;
+  kind: "ordered" | "unordered";
+  ordinal?: number;
+};
+
+function parseMarkdownListItem(line: string): MarkdownListItem | null {
+  const match = line.match(/^(\s*)(?:(\d+)[.)]|[-*+])\s+(.+)$/);
+  if (!match) {
+    return null;
+  }
+  const content = match[3];
+  const task = content.match(/^\[([ xX])]\s+(.+)$/);
+  return {
+    checked: task ? task[1].toLowerCase() === "x" : undefined,
+    content: task ? task[2] : content,
+    indent: match[1].replace(/\t/g, "  ").length,
+    kind: match[2] ? "ordered" : "unordered",
+    ordinal: match[2] ? Number(match[2]) : undefined,
+  };
+}
+
+function renderMarkdownList(lines: string[], startIndex: number, keyPrefix: string): { nextIndex: number; node: ReactNode } {
+  const firstItem = parseMarkdownListItem(lines[startIndex]);
+  if (!firstItem) {
+    throw new Error("Expected a markdown list item.");
+  }
+
+  const parseList = (index: number, indent: number, kind: MarkdownListItem["kind"], prefix: string): { nextIndex: number; node: ReactNode } => {
+    const items: Array<{ item: MarkdownListItem; children: ReactNode[] }> = [];
+
+    while (index < lines.length) {
+      const item = parseMarkdownListItem(lines[index]);
+      if (!item || item.indent !== indent || item.kind !== kind) {
+        break;
+      }
+      index += 1;
+      const children: ReactNode[] = [];
+      while (index < lines.length) {
+        const child = parseMarkdownListItem(lines[index]);
+        if (!child || child.indent <= indent) {
+          break;
+        }
+        const nested = parseList(index, child.indent, child.kind, `${prefix}-${items.length}-${children.length}`);
+        children.push(nested.node);
+        index = nested.nextIndex;
+      }
+      items.push({ item, children });
+    }
+
+    const isTaskList = kind === "unordered" && items.some(({ item }) => item.checked !== undefined);
+    const content = items.map(({ item, children }, itemIndex) => (
+      <li key={`${prefix}-item-${itemIndex}`} value={kind === "ordered" ? item.ordinal : undefined}>
+        {item.checked !== undefined ? <input aria-label={item.checked ? "Completed task" : "Incomplete task"} checked={item.checked} disabled type="checkbox" /> : null}
+        <span>{renderMarkdownInline(item.content, `${prefix}-item-${itemIndex}`)}</span>
+        {children}
+      </li>
+    ));
+
+    return {
+      nextIndex: index,
+      node:
+        kind === "ordered" ? (
+          <ol key={prefix} start={items[0]?.item.ordinal}>
+            {content}
+          </ol>
+        ) : (
+          <ul key={prefix} className={isTaskList ? "agent-response-task-list" : undefined}>
+            {content}
+          </ul>
+        ),
+    };
+  };
+
+  return parseList(startIndex, firstItem.indent, firstItem.kind, keyPrefix);
 }
 
 function renderMarkdownContent(markdown: string): ReactNode[] {
@@ -1553,49 +1640,10 @@ function renderMarkdownContent(markdown: string): ReactNode[] {
       continue;
     }
 
-    const unorderedListMatch = line.match(/^\s*[-*+]\s+(.+)$/);
-    if (unorderedListMatch) {
-      const items: Array<{ checked?: boolean; content: string }> = [];
-      while (index < lines.length) {
-        const item = lines[index].match(/^\s*[-*+]\s+(.+)$/);
-        if (!item) {
-          break;
-        }
-        const task = item[1].match(/^\[([ xX])]\s+(.+)$/);
-        items.push(task ? { checked: task[1].toLowerCase() === "x", content: task[2] } : { content: item[1] });
-        index += 1;
-      }
-      blocks.push(
-        <ul key={`md-${blocks.length}`} className={items.some((item) => item.checked !== undefined) ? "agent-response-task-list" : undefined}>
-          {items.map((item, itemIndex) => (
-            <li key={itemIndex}>
-              {item.checked !== undefined ? <input aria-label={item.checked ? "Completed task" : "Incomplete task"} checked={item.checked} disabled type="checkbox" /> : null}
-              <span>{renderMarkdownInline(item.content, `md-${blocks.length}-li-${itemIndex}`)}</span>
-            </li>
-          ))}
-        </ul>,
-      );
-      continue;
-    }
-
-    const orderedListMatch = line.match(/^\s*\d+[.)]\s+(.+)$/);
-    if (orderedListMatch) {
-      const items: string[] = [];
-      while (index < lines.length) {
-        const item = lines[index].match(/^\s*\d+[.)]\s+(.+)$/);
-        if (!item) {
-          break;
-        }
-        items.push(item[1]);
-        index += 1;
-      }
-      blocks.push(
-        <ol key={`md-${blocks.length}`}>
-          {items.map((item, itemIndex) => (
-            <li key={itemIndex}>{renderMarkdownInline(item, `md-${blocks.length}-li-${itemIndex}`)}</li>
-          ))}
-        </ol>,
-      );
+    if (parseMarkdownListItem(line)) {
+      const list = renderMarkdownList(lines, index, `md-${blocks.length}`);
+      blocks.push(list.node);
+      index = list.nextIndex;
       continue;
     }
 
@@ -1729,6 +1777,27 @@ function createDemoThreadMessages(runState: MockRunState): Record<string, Thread
       { id: "draft-agent-response", role: "agent", label: "Agent response", content: runState.skillDraft.name, showContext: true },
       { id: "draft-approval", role: "approval" },
     ],
+  };
+}
+
+function createUxrayAgentResponsePreviewThreadState(): ThreadStateSnapshot {
+  const workspace = { ...initialWorkspaces[0], label: "Response preview", description: "Local visual review fixture", badge: "preview" };
+  return {
+    workspaces: [workspace],
+    threadMessagesByWorkspace: {
+      [workspace.id]: [
+        { id: "uxray-preview-user", role: "user", content: "Render a source-backed implementation summary." },
+        {
+          id: "uxray-preview-agent",
+          role: "agent",
+          label: "Agent response",
+          content:
+            "## Completed\n\nImplemented the response rendering repair and preserved the final model answer as the primary transcript content.\n\n## Verification\n\n1. Run the focused desktop test.\n2. Inspect the rendered response structure.\n   - Confirm nested steps remain grouped.\n   - Confirm source details stay outside the answer.\n3. Keep the repository completion metadata in Agent details.",
+        },
+      ],
+    },
+    nextWorkspaceThreadIndex: 2,
+    activeWorkspaceId: workspace.id,
   };
 }
 
@@ -2001,15 +2070,17 @@ function App({
   initialRunState,
   initialSelectedRunId,
   seedDemoThread = false,
+  seedUxrayAgentResponse = false,
 }: {
   initialRunState?: MockRunState;
   initialSelectedRunId?: string | null;
   seedDemoThread?: boolean;
+  seedUxrayAgentResponse?: boolean;
 } = {}) {
   const runState = useMemo(() => initialRunState ?? createMockRunState(), [initialRunState]);
   const initialThreadState = useMemo(
-    () => (seedDemoThread ? createDemoThreadState(runState) : readPersistedThreadState() ?? createInitialThreadState()),
-    [runState, seedDemoThread],
+    () => (seedUxrayAgentResponse ? createUxrayAgentResponsePreviewThreadState() : seedDemoThread ? createDemoThreadState(runState) : readPersistedThreadState() ?? createInitialThreadState()),
+    [runState, seedDemoThread, seedUxrayAgentResponse],
   );
   const [approvalStatus, setApprovalStatus] = useState("Waiting for operator approval");
   const [currentRunId, setCurrentRunId] = useState<string | null>(initialSelectedRunId === undefined ? runState.traceSummary.runId : initialSelectedRunId);
@@ -2075,11 +2146,11 @@ function App({
   const [isMobileWorkspaceDrawerOpen, setIsMobileWorkspaceDrawerOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [showSettingsSidebar, setShowSettingsSidebar] = useState(false);
-  const [showSetupDialog, setShowSetupDialog] = useState(() => !readPrivateBetaOnboardingDismissed());
+  const [showSetupDialog, setShowSetupDialog] = useState(() => !seedUxrayAgentResponse && !readPrivateBetaOnboardingDismissed());
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [showMessageBlockMeta, setShowMessageBlockMeta] = useState(readMessageBlockMetaVisible);
-  const [hasDismissedPrivateBetaOnboarding, setHasDismissedPrivateBetaOnboarding] = useState(readPrivateBetaOnboardingDismissed);
+  const [hasDismissedPrivateBetaOnboarding, setHasDismissedPrivateBetaOnboarding] = useState(() => seedUxrayAgentResponse || readPrivateBetaOnboardingDismissed());
   const [operatorFullName, setOperatorFullName] = useState("Operator");
   const [operatorCallSign, setOperatorCallSign] = useState("Operator");
   const [operatorWorkType, setOperatorWorkType] = useState<SettingsSnapshot["operatorProfile"]["workType"]>("engineering");
@@ -2107,6 +2178,7 @@ function App({
   const [composerAttachmentMenuPlacement, setComposerAttachmentMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
   const [composerQuickDialog, setComposerQuickDialog] = useState<"model" | "effort" | null>(null);
   const [composerQuickMenuPlacement, setComposerQuickMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
+  const [composerEffortPopoverCenter, setComposerEffortPopoverCenter] = useState<number | null>(null);
   const [surfaceToggles, setSurfaceToggles] = useState<SurfaceToggleState>(() => ({
     repository: true,
     browser: !MVP_BLOCKED_SURFACES.includes("browser"),
@@ -2231,6 +2303,22 @@ function App({
           ? "Complete setup before starting a task."
           : "";
   const composerStatusMessage = composerReadinessMessage || setupWarningMessage ? "" : !isModelConnectionReady ? activeConnectionMessage : "";
+  const updateComposerEffortPopoverCenter = () => {
+    const button = composerEffortButtonRef.current;
+    const container = button?.closest(".composer-attachment");
+    if (!button || !container) {
+      setComposerEffortPopoverCenter(null);
+      return;
+    }
+
+    const triggerRect = button.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const popoverWidth = Math.min(Math.max(180, composerThinkingEffortOptions.length * 52 + 24), window.innerWidth - 24);
+    const desiredCenter = triggerRect.left - containerRect.left + triggerRect.width / 2;
+    const minCenter = 12 - containerRect.left + popoverWidth / 2;
+    const maxCenter = window.innerWidth - 12 - containerRect.left - popoverWidth / 2;
+    setComposerEffortPopoverCenter(Math.min(Math.max(desiredCenter, minCenter), maxCenter));
+  };
 
   const pushNotification = (tone: AppNotificationTone, message: string) => {
     const notification: AppNotification = {
@@ -2596,7 +2684,7 @@ function App({
           if (!mounted) {
             return;
           }
-          setSetupRepositoryMessage("Detected the current local directory. Save setup settings to persist it.");
+          setSetupRepositoryMessage("Detected the current local directory. Complete setup to persist it.");
           setSetupRepositoryMessageTone("warning");
         });
     });
@@ -2726,6 +2814,9 @@ function App({
         const quickButton = composerQuickDialog === "model" ? composerModelButtonRef.current : composerEffortButtonRef.current;
         if (quickButton) {
           setComposerQuickMenuPlacement(resolveComposerMenuPlacement(quickButton, composerQuickDialog === "model" ? 520 : 380));
+        }
+        if (composerQuickDialog === "effort") {
+          updateComposerEffortPopoverCenter();
         }
       }
     };
@@ -3205,10 +3296,15 @@ function App({
     setIsAccountMenuOpen(false);
   };
 
-  const handleSaveSetupSettings = async () => {
+  const handleCompleteWelcomeSetup = async () => {
     try {
-      await withPendingAction("setup:save-directory", async () => {
-        const defaultRepositoryPath = setupRepositoryPath.trim() || repositoryPath.trim();
+      await withPendingAction("setup:complete", async () => {
+        const defaultRepositoryPath = setupRepositoryPath.trim() || repositoryPath.trim() || settingsSnapshot?.defaultRepositoryPath.trim() || "";
+        if (!defaultRepositoryPath) {
+          setSetupRepositoryMessage("Select a local directory before completing setup.");
+          setSetupRepositoryMessageTone("warning");
+          return;
+        }
         setSetupRepositoryPath(defaultRepositoryPath);
         setRepositoryPath(defaultRepositoryPath);
         const savedModelConnection = canSaveSelectedModelConnection ? await saveSelectedModelConnectionWithPreflight() : null;
@@ -3217,45 +3313,17 @@ function App({
         applySettingsSnapshot(nextSettings);
         setSetupRepositoryPath(nextSettings.defaultRepositoryPath);
         setRepositoryPath(nextSettings.defaultRepositoryPath);
-        setSetupRepositoryMessage(nextSettings.defaultRepositoryPath ? "Local directory saved." : "Local directory cleared.");
-        setSetupRepositoryMessageTone(nextSettings.defaultRepositoryPath ? "success" : "info");
-        if (nextSettings.defaultRepositoryPath && modelConnectionIsReady(nextSettings)) {
-          await completeReadySetup();
+        if (!modelConnectionIsReady(nextSettings)) {
+          setModelConnectionMessage("Save provider setup and run the provider check before completing setup.");
+          setModelConnectionMessageTone("warning");
+          return;
         }
+        await completeReadySetup();
       });
     } catch (error) {
       setSetupRepositoryMessage(messageFromUnknownError(error, "Setup settings could not be saved."));
       setSetupRepositoryMessageTone("error");
     }
-  };
-
-  const handleSaveAdvancedSettings = async () => {
-    const settings = await orynt.updateSettings({
-      retentionPolicy: {
-        runHistoryDays: retentionRunHistoryDays,
-        artifactRetentionDays: retentionArtifactRetentionDays,
-        cleanupEnabled: retentionCleanupEnabled,
-      },
-    });
-    applySettingsSnapshot(settings);
-  };
-
-  const handleCompleteWelcomeSetup = async () => {
-    await withPendingAction("setup:complete", async () => {
-      const defaultRepositoryPath = setupRepositoryPath.trim() || repositoryPath.trim() || settingsSnapshot?.defaultRepositoryPath.trim() || "";
-      if (!defaultRepositoryPath) {
-        setSetupRepositoryMessage("Select a local directory before completing setup.");
-        setSetupRepositoryMessageTone("warning");
-        return;
-      }
-      const currentSettings = settingsSnapshot ?? (await refreshSettingsSnapshot());
-      if (!modelConnectionIsReady(currentSettings)) {
-        setModelConnectionMessage("Save provider setup and run the provider check before completing setup.");
-        setModelConnectionMessageTone("warning");
-        return;
-      }
-      await completeReadySetup();
-    });
   };
 
   const handleDetectSetupRepositoryPath = async () => {
@@ -3288,7 +3356,7 @@ function App({
       }
       setSetupRepositoryPath(browseResult.path);
       setRepositoryPath(browseResult.path);
-      setSetupRepositoryMessage("Local directory selected. Save setup settings to persist it.");
+      setSetupRepositoryMessage("Local directory selected. Complete setup to persist it.");
       setSetupRepositoryMessageTone("success");
     });
   };
@@ -3313,15 +3381,33 @@ function App({
   const loadProviderModels = async (providerId: ModelProviderId, envKey = apiKeyEnvName, requestId = ++modelCatalogRequestIdRef.current) => {
     return withPendingAction(`model-fetch:${providerId}`, async () => {
       let hasFallbackCatalog = false;
-      let liveFetchFinished = false;
+      const preserveSelectedModel = (models: ModelCatalogOption[]) => {
+        if (
+          modelConnection?.providerId !== providerId ||
+          !modelConnection.modelId ||
+          models.some((model) => model.id === modelConnection.modelId)
+        ) {
+          return models;
+        }
+        return [
+          ...models,
+          {
+            id: modelConnection.modelId,
+            label: modelConnection.modelLabel,
+            description: "Unavailable to verify. Refresh the provider catalog and check the connection.",
+            source: providerId,
+            supportedThinkingEfforts: modelConnection.supportedThinkingEfforts,
+            defaultThinkingEffort: modelConnection.defaultThinkingEffort,
+          },
+        ];
+      };
       const applyFallbackCatalog = (catalog: CachedProviderModelCatalog, message: string, tone: SetupNoticeTone = "info") => {
         if (requestId !== modelCatalogRequestIdRef.current || catalog.models.length === 0) {
           return;
         }
         hasFallbackCatalog = true;
         setModelCatalogProviderId(providerId);
-        setModelCatalogOptions(catalog.models);
-        setSelectedModelId((currentModelId) => (catalog.models.some((model) => model.id === currentModelId) ? currentModelId : null));
+        setModelCatalogOptions(preserveSelectedModel(catalog.models));
         setModelCatalogStatus("ready");
         setModelCatalogIsLive(false);
         setModelCatalogMessage(message);
@@ -3340,42 +3426,32 @@ function App({
         setModelCatalogMessageTone("info");
       }
 
-      const modelsDevRefresh = fetchModelsDevProviderCatalog(providerId).then((catalog) => {
-        if (!catalog || liveFetchFinished) {
-          return;
-        }
-        applyFallbackCatalog(catalog, "Models.dev catalog shown. Refreshing live availability.");
-      });
 
       try {
         const catalog = await orynt.listProviderModels({
           providerId,
           envKey: providerId === "openai-api" ? envKey.trim() || "OPENAI_API_KEY" : null,
         });
-        liveFetchFinished = true;
         if (requestId !== modelCatalogRequestIdRef.current) {
           return catalog;
         }
+        const models = preserveSelectedModel(catalog.models);
         setModelCatalogProviderId(catalog.providerId);
-        setModelCatalogOptions(catalog.models);
+        setModelCatalogOptions(models);
         if (catalog.models.length === 0) {
-          setSelectedModelId(null);
           setModelCatalogStatus("empty");
           setModelCatalogIsLive(true);
           setModelCatalogMessage("No available models found for this provider.");
           setModelCatalogMessageTone("warning");
         } else {
           writeCachedProviderModelCatalog(providerId, catalog.models);
-          setSelectedModelId((currentModelId) => (catalog.models.some((model) => model.id === currentModelId) ? currentModelId : null));
           setModelCatalogStatus("ready");
           setModelCatalogIsLive(true);
-          setModelCatalogMessage("");
-          setModelCatalogMessageTone("info");
+          setModelCatalogMessage(catalog.warnings.join(" "));
+          setModelCatalogMessageTone(catalog.warnings.length > 0 ? "warning" : "info");
         }
         return catalog;
       } catch (error) {
-        await modelsDevRefresh;
-        liveFetchFinished = true;
         if (requestId !== modelCatalogRequestIdRef.current) {
           return null;
         }
@@ -4117,6 +4193,9 @@ function App({
     if (quickButton) {
       setComposerQuickMenuPlacement(resolveComposerMenuPlacement(quickButton, dialog === "model" ? 520 : 380));
     }
+    if (dialog === "effort" && composerQuickDialog !== "effort") {
+      updateComposerEffortPopoverCenter();
+    }
     setIsComposerAttachmentMenuOpen(false);
     setIsComposerMetaMenuOpen(false);
     setComposerQuickDialog((current) => (current === dialog ? null : dialog));
@@ -4145,9 +4224,6 @@ function App({
     });
   };
 
-  const handleAdjustComposerThinkingEffort = async (effort: ThinkingEffortOption) => {
-    await handleThinkingEffortChange(effort);
-  };
 
   const handleSelectComposerThinkingEffortAndClose = async (effort: ThinkingEffortOption) => {
     await handleThinkingEffortChange(effort);
@@ -4190,51 +4266,63 @@ function App({
       <div
         className={`composer-quick-dropdown composer-model-dropdown composer-quick-dropdown-${composerQuickMenuPlacement}`}
         id="composer-model-menu"
-        role="menu"
-        aria-label="Change model"
+        role="dialog"
+        aria-label="Choose model"
         ref={composerQuickMenuRef}
       >
-          <section className="composer-quick-section" aria-label="Model choices">
-            <div className="composer-quick-section-header">
+        <section className="composer-quick-section" aria-label="Model choices">
+          <div className="composer-quick-section-header composer-model-section-header">
+            <div>
               <span>Model</span>
-              <button
-                className="composer-quick-link-button"
-                type="button"
-                disabled={!selectedProvider || isSelectedProviderCheckPending || isSelectedProviderModelFetchPending}
-                onClick={() => selectedProvider && void preflightSelectedProviderAndLoadModels(selectedProvider)}
-              >
-                {isSelectedProviderCheckPending || isSelectedProviderModelFetchPending ? (
-                  <LoaderCircle className="composer-option-icon composer-option-icon-spin" aria-hidden="true" strokeWidth={2} />
-                ) : (
-                  <RotateCcw className="composer-option-icon" aria-hidden="true" strokeWidth={2} />
-                )}
-                <span>{isSelectedProviderCheckPending || isSelectedProviderModelFetchPending ? "Loading" : "Refresh"}</span>
-              </button>
+              <small>
+                {isSelectedProviderModelFetchPending || isSelectedProviderCheckPending
+                  ? "Refreshing available models"
+                  : activeModelCatalogOptions.length > 0
+                    ? `${activeModelCatalogOptions.length} available${modelCatalogIsLive ? " - live" : " - cached"}`
+                    : "No models loaded"}
+              </small>
             </div>
-            <div className="composer-model-options" role="listbox" aria-label="Model">
+            <button
+              className="composer-quick-link-button"
+              type="button"
+              aria-label="Refresh available models"
+              title="Refresh available models"
+              disabled={!selectedProvider || isSelectedProviderCheckPending || isSelectedProviderModelFetchPending}
+              onClick={() => selectedProvider && void preflightSelectedProviderAndLoadModels(selectedProvider)}
+            >
+              {isSelectedProviderCheckPending || isSelectedProviderModelFetchPending ? (
+                <LoaderCircle className="composer-option-icon composer-option-icon-spin" aria-hidden="true" strokeWidth={2} />
+              ) : (
+                <RotateCcw className="composer-option-icon" aria-hidden="true" strokeWidth={2} />
+              )}
+            </button>
+          </div>
+            {modelCatalogMessage ? <p className={`composer-quick-message composer-quick-message-${modelCatalogMessageTone}`} role="status">{modelCatalogMessage}</p> : null}
+            <div className="composer-model-options" aria-label="Available models">
               {selectedProvider && activeModelCatalogOptions.length > 0 ? (
                 activeModelCatalogOptions.map((model) => {
                   const isSelectedModel = selectedModelId === model.id;
                   return (
                     <button
-                      className="composer-option-card composer-model-option"
+                      className="composer-model-option"
                       type="button"
-                      role="option"
-                      aria-selected={isSelectedModel}
+                      aria-pressed={isSelectedModel}
+                      aria-busy={isSelectedModel && isModelConnectionSavePending}
+                      disabled={isModelConnectionSavePending}
                       key={model.id}
                       onClick={() => selectedProvider && void handleSaveComposerModel(selectedProvider, model)}
                     >
                       <Code2 className="composer-option-icon" aria-hidden="true" strokeWidth={2} />
                       <span>
                         <strong>{model.label}</strong>
-                        <small>{model.description ?? model.id}</small>
+                        <small>{isSelectedModel && isModelConnectionSavePending ? "Saving model choice" : model.description ?? model.id}</small>
                       </span>
                       {isSelectedModel ? <Check className="composer-option-check" aria-hidden="true" strokeWidth={2} /> : null}
                     </button>
                   );
                 })
               ) : (
-                <p className="composer-quick-empty">{selectedProvider ? "Refresh to load live model choices." : "Choose a provider first."}</p>
+                <p className="composer-quick-empty">{selectedProvider ? "Refresh to load provider-available models." : "Choose a provider first."}</p>
               )}
             </div>
           </section>
@@ -4248,14 +4336,6 @@ function App({
     }
     const activeComposerThinkingEffort =
       composerThinkingEffortOptions.find((option) => option.value === thinkingEffort) ?? composerThinkingEffortOptions.find((option) => option.value === selectedModelThinkingEffort) ?? composerThinkingEffortOptions[0];
-    const activeComposerThinkingEffortIndex = Math.max(
-      0,
-      composerThinkingEffortOptions.findIndex((option) => option.value === activeComposerThinkingEffort.value),
-    );
-    const effortProgress =
-      composerThinkingEffortOptions.length > 1
-        ? (activeComposerThinkingEffortIndex / (composerThinkingEffortOptions.length - 1)) * 100
-        : 0;
 
     return (
       <div
@@ -4264,47 +4344,27 @@ function App({
         role="menu"
         aria-label="Change thinking effort"
         ref={composerQuickMenuRef}
+        style={
+          composerEffortPopoverCenter === null ? undefined : ({ "--composer-effort-anchor-x": `${composerEffortPopoverCenter}px` } as CSSProperties)
+        }
       >
-          <div
-            className="composer-effort-options"
-            data-selected-effort={activeComposerThinkingEffort.value}
-            style={{ "--composer-effort-progress": `${effortProgress}%` } as CSSProperties}
-          >
-            <input
-              className="composer-effort-slider"
-              type="range"
-              min={0}
-              max={Math.max(0, composerThinkingEffortOptions.length - 1)}
-              step={1}
-              value={activeComposerThinkingEffortIndex}
-              aria-label="Thinking effort"
-              aria-valuetext={activeComposerThinkingEffort.label}
-              onChange={(event) => {
-                const option = composerThinkingEffortOptions[Number(event.currentTarget.value)];
-                if (option) {
-                  void handleAdjustComposerThinkingEffort(option.value);
-                }
-              }}
-            />
-            <div className="composer-effort-ticks" aria-label="Thinking effort options">
-              {composerThinkingEffortOptions.map((option) => {
-                const isSelectedEffort = option.value === activeComposerThinkingEffort.value;
-                return (
-                  <button
-                    className="composer-effort-tick"
-                    type="button"
-                    data-effort={option.value}
-                    data-selected={isSelectedEffort}
-                    aria-pressed={isSelectedEffort}
-                    key={option.value}
-                    onClick={() => void handleSelectComposerThinkingEffortAndClose(option.value)}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        <div className="composer-effort-menu-options">
+          {composerThinkingEffortOptions.map((option) => {
+            const isSelectedEffort = option.value === activeComposerThinkingEffort.value;
+            return (
+              <button
+                className="composer-effort-menu-option"
+                type="button"
+                role="menuitemradio"
+                aria-checked={isSelectedEffort}
+                key={option.value}
+                onClick={() => void handleSelectComposerThinkingEffortAndClose(option.value)}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -5004,11 +5064,6 @@ function App({
         </li>
       </ol>
       <div className="candidate-rule-actions">
-        <button type="button" onClick={() => void handleSaveSetupSettings()} disabled={isSetupSavePending} aria-busy={isSetupSavePending} aria-label="Save setup settings">
-          <LoadingButtonContent isLoading={isSetupSavePending} loadingLabel="Saving">
-            Save setup settings
-          </LoadingButtonContent>
-        </button>
         <button type="button" onClick={() => void handleCompleteWelcomeSetup()} disabled={isSetupCompletePending} aria-busy={isSetupCompletePending} aria-label="Complete setup">
           <LoadingButtonContent isLoading={isSetupCompletePending} loadingLabel="Completing">
             Complete setup

@@ -447,6 +447,7 @@ pub struct ModelCatalogResult {
     provider_id: String,
     fetched_at: String,
     models: Vec<ModelCatalogOption>,
+    source: String,
     warnings: Vec<String>,
 }
 
@@ -2539,6 +2540,7 @@ async fn list_provider_models(
         provider_id: provider_id.into(),
         fetched_at: now_iso_like(),
         models,
+        source: "live".into(),
         warnings: vec![],
     })
 }

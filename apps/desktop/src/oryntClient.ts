@@ -215,6 +215,7 @@ export type ModelCatalogResult = {
   providerId: ModelProviderId;
   fetchedAt: string;
   models: ModelCatalogOption[];
+  source?: "live";
   warnings: string[];
 };
 
