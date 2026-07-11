@@ -1,17 +1,27 @@
 # Orynt Agent Guide
 
-This repository is currently in planning/bootstrap mode. Treat `.codex/` as the working source of truth until product code is added.
+Orynt is an implemented pnpm workspace: a Tauri v2 + React desktop private beta and a Vite + React marketing application backed by workspace packages. The desktop product provides supervised, repository-only work; the marketing site communicates that product without implying a broader executable or hosted surface.
 
-## Path Map
+## Repository Map
 
-- `.codex/plan/`: Product plans, setup plans, roadmap notes, requirements, backlog, launch checklists, and planning contracts.
-- `.codex/ui/`: UI/UX material, including information architecture, wireframes, mockups, screen contracts, design tokens, and implementation prompts for the interface.
-- `.codex/technical/`: Technical architecture notes, implementation research, ADR drafts, runtime design, platform decisions, and engineering setup details.
-- `.codex/skills/`: Orynt-specific skills only. Put application-local Codex skills here when they implement or document behavior unique to Orynt.
+- `apps/desktop`: active desktop product; `apps/desktop/src` owns the product UI and `apps/desktop/src-tauri` is the native boundary.
+- `apps/marketing-site`: marketing application; `apps/marketing-site/src` owns the marketing UI.
+- `packages/shared` and `packages/ipc-contracts`: shared types, utilities, and IPC contracts.
+- `packages/*`: orchestration and runtime packages, including the cognitive kernel, gateway, memory, verifier, repository sandbox, adapters, skill registry, and evaluation harness.
+- `docs`: product, release, and technical guidance.
+- `scripts`: operational tooling and repository checks.
+- `assets`: shared fonts, illustrations, and visual assets.
 
 ## Working Rules
 
-- Keep planning, UI, technical, and skill material in their assigned folders.
-- Do not place general-purpose Codex skills in `.codex/skills/`; that folder is only for Orynt application behavior owned by CodePawl.
-- Prefer adding focused README files or small topic files over mixing unrelated concerns into one large document.
-- When product code is introduced, keep `.codex/` as project guidance and put runtime code in normal source directories such as `apps/`, `packages/`, or `crates/`.
+- Keep runtime code in `apps/*` and `packages/*`, product and release guidance in `docs/*`, operational tooling in `scripts/*`, and shared visual assets in `assets/*`.
+- Inspect the relevant app and its existing owned implementation before changing behavior or UI.
+- For user-facing UI, MUST read and follow `DESIGN.md`, the UI contract for `apps/marketing-site/src` and `apps/desktop/src`, unless an explicit product requirement conflicts.
+- Reuse or extend owned code before creating a parallel implementation.
+- Use an already-installed external dependency only when repository search proves no suitable owned layer exists.
+
+## Verification
+
+- Run the touched workspace's own scripts first: `pnpm --filter @codepawl/desktop test`, `pnpm --filter @codepawl/desktop build`, `pnpm --filter @codepawl/marketing-site test`, or `pnpm --filter @codepawl/marketing-site build` as applicable.
+- Run `pnpm test:contracts` when shared or IPC contracts change, and `pnpm test:tauri` when the Tauri boundary changes.
+- There is no root lint script. Agents MUST NOT claim lint passed unless a future manifest adds one.
