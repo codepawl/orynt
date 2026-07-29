@@ -1,6 +1,6 @@
 # Local Coding Apprentice MVP Walkthrough
 
-This walkthrough proves the local Coding Apprentice loop with a disposable repository, a CodePawl-managed sandbox/worktree, a generated Codex contract artifact, explicit controlled-execution approval, result import, deterministic verification, memory review, manual skill promotion, and a dry-run replay plan.
+This walkthrough proves the local Coding Apprentice loop with a disposable repository, an Orynt-managed sandbox/worktree, a generated Codex contract artifact, explicit controlled-execution approval, result import, deterministic verification, memory review, manual skill promotion, and a dry-run replay plan.
 
 The default path uses a fake Codex executable. It does not require model credentials, cloud execution, browser automation, billing, or autonomous mode.
 
@@ -36,7 +36,7 @@ git diff --check
 To preserve the temporary fixture, sandbox, and artifacts for manual inspection:
 
 ```bash
-CODEPAWL_KEEP_WALKTHROUGH=1 pnpm walkthrough:smoke
+ORYNT_KEEP_WALKTHROUGH=1 pnpm walkthrough:smoke
 ```
 
 ## Start The Desktop App
@@ -53,9 +53,9 @@ The desktop shell shows the MVP cockpit with the run timeline, controlled Codex 
 
 1. Create or select a fixture repo.
    - Default: run `pnpm walkthrough:smoke`; it creates a disposable git repo with `packages/value.txt` and `scripts/pass.mjs`.
-   - Manual inspection: preserve artifacts with `CODEPAWL_KEEP_WALKTHROUGH=1`.
+   - Manual inspection: preserve artifacts with `ORYNT_KEEP_WALKTHROUGH=1`.
 
-2. Create a CodePawl run.
+2. Create an Orynt run.
    - The smoke script calls `LocalCodingApprenticeDemoOrchestrator.runDemo`.
    - The run goal is `Run the local MVP walkthrough with fake Codex.`
 
@@ -173,7 +173,7 @@ Depending on the block reason, the timeline can include a more specific prefligh
 
 ## Optional Real Codex Execution
 
-The default walkthrough intentionally uses fake Codex. Optional real Codex execution should be tested only with a disposable repository, a CodePawl-managed sandbox/worktree, and explicit user approval.
+The default walkthrough intentionally uses fake Codex. Optional real Codex execution should be tested only with a disposable repository, an Orynt-managed sandbox/worktree, and explicit user approval.
 
 Before trying real Codex:
 
@@ -184,10 +184,10 @@ codex --version
 Run the opt-in real Codex walkthrough only when the local CLI is authenticated and you are ready to spend model/network budget:
 
 ```bash
-CODEPAWL_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex
+ORYNT_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex
 ```
 
-This script creates a disposable fixture repository under `/tmp`, routes execution through CodePawl's controlled Codex adapter, records the approval and execution lifecycle events, imports the result, and runs `node scripts/pass.mjs` as a separate verifier stage.
+This script creates a disposable fixture repository under `/tmp`, routes execution through Orynt's controlled Codex adapter, records the approval and execution lifecycle events, imports the result, and runs `node scripts/pass.mjs` as a separate verifier stage.
 
 Keep secrets out of the repository, fixture files, command output, and contract content. Do not place API keys, passwords, OTPs, private keys, cookies, or raw sensitive values in the fixture repo or walkthrough notes. Verification must still run as a separate stage after result import.
 
@@ -198,7 +198,7 @@ Keep secrets out of the repository, fixture files, command output, and contract 
 - Homebrew `pkg-config` shadowing system packages: rerun through `pnpm test:tauri` instead of invoking Cargo directly.
 - Missing git identity in the fixture repo: the smoke script configures local fixture-only `user.name` and `user.email`; it does not change global git config.
 - Fake Codex not executable: rerun `pnpm walkthrough:smoke`; the script recreates the temporary fake binary with executable permissions.
-- Need artifact inspection after cleanup: rerun with `CODEPAWL_KEEP_WALKTHROUGH=1`.
+- Need artifact inspection after cleanup: rerun with `ORYNT_KEEP_WALKTHROUGH=1`.
 
 ## Not Implemented Yet
 

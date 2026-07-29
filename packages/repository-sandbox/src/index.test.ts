@@ -26,8 +26,8 @@ async function createTempGitRepository(name = "repo") {
   const repoPath = path.join(tempRoot, name);
   await mkdir(repoPath, { recursive: true });
   await git(["init"], repoPath);
-  await git(["config", "user.email", "codepawl@example.test"], repoPath);
-  await git(["config", "user.name", "CodePawl Test"], repoPath);
+  await git(["config", "user.email", "orynt@example.test"], repoPath);
+  await git(["config", "user.name", "Orynt Test"], repoPath);
   await writeFile(path.join(repoPath, "README.md"), "# Fixture\n");
   await git(["add", "README.md"], repoPath);
   await git(["commit", "-m", "initial"], repoPath);
@@ -46,7 +46,7 @@ function createRun(store: InMemoryRunStore) {
 
 describe("GitRepositorySandboxManager", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-repository-sandbox-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-repository-sandbox-test-"));
   });
 
   afterEach(async () => {
@@ -55,7 +55,7 @@ describe("GitRepositorySandboxManager", () => {
 
   it("inspects a clean git repository", async () => {
     const repoPath = await createTempGitRepository();
-    await git(["remote", "add", "origin", "https://example.test/codepawl.git"], repoPath);
+    await git(["remote", "add", "origin", "https://example.test/orynt.git"], repoPath);
     const policy = createConservativeCodingApprenticePolicy(repoPath, path.join(tempRoot, "sandboxes"));
     const inspection = await new GitRepositorySandboxManager().inspectRepository(
       { runId: "run-clean", taskId: "task-clean", repositoryPath: repoPath, baseRef: "HEAD" },
@@ -106,21 +106,32 @@ describe("GitRepositorySandboxManager", () => {
     ).rejects.toMatchObject({ details: { code: "unsafe_repository_path" } });
   });
 
-  it("generates deterministic worktree plans", async () => {
+  it("generates unique worktree plans under the sandbox root", async () => {
     const repoPath = await createTempGitRepository();
     const sandboxRoot = path.join(tempRoot, "sandboxes");
     const policy = createConservativeCodingApprenticePolicy(repoPath, sandboxRoot);
     const manager = new GitRepositorySandboxManager({ sandboxRoot });
     const request = { runId: "run-123", taskId: "task-abc", repositoryPath: repoPath, baseRef: "HEAD" };
     const inspection = await manager.inspectRepository(request, policy);
+    const shortCommit = inspection.currentCommit.slice(0, 12);
+    const expectedBranchPrefix = `orynt/run-123-task-abc-${shortCommit}-`;
+    const expectedWorktreePrefix = `run-123-task-abc-${shortCommit}-`;
 
     const first = manager.planWorktree(request, policy, inspection);
     const second = manager.planWorktree(request, policy, inspection);
 
-    expect(first).toEqual(second);
-    expect(first.branchName).toMatch(/^codepawl\/run-123-task-abc-/);
-    expect(first.worktreePath).toContain(sandboxRoot);
-    expect(first.policyDecision.decision).toBe("allow");
+    expect(first.branchName).toMatch(new RegExp(`^${expectedBranchPrefix}`));
+    expect(second.branchName).toMatch(new RegExp(`^${expectedBranchPrefix}`));
+    expect(path.basename(first.worktreePath)).toMatch(new RegExp(`^${expectedWorktreePrefix}`));
+    expect(path.basename(second.worktreePath)).toMatch(new RegExp(`^${expectedWorktreePrefix}`));
+    expect(first.branchName).not.toBe(second.branchName);
+    expect(first.worktreePath).not.toBe(second.worktreePath);
+    for (const plan of [first, second]) {
+      const relativeWorktreePath = path.relative(sandboxRoot, plan.worktreePath);
+      expect(relativeWorktreePath).not.toMatch(/^\.\.(?:\/|$)/);
+      expect(path.isAbsolute(relativeWorktreePath)).toBe(false);
+      expect(plan.policyDecision.decision).toBe("allow");
+    }
   });
 
   it("creates a policy-gated git worktree", async () => {

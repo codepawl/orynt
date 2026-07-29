@@ -1,22 +1,24 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use thiserror::Error;
 
+const DEFAULT_REPOSITORY_PATH_ENV: &str = "ORYNT_DEFAULT_REPOSITORY_PATH";
+
 #[derive(Debug, Default)]
 pub struct AppState {
     runs: Mutex<Vec<String>>,
-    candidate_rule_statuses: Mutex<HashMap<String, CandidateRuleReviewStatus>>,
     skill_statuses: Mutex<HashMap<String, SkillLifecycleStatus>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetPolicy {
     max_steps: u32,
@@ -34,6 +36,8 @@ pub struct CreateRunInput {
     task_id: String,
     workspace_id: String,
     repository_path: Option<String>,
+    #[serde(default)]
+    selected_skill_ids: Vec<String>,
     budget: BudgetPolicy,
 }
 
@@ -172,6 +176,8 @@ pub struct RunEvent {
 pub struct SettingsSnapshot {
     workspace_id: String,
     permission_mode: String,
+    #[serde(default = "default_thinking_effort")]
+    thinking_effort: String,
     executable_surfaces: Vec<String>,
     blocked_surfaces: Vec<String>,
     #[serde(default)]
@@ -229,6 +235,7 @@ pub struct VoicePreferencesSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct SettingsUpdateInput {
     permission_mode: Option<String>,
+    thinking_effort: Option<String>,
     default_repository_path: Option<String>,
     welcome_completed: Option<bool>,
     executable_surfaces: Option<Vec<String>>,
@@ -287,6 +294,28 @@ pub struct CodexConnectionSetupInput {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub enum CodexLoginMethod {
+    Browser,
+    DeviceCode,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLoginLaunchInput {
+    method: CodexLoginMethod,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLoginLaunchResult {
+    method: CodexLoginMethod,
+    command: String,
+    message: String,
+    login_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum CodexConnectionStatus {
     Missing,
     AuthRequired,
@@ -323,18 +352,6 @@ pub struct CodexConnectionReference {
     status: CodexConnectionStatus,
     #[serde(default)]
     last_preflight: Option<CodexConnectionPreflightResult>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexConnectionLoginInput {
-    method: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexAccessTokenLoginInput {
-    access_token: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -376,6 +393,10 @@ pub struct ModelConnectionReference {
     auth_method: String,
     env_key: Option<String>,
     #[serde(default)]
+    supported_thinking_efforts: Option<Vec<String>>,
+    #[serde(default)]
+    default_thinking_effort: Option<String>,
+    #[serde(default)]
     status: ModelConnectionStatus,
     #[serde(default)]
     last_preflight: Option<ModelConnectionPreflightResult>,
@@ -386,8 +407,49 @@ pub struct ModelConnectionReference {
 pub struct ModelConnectionSetupInput {
     provider_id: String,
     model_id: String,
+    model_label: Option<String>,
     auth_method: String,
     env_key: Option<String>,
+    thinking_effort: Option<String>,
+    supported_thinking_efforts: Option<Vec<String>>,
+    default_thinking_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProviderPreflightInput {
+    provider_id: String,
+    auth_method: String,
+    env_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCatalogListInput {
+    provider_id: String,
+    env_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCatalogOption {
+    id: String,
+    label: String,
+    description: Option<String>,
+    owned_by: Option<String>,
+    source: String,
+    supported_thinking_efforts: Option<Vec<String>>,
+    default_thinking_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCatalogResult {
+    provider_id: String,
+    fetched_at: String,
+    models: Vec<ModelCatalogOption>,
+    source: String,
+    warnings: Vec<String>,
 }
 
 const MAX_ARTIFACT_EVIDENCE_BYTES: usize = 256 * 1024;
@@ -399,6 +461,7 @@ pub enum ArtifactEvidenceKind {
     Contract,
     ContractMetadata,
     EventLog,
+    CognitiveTrace,
     VerifierInput,
     VerificationResult,
     RedactedLog,
@@ -469,6 +532,11 @@ struct DesktopRepositoryRunRequest {
     sandbox_root: String,
     artifact_root: String,
     memory_root: String,
+    budget: BudgetPolicy,
+    model_connection: ModelConnectionReference,
+    thinking_effort: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skill_context: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -525,6 +593,10 @@ pub enum AppError {
     RepositoryRun(String),
     #[error("{0}")]
     Persistence(String),
+    #[error("skill manager failed: {0}")]
+    SkillManager(String),
+    #[error("memory manager failed: {0}")]
+    MemoryManager(String),
 }
 
 impl serde::Serialize for AppError {
@@ -666,7 +738,6 @@ impl LocalPersistenceStore {
             ));
         }
         let mut settings = self.load_settings()?;
-        settings.model_connection = Some(model_connection_from_codex_connection(&reference));
         settings.codex_connection = Some(reference);
         self.save_settings(&settings)
     }
@@ -697,7 +768,13 @@ impl LocalPersistenceStore {
         let auth_method = normalized_model_auth_method(&input);
         let reference = ModelConnectionReference {
             provider_label: model_provider_label(&provider_id).into(),
-            model_label: model_label(&provider_id, input.model_id.trim()).into(),
+            model_label: input
+                .model_label
+                .as_deref()
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .unwrap_or_else(|| input.model_id.trim())
+                .to_string(),
             model_id: input.model_id.trim().to_string(),
             env_key: if auth_method == "apiKeyEnv" {
                 Some(
@@ -712,18 +789,37 @@ impl LocalPersistenceStore {
             } else {
                 None
             },
+            supported_thinking_efforts: normalize_thinking_efforts(
+                input.supported_thinking_efforts.as_deref(),
+            ),
+            default_thinking_effort: normalize_optional_thinking_effort(
+                input.default_thinking_effort.as_deref(),
+            ),
             auth_method,
             provider_id,
             status: ModelConnectionStatus::AuthRequired,
             last_preflight: None,
         };
-        self.save_model_connection_record(reference.clone())?;
+        let selected_thinking_effort =
+            normalize_optional_thinking_effort(input.thinking_effort.as_deref());
+        self.save_model_connection_record_with_thinking_effort(
+            reference.clone(),
+            selected_thinking_effort.or_else(|| reference.default_thinking_effort.clone()),
+        )?;
         Ok(reference)
     }
 
     pub fn save_model_connection_record(
         &self,
         reference: ModelConnectionReference,
+    ) -> Result<(), AppError> {
+        self.save_model_connection_record_with_thinking_effort(reference, None)
+    }
+
+    fn save_model_connection_record_with_thinking_effort(
+        &self,
+        reference: ModelConnectionReference,
+        thinking_effort: Option<String>,
     ) -> Result<(), AppError> {
         validate_model_connection_reference(&reference)?;
         let mut settings = self.load_settings()?;
@@ -732,18 +828,15 @@ impl LocalPersistenceStore {
         } else {
             settings.codex_connection = None;
         }
+        if let Some(effort) = thinking_effort {
+            settings.thinking_effort = effort;
+        }
         settings.model_connection = Some(reference);
         self.save_settings(&settings)
     }
 
     pub fn load_model_connection(&self) -> Result<Option<ModelConnectionReference>, AppError> {
-        let settings = self.load_settings()?;
-        Ok(settings.model_connection.or_else(|| {
-            settings
-                .codex_connection
-                .as_ref()
-                .map(model_connection_from_codex_connection)
-        }))
+        Ok(self.load_settings()?.model_connection)
     }
 
     pub fn delete_model_connection(&self) -> Result<(), AppError> {
@@ -761,17 +854,17 @@ impl LocalPersistenceStore {
         let manifest = PathBuf::from(artifact_manifest_path);
         let manifest_parent = manifest.parent().ok_or_else(|| {
             AppError::Validation(
-                "artifact manifest must stay inside the CodePawl app data directory".into(),
+                "artifact manifest must stay inside the Orynt app data directory".into(),
             )
         })?;
         let canonical_parent = manifest_parent.canonicalize().map_err(|_| {
             AppError::Validation(
-                "artifact manifest must stay inside the CodePawl app data directory".into(),
+                "artifact manifest must stay inside the Orynt app data directory".into(),
             )
         })?;
         if !canonical_parent.starts_with(&root) {
             return Err(AppError::Validation(
-                "artifact manifest must stay inside the CodePawl app data directory".into(),
+                "artifact manifest must stay inside the Orynt app data directory".into(),
             ));
         }
         Ok(())
@@ -937,7 +1030,7 @@ impl LocalPersistenceStore {
         let app_artifact_root = self.canonical_root()?.join("artifacts");
         let canonical_app_artifact_root = app_artifact_root.canonicalize().map_err(|_| {
             AppError::Validation(
-                "artifact path must stay inside the CodePawl app artifact directory".into(),
+                "artifact path must stay inside the Orynt app artifact directory".into(),
             )
         })?;
         if !canonical_artifact_root.starts_with(&canonical_app_artifact_root) {
@@ -1049,7 +1142,7 @@ fn default_operator_profile() -> OperatorProfileSnapshot {
 fn default_ui_preferences() -> UiPreferencesSnapshot {
     UiPreferencesSnapshot {
         appearance: "dark".into(),
-        chat_font: "codepawl-sans".into(),
+        chat_font: "orynt-sans".into(),
         motion: "system".into(),
         show_message_block_meta: false,
     }
@@ -1063,10 +1156,46 @@ fn default_voice_preferences() -> VoicePreferencesSnapshot {
     }
 }
 
+fn default_thinking_effort() -> String {
+    "medium".into()
+}
+
+fn thinking_effort_is_supported(effort: &str) -> bool {
+    matches!(
+        effort,
+        "minimal" | "none" | "low" | "medium" | "high" | "xhigh"
+    )
+}
+
+fn normalize_optional_thinking_effort(effort: Option<&str>) -> Option<String> {
+    effort
+        .map(str::trim)
+        .filter(|value| thinking_effort_is_supported(value))
+        .map(str::to_string)
+}
+
+fn normalize_thinking_efforts(efforts: Option<&[String]>) -> Option<Vec<String>> {
+    let mut normalized = vec![];
+    for effort in efforts.unwrap_or_default() {
+        let effort = effort.trim();
+        if thinking_effort_is_supported(effort)
+            && !normalized.iter().any(|existing| existing == effort)
+        {
+            normalized.push(effort.to_string());
+        }
+    }
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
 fn default_settings_snapshot() -> SettingsSnapshot {
     SettingsSnapshot {
         workspace_id: "workspace-local-alpha".into(),
         permission_mode: "safe".into(),
+        thinking_effort: default_thinking_effort(),
         executable_surfaces: vec!["repository".into()],
         blocked_surfaces: vec![
             "browser".into(),
@@ -1133,59 +1262,35 @@ fn migrate_settings_value(mut value: serde_json::Value) -> serde_json::Value {
         .get("modelConnection")
         .is_some_and(|connection| !connection.is_null());
     if !has_model_connection {
-        let model_connection = object
-            .get("codexConnection")
-            .and_then(legacy_codex_model_connection_value);
-        object.insert(
-            "modelConnection".into(),
-            model_connection.unwrap_or(serde_json::Value::Null),
-        );
+        object.insert("modelConnection".into(), serde_json::Value::Null);
+    }
+    object
+        .entry("thinkingEffort")
+        .or_insert_with(|| serde_json::Value::String(default_thinking_effort()));
+    let migrated_chat_font = object
+        .get("uiPreferences")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|preferences| preferences.get("chatFont"))
+        .and_then(serde_json::Value::as_str)
+        .map(normalize_chat_font_value);
+    if let Some(chat_font) = migrated_chat_font {
+        if let Some(preferences) = object
+            .get_mut("uiPreferences")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            preferences.insert("chatFont".into(), serde_json::Value::String(chat_font));
+        }
     }
     object.remove("providerRefs");
     value
 }
 
-fn legacy_codex_model_connection_value(
-    connection: &serde_json::Value,
-) -> Option<serde_json::Value> {
-    if connection.is_null() {
-        return None;
+fn normalize_chat_font_value(chat_font: &str) -> String {
+    match chat_font {
+        "codepawl-sans" => "orynt-sans".into(),
+        "codepawl-serif" => "orynt-serif".into(),
+        value => value.into(),
     }
-    let status = match connection.get("status").and_then(serde_json::Value::as_str) {
-        Some("ready") => "ready",
-        Some("failed") => "failed",
-        Some("missing") => "missing",
-        _ => "authRequired",
-    };
-    let last_preflight = connection
-        .get("lastPreflight")
-        .and_then(|preflight| {
-            if preflight.is_null() {
-                return None;
-            }
-            Some(serde_json::json!({
-                "checkedProviderId": "codex-cli",
-                "checkedModelId": "gpt-5.5",
-                "status": preflight.get("status").and_then(serde_json::Value::as_str).unwrap_or(status),
-                "ready": preflight.get("ready").and_then(serde_json::Value::as_bool).unwrap_or(status == "ready"),
-                "checkedAt": preflight.get("checkedAt").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "executablePath": preflight.get("executablePath").cloned().unwrap_or(serde_json::Value::Null),
-                "authMode": preflight.get("authMode").cloned().unwrap_or(serde_json::Value::Null),
-                "reasons": preflight.get("reasons").cloned().unwrap_or_else(|| serde_json::json!([])),
-                "warnings": preflight.get("warnings").cloned().unwrap_or_else(|| serde_json::json!([])),
-            }))
-        })
-        .unwrap_or(serde_json::Value::Null);
-    Some(serde_json::json!({
-        "providerId": "codex-cli",
-        "providerLabel": "Codex CLI",
-        "modelId": "gpt-5.5",
-        "modelLabel": "GPT-5.5",
-        "authMethod": "chatgptOAuth",
-        "envKey": null,
-        "status": status,
-        "lastPreflight": last_preflight,
-    }))
 }
 
 fn retention_policy_summary(policy: &RetentionPolicySnapshot) -> String {
@@ -1214,8 +1319,18 @@ fn apply_settings_update(
         }
     }
 
+    if let Some(thinking_effort) = input.thinking_effort {
+        if thinking_effort_is_supported(thinking_effort.as_str()) {
+            settings.thinking_effort = thinking_effort;
+        } else {
+            return Err(AppError::Validation(
+                "thinkingEffort must be minimal, none, low, medium, high, or xhigh".into(),
+            ));
+        }
+    }
+
     if let Some(default_repository_path) = input.default_repository_path {
-        settings.default_repository_path = default_repository_path.trim().to_string();
+        settings.default_repository_path = normalize_default_repository_path(&default_repository_path)?;
     }
 
     if let Some(welcome_completed) = input.welcome_completed {
@@ -1289,13 +1404,14 @@ fn apply_settings_update(
             }
         }
         if let Some(chat_font) = preferences_update.chat_font {
-            match chat_font.as_str() {
-                "codepawl-sans" | "codepawl-serif" | "system" => {
-                    settings.ui_preferences.chat_font = chat_font;
+            let normalized_chat_font = normalize_chat_font_value(&chat_font);
+            match normalized_chat_font.as_str() {
+                "orynt-sans" | "orynt-serif" | "system" => {
+                    settings.ui_preferences.chat_font = normalized_chat_font;
                 }
                 _ => {
                     return Err(AppError::Validation(
-                        "chatFont must be codepawl-sans, codepawl-serif, or system".into(),
+                        "chatFont must be orynt-sans, orynt-serif, or system".into(),
                     ));
                 }
             }
@@ -1347,6 +1463,23 @@ fn apply_settings_update(
     Ok(settings)
 }
 
+fn apply_default_repository_path_env_override(
+    mut settings: SettingsSnapshot,
+    env_repository_path: Option<&str>,
+) -> SettingsSnapshot {
+    let Some(env_repository_path) = env_repository_path else {
+        return settings;
+    };
+    if env_repository_path.trim().is_empty() {
+        return settings;
+    }
+    if let Ok(default_repository_path) = normalize_default_repository_path(env_repository_path) {
+        settings.default_repository_path = default_repository_path;
+    }
+
+    settings
+}
+
 struct ArtifactEvidenceSpec {
     artifact_id: String,
     label: String,
@@ -1386,6 +1519,12 @@ fn artifact_evidence_specs(
             "eventLog",
             "Event log",
             ArtifactEvidenceKind::EventLog,
+            "application/json",
+        ),
+        (
+            "cognitiveTrace",
+            "Cognitive trace",
+            ArtifactEvidenceKind::CognitiveTrace,
             "application/json",
         ),
         (
@@ -1476,7 +1615,10 @@ fn artifact_path_from_uri(
     if let Some(path) = trimmed.strip_prefix("file://") {
         return Ok(PathBuf::from(path));
     }
-    if let Some(rest) = trimmed.strip_prefix("codepawl-artifact://") {
+    let artifact_uri_body = trimmed
+        .strip_prefix("orynt-artifact://")
+        .or_else(|| trimmed.strip_prefix("codepawl-artifact://"));
+    if let Some(rest) = artifact_uri_body {
         let (run_id, relative_path) = rest
             .split_once('/')
             .ok_or_else(|| AppError::Validation("artifact URI scheme is not allowed".into()))?;
@@ -1547,36 +1689,11 @@ fn model_provider_label(provider_id: &str) -> &'static str {
     }
 }
 
-fn model_label(provider_id: &str, model_id: &str) -> &'static str {
-    match (provider_id, model_id) {
-        ("codex-cli", "gpt-5.5") => "GPT-5.5",
-        ("codex-cli", "gpt-5.4-mini") => "GPT-5.4 mini",
-        ("codex-cli", "gpt-5.3-codex-spark") => "GPT-5.3 Codex Spark",
-        ("openai-api", "gpt-5.5") => "GPT-5.5",
-        ("openai-api", "gpt-5.4") => "GPT-5.4",
-        ("openai-api", "gpt-5.4-mini") => "GPT-5.4 mini",
-        ("openai-api", "gpt-5.4-nano") => "GPT-5.4 nano",
-        _ => "Unknown model",
-    }
-}
-
-fn model_is_supported(provider_id: &str, model_id: &str) -> bool {
-    matches!(
-        (provider_id, model_id),
-        ("codex-cli", "gpt-5.5")
-            | ("codex-cli", "gpt-5.4-mini")
-            | ("codex-cli", "gpt-5.3-codex-spark")
-            | ("openai-api", "gpt-5.5")
-            | ("openai-api", "gpt-5.4")
-            | ("openai-api", "gpt-5.4-mini")
-            | ("openai-api", "gpt-5.4-nano")
-    )
-}
-
 fn model_auth_method_is_supported(provider_id: &str, auth_method: &str) -> bool {
     matches!(
         (provider_id, auth_method),
-        ("codex-cli", "chatgptOAuth")
+        ("codex-cli", "codexCliSession")
+            | ("codex-cli", "chatgptOAuth")
             | ("codex-cli", "deviceCode")
             | ("codex-cli", "accessToken")
             | ("openai-api", "apiKeyEnv")
@@ -1602,10 +1719,8 @@ fn validate_model_connection_setup_input(
             "providerId must be codex-cli or openai-api".into(),
         ));
     }
-    if !model_is_supported(provider_id, model_id) {
-        return Err(AppError::Validation(
-            "modelId is not supported for provider".into(),
-        ));
+    if model_id.is_empty() {
+        return Err(AppError::Validation("modelId is required".into()));
     }
     if !model_auth_method_is_supported(provider_id, &auth_method) {
         return Err(AppError::Validation(
@@ -1624,6 +1739,36 @@ fn validate_model_connection_setup_input(
             "envKey is required for OpenAI API".into(),
         ));
     }
+    if input
+        .thinking_effort
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|effort| !thinking_effort_is_supported(effort))
+    {
+        return Err(AppError::Validation(
+            "thinkingEffort must be minimal, none, low, medium, high, or xhigh".into(),
+        ));
+    }
+    if input
+        .default_thinking_effort
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|effort| !thinking_effort_is_supported(effort))
+    {
+        return Err(AppError::Validation(
+            "defaultThinkingEffort must be minimal, none, low, medium, high, or xhigh".into(),
+        ));
+    }
+    if let Some(efforts) = input.supported_thinking_efforts.as_ref() {
+        if efforts
+            .iter()
+            .any(|effort| !thinking_effort_is_supported(effort.trim()))
+        {
+            return Err(AppError::Validation(
+                "supportedThinkingEfforts may only include minimal, none, low, medium, high, or xhigh".into(),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -1633,8 +1778,12 @@ fn validate_model_connection_reference(
     validate_model_connection_setup_input(&ModelConnectionSetupInput {
         provider_id: reference.provider_id.clone(),
         model_id: reference.model_id.clone(),
+        model_label: Some(reference.model_label.clone()),
         auth_method: reference.auth_method.clone(),
         env_key: reference.env_key.clone(),
+        thinking_effort: None,
+        supported_thinking_efforts: reference.supported_thinking_efforts.clone(),
+        default_thinking_effort: reference.default_thinking_effort.clone(),
     })
 }
 
@@ -1658,8 +1807,7 @@ fn codex_status_from_model_status(status: &ModelConnectionStatus) -> CodexConnec
 
 fn model_auth_from_codex_auth(auth_mode: Option<&String>) -> Option<String> {
     match auth_mode.map(String::as_str) {
-        Some("chatgpt") => Some("chatgptOAuth".into()),
-        Some("accessToken") => Some("accessToken".into()),
+        Some("chatgpt" | "apiKey" | "accessToken" | "unknown") => Some("codexCliSession".into()),
         Some(other) => Some(other.into()),
         None => None,
     }
@@ -1700,24 +1848,6 @@ fn codex_preflight_from_model_preflight(
     })
 }
 
-fn model_connection_from_codex_connection(
-    reference: &CodexConnectionReference,
-) -> ModelConnectionReference {
-    ModelConnectionReference {
-        provider_id: "codex-cli".into(),
-        provider_label: "Codex CLI".into(),
-        model_id: "gpt-5.5".into(),
-        model_label: "GPT-5.5".into(),
-        auth_method: "chatgptOAuth".into(),
-        env_key: None,
-        status: model_status_from_codex_status(&reference.status),
-        last_preflight: reference
-            .last_preflight
-            .as_ref()
-            .map(|result| model_preflight_from_codex_preflight(result, "gpt-5.5")),
-    }
-}
-
 fn codex_connection_from_model_connection(
     reference: &ModelConnectionReference,
 ) -> CodexConnectionReference {
@@ -1749,35 +1879,146 @@ fn executable_path_on_path(path_env: &str, executable_name: &str) -> Option<Path
     None
 }
 
-fn codex_command_output(
-    path_env: &str,
-    args: &[&str],
-    stdin_text: Option<&str>,
-) -> Result<std::process::Output, AppError> {
+fn real_user_home() -> Option<PathBuf> {
+    let user_name = std::env::var("USER").ok()?;
+    let passwd = fs::read_to_string("/etc/passwd").ok()?;
+    passwd.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        let name = fields.next()?;
+        if name != user_name {
+            return None;
+        }
+        fields.nth(4).map(PathBuf::from)
+    })
+}
+
+fn apply_real_user_home_env(command: &mut Command) {
+    if let Some(home) = real_user_home() {
+        command.env("HOME", &home);
+        command.env("XDG_CONFIG_HOME", home.join(".config"));
+        command.env("XDG_DATA_HOME", home.join(".local/share"));
+    }
+}
+
+fn codex_command_output(path_env: &str, args: &[&str]) -> Result<std::process::Output, AppError> {
     let executable_path = executable_path_on_path(path_env, "codex")
         .ok_or_else(|| AppError::Validation("Codex CLI was not found on PATH.".into()))?;
     let mut command = Command::new(executable_path);
+    apply_real_user_home_env(&mut command);
     command
         .args(args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if stdin_text.is_some() {
-        command.stdin(Stdio::piped());
-    }
-    let mut child = command
+        .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| AppError::Validation(format!("could not start Codex CLI: {error}")))?;
-    if let Some(stdin_text) = stdin_text {
-        let mut stdin = child.stdin.take().ok_or_else(|| {
-            AppError::Validation("could not open Codex CLI stdin for access token login".into())
-        })?;
-        stdin.write_all(stdin_text.as_bytes()).map_err(|error| {
-            AppError::Validation(format!("could not write Codex CLI stdin: {error}"))
-        })?;
-    }
-    child
+        .map_err(|error| AppError::Validation(format!("could not start Codex CLI: {error}")))?
         .wait_with_output()
         .map_err(|error| AppError::Validation(format!("could not read Codex CLI output: {error}")))
+}
+
+fn terminal_executable_on_path(path_env: &str) -> Option<(String, String)> {
+    [
+        "konsole",
+        "gnome-terminal",
+        "x-terminal-emulator",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "xfce4-terminal",
+        "xterm",
+    ]
+    .into_iter()
+    .find_map(|terminal| {
+        executable_path_on_path(path_env, terminal)
+            .map(|path| (terminal.to_string(), path.to_string_lossy().to_string()))
+    })
+}
+
+fn launch_codex_terminal_login(
+    path_env: &str,
+    method: CodexLoginMethod,
+    codex_args: &[&str],
+    manual_command: &str,
+    terminal_missing_message: &str,
+    spawn_error_prefix: &str,
+    success_message: &str,
+) -> Result<CodexLoginLaunchResult, AppError> {
+    executable_path_on_path(path_env, "codex")
+        .ok_or_else(|| AppError::Validation("Codex CLI was not found on PATH.".into()))?;
+    let (terminal, terminal_path) = terminal_executable_on_path(path_env).ok_or_else(|| {
+        AppError::Validation(terminal_missing_message.into())
+    })?;
+    let mut command = Command::new(&terminal_path);
+    apply_real_user_home_env(&mut command);
+    command.env("PATH", path_env);
+    match terminal.as_str() {
+        "konsole" => {
+            command.args(["--new-tab", "-e", "codex"]);
+            command.args(codex_args);
+        }
+        "gnome-terminal" => {
+            command.args(["--", "codex"]);
+            command.args(codex_args);
+        }
+        "wezterm" => {
+            command.args(["start", "--", "codex"]);
+            command.args(codex_args);
+        }
+        "xfce4-terminal" => {
+            command.args(["--command"]);
+            command.arg(format!("codex {}", codex_args.join(" ")));
+        }
+        _ => {
+            command.args(["-e", "codex"]);
+            command.args(codex_args);
+        }
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| AppError::Validation(format!("{spawn_error_prefix}: {error}")))?;
+
+    Ok(CodexLoginLaunchResult {
+        method,
+        command: manual_command.into(),
+        message: success_message.into(),
+        login_url: None,
+    })
+}
+
+fn launch_codex_browser_login(path_env: &str) -> Result<CodexLoginLaunchResult, AppError> {
+    launch_codex_terminal_login(
+        path_env,
+        CodexLoginMethod::Browser,
+        &["login"],
+        "codex login",
+        "No supported terminal app was found. Run codex login manually in a terminal.",
+        "could not open Codex login terminal",
+        "Opened Codex login in a terminal.",
+    )
+}
+
+fn launch_codex_device_code_login(path_env: &str) -> Result<CodexLoginLaunchResult, AppError> {
+    launch_codex_terminal_login(
+        path_env,
+        CodexLoginMethod::DeviceCode,
+        &["login", "--device-auth"],
+        "codex login --device-auth",
+        "No supported terminal app was found. Run codex login --device-auth manually in a terminal.",
+        "could not open Codex device-code terminal",
+        "Opened Codex device-code login in a terminal.",
+    )
+}
+
+fn launch_codex_login(
+    input: CodexLoginLaunchInput,
+    path_env: &str,
+) -> Result<CodexLoginLaunchResult, AppError> {
+    match input.method {
+        CodexLoginMethod::Browser => launch_codex_browser_login(path_env),
+        CodexLoginMethod::DeviceCode => launch_codex_device_code_login(path_env),
+    }
 }
 
 fn codex_output_text(output: &std::process::Output) -> String {
@@ -1802,7 +2043,7 @@ fn codex_auth_mode(output_text: &str) -> Option<String> {
 }
 
 fn codex_doctor_warnings(path_env: &str) -> Vec<String> {
-    let Ok(output) = codex_command_output(path_env, &["doctor", "--json"], None) else {
+    let Ok(output) = codex_command_output(path_env, &["doctor", "--json"]) else {
         return vec![];
     };
     if output.status.success() {
@@ -1838,7 +2079,7 @@ fn preflight_codex_connection(
     }
 
     if let Some(executable_path) = executable_path_on_path(path_env, "codex") {
-        let login_status = codex_command_output(path_env, &["login", "status"], None);
+        let login_status = codex_command_output(path_env, &["login", "status"]);
         let Ok(login_output) = login_status else {
             return CodexConnectionPreflightResult {
                 checked_connection_id: reference.connection_id.clone(),
@@ -1848,7 +2089,7 @@ fn preflight_codex_connection(
                 executable_path: Some(executable_path.to_string_lossy().to_string()),
                 auth_mode: None,
                 reasons: vec![
-                    "Codex CLI is installed but not authenticated. Run codex login or use a Codex access token.".into(),
+                    "No authenticated Codex CLI session was detected. Run codex login in a terminal, or open Codex login from setup, then check again.".into(),
                 ],
                 warnings: vec![],
             };
@@ -1862,7 +2103,7 @@ fn preflight_codex_connection(
                 executable_path: Some(executable_path.to_string_lossy().to_string()),
                 auth_mode: None,
                 reasons: vec![
-                    "Codex CLI is installed but not authenticated. Run codex login or use a Codex access token.".into(),
+                    "No authenticated Codex CLI session was detected. Run codex login in a terminal, or open Codex login from setup, then check again.".into(),
                 ],
                 warnings: vec![],
             };
@@ -1972,76 +2213,351 @@ fn preflight_model_connection(
     }
 }
 
-fn login_codex_connection(
+fn preflight_model_provider(
+    input: &ModelProviderPreflightInput,
     path_env: &str,
-    method: &str,
-) -> Result<CodexConnectionReference, AppError> {
-    let args = match method {
-        "chatgpt" => vec!["login"],
-        "device" => vec!["login", "--device-auth"],
-        _ => {
-            return Err(AppError::Validation(
-                "method must be chatgpt or device".into(),
-            ))
-        }
+) -> Result<ModelConnectionPreflightResult, AppError> {
+    let provider_id = input.provider_id.trim();
+    let auth_method = if provider_id == "openai-api" {
+        "apiKeyEnv"
+    } else {
+        input.auth_method.trim()
     };
-    let output = codex_command_output(path_env, &args, None)?;
-    if !output.status.success() {
-        let text = codex_output_text(&output);
-        return Err(AppError::Validation(format!(
-            "Codex login failed: {}",
-            text.trim()
-        )));
-    }
-    Ok(CodexConnectionReference {
-        connection_id: "codex-cli".into(),
-        label: "Local Codex CLI".into(),
-        status: CodexConnectionStatus::AuthRequired,
-        last_preflight: None,
-    })
-}
-
-fn login_codex_connection_with_access_token(
-    path_env: &str,
-    access_token: &str,
-) -> Result<CodexConnectionReference, AppError> {
-    if access_token.trim().is_empty() {
-        return Err(AppError::Validation("accessToken is required".into()));
-    }
-    let output = codex_command_output(
-        path_env,
-        &["login", "--with-access-token"],
-        Some(access_token.trim()),
-    )?;
-    if !output.status.success() {
-        let text = codex_output_text(&output);
-        return Err(AppError::Validation(format!(
-            "Codex access token login failed: {}",
-            text.trim()
-        )));
-    }
-    Ok(CodexConnectionReference {
-        connection_id: "codex-cli".into(),
-        label: "Local Codex CLI".into(),
-        status: CodexConnectionStatus::AuthRequired,
-        last_preflight: None,
-    })
-}
-
-fn ensure_codex_connection_ready_for_run(
-    store: &LocalPersistenceStore,
-) -> Result<CodexConnectionReference, AppError> {
-    let Some(reference) = store.load_codex_connection()? else {
+    if !matches!(provider_id, "codex-cli" | "openai-api") {
         return Err(AppError::Validation(
-            "Codex connection is required before running a real repository task".into(),
-        ));
-    };
-    if reference.status != CodexConnectionStatus::Ready {
-        return Err(AppError::Validation(
-            "Codex connection check must pass before running a real repository task".into(),
+            "providerId must be codex-cli or openai-api".into(),
         ));
     }
-    Ok(reference)
+    if !model_auth_method_is_supported(provider_id, auth_method) {
+        return Err(AppError::Validation(
+            "authMethod is not supported for provider".into(),
+        ));
+    }
+
+    let reference = ModelConnectionReference {
+        provider_id: provider_id.into(),
+        provider_label: model_provider_label(provider_id).into(),
+        model_id: String::new(),
+        model_label: String::new(),
+        auth_method: auth_method.into(),
+        env_key: if provider_id == "openai-api" {
+            Some(
+                input
+                    .env_key
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|key| !key.is_empty())
+                    .unwrap_or("OPENAI_API_KEY")
+                    .to_string(),
+            )
+        } else {
+            None
+        },
+        supported_thinking_efforts: None,
+        default_thinking_effort: None,
+        status: ModelConnectionStatus::AuthRequired,
+        last_preflight: None,
+    };
+    Ok(preflight_model_connection(&reference, path_env))
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexModelCatalog {
+    models: Vec<CodexModelCatalogEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexModelCatalogEntry {
+    slug: String,
+    display_name: Option<String>,
+    description: Option<String>,
+    visibility: Option<String>,
+    priority: Option<i64>,
+    #[serde(
+        default,
+        alias = "supportedThinkingEfforts",
+        alias = "supported_reasoning_efforts",
+        alias = "reasoningEfforts"
+    )]
+    supported_thinking_efforts: Option<Vec<String>>,
+    #[serde(
+        default,
+        alias = "defaultThinkingEffort",
+        alias = "default_reasoning_effort",
+        alias = "defaultReasoningEffort"
+    )]
+    default_thinking_effort: Option<String>,
+}
+
+fn known_model_thinking_efforts(model_id: &str) -> (Option<Vec<String>>, Option<String>) {
+    match model_id {
+        "gpt-5.5" => (
+            Some(vec![
+                "none".into(),
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+            ]),
+            Some("medium".into()),
+        ),
+        "gpt-5.5-pro" => (
+            Some(vec!["medium".into(), "high".into(), "xhigh".into()]),
+            Some("high".into()),
+        ),
+        "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.4-nano" | "gpt-5.2" => (
+            Some(vec![
+                "none".into(),
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+            ]),
+            Some("none".into()),
+        ),
+        "gpt-5.4-pro" => (
+            Some(vec!["medium".into(), "high".into(), "xhigh".into()]),
+            Some("medium".into()),
+        ),
+        "gpt-5.1" => (
+            Some(vec![
+                "none".into(),
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+            ]),
+            Some("none".into()),
+        ),
+        "gpt-5" => (
+            Some(vec![
+                "minimal".into(),
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+            ]),
+            Some("medium".into()),
+        ),
+        "gpt-5-pro" => (Some(vec!["high".into()]), Some("high".into())),
+        _ => (None, None),
+    }
+}
+
+fn enrich_model_thinking_efforts(
+    model_id: &str,
+    supported: Option<Vec<String>>,
+    default_effort: Option<String>,
+) -> (Option<Vec<String>>, Option<String>) {
+    let supported = normalize_thinking_efforts(supported.as_deref());
+    let default_effort = normalize_optional_thinking_effort(default_effort.as_deref());
+    if supported.is_some() || default_effort.is_some() {
+        return (supported, default_effort);
+    }
+    known_model_thinking_efforts(model_id)
+}
+
+fn parse_codex_model_catalog(raw: &str) -> Result<Vec<ModelCatalogOption>, AppError> {
+    let catalog: CodexModelCatalog = serde_json::from_str(raw).map_err(|error| {
+        AppError::Validation(format!("could not parse Codex model catalog: {error}"))
+    })?;
+    let mut entries = catalog
+        .models
+        .into_iter()
+        .filter(|model| model.visibility.as_deref() == Some("list"))
+        .filter(|model| !model.slug.trim().is_empty())
+        .map(|model| {
+            let id = model.slug.trim().to_string();
+            let label = model
+                .display_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .unwrap_or(&id)
+                .to_string();
+            let (supported_thinking_efforts, default_thinking_effort) =
+                enrich_model_thinking_efforts(
+                    &id,
+                    model.supported_thinking_efforts,
+                    model.default_thinking_effort,
+                );
+            (
+                model.priority.unwrap_or(i64::MAX),
+                label.clone(),
+                ModelCatalogOption {
+                    id: id.clone(),
+                    label,
+                    description: model.description,
+                    owned_by: None,
+                    source: "codex-cli".into(),
+                    supported_thinking_efforts,
+                    default_thinking_effort,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    Ok(entries.into_iter().map(|(_, _, option)| option).collect())
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelsResponse {
+    data: Vec<OpenAiModelEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelEntry {
+    id: String,
+    owned_by: Option<String>,
+}
+
+fn parse_openai_model_catalog(raw: &str) -> Result<Vec<ModelCatalogOption>, AppError> {
+    let response: OpenAiModelsResponse = serde_json::from_str(raw).map_err(|error| {
+        AppError::Validation(format!("could not parse OpenAI model catalog: {error}"))
+    })?;
+    let mut models = response
+        .data
+        .into_iter()
+        .filter(|model| !model.id.trim().is_empty())
+        .filter(|model| openai_model_id_is_supported_for_repository_runs(&model.id))
+        .map(|model| {
+            let id = model.id.trim().to_string();
+            let (supported_thinking_efforts, default_thinking_effort) =
+                enrich_model_thinking_efforts(&id, None, None);
+            ModelCatalogOption {
+                label: id.clone(),
+                id,
+                description: None,
+                owned_by: model.owned_by,
+                source: "openai-api".into(),
+                supported_thinking_efforts,
+                default_thinking_effort,
+            }
+        })
+        .collect::<Vec<_>>();
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(models)
+}
+
+fn openai_model_id_is_supported_for_repository_runs(model_id: &str) -> bool {
+    let model_id = model_id.trim().to_lowercase();
+    if model_id.is_empty() {
+        return false;
+    }
+    ![
+        "audio-",
+        "babbage",
+        "dall-e",
+        "davinci",
+        "embedding",
+        "image-",
+        "omni-moderation",
+        "text-embedding-",
+        "tts-",
+        "whisper-",
+    ]
+    .iter()
+    .any(|prefix| model_id.starts_with(prefix))
+}
+
+fn openai_model_catalog_timeout() -> Duration {
+    Duration::from_secs(10)
+}
+
+async fn fetch_openai_model_catalog(env_key: &str) -> Result<Vec<ModelCatalogOption>, AppError> {
+    let api_key = std::env::var(env_key).map_err(|_| {
+        AppError::Validation(format!(
+            "{env_key} is not set. Set it in your shell before fetching OpenAI API models."
+        ))
+    })?;
+    if api_key.trim().is_empty() {
+        return Err(AppError::Validation(format!(
+            "{env_key} is not set. Set it in your shell before fetching OpenAI API models."
+        )));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(openai_model_catalog_timeout())
+        .build()
+        .map_err(|error| {
+            AppError::Validation(format!("could not create OpenAI model list client: {error}"))
+        })?;
+
+    let response = client
+        .get("https://api.openai.com/v1/models")
+        .bearer_auth(api_key.trim())
+        .send()
+        .await
+        .map_err(|error| {
+            AppError::Validation(format!("OpenAI model list request failed: {error}"))
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(AppError::Validation(format!(
+            "OpenAI model list request failed with HTTP {status}."
+        )));
+    }
+    let raw = response.text().await.map_err(|error| {
+        AppError::Validation(format!(
+            "could not read OpenAI model list response: {error}"
+        ))
+    })?;
+    parse_openai_model_catalog(&raw)
+}
+
+async fn list_provider_models(
+    input: ModelCatalogListInput,
+    path_env: &str,
+) -> Result<ModelCatalogResult, AppError> {
+    let provider_id = input.provider_id.trim();
+    let models =
+        match provider_id {
+            "codex-cli" => {
+                let reference = CodexConnectionReference {
+                    connection_id: "codex-cli".into(),
+                    label: "Local Codex CLI".into(),
+                    status: CodexConnectionStatus::AuthRequired,
+                    last_preflight: None,
+                };
+                let preflight = preflight_codex_connection(&reference, path_env);
+                if !preflight.ready {
+                    return Err(AppError::Validation(
+                        preflight.reasons.first().cloned().unwrap_or_else(|| {
+                            "Authenticate Codex CLI before fetching models.".into()
+                        }),
+                    ));
+                }
+                let output = codex_command_output(path_env, &["debug", "models"])?;
+                if !output.status.success() {
+                    let text = codex_output_text(&output);
+                    return Err(AppError::Validation(format!(
+                        "Codex model catalog failed: {}",
+                        text.trim()
+                    )));
+                }
+                parse_codex_model_catalog(&String::from_utf8_lossy(&output.stdout))?
+            }
+            "openai-api" => {
+                let env_key = input
+                    .env_key
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|key| !key.is_empty())
+                    .unwrap_or("OPENAI_API_KEY");
+                fetch_openai_model_catalog(env_key).await?
+            }
+            _ => {
+                return Err(AppError::Validation(
+                    "providerId must be codex-cli or openai-api".into(),
+                ))
+            }
+        };
+
+    Ok(ModelCatalogResult {
+        provider_id: provider_id.into(),
+        fetched_at: now_iso_like(),
+        models,
+        source: "live".into(),
+        warnings: vec![],
+    })
 }
 
 fn ensure_model_connection_ready_for_run(
@@ -2105,27 +2621,6 @@ fn validate_create_run(input: &CreateRunInput) -> Result<(), AppError> {
     Ok(())
 }
 
-fn validate_repository_path(repository_path: Option<&str>) -> Result<PathBuf, AppError> {
-    let repository_path = repository_path
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            AppError::Validation(
-                "repositoryPath must point to a selected local git repository".into(),
-            )
-        })?;
-    let canonical = Path::new(repository_path).canonicalize().map_err(|_| {
-        AppError::Validation("repositoryPath must point to a selected local git repository".into())
-    })?;
-    if !canonical.is_dir() || canonical.parent().is_none() || !canonical.join(".git").exists() {
-        return Err(AppError::Validation(
-            "repositoryPath must point to a selected local git repository".into(),
-        ));
-    }
-
-    Ok(canonical)
-}
-
 fn find_git_repository_root(start: &Path) -> Option<PathBuf> {
     let mut current = if start.is_file() {
         start.parent()?.to_path_buf()
@@ -2133,13 +2628,70 @@ fn find_git_repository_root(start: &Path) -> Option<PathBuf> {
         start.to_path_buf()
     };
     loop {
-        if current.join(".git").exists() && current.parent().is_some() {
+        let marker = current.join(".git");
+        if marker.is_dir() || marker.is_file() {
             return Some(current);
         }
         if !current.pop() {
             return None;
         }
     }
+}
+
+fn validate_repository_path(repository_path: Option<&str>) -> Result<PathBuf, AppError> {
+    let repository_path = repository_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::Validation("repositoryPath must point to a selected local directory".into())
+        })?;
+    let canonical = Path::new(repository_path).canonicalize().map_err(|_| {
+        AppError::Validation("repositoryPath must point to a selected local directory".into())
+    })?;
+    let directory = if canonical.is_file() {
+        canonical.parent().map(Path::to_path_buf).ok_or_else(|| {
+            AppError::Validation("repositoryPath must point to a selected local directory".into())
+        })?
+    } else {
+        canonical
+    };
+    if !directory.is_dir() || directory.parent().is_none() {
+        return Err(AppError::Validation(
+            "repositoryPath must point to a selected local directory".into(),
+        ));
+    }
+
+    Ok(find_git_repository_root(&directory).unwrap_or(directory))
+}
+
+fn normalize_default_repository_path(repository_path: &str) -> Result<String, AppError> {
+    let trimmed = repository_path.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    validate_repository_path(Some(trimmed)).map(|path| path.to_string_lossy().to_string())
+}
+
+fn detect_current_local_directory(start: &Path) -> Option<PathBuf> {
+    let canonical = start.canonicalize().ok()?;
+    let directory = if canonical.is_file() {
+        canonical.parent()?.to_path_buf()
+    } else {
+        canonical
+    };
+
+    let selected = find_git_repository_root(&directory).unwrap_or(directory);
+    if selected.is_dir() && selected.parent().is_some() {
+        Some(selected)
+    } else {
+        None
+    }
+}
+
+fn detect_default_repository_path(current_dir: &Path, env_repository_path: Option<&str>) -> Option<PathBuf> {
+    env_repository_path
+        .and_then(|repository_path| validate_repository_path(Some(repository_path)).ok())
+        .or_else(|| detect_current_local_directory(current_dir))
 }
 
 fn is_desktop_repository_runner_root(root: &Path) -> bool {
@@ -2172,6 +2724,8 @@ fn find_repository_root(start: &Path) -> Option<PathBuf> {
 fn packaged_repository_runner_root(executable_path: &Path) -> Option<PathBuf> {
     let binary_dir = executable_path.parent()?;
     let candidates = [
+        binary_dir.join("orynt-runner"),
+        binary_dir.join("../orynt-runner"),
         binary_dir.join("codepawl-runner"),
         binary_dir.join("../codepawl-runner"),
     ];
@@ -2181,11 +2735,11 @@ fn packaged_repository_runner_root(executable_path: &Path) -> Option<PathBuf> {
 }
 
 fn resolve_desktop_repository_runner() -> Result<(PathBuf, PathBuf), AppError> {
-    if let Ok(script_path) = std::env::var("CODEPAWL_DESKTOP_REPOSITORY_RUNNER") {
+    if let Ok(script_path) = std::env::var("ORYNT_DESKTOP_REPOSITORY_RUNNER") {
         let script = PathBuf::from(script_path);
         let root = find_repository_root(&script).ok_or_else(|| {
             AppError::RepositoryRun(
-                "could not locate CodePawl repository root for desktop repository runner".into(),
+                "could not locate Orynt repository root for desktop repository runner".into(),
             )
         })?;
         return Ok((root, script));
@@ -2218,10 +2772,108 @@ fn resolve_desktop_repository_runner() -> Result<(PathBuf, PathBuf), AppError> {
     ))
 }
 
+fn resolve_desktop_skill_manager() -> Result<(PathBuf, PathBuf), AppError> {
+    if let Ok(script_path) = std::env::var("ORYNT_DESKTOP_SKILL_MANAGER") {
+        let script = PathBuf::from(script_path);
+        if !script.is_file() {
+            return Err(AppError::SkillManager(
+                "configured desktop skill manager script does not exist".into(),
+            ));
+        }
+        let root = find_repository_root(&script).ok_or_else(|| {
+            AppError::SkillManager(
+                "could not locate Orynt runner root for desktop skill manager".into(),
+            )
+        })?;
+        return Ok((root, script));
+    }
+
+    let (root, _) = resolve_desktop_repository_runner()
+        .map_err(|error| AppError::SkillManager(error.to_string()))?;
+    let script = root.join("scripts").join("desktop-skill-manager.mjs");
+    if !script.is_file() {
+        return Err(AppError::SkillManager(
+            "could not locate scripts/desktop-skill-manager.mjs".into(),
+        ));
+    }
+    Ok((root, script))
+}
+
+fn resolve_desktop_memory_manager() -> Result<(PathBuf, PathBuf), AppError> {
+    if let Ok(script_path) = std::env::var("ORYNT_DESKTOP_MEMORY_MANAGER") {
+        let script = PathBuf::from(script_path);
+        if !script.is_file() {
+            return Err(AppError::MemoryManager(
+                "configured desktop memory manager script does not exist".into(),
+            ));
+        }
+        let root = find_repository_root(&script).ok_or_else(|| {
+            AppError::MemoryManager(
+                "could not locate Orynt runner root for desktop memory manager".into(),
+            )
+        })?;
+        return Ok((root, script));
+    }
+
+    let (root, _) = resolve_desktop_repository_runner()
+        .map_err(|error| AppError::MemoryManager(error.to_string()))?;
+    let script = root.join("scripts").join("desktop-memory-manager.mjs");
+    if !script.is_file() {
+        return Err(AppError::MemoryManager(
+            "could not locate scripts/desktop-memory-manager.mjs".into(),
+        ));
+    }
+    Ok((root, script))
+}
+
 fn run_data_root(app: &AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("codepawl-desktop"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("orynt-desktop"))
+}
+
+fn orynt_skill_state_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("ORYNT_STATE_HOME").filter(|value| !value.is_empty()) {
+        return PathBuf::from(root).join("skills");
+    }
+    if let Some(root) = std::env::var_os("XDG_STATE_HOME").filter(|value| !value.is_empty()) {
+        return PathBuf::from(root).join("orynt").join("skills");
+    }
+    real_user_home()
+        .unwrap_or_else(std::env::temp_dir)
+        .join(".local")
+        .join("state")
+        .join("orynt")
+        .join("skills")
+}
+
+fn user_skill_root() -> Result<PathBuf, AppError> {
+    real_user_home()
+        .map(|home| home.join(".agents").join("skills"))
+        .ok_or_else(|| AppError::SkillManager("could not resolve the operating-system user home".into()))
+}
+
+fn build_desktop_repository_run_request(
+    input: &CreateRunInput,
+    repository_path: &Path,
+    data_root: &Path,
+    model_connection: &ModelConnectionReference,
+    thinking_effort: &str,
+    skill_context: Option<serde_json::Value>,
+) -> DesktopRepositoryRunRequest {
+    DesktopRepositoryRunRequest {
+        goal: input.goal.clone(),
+        task_id: input.task_id.clone(),
+        workspace_id: input.workspace_id.clone(),
+        repository_path: repository_path.to_string_lossy().to_string(),
+        sandbox_root: data_root.join("sandboxes").to_string_lossy().to_string(),
+        artifact_root: data_root.join("artifacts").to_string_lossy().to_string(),
+        memory_root: data_root.join("memory").to_string_lossy().to_string(),
+        budget: input.budget.clone(),
+        model_connection: model_connection.clone(),
+        thinking_effort: thinking_effort.to_string(),
+        skill_context,
+    }
 }
 
 fn persistence_store(app: &AppHandle) -> LocalPersistenceStore {
@@ -2340,12 +2992,7 @@ fn persisted_run_from_output(
         memory_candidates: manifest_memory_candidates(&manifest),
         skills: manifest_skills(&skill_replay_plan),
         skill_replay_plan,
-        model_connection: settings.model_connection.or_else(|| {
-            settings
-                .codex_connection
-                .as_ref()
-                .map(model_connection_from_codex_connection)
-        }),
+        model_connection: settings.model_connection,
         codex_connection: settings.codex_connection,
         created_at: now.clone(),
         updated_at: now,
@@ -2356,21 +3003,23 @@ fn run_desktop_repository_sidecar(
     app: &AppHandle,
     input: &CreateRunInput,
     repository_path: &Path,
+    model_connection: &ModelConnectionReference,
+    thinking_effort: &str,
+    skill_context: Option<serde_json::Value>,
 ) -> Result<DesktopRepositoryRunOutput, AppError> {
     let (repo_root, script_path) = resolve_desktop_repository_runner()?;
     let loader_path = repo_root
         .join("scripts")
         .join("register-extensionless-esm-loader.mjs");
     let data_root = run_data_root(app);
-    let request = DesktopRepositoryRunRequest {
-        goal: input.goal.clone(),
-        task_id: input.task_id.clone(),
-        workspace_id: input.workspace_id.clone(),
-        repository_path: repository_path.to_string_lossy().to_string(),
-        sandbox_root: data_root.join("sandboxes").to_string_lossy().to_string(),
-        artifact_root: data_root.join("artifacts").to_string_lossy().to_string(),
-        memory_root: data_root.join("memory").to_string_lossy().to_string(),
-    };
+    let request = build_desktop_repository_run_request(
+        input,
+        repository_path,
+        &data_root,
+        model_connection,
+        thinking_effort,
+        skill_context,
+    );
     let request_json = serde_json::to_string(&request).map_err(|error| {
         AppError::RepositoryRun(format!("could not encode run request: {error}"))
     })?;
@@ -2393,18 +3042,53 @@ fn run_desktop_repository_sidecar(
         })?;
     }
 
-    let output = child.wait_with_output().map_err(|error| {
+    let stdout = child.stdout.take().ok_or_else(|| {
+        AppError::RepositoryRun("repository runner stdout was unavailable".into())
+    })?;
+    let stderr = child.stderr.take().ok_or_else(|| {
+        AppError::RepositoryRun("repository runner stderr was unavailable".into())
+    })?;
+    let stdout_thread = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut reader = BufReader::new(stdout);
+        let _ = reader.read_to_end(&mut bytes);
+        bytes
+    });
+    let app_for_events = app.clone();
+    let stderr_thread = std::thread::spawn(move || {
+        let mut stderr_text = String::new();
+        for line in BufReader::new(stderr).lines() {
+            let Ok(line) = line else {
+                continue;
+            };
+            if let Some(event_json) = line.strip_prefix("ORYNT_RUN_EVENT ") {
+                if let Ok(event) = serde_json::from_str::<serde_json::Value>(event_json) {
+                    let _ = app_for_events.emit("run_event", event);
+                }
+            } else {
+                stderr_text.push_str(&line);
+                stderr_text.push('\n');
+            }
+        }
+        stderr_text
+    });
+
+    let status = child.wait().map_err(|error| {
         AppError::RepositoryRun(format!("repository runner did not finish: {error}"))
     })?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = stdout_thread.join().map_err(|_| {
+        AppError::RepositoryRun("repository runner stdout reader failed".into())
+    })?;
+    let stderr = stderr_thread.join().map_err(|_| {
+        AppError::RepositoryRun("repository runner stderr reader failed".into())
+    })?;
+    if !status.success() {
         return Err(AppError::RepositoryRun(stderr.trim().to_string()));
     }
 
-    let output: DesktopRepositoryRunOutput =
-        serde_json::from_slice(&output.stdout).map_err(|error| {
-            AppError::RepositoryRun(format!("could not parse repository runner output: {error}"))
-        })?;
+    let output: DesktopRepositoryRunOutput = serde_json::from_slice(&stdout).map_err(|error| {
+        AppError::RepositoryRun(format!("could not parse repository runner output: {error}"))
+    })?;
     if output.event_count != output.events.len()
         || output.status.trim().is_empty()
         || output.artifact_root.trim().is_empty()
@@ -2416,6 +3100,182 @@ fn run_desktop_repository_sidecar(
     }
 
     Ok(output)
+}
+
+fn run_skill_manager_sidecar(
+    app: &AppHandle,
+    operation: &str,
+    mut input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    if operation.trim().is_empty()
+        || !operation
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+    {
+        return Err(AppError::Validation(
+            "skill manager operation is invalid".into(),
+        ));
+    }
+
+    let (runner_root, script_path) = resolve_desktop_skill_manager()?;
+    let loader_path = runner_root
+        .join("scripts")
+        .join("register-extensionless-esm-loader.mjs");
+    let manager_root = orynt_skill_state_root();
+    let shared_skill_root = user_skill_root()?;
+    if let Some(input_object) = input.as_object_mut() {
+        if !input_object.contains_key("repositoryPath") {
+            let settings = persistence_store(app).load_settings()?;
+            if !settings.default_repository_path.trim().is_empty() {
+                input_object.insert(
+                    "repositoryPath".into(),
+                    serde_json::Value::String(settings.default_repository_path),
+                );
+            }
+        }
+    }
+    let request = serde_json::json!({
+        "schemaVersion": 1,
+        "operation": operation,
+        "input": input,
+        "managerRoot": manager_root,
+        "userSkillRoot": shared_skill_root,
+    });
+    let request_json = serde_json::to_vec(&request).map_err(|error| {
+        AppError::SkillManager(format!("could not encode skill manager request: {error}"))
+    })?;
+
+    let mut command = Command::new("node");
+    apply_real_user_home_env(&mut command);
+    let mut child = command
+        .arg("--import")
+        .arg(&loader_path)
+        .arg(&script_path)
+        .current_dir(runner_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            AppError::SkillManager(format!("could not start skill manager sidecar: {error}"))
+        })?;
+
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| AppError::SkillManager("skill manager stdin was unavailable".into()))?
+        .write_all(&request_json)
+        .map_err(|error| {
+            AppError::SkillManager(format!("could not write skill manager request: {error}"))
+        })?;
+
+    let output = child.wait_with_output().map_err(|error| {
+        AppError::SkillManager(format!("could not read skill manager result: {error}"))
+    })?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let detail = stderr.trim();
+        return Err(AppError::SkillManager(if detail.is_empty() {
+            "skill manager sidecar failed without diagnostics".into()
+        } else {
+            detail.chars().take(4_096).collect()
+        }));
+    }
+    if output.stdout.len() > 4 * 1024 * 1024 {
+        return Err(AppError::SkillManager(
+            "skill manager response exceeded the 4 MiB limit".into(),
+        ));
+    }
+
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        AppError::SkillManager(format!("could not parse skill manager response: {error}"))
+    })?;
+    if let Some(events) = response.get("events").and_then(serde_json::Value::as_array) {
+        for event in events {
+            let _ = app.emit("skill_manager_event", event.clone());
+        }
+    }
+    response
+        .get("result")
+        .cloned()
+        .ok_or_else(|| AppError::SkillManager("skill manager response did not include result".into()))
+}
+
+fn run_memory_manager_sidecar(
+    app: &AppHandle,
+    operation: &str,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    if operation.trim().is_empty()
+        || !operation
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character == '.')
+    {
+        return Err(AppError::Validation(
+            "memory manager operation is invalid".into(),
+        ));
+    }
+
+    let (runner_root, script_path) = resolve_desktop_memory_manager()?;
+    let loader_path = runner_root
+        .join("scripts")
+        .join("register-extensionless-esm-loader.mjs");
+    let request = serde_json::json!({
+        "schemaVersion": 1,
+        "operation": operation,
+        "input": input,
+        "memoryRoot": run_data_root(app).join("memory"),
+    });
+    let request_json = serde_json::to_vec(&request).map_err(|error| {
+        AppError::MemoryManager(format!("could not encode memory manager request: {error}"))
+    })?;
+
+    let mut command = Command::new("node");
+    apply_real_user_home_env(&mut command);
+    let mut child = command
+        .arg("--import")
+        .arg(&loader_path)
+        .arg(&script_path)
+        .current_dir(runner_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            AppError::MemoryManager(format!("could not start memory manager sidecar: {error}"))
+        })?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| AppError::MemoryManager("memory manager stdin was unavailable".into()))?
+        .write_all(&request_json)
+        .map_err(|error| {
+            AppError::MemoryManager(format!("could not write memory manager request: {error}"))
+        })?;
+
+    let output = child.wait_with_output().map_err(|error| {
+        AppError::MemoryManager(format!("could not read memory manager result: {error}"))
+    })?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::MemoryManager(if detail.trim().is_empty() {
+            "memory manager sidecar failed without diagnostics".into()
+        } else {
+            detail.trim().chars().take(4_096).collect()
+        }));
+    }
+    if output.stdout.len() > 4 * 1024 * 1024 {
+        return Err(AppError::MemoryManager(
+            "memory manager response exceeded the 4 MiB limit".into(),
+        ));
+    }
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        AppError::MemoryManager(format!("could not parse memory manager response: {error}"))
+    })?;
+    response
+        .get("result")
+        .cloned()
+        .ok_or_else(|| AppError::MemoryManager("memory manager response did not include result".into()))
 }
 
 fn validate_candidate_rule_status_update(
@@ -2505,8 +3365,8 @@ fn mock_codex_execution_preview(
         "planId": plan_id,
         "status": status,
         "command": "codex exec --json --ephemeral --sandbox workspace-write",
-        "contractArtifact": format!("codepawl-artifact://{run_id}/codex-contract.md"),
-        "artifactRoot": format!("codepawl-artifact://{run_id}/execution/"),
+        "contractArtifact": format!("orynt-artifact://{run_id}/codex-contract.md"),
+        "artifactRoot": format!("orynt-artifact://{run_id}/execution/"),
         "blockedReasons": blocked_reasons,
         "approvalRequired": status == "approval_required",
         "resultReady": status == "result_ready",
@@ -2519,155 +3379,8 @@ fn memory_namespace() -> serde_json::Value {
     serde_json::json!({
         "capabilityId": "coding-apprentice",
         "workspaceId": "workspace-local-alpha",
-        "repositoryPath": "/repos/codepawl",
+        "repositoryPath": "/repos/orynt",
     })
-}
-
-fn memory_provenance(run_id: &str) -> serde_json::Value {
-    serde_json::json!({
-        "runId": run_id,
-        "taskId": "task-failing-unit-test",
-        "eventIds": [format!("{run_id}-event-30"), format!("{run_id}-event-34")],
-        "artifactRefs": [
-            {
-                "id": "mock-memory-episode",
-                "kind": "memory_episode",
-                "uri": format!("codepawl-artifact://{run_id}/memory/memory-store.json#episode"),
-                "label": "Episodic memory item",
-                "sha256": "mock-memory-episode-sha256",
-            },
-            {
-                "id": "mock-candidate-rule",
-                "kind": "candidate_rule",
-                "uri": format!("codepawl-artifact://{run_id}/memory/memory-store.json#candidate-rule"),
-                "label": "Candidate project rule",
-                "sha256": "mock-candidate-rule-sha256",
-            },
-        ],
-        "sources": ["verification_result", "import_summary", "run_event"],
-        "sourceTimestamps": ["2026-06-26T00:00:00.000Z"],
-        "verificationResultId": "mock-verification-result",
-        "importBundleId": "mock-codex-result-import",
-    })
-}
-
-fn mock_memory_episode(run_id: &str) -> serde_json::Value {
-    serde_json::json!({
-        "id": "episode-latest-successful-run",
-        "namespace": memory_namespace(),
-        "kind": "run_episode",
-        "summary": "Latest successful run episode: verifier passed after a package-only imported correction.",
-        "content": {
-            "status": "pass",
-            "changedFiles": ["packages/shared/src/index.ts"],
-            "redactedNote": "[REDACTED]",
-        },
-        "provenance": memory_provenance(run_id),
-        "retention": { "ttlDays": 30, "archiveAfterDays": 90 },
-        "redaction": { "applied": true, "redactedPaths": ["content.redactedNote"], "redactionCount": 1 },
-        "confidence": 1,
-        "createdAt": "2026-06-26T00:00:00.000Z",
-    })
-}
-
-fn mock_candidate_rule(
-    id: &str,
-    title: &str,
-    rule: &str,
-    evidence_kind: &str,
-    evidence_summary: &str,
-    confidence: f64,
-    status: &str,
-    run_id: &str,
-    redacted: bool,
-    superseded_by: Option<&str>,
-) -> serde_json::Value {
-    serde_json::json!({
-        "id": id,
-        "namespace": memory_namespace(),
-        "status": status,
-        "title": title,
-        "rule": rule,
-        "scope": {
-            "repositoryPath": "/repos/codepawl",
-            "allowedPaths": ["apps/desktop/**", "packages/**"],
-            "protectedPaths": [".env", "pnpm-lock.yaml"],
-        },
-        "evidence": [
-            {
-                "kind": evidence_kind,
-                "summary": evidence_summary,
-                "eventIds": [format!("{run_id}-event-30")],
-                "artifactRefs": [
-                    {
-                        "id": "mock-candidate-rule",
-                        "kind": "candidate_rule",
-                        "uri": format!("codepawl-artifact://{run_id}/memory/memory-store.json#candidate-rule"),
-                        "label": "Candidate project rule",
-                        "sha256": "mock-candidate-rule-sha256",
-                    }
-                ],
-                "confidence": confidence,
-            }
-        ],
-        "provenance": memory_provenance(run_id),
-        "redaction": {
-            "applied": redacted,
-            "redactedPaths": if redacted { vec!["rule", "evidence[0].summary"] } else { vec![] },
-            "redactionCount": if redacted { 2 } else { 0 },
-        },
-        "createdAt": "2026-06-26T00:00:00.000Z",
-        "updatedAt": "2026-06-26T00:00:00.000Z",
-        "supersededBy": superseded_by,
-    })
-}
-
-fn mock_candidate_rules(
-    statuses: &HashMap<String, CandidateRuleReviewStatus>,
-) -> Vec<serde_json::Value> {
-    let run_id = "run-1";
-    let package_status = statuses
-        .get("candidate-rule-package-scope")
-        .map(CandidateRuleReviewStatus::as_str)
-        .unwrap_or("candidate");
-    let redacted_status = statuses
-        .get("candidate-rule-redacted-log")
-        .map(CandidateRuleReviewStatus::as_str)
-        .unwrap_or("candidate");
-    vec![
-        mock_candidate_rule(
-            "candidate-rule-package-scope",
-            "Keep package fixes scoped",
-            "Keep source-only fixes under packages/** unless the contract says otherwise.",
-            "allowed_scope_pattern",
-            "Verifier passed after changed files stayed inside packages/**.",
-            0.86,
-            package_status,
-            run_id,
-            false,
-            if package_status == "superseded" {
-                Some("candidate-rule-replacement-demo")
-            } else {
-                None
-            },
-        ),
-        mock_candidate_rule(
-            "candidate-rule-redacted-log",
-            "Avoid secret-bearing logs",
-            "Do not persist imported manual logs containing [REDACTED]; keep only redacted summaries and artifact references.",
-            "command_observation",
-            "Manual import evidence contained [REDACTED] and was redacted before display.",
-            0.78,
-            redacted_status,
-            run_id,
-            true,
-            if redacted_status == "superseded" {
-                Some("candidate-rule-replacement-demo")
-            } else {
-                None
-            },
-        ),
-    ]
 }
 
 fn mock_skill(
@@ -2738,7 +3451,7 @@ fn mock_skill(
                 {
                     "id": "mock-skill-definition",
                     "kind": "skill_definition",
-                    "uri": format!("codepawl-artifact://{run_id}/skills/skill-package-scope.json"),
+                    "uri": format!("orynt-artifact://{run_id}/skills/skill-package-scope.json"),
                     "label": "Candidate skill definition",
                     "sha256": "mock-skill-definition-sha256",
                 }
@@ -2887,7 +3600,7 @@ fn mock_skill_replay_plan(skill: &serde_json::Value, run_id: &str) -> serde_json
             {
                 "id": format!("skill-replay-plan-{skill_id}"),
                 "kind": "skill_replay_plan",
-                "uri": format!("codepawl-artifact://{run_id}/skills/{skill_id}-replay-plan.json"),
+                "uri": format!("orynt-artifact://{run_id}/skills/{skill_id}-replay-plan.json"),
                 "label": "Skill replay dry-run plan",
             }
         ],
@@ -2932,8 +3645,34 @@ async fn run_create(
     validate_create_run(&input)?;
     let repository_path = validate_repository_path(input.repository_path.as_deref())?;
     let store = persistence_store(&app);
-    let _model_connection = ensure_model_connection_ready_for_run(&store)?;
-    let output = run_desktop_repository_sidecar(&app, &input, &repository_path)?;
+    let model_connection = ensure_model_connection_ready_for_run(&store)?;
+    let thinking_effort = store.load_settings()?.thinking_effort;
+    let skill_context = if input.selected_skill_ids.is_empty() {
+        None
+    } else {
+        Some(run_skill_manager_sidecar(
+            &app,
+            "context.snapshot",
+            serde_json::json!({
+                "runId": input.task_id.clone(),
+                "skillIds": input.selected_skill_ids.clone(),
+                "repositoryPath": repository_path.to_string_lossy(),
+            }),
+        )?
+        .get("context")
+        .cloned()
+        .ok_or_else(|| {
+            AppError::SkillManager("skill context snapshot was incomplete".into())
+        })?)
+    };
+    let output = run_desktop_repository_sidecar(
+        &app,
+        &input,
+        &repository_path,
+        &model_connection,
+        &thinking_effort,
+        skill_context,
+    )?;
     let persisted_run = persisted_run_from_output(&app, &input, &repository_path, &output)?;
     store.save_run(&persisted_run)?;
 
@@ -3032,37 +3771,44 @@ async fn approval_respond(app: AppHandle, input: ApprovalDecisionInput) -> Resul
 }
 
 #[tauri::command]
-async fn memory_list_episodes() -> Result<Vec<serde_json::Value>, AppError> {
-    Ok(vec![mock_memory_episode("run-1")])
+async fn memory_list_episodes(app: AppHandle) -> Result<Vec<serde_json::Value>, AppError> {
+    let result = run_memory_manager_sidecar(&app, "episode.list", serde_json::json!({
+        "query": {}
+    }))?;
+    serde_json::from_value(result).map_err(|error| {
+        AppError::MemoryManager(format!("memory episode list was invalid: {error}"))
+    })
 }
 
 #[tauri::command]
 async fn memory_list_candidate_rules(
-    state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<Vec<serde_json::Value>, AppError> {
-    let statuses = state
-        .candidate_rule_statuses
-        .lock()
-        .map_err(|_| AppError::StateLock)?;
-
-    Ok(mock_candidate_rules(&statuses))
+    let result = run_memory_manager_sidecar(&app, "rule.list", serde_json::json!({
+        "query": {}
+    }))?;
+    serde_json::from_value(result).map_err(|error| {
+        AppError::MemoryManager(format!("candidate rule list was invalid: {error}"))
+    })
 }
 
 #[tauri::command]
 async fn memory_update_candidate_rule_status(
     app: AppHandle,
-    state: State<'_, AppState>,
     input: CandidateRuleStatusUpdateInput,
 ) -> Result<serde_json::Value, AppError> {
     validate_candidate_rule_status_update(&input)?;
-
-    {
-        let mut statuses = state
-            .candidate_rule_statuses
-            .lock()
-            .map_err(|_| AppError::StateLock)?;
-        statuses.insert(input.id.clone(), input.status.clone());
-    }
+    let updated = run_memory_manager_sidecar(
+        &app,
+        "rule.status",
+        serde_json::json!({
+            "id": input.id.clone(),
+            "status": input.status.as_str(),
+            "options": {
+                "supersededBy": input.superseded_by.clone(),
+            },
+        }),
+    )?;
 
     let run_id = input.run_id.clone().unwrap_or_else(|| "run-1".into());
     let event_type = candidate_rule_review_event_type(&input.status);
@@ -3086,23 +3832,6 @@ async fn memory_update_candidate_rule_status(
         },
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
-
-    let statuses = state
-        .candidate_rule_statuses
-        .lock()
-        .map_err(|_| AppError::StateLock)?;
-    let rule = mock_candidate_rules(&statuses)
-        .into_iter()
-        .find(|rule| rule.get("id").and_then(serde_json::Value::as_str) == Some(input.id.as_str()))
-        .ok_or_else(|| AppError::Validation("candidate rule not found".into()))?;
-    let mut updated = rule;
-    if input.status == CandidateRuleReviewStatus::Superseded {
-        updated["supersededBy"] = serde_json::Value::String(
-            input
-                .superseded_by
-                .unwrap_or_else(|| "candidate-rule-replacement-demo".into()),
-        );
-    }
 
     Ok(updated)
 }
@@ -3138,7 +3867,7 @@ async fn skill_create_candidate(app: AppHandle) -> Result<serde_json::Value, App
             artifacts: vec![serde_json::json!({
                 "id": "mock-skill-definition",
                 "kind": "skill_definition",
-                "uri": format!("codepawl-artifact://{run_id}/skills/skill-package-scope.json"),
+                "uri": format!("orynt-artifact://{run_id}/skills/skill-package-scope.json"),
                 "label": "Candidate skill definition",
                 "sha256": "mock-skill-definition-sha256",
             })],
@@ -3323,6 +4052,122 @@ async fn skill_create_replay_plan(
     Ok(plan)
 }
 
+fn skill_manager_input(input: Option<serde_json::Value>) -> serde_json::Value {
+    input.unwrap_or_else(|| serde_json::json!({}))
+}
+
+#[tauri::command]
+async fn skill_inventory_scan(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "inventory.scan", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_inventory_list(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "inventory.list", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_inventory_get(
+    app: AppHandle,
+    skill_id: String,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(
+        &app,
+        "inventory.get",
+        serde_json::json!({ "skillId": skill_id }),
+    )
+}
+
+#[tauri::command]
+async fn skill_hub_list_sources(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "hub.listSources", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_hub_refresh(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "hub.refresh", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_hub_search(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "hub.search", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_hub_get(
+    app: AppHandle,
+    skill_id: String,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(
+        &app,
+        "hub.get",
+        serde_json::json!({ "skillId": skill_id }),
+    )
+}
+
+#[tauri::command]
+async fn skill_mutation_plan(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.plan", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_mutation_approve(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.approve", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_mutation_execute(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.execute", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_mutation_history(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.history", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_mutation_recover(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.recover", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_context_snapshot(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "context.snapshot", skill_manager_input(input))
+}
+
 #[tauri::command]
 async fn codex_execution_approve(
     app: AppHandle,
@@ -3371,7 +4216,7 @@ async fn codex_execution_approve(
             artifacts: vec![serde_json::json!({
                 "id": format!("{}-result", input.plan_id),
                 "kind": "codex_execution_result",
-                "uri": format!("codepawl-artifact://{}/execution/codex-execution-result.json", input.run_id),
+                "uri": format!("orynt-artifact://{}/execution/codex-execution-result.json", input.run_id),
                 "label": "Controlled Codex execution result",
             })],
             safety: None,
@@ -3426,7 +4271,12 @@ async fn codex_execution_blocked_preview(
 
 #[tauri::command]
 async fn settings_get(app: AppHandle) -> Result<SettingsSnapshot, AppError> {
-    persistence_store(&app).load_settings()
+    let settings = persistence_store(&app).load_settings()?;
+    let env_repository_path = std::env::var(DEFAULT_REPOSITORY_PATH_ENV).ok();
+    Ok(apply_default_repository_path_env_override(
+        settings,
+        env_repository_path.as_deref(),
+    ))
 }
 
 #[tauri::command]
@@ -3442,9 +4292,12 @@ async fn settings_update(
 
 #[tauri::command]
 async fn repository_detect_current_path() -> Result<Option<String>, AppError> {
-    let current_dir = std::env::current_dir()
-        .map_err(|error| AppError::Validation(format!("could not read current directory: {error}")))?;
-    Ok(find_git_repository_root(&current_dir).map(|path| path.to_string_lossy().to_string()))
+    let current_dir = std::env::current_dir().map_err(|error| {
+        AppError::Validation(format!("could not read current directory: {error}"))
+    })?;
+    let env_repository_path = std::env::var(DEFAULT_REPOSITORY_PATH_ENV).ok();
+    Ok(detect_default_repository_path(&current_dir, env_repository_path.as_deref())
+        .map(|path| path.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
@@ -3456,32 +4309,6 @@ async fn codex_connection_save(
         connection_id: input.connection_id.unwrap_or_else(|| "codex-cli".into()),
         label: input.label,
     })
-}
-
-#[tauri::command]
-async fn codex_connection_login(
-    app: AppHandle,
-    input: CodexConnectionLoginInput,
-) -> Result<CodexConnectionReference, AppError> {
-    let reference = login_codex_connection(
-        &(std::env::var("PATH").unwrap_or_default()),
-        input.method.trim(),
-    )?;
-    persistence_store(&app).save_codex_connection_record(reference.clone())?;
-    Ok(reference)
-}
-
-#[tauri::command]
-async fn codex_connection_login_with_access_token(
-    app: AppHandle,
-    input: CodexAccessTokenLoginInput,
-) -> Result<CodexConnectionReference, AppError> {
-    let reference = login_codex_connection_with_access_token(
-        &(std::env::var("PATH").unwrap_or_default()),
-        &input.access_token,
-    )?;
-    persistence_store(&app).save_codex_connection_record(reference.clone())?;
-    Ok(reference)
 }
 
 #[tauri::command]
@@ -3506,6 +4333,13 @@ async fn codex_connection_preflight(
 }
 
 #[tauri::command]
+async fn codex_connection_login(
+    input: CodexLoginLaunchInput,
+) -> Result<CodexLoginLaunchResult, AppError> {
+    launch_codex_login(input, &(std::env::var("PATH").unwrap_or_default()))
+}
+
+#[tauri::command]
 async fn codex_connection_delete(app: AppHandle) -> Result<(), AppError> {
     persistence_store(&app).delete_codex_connection()
 }
@@ -3519,22 +4353,29 @@ async fn model_connection_save(
 }
 
 #[tauri::command]
+async fn model_provider_preflight(
+    input: ModelProviderPreflightInput,
+) -> Result<ModelConnectionPreflightResult, AppError> {
+    preflight_model_provider(&input, &(std::env::var("PATH").unwrap_or_default()))
+}
+
+#[tauri::command]
+async fn model_connection_list_models(
+    input: ModelCatalogListInput,
+) -> Result<ModelCatalogResult, AppError> {
+    list_provider_models(input, &(std::env::var("PATH").unwrap_or_default())).await
+}
+
+#[tauri::command]
 async fn model_connection_preflight(
     app: AppHandle,
 ) -> Result<ModelConnectionPreflightResult, AppError> {
     let store = persistence_store(&app);
-    let mut reference = store
-        .load_model_connection()?
-        .unwrap_or(ModelConnectionReference {
-            provider_id: "codex-cli".into(),
-            provider_label: "Codex CLI".into(),
-            model_id: "gpt-5.5".into(),
-            model_label: "GPT-5.5".into(),
-            auth_method: "chatgptOAuth".into(),
-            env_key: None,
-            status: ModelConnectionStatus::AuthRequired,
-            last_preflight: None,
-        });
+    let Some(mut reference) = store.load_model_connection()? else {
+        return Err(AppError::Validation(
+            "Choose a provider and model before running the provider check.".into(),
+        ));
+    };
     let result =
         preflight_model_connection(&reference, &(std::env::var("PATH").unwrap_or_default()));
     reference.status = result.status.clone();
@@ -3579,18 +4420,32 @@ pub fn run() {
             skill_supersede,
             skill_archive,
             skill_create_replay_plan,
+            skill_inventory_scan,
+            skill_inventory_list,
+            skill_inventory_get,
+            skill_hub_list_sources,
+            skill_hub_refresh,
+            skill_hub_search,
+            skill_hub_get,
+            skill_mutation_plan,
+            skill_mutation_approve,
+            skill_mutation_execute,
+            skill_mutation_history,
+            skill_mutation_recover,
+            skill_context_snapshot,
             codex_execution_approve,
             codex_execution_blocked_preview,
             settings_get,
             settings_update,
             repository_detect_current_path,
             model_connection_save,
+            model_provider_preflight,
+            model_connection_list_models,
             model_connection_preflight,
             model_connection_delete,
             codex_connection_save,
-            codex_connection_login,
-            codex_connection_login_with_access_token,
             codex_connection_preflight,
+            codex_connection_login,
             codex_connection_delete,
             trace_export
         ])
@@ -3599,18 +4454,41 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running CodePawl desktop app");
+        .expect("error while running Orynt desktop app");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn local_git_repository_path(label: &str) -> String {
-        let mut repository_path = std::env::temp_dir();
-        repository_path.push(format!("codepawl-tauri-test-{label}-{}", unique_suffix()));
-        std::fs::create_dir_all(repository_path.join(".git")).expect("create test git marker");
-        repository_path.to_string_lossy().to_string()
+    fn local_directory_path(label: &str) -> String {
+        let mut directory_path = test_temp_parent();
+        directory_path.push(format!("orynt-tauri-test-{label}-{}", unique_suffix()));
+        std::fs::create_dir_all(&directory_path).expect("create test local directory");
+        directory_path.to_string_lossy().to_string()
+    }
+
+    fn test_temp_parent() -> PathBuf {
+        let mut candidates = vec![std::env::temp_dir()];
+        #[cfg(unix)]
+        candidates.extend([PathBuf::from("/var/tmp"), PathBuf::from("/dev/shm")]);
+
+        candidates
+            .into_iter()
+            .find(|candidate| {
+                if !candidate.is_dir() || find_git_repository_root(candidate).is_some() {
+                    return false;
+                }
+                let probe = candidate.join(format!(".orynt-tauri-test-probe-{}", unique_suffix()));
+                match std::fs::create_dir(&probe) {
+                    Ok(()) => {
+                        let _ = std::fs::remove_dir(&probe);
+                        true
+                    }
+                    Err(_) => false,
+                }
+            })
+            .unwrap_or_else(std::env::temp_dir)
     }
 
     fn unique_suffix() -> u128 {
@@ -3626,7 +4504,8 @@ mod tests {
             capability_id: "coding-apprentice".into(),
             task_id: "task-1".into(),
             workspace_id: "workspace-1".into(),
-            repository_path: Some(local_git_repository_path("valid")),
+            repository_path: Some(local_directory_path("valid")),
+            selected_skill_ids: vec![],
             budget: BudgetPolicy {
                 max_steps: 40,
                 max_wall_time_ms: 1_800_000,
@@ -3664,28 +4543,121 @@ mod tests {
     }
 
     #[test]
-    fn validate_create_run_accepts_selected_local_git_repository_path() {
-        let input = valid_run_input_json(Some(&local_git_repository_path("json-valid")));
+    fn validate_create_run_accepts_selected_local_directory_path() {
+        let input = valid_run_input_json(Some(&local_directory_path("json-valid")));
 
         assert!(validate_create_run(&input).is_ok());
     }
 
     #[test]
-    fn find_git_repository_root_returns_nearest_parent_git_repo() {
-        let root = PathBuf::from(local_git_repository_path("detect-root"));
-        let nested = root.join("packages").join("demo");
-        std::fs::create_dir_all(&nested).expect("create nested path");
+    fn validate_repository_path_resolves_selected_subdirectory_to_git_root() {
+        let repository = PathBuf::from(local_directory_path("nested-repository-root"));
+        let nested = repository.join("apps").join("desktop").join("src-tauri");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested selected directory");
 
-        assert_eq!(find_git_repository_root(&nested), Some(root));
+        assert_eq!(
+            validate_repository_path(Some(&nested.to_string_lossy())).expect("valid nested repository path"),
+            repository.canonicalize().expect("canonical repository root")
+        );
     }
 
     #[test]
-    fn find_git_repository_root_returns_none_outside_git_repo() {
-        let root = std::env::temp_dir().join(format!("codepawl-tauri-test-no-git-{}", unique_suffix()));
-        let nested = root.join("packages").join("demo");
-        std::fs::create_dir_all(&nested).expect("create nested path");
+    fn validate_repository_path_resolves_selected_file_to_parent_directory() {
+        let directory = PathBuf::from(local_directory_path("selected-file-parent"));
+        let file_path = directory.join("task.txt");
+        std::fs::write(&file_path, "task").expect("write test file");
 
-        assert_eq!(find_git_repository_root(&nested), None);
+        assert_eq!(
+            validate_repository_path(Some(&file_path.to_string_lossy())).expect("valid selected file path"),
+            directory.canonicalize().expect("canonical file parent")
+        );
+    }
+
+    #[test]
+    fn validate_repository_path_resolves_selected_git_file_to_git_root() {
+        let repository = PathBuf::from(local_directory_path("selected-git-file-root"));
+        let nested = repository.join("apps").join("desktop");
+        let file_path = nested.join("task.txt");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested directory");
+        std::fs::write(&file_path, "task").expect("write test file");
+
+        assert_eq!(
+            validate_repository_path(Some(&file_path.to_string_lossy())).expect("valid selected git file path"),
+            repository.canonicalize().expect("canonical git root")
+        );
+    }
+
+    #[test]
+    fn detect_current_local_directory_returns_canonical_directory() {
+        let directory = PathBuf::from(local_directory_path("detect-directory"));
+
+        assert_eq!(
+            detect_current_local_directory(&directory),
+            directory.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_current_local_directory_resolves_nested_git_directory_to_root() {
+        let repository = PathBuf::from(local_directory_path("detect-nested-repository-root"));
+        let nested = repository.join("apps").join("desktop").join("src-tauri");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested selected directory");
+
+        assert_eq!(
+            detect_current_local_directory(&nested),
+            repository.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_current_local_directory_returns_parent_for_file_path() {
+        let directory = PathBuf::from(local_directory_path("detect-file-parent"));
+        let file_path = directory.join("notes.txt");
+        std::fs::write(&file_path, "notes").expect("write test file");
+
+        assert_eq!(
+            detect_current_local_directory(&file_path),
+            directory.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_default_repository_path_prefers_env_repository_path() {
+        let current_directory = PathBuf::from(local_directory_path("detect-current-directory"));
+        let repository = PathBuf::from(local_directory_path("detect-env-repository"));
+
+        assert_eq!(
+            detect_default_repository_path(&current_directory, Some(&repository.to_string_lossy())),
+            repository.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_default_repository_path_resolves_nested_env_repository_path_to_git_root() {
+        let current_directory = PathBuf::from(local_directory_path("detect-current-directory-nested"));
+        let repository = PathBuf::from(local_directory_path("detect-env-nested-repository-root"));
+        let nested = repository.join("apps").join("desktop").join("src-tauri");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested selected directory");
+
+        assert_eq!(
+            detect_default_repository_path(&current_directory, Some(&nested.to_string_lossy())),
+            repository.canonicalize().ok()
+        );
+    }
+
+    #[test]
+    fn detect_default_repository_path_falls_back_when_env_repository_path_is_invalid() {
+        let current_directory = PathBuf::from(local_directory_path("detect-current-directory-fallback"));
+        let missing_repository = current_directory.join("missing");
+
+        assert_eq!(
+            detect_default_repository_path(&current_directory, Some(&missing_repository.to_string_lossy())),
+            current_directory.canonicalize().ok()
+        );
     }
 
     #[test]
@@ -3695,7 +4667,7 @@ mod tests {
         let error = validate_create_run(&input).expect_err("repository path is required");
         assert_eq!(
             error.to_string(),
-            "repositoryPath must point to a selected local git repository"
+            "repositoryPath must point to a selected local directory"
         );
     }
 
@@ -3706,8 +4678,18 @@ mod tests {
         let error = validate_create_run(&input).expect_err("filesystem root is unsafe");
         assert_eq!(
             error.to_string(),
-            "repositoryPath must point to a selected local git repository"
+            "repositoryPath must point to a selected local directory"
         );
+    }
+
+    #[test]
+    fn validate_create_run_accepts_file_repository_path_as_parent_directory() {
+        let directory = PathBuf::from(local_directory_path("file-path"));
+        let file_path = directory.join("task.txt");
+        std::fs::write(&file_path, "task").expect("write test file");
+        let input = valid_run_input_json(Some(&file_path.to_string_lossy()));
+
+        assert!(validate_create_run(&input).is_ok());
     }
 
     #[test]
@@ -3855,7 +4837,7 @@ mod tests {
     fn temp_store_root(label: &str) -> PathBuf {
         let mut root = std::env::temp_dir();
         root.push(format!(
-            "codepawl-persistence-test-{label}-{}",
+            "orynt-persistence-test-{label}-{}",
             unique_suffix()
         ));
         root
@@ -3865,7 +4847,7 @@ mod tests {
     fn packaged_repository_runner_root_resolves_runner_next_to_binary() {
         let root = temp_store_root("packaged-runner");
         let app_dir = root.join("app");
-        let runner_dir = app_dir.join("codepawl-runner");
+        let runner_dir = app_dir.join("orynt-runner");
         let scripts_dir = runner_dir.join("scripts");
         std::fs::create_dir_all(&scripts_dir).expect("create packaged runner scripts");
         std::fs::write(runner_dir.join("package.json"), "{}\n").expect("write package manifest");
@@ -3877,7 +4859,7 @@ mod tests {
         )
         .expect("write esm loader");
 
-        let executable = app_dir.join("codepawl-desktop");
+        let executable = app_dir.join("orynt-desktop");
         let resolved =
             packaged_repository_runner_root(&executable).expect("packaged runner root resolves");
 
@@ -3895,7 +4877,7 @@ mod tests {
             &manifest_path,
             serde_json::json!({
                 "runId": run_id,
-                "repositoryPath": "/repo/codepawl",
+                "repositoryPath": "/repo/orynt",
                 "artifacts": {
                     "contract": format!("{}/artifacts/{}/codex-contract.md", root.display(), run_id),
                     "eventLog": format!("{}/artifacts/{}/run-events.json", root.display(), run_id),
@@ -3918,7 +4900,7 @@ mod tests {
             task_id: "task-1".into(),
             workspace_id: "workspace-1".into(),
             goal: "Persist this run".into(),
-            repository_path: "/repo/codepawl".into(),
+            repository_path: "/repo/orynt".into(),
             status: "pass".into(),
             artifact_root: root
                 .join("artifacts")
@@ -3955,6 +4937,8 @@ mod tests {
                 model_label: "GPT-5.5".into(),
                 auth_method: "chatgptOAuth".into(),
                 env_key: None,
+                supported_thinking_efforts: None,
+                default_thinking_effort: None,
                 status: ModelConnectionStatus::AuthRequired,
                 last_preflight: None,
             }),
@@ -4033,13 +5017,13 @@ mod tests {
                 {
                     "providerId": "openai",
                     "label": "OpenAI",
-                    "keyRef": "keychain://codepawl/local-beta/openai",
+                    "keyRef": "keychain://orynt/local-beta/openai",
                     "status": "ready"
                 },
                 {
                     "providerId": "codex-cli",
                     "label": "Local Codex CLI",
-                    "keyRef": "local-safe-keychain://codepawl/private-beta/codex-cli",
+                    "keyRef": "local-safe-keychain://orynt/private-beta/codex-cli",
                     "status": "ready"
                 }
             ],
@@ -4060,12 +5044,9 @@ mod tests {
             .expect("load settings");
 
         assert_eq!(reloaded.permission_mode, "manual");
-        assert_eq!(
-            reloaded
-                .model_connection
-                .expect("migrated model connection")
-                .provider_id,
-            "codex-cli"
+        assert!(
+            reloaded.model_connection.is_none(),
+            "legacy Codex refs must not create an implicit model choice"
         );
         assert_eq!(
             reloaded
@@ -4079,20 +5060,33 @@ mod tests {
     #[test]
     fn settings_update_preserves_codex_connection_and_persists_setup_fields() {
         let mut settings = default_settings_snapshot();
+        let default_repository = PathBuf::from(local_directory_path("settings-default-repository"));
         let codex_connection = CodexConnectionReference {
             connection_id: "codex-cli".into(),
             label: "Local Codex CLI".into(),
             status: CodexConnectionStatus::Ready,
             last_preflight: None,
         };
-        settings.model_connection = Some(model_connection_from_codex_connection(&codex_connection));
+        settings.model_connection = Some(ModelConnectionReference {
+            provider_id: "codex-cli".into(),
+            provider_label: "Codex CLI".into(),
+            model_id: "gpt-5.5".into(),
+            model_label: "GPT-5.5".into(),
+            auth_method: "chatgptOAuth".into(),
+            env_key: None,
+            supported_thinking_efforts: None,
+            default_thinking_effort: None,
+            status: ModelConnectionStatus::Ready,
+            last_preflight: None,
+        });
         settings.codex_connection = Some(codex_connection);
 
         let updated = apply_settings_update(
             settings,
             SettingsUpdateInput {
                 permission_mode: Some("manual".into()),
-                default_repository_path: Some("/home/operator/project".into()),
+                thinking_effort: Some("high".into()),
+                default_repository_path: Some(default_repository.to_string_lossy().to_string()),
                 welcome_completed: Some(true),
                 executable_surfaces: Some(vec!["repository".into(), "browser".into()]),
                 retention_policy: Some(RetentionPolicyUpdateInput {
@@ -4107,7 +5101,7 @@ mod tests {
                 }),
                 ui_preferences: Some(UiPreferencesUpdateInput {
                     appearance: Some("system".into()),
-                    chat_font: Some("codepawl-serif".into()),
+                    chat_font: Some("orynt-serif".into()),
                     motion: Some("reduced".into()),
                     show_message_block_meta: Some(true),
                 }),
@@ -4121,7 +5115,15 @@ mod tests {
         .expect("partial settings update");
 
         assert_eq!(updated.permission_mode, "manual");
-        assert_eq!(updated.default_repository_path, "/home/operator/project");
+        assert_eq!(updated.thinking_effort, "high");
+        assert_eq!(
+            updated.default_repository_path,
+            default_repository
+                .canonicalize()
+                .expect("canonical default repository")
+                .to_string_lossy()
+                .to_string()
+        );
         assert!(updated.welcome_completed);
         assert_eq!(updated.executable_surfaces, vec!["repository"]);
         assert_eq!(
@@ -4149,7 +5151,7 @@ mod tests {
         assert_eq!(updated.operator_profile.call_sign, "An");
         assert_eq!(updated.operator_profile.work_type, "data-science");
         assert_eq!(updated.ui_preferences.appearance, "system");
-        assert_eq!(updated.ui_preferences.chat_font, "codepawl-serif");
+        assert_eq!(updated.ui_preferences.chat_font, "orynt-serif");
         assert_eq!(updated.ui_preferences.motion, "reduced");
         assert!(updated.ui_preferences.show_message_block_meta);
         assert_eq!(updated.voice_preferences.language, "english");
@@ -4158,11 +5160,183 @@ mod tests {
     }
 
     #[test]
+    fn settings_update_normalizes_file_default_repository_path_to_parent_directory() {
+        let settings = default_settings_snapshot();
+        let default_repository = PathBuf::from(local_directory_path("settings-file-parent"));
+        let file_path = default_repository.join("notes.txt");
+        std::fs::write(&file_path, "notes").expect("write settings file path");
+
+        let updated = apply_settings_update(
+            settings,
+            SettingsUpdateInput {
+                permission_mode: None,
+                thinking_effort: None,
+                default_repository_path: Some(file_path.to_string_lossy().to_string()),
+                welcome_completed: None,
+                executable_surfaces: None,
+                retention_policy: None,
+                operator_profile: None,
+                ui_preferences: None,
+                voice_preferences: None,
+            },
+        )
+        .expect("settings update accepts existing file path");
+
+        assert_eq!(
+            updated.default_repository_path,
+            default_repository
+                .canonicalize()
+                .expect("canonical default repository")
+                .to_string_lossy()
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn settings_update_rejects_missing_default_repository_path() {
+        let settings = default_settings_snapshot();
+        let missing_repository = PathBuf::from(local_directory_path("settings-missing-parent"))
+            .join("missing")
+            .join("project");
+
+        let error = apply_settings_update(
+            settings,
+            SettingsUpdateInput {
+                permission_mode: None,
+                thinking_effort: None,
+                default_repository_path: Some(missing_repository.to_string_lossy().to_string()),
+                welcome_completed: None,
+                executable_surfaces: None,
+                retention_policy: None,
+                operator_profile: None,
+                ui_preferences: None,
+                voice_preferences: None,
+            },
+        )
+        .expect_err("missing repository path should not be persisted");
+
+        assert_eq!(
+            error.to_string(),
+            "repositoryPath must point to a selected local directory"
+        );
+    }
+
+    #[test]
+    fn settings_env_override_replaces_stale_saved_default_for_session() {
+        let mut settings = default_settings_snapshot();
+        settings.default_repository_path =
+            "/home/nxank4/Code/personal/orynt/apps/desktop/src-tauri".into();
+        let dev_repository = PathBuf::from(local_directory_path("settings-dev-env-repository"));
+
+        let updated = apply_default_repository_path_env_override(
+            settings,
+            Some(&dev_repository.to_string_lossy()),
+        );
+
+        assert_eq!(
+            updated.default_repository_path,
+            dev_repository
+                .canonicalize()
+                .expect("canonical dev repository")
+                .to_string_lossy()
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn settings_env_override_keeps_saved_default_when_env_is_invalid_or_blank() {
+        fn saved_default_settings() -> SettingsSnapshot {
+            let mut settings = default_settings_snapshot();
+            settings.default_repository_path = "/home/operator/saved-project".into();
+            settings
+        }
+        let missing_repository = PathBuf::from(local_directory_path("settings-dev-env-invalid"))
+            .join("missing");
+
+        let invalid = apply_default_repository_path_env_override(
+            saved_default_settings(),
+            Some(&missing_repository.to_string_lossy()),
+        );
+        let blank = apply_default_repository_path_env_override(saved_default_settings(), Some("   "));
+        let absent = apply_default_repository_path_env_override(saved_default_settings(), None);
+
+        assert_eq!(invalid.default_repository_path, "/home/operator/saved-project");
+        assert_eq!(blank.default_repository_path, "/home/operator/saved-project");
+        assert_eq!(absent.default_repository_path, "/home/operator/saved-project");
+    }
+
+    #[test]
+    fn settings_env_override_resolves_nested_git_path_to_git_root() {
+        let mut settings = default_settings_snapshot();
+        settings.default_repository_path = "/home/operator/saved-project".into();
+        let repository = PathBuf::from(local_directory_path("settings-dev-env-git-root"));
+        let nested = repository.join("apps").join("desktop").join("src-tauri");
+        std::fs::create_dir_all(repository.join(".git")).expect("create git marker");
+        std::fs::create_dir_all(&nested).expect("create nested directory");
+
+        let updated =
+            apply_default_repository_path_env_override(settings, Some(&nested.to_string_lossy()));
+
+        assert_eq!(
+            updated.default_repository_path,
+            repository
+                .canonicalize()
+                .expect("canonical git root")
+                .to_string_lossy()
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn settings_update_accepts_expanded_model_thinking_efforts() {
+        for effort in ["minimal", "none", "low", "medium", "high", "xhigh"] {
+            let updated = apply_settings_update(
+                default_settings_snapshot(),
+                SettingsUpdateInput {
+                    permission_mode: None,
+                    thinking_effort: Some(effort.into()),
+                    default_repository_path: None,
+                    welcome_completed: None,
+                    executable_surfaces: None,
+                    retention_policy: None,
+                    operator_profile: None,
+                    ui_preferences: None,
+                    voice_preferences: None,
+                },
+            )
+            .expect("expanded thinking effort is accepted");
+
+            assert_eq!(updated.thinking_effort, effort);
+        }
+
+        let rejected = apply_settings_update(
+            default_settings_snapshot(),
+            SettingsUpdateInput {
+                permission_mode: None,
+                thinking_effort: Some("turbo".into()),
+                default_repository_path: None,
+                welcome_completed: None,
+                executable_surfaces: None,
+                retention_policy: None,
+                operator_profile: None,
+                ui_preferences: None,
+                voice_preferences: None,
+            },
+        )
+        .expect_err("unknown thinking effort is rejected");
+
+        assert_eq!(
+            rejected.to_string(),
+            "thinkingEffort must be minimal, none, low, medium, high, or xhigh"
+        );
+    }
+
+    #[test]
     fn local_persistence_rejects_artifact_manifest_outside_app_data_root() {
         let root = temp_store_root("unsafe");
         let store = LocalPersistenceStore::new(root.clone());
         let mut run = persisted_run(&root, "run-unsafe-1");
-        run.artifact_manifest_path = "/tmp/outside-codepawl-artifact-manifest.json".into();
+        run.artifact_manifest_path = "/tmp/outside-orynt-artifact-manifest.json".into();
 
         let error = store
             .save_run(&run)
@@ -4170,7 +5344,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "artifact manifest must stay inside the CodePawl app data directory"
+            "artifact manifest must stay inside the Orynt app data directory"
         );
     }
 
@@ -4214,13 +5388,12 @@ mod tests {
             loaded.expect("loaded connection").connection_id,
             "codex-cli"
         );
-        assert_eq!(
+        assert!(
             store
                 .load_model_connection()
                 .expect("load model connection")
-                .expect("loaded model connection")
-                .provider_id,
-            "codex-cli"
+                .is_none(),
+            "saving Codex auth alone must not choose a model"
         );
         assert!(!raw_settings.contains("sk-"));
         assert!(!raw_settings.contains("accessToken"));
@@ -4242,15 +5415,23 @@ mod tests {
     fn model_connection_openai_env_preflight_never_persists_raw_secret() {
         let root = temp_store_root("model-openai");
         let store = LocalPersistenceStore::new(root.clone());
-        let env_key = "CODEPAWL_TEST_OPENAI_API_KEY";
+        let env_key = "ORYNT_TEST_OPENAI_API_KEY";
         std::env::remove_var(env_key);
 
         let mut reference = store
             .save_model_connection(ModelConnectionSetupInput {
                 provider_id: "openai-api".into(),
                 model_id: "gpt-5.5".into(),
+                model_label: Some("GPT-5.5".into()),
                 auth_method: "apiKeyEnv".into(),
                 env_key: Some(env_key.into()),
+                thinking_effort: Some("medium".into()),
+                supported_thinking_efforts: Some(vec![
+                    "medium".into(),
+                    "high".into(),
+                    "xhigh".into(),
+                ]),
+                default_thinking_effort: Some("medium".into()),
             })
             .expect("save OpenAI model connection");
 
@@ -4260,7 +5441,7 @@ mod tests {
         assert!(missing
             .reasons
             .iter()
-            .any(|reason| reason.contains("CODEPAWL_TEST_OPENAI_API_KEY is not set")));
+            .any(|reason| reason.contains("ORYNT_TEST_OPENAI_API_KEY is not set")));
 
         std::env::set_var(env_key, "sk-test-secret-openai");
         let ready = preflight_model_connection(&reference, "");
@@ -4272,7 +5453,7 @@ mod tests {
         assert!(ready
             .reasons
             .iter()
-            .any(|reason| reason == "CODEPAWL_TEST_OPENAI_API_KEY is available for OpenAI API."));
+            .any(|reason| reason == "ORYNT_TEST_OPENAI_API_KEY is available for OpenAI API."));
 
         reference.status = ready.status.clone();
         reference.last_preflight = Some(ready);
@@ -4282,7 +5463,7 @@ mod tests {
 
         let raw_settings = std::fs::read_to_string(store.settings_path()).expect("read settings");
         assert!(raw_settings.contains("openai-api"));
-        assert!(raw_settings.contains("CODEPAWL_TEST_OPENAI_API_KEY"));
+        assert!(raw_settings.contains("ORYNT_TEST_OPENAI_API_KEY"));
         assert!(!raw_settings.contains("sk-test-secret-openai"));
         assert!(store
             .load_codex_connection()
@@ -4291,10 +5472,239 @@ mod tests {
     }
 
     #[test]
+    fn model_provider_openai_env_preflight_does_not_require_a_model() {
+        let env_key = "ORYNT_TEST_OPENAI_PROVIDER_KEY";
+        std::env::set_var(env_key, "sk-test-provider-secret");
+        let result = preflight_model_provider(
+            &ModelProviderPreflightInput {
+                provider_id: "openai-api".into(),
+                auth_method: "apiKeyEnv".into(),
+                env_key: Some(env_key.into()),
+            },
+            "",
+        )
+        .expect("preflight OpenAI provider");
+        std::env::remove_var(env_key);
+
+        assert!(result.ready);
+        assert_eq!(result.status, ModelConnectionStatus::Ready);
+        assert_eq!(result.checked_provider_id, "openai-api");
+        assert_eq!(result.checked_model_id, "");
+        assert!(result
+            .reasons
+            .iter()
+            .any(|reason| reason == "ORYNT_TEST_OPENAI_PROVIDER_KEY is available for OpenAI API."));
+    }
+
+    #[test]
+    fn save_model_connection_accepts_live_model_id_and_label() {
+        let root = temp_store_root("model-live-id");
+        let store = LocalPersistenceStore::new(root);
+
+        let reference = store
+            .save_model_connection(ModelConnectionSetupInput {
+                provider_id: "openai-api".into(),
+                model_id: "live-custom-model".into(),
+                model_label: Some("Live Custom Model".into()),
+                auth_method: "apiKeyEnv".into(),
+                env_key: Some("ORYNT_TEST_OPENAI_API_KEY".into()),
+                thinking_effort: None,
+                supported_thinking_efforts: None,
+                default_thinking_effort: None,
+            })
+            .expect("save live model connection");
+
+        assert_eq!(reference.model_id, "live-custom-model");
+        assert_eq!(reference.model_label, "Live Custom Model");
+        assert_eq!(reference.provider_id, "openai-api");
+    }
+
+    #[test]
+    fn parse_codex_model_catalog_keeps_only_visible_live_models() {
+        let models = parse_codex_model_catalog(
+            r#"{
+              "models": [
+                {
+                  "slug": "gpt-5.4-mini",
+                  "display_name": "GPT-5.4 mini",
+                  "description": "Fast coding model.",
+                  "visibility": "list",
+                  "priority": 20
+                },
+                {
+                  "slug": "hidden-model",
+                  "display_name": "Hidden Model",
+                  "visibility": "hidden",
+                  "priority": 1
+                },
+                {
+                  "slug": "gpt-5.5",
+                  "display_name": "GPT-5.5",
+                  "description": "Complex coding model.",
+                  "visibility": "list",
+                  "priority": 10
+                }
+              ]
+            }"#,
+        )
+        .expect("parse Codex catalog");
+
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "gpt-5.5");
+        assert_eq!(models[0].label, "GPT-5.5");
+        assert_eq!(models[0].source, "codex-cli");
+        assert_eq!(
+            models[0].supported_thinking_efforts,
+            Some(vec![
+                "none".into(),
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+            ])
+        );
+        assert_eq!(models[0].default_thinking_effort.as_deref(), Some("medium"));
+        assert_eq!(models[1].id, "gpt-5.4-mini");
+        assert_eq!(
+            models[1].supported_thinking_efforts,
+            Some(vec![
+                "none".into(),
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_openai_model_catalog_uses_live_ids() {
+        let models = parse_openai_model_catalog(
+            r#"{
+              "object": "list",
+              "data": [
+                { "id": "gpt-5.5", "object": "model", "owned_by": "openai" },
+                { "id": "gpt-5.4-mini", "object": "model", "owned_by": "team" },
+                { "id": "text-embedding-3-large", "object": "model", "owned_by": "openai" },
+                { "id": "tts-1", "object": "model", "owned_by": "openai" },
+                { "id": "whisper-1", "object": "model", "owned_by": "openai" },
+                { "id": "   ", "object": "model", "owned_by": "openai" }
+              ]
+            }"#,
+        )
+        .expect("parse OpenAI catalog");
+
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "gpt-5.4-mini");
+        assert_eq!(models[0].label, "gpt-5.4-mini");
+        assert_eq!(models[0].owned_by.as_deref(), Some("team"));
+        assert_eq!(models[0].source, "openai-api");
+        assert_eq!(models[1].id, "gpt-5.5");
+    }
+
+    #[test]
+    fn openai_model_catalog_request_timeout_is_bounded() {
+        assert!(openai_model_catalog_timeout().as_secs() <= 10);
+    }
+
+    #[test]
+    fn desktop_repository_run_request_includes_selected_model_metadata() {
+        let repository_path = PathBuf::from(local_directory_path("selected-model-request"));
+        let input = valid_run_input();
+        let model_connection = ModelConnectionReference {
+            provider_id: "openai-api".into(),
+            provider_label: "OpenAI API".into(),
+            model_id: "gpt-5.5".into(),
+            model_label: "GPT-5.5".into(),
+            auth_method: "apiKeyEnv".into(),
+            env_key: Some("ORYNT_TEST_OPENAI_API_KEY".into()),
+            supported_thinking_efforts: Some(vec!["medium".into(), "high".into(), "xhigh".into()]),
+            default_thinking_effort: Some("medium".into()),
+            status: ModelConnectionStatus::Ready,
+            last_preflight: None,
+        };
+
+        let request = build_desktop_repository_run_request(
+            &input,
+            &repository_path,
+            &PathBuf::from("/tmp/orynt-data"),
+            &model_connection,
+            "high",
+            Some(serde_json::json!({
+                "schemaVersion": 1,
+                "runId": "run-skill-context",
+                "createdAt": "2026-07-29T00:00:00.000Z",
+                "skills": [],
+                "digest": "context-digest",
+            })),
+        );
+        let value = serde_json::to_value(request).expect("serialize request");
+
+        assert_eq!(value["modelConnection"]["providerId"], "openai-api");
+        assert_eq!(value["modelConnection"]["modelId"], "gpt-5.5");
+        assert_eq!(value["modelConnection"]["envKey"], "ORYNT_TEST_OPENAI_API_KEY");
+        assert_eq!(value["thinkingEffort"], "high");
+        assert_eq!(value["skillContext"]["digest"], "context-digest");
+        assert_eq!(value["budget"]["maxSteps"], 40);
+        assert_eq!(value["budget"]["maxWallTimeMs"], 1_800_000);
+        assert_eq!(value["budget"]["maxModelTokens"], 120_000);
+        assert_eq!(value["budget"]["maxUsd"], 1.0);
+        assert_eq!(value["budget"]["stopOnBudgetExceeded"], true);
+    }
+
+    #[test]
+    fn parse_openai_model_catalog_enriches_known_model_efforts_without_guessing_unknown_models() {
+        let models = parse_openai_model_catalog(
+            r#"{
+              "object": "list",
+              "data": [
+                { "id": "gpt-5.5", "object": "model", "owned_by": "openai" },
+                { "id": "gpt-5.5-pro", "object": "model", "owned_by": "openai" },
+                { "id": "custom-reasoning-model", "object": "model", "owned_by": "team" }
+              ]
+            }"#,
+        )
+        .expect("parse OpenAI catalog");
+
+        let custom_model = models
+            .iter()
+            .find(|model| model.id == "custom-reasoning-model")
+            .expect("custom model");
+        assert_eq!(custom_model.supported_thinking_efforts, None);
+        assert_eq!(custom_model.default_thinking_effort, None);
+
+        let gpt55 = models
+            .iter()
+            .find(|model| model.id == "gpt-5.5")
+            .expect("gpt-5.5");
+        assert_eq!(
+            gpt55.supported_thinking_efforts,
+            Some(vec![
+                "none".into(),
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+            ])
+        );
+        assert_eq!(gpt55.default_thinking_effort.as_deref(), Some("medium"));
+
+        let gpt55_pro = models
+            .iter()
+            .find(|model| model.id == "gpt-5.5-pro")
+            .expect("gpt-5.5-pro");
+        assert_eq!(
+            gpt55_pro.supported_thinking_efforts,
+            Some(vec!["medium".into(), "high".into(), "xhigh".into()])
+        );
+        assert_eq!(gpt55_pro.default_thinking_effort.as_deref(), Some("high"));
+    }
+
+    #[test]
     fn codex_connection_preflight_reports_missing_auth_and_ready_states() {
         let root = temp_store_root("codex-preflight");
         let store = LocalPersistenceStore::new(root.clone());
-        let mut reference = store
+        let reference = store
             .save_codex_connection(CodexConnectionSetupInput {
                 connection_id: "codex-cli".into(),
                 label: "Local Codex CLI".into(),
@@ -4343,13 +5753,12 @@ mod tests {
         assert_eq!(ready.status, CodexConnectionStatus::Ready);
         assert_eq!(ready.checked_connection_id, "codex-cli");
 
-        reference.last_preflight = Some(ready);
-        reference.status = CodexConnectionStatus::Ready;
-        store
-            .save_codex_connection_record(reference)
-            .expect("persist ready Codex connection");
-        assert!(ensure_codex_connection_ready_for_run(&store).is_ok());
-        assert!(ensure_model_connection_ready_for_run(&store).is_ok());
+        let missing_model_error = ensure_model_connection_ready_for_run(&store)
+            .expect_err("Codex auth alone does not choose a model");
+        assert_eq!(
+            missing_model_error.to_string(),
+            "Provider setup is required before running a real repository task"
+        );
     }
 
     #[test]
@@ -4368,8 +5777,12 @@ mod tests {
             .save_model_connection(ModelConnectionSetupInput {
                 provider_id: "openai-api".into(),
                 model_id: "gpt-5.5".into(),
+                model_label: Some("GPT-5.5".into()),
                 auth_method: "apiKeyEnv".into(),
-                env_key: Some("CODEPAWL_TEST_OPENAI_API_KEY".into()),
+                env_key: Some("ORYNT_TEST_OPENAI_API_KEY".into()),
+                thinking_effort: None,
+                supported_thinking_efforts: None,
+                default_thinking_effort: None,
             })
             .expect("save unauthenticated model connection");
         let failed_error = ensure_model_connection_ready_for_run(&store)
@@ -4381,20 +5794,20 @@ mod tests {
     }
 
     #[test]
-    fn codex_access_token_login_pipes_token_to_stdin_without_persisting_it() {
-        let root = temp_store_root("codex-token");
-        let token_capture_path = root.join("captured-token.txt");
+    fn codex_preflight_requires_external_terminal_login_without_mutating_credentials() {
+        let root = temp_store_root("codex-login-detect-only");
+        let args_capture_path = root.join("captured-args.txt");
         let bin_dir = root.join("bin");
         let codex_path = bin_dir.join("codex");
         std::fs::create_dir_all(&bin_dir).expect("create fake bin dir");
         std::fs::write(
             &codex_path,
             format!(
-                "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"--with-access-token\" ]; then cat > '{}'; exit 0; fi\nexit 1\n",
-                token_capture_path.display()
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nexit 1\n",
+                args_capture_path.display()
             ),
         )
-        .expect("write fake codex token login");
+        .expect("write fake codex login status");
         let mut permissions = std::fs::metadata(&codex_path)
             .expect("codex metadata")
             .permissions();
@@ -4405,20 +5818,79 @@ mod tests {
         }
         std::fs::set_permissions(&codex_path, permissions).expect("chmod fake codex");
 
-        let connection = login_codex_connection_with_access_token(
+        let result = preflight_codex_connection(
+            &CodexConnectionReference {
+                connection_id: "codex-cli".into(),
+                label: "Local Codex CLI".into(),
+                status: CodexConnectionStatus::AuthRequired,
+                last_preflight: None,
+            },
             &bin_dir.to_string_lossy(),
-            "codex-access-token-secret",
-        )
-        .expect("token login succeeds");
-
-        assert_eq!(connection.connection_id, "codex-cli");
-        assert_eq!(connection.status, CodexConnectionStatus::AuthRequired);
-        assert_eq!(
-            std::fs::read_to_string(token_capture_path).expect("read captured token"),
-            "codex-access-token-secret"
         );
-        let serialized = serde_json::to_string(&connection).expect("serialize connection");
-        assert!(!serialized.contains("codex-access-token-secret"));
+
+        assert_eq!(result.status, CodexConnectionStatus::AuthRequired);
+        assert!(!result.ready);
+        assert_eq!(
+            result.reasons,
+            vec![
+                "No authenticated Codex CLI session was detected. Run codex login in a terminal, or open Codex login from setup, then check again."
+            ]
+        );
+        assert_eq!(
+            std::fs::read_to_string(args_capture_path).expect("read device args"),
+            "login status\n"
+        );
+    }
+
+    #[test]
+    fn codex_browser_login_delegates_to_codex_cli_terminal_flow() {
+        let root = temp_store_root("codex-browser-login-terminal");
+        let bin_dir = root.join("bin");
+        let terminal_capture_path = root.join("terminal-args.txt");
+        std::fs::create_dir_all(&bin_dir).expect("create fake bin dir");
+
+        let codex_path = bin_dir.join("codex");
+        std::fs::write(
+            &codex_path,
+            "#!/bin/sh\nprintf '%s\\n' 'https://auth.openai.com/oauth/authorize?state=headless-wrong'\nexit 0\n",
+        )
+        .expect("write fake codex");
+
+        let terminal_path = bin_dir.join("konsole");
+        std::fs::write(
+            &terminal_path,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nexit 0\n",
+                terminal_capture_path.display()
+            ),
+        )
+        .expect("write fake terminal");
+
+        for path in [&codex_path, &terminal_path] {
+            let mut permissions = std::fs::metadata(path).expect("fake binary metadata").permissions();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                permissions.set_mode(0o755);
+            }
+            std::fs::set_permissions(path, permissions).expect("chmod fake binary");
+        }
+
+        let result = launch_codex_browser_login(&bin_dir.to_string_lossy()).expect("launch codex login");
+
+        assert_eq!(result.method, CodexLoginMethod::Browser);
+        assert_eq!(result.command, "codex login");
+        assert_eq!(result.message, "Opened Codex login in a terminal.");
+        assert_eq!(result.login_url, None);
+        let captured_terminal_args = (0..20)
+            .find_map(|_| {
+                std::fs::read_to_string(&terminal_capture_path).ok().or_else(|| {
+                    std::thread::sleep(Duration::from_millis(10));
+                    None
+                })
+            })
+            .expect("terminal args captured");
+        assert_eq!(captured_terminal_args, "--new-tab -e codex login\n");
     }
 
     #[test]
@@ -4529,6 +6001,37 @@ mod tests {
         assert!(!contract.content.contains("sk-privatebeta-secret-789"));
         assert!(contract.content.contains("[REDACTED_SECRET]"));
 
+        let legacy_run = persisted_run(&root, "run-legacy-artifact-scheme");
+        let legacy_artifact_root = PathBuf::from(&legacy_run.artifact_root);
+        std::fs::create_dir_all(&legacy_artifact_root).expect("create legacy artifact root");
+        std::fs::write(
+            legacy_artifact_root.join("codex-contract.md"),
+            "Legacy scheme contract body\n",
+        )
+        .expect("write legacy contract");
+        std::fs::write(
+            &legacy_run.artifact_manifest_path,
+            serde_json::json!({
+                "runId": "run-legacy-artifact-scheme",
+                "artifacts": {
+                    "contract": "codepawl-artifact://run-legacy-artifact-scheme/codex-contract.md"
+                }
+            })
+            .to_string(),
+        )
+        .expect("write legacy scheme manifest");
+        store.save_run(&legacy_run).expect("save legacy scheme run");
+        let legacy_contract = store
+            .read_artifact_evidence(ArtifactReadInput {
+                run_id: "run-legacy-artifact-scheme".into(),
+                artifact_id: "contract".into(),
+            })
+            .expect("read legacy artifact scheme");
+        assert_eq!(legacy_contract.status, ArtifactEvidenceStatus::Verified);
+        assert!(legacy_contract
+            .content
+            .contains("Legacy scheme contract body"));
+
         let memory_store = store
             .read_artifact_evidence(ArtifactReadInput {
                 run_id: "run-artifact-read".into(),
@@ -4609,7 +6112,7 @@ mod tests {
             &external_path,
             serde_json::json!({
                 "runId": "run-external",
-                "artifacts": { "contract": "/tmp/codepawl-external-contract.md" }
+                "artifacts": { "contract": "/tmp/orynt-external-contract.md" }
             })
             .to_string(),
         )
@@ -4708,8 +6211,8 @@ mod tests {
                 .join("artifact-manifest.json");
             std::fs::create_dir_all(symlink_path.parent().expect("symlink parent"))
                 .expect("create symlink parent");
-            let outside_symlink_target = std::env::temp_dir()
-                .join(format!("codepawl-symlink-target-{}.md", unique_suffix()));
+            let outside_symlink_target =
+                std::env::temp_dir().join(format!("orynt-symlink-target-{}.md", unique_suffix()));
             std::fs::write(&outside_symlink_target, "outside secret")
                 .expect("write outside symlink target");
             let mut symlink_run = persisted_run(&root, "run-symlink");
@@ -4741,7 +6244,7 @@ mod tests {
         std::fs::create_dir_all(outside_memory_path.parent().expect("outside memory parent"))
             .expect("create outside memory parent");
         let outside_memory_file =
-            std::env::temp_dir().join(format!("codepawl-outside-memory-{}.json", unique_suffix()));
+            std::env::temp_dir().join(format!("orynt-outside-memory-{}.json", unique_suffix()));
         std::fs::write(&outside_memory_file, "{}").expect("write outside memory file");
         let mut outside_memory_run = persisted_run(&root, "run-outside-memory");
         outside_memory_run.artifact_root = root

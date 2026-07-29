@@ -18,7 +18,7 @@ import { LocalSkillRegistry, LocalSkillReplayPlanner, SkillCandidateBuilder, Ski
 const namespace: MemoryNamespace = {
   capabilityId: "coding-apprentice",
   workspaceId: "workspace-skill",
-  repositoryPath: "/repo/codepawl",
+  repositoryPath: "/repo/orynt",
 };
 
 const provenance = {
@@ -29,7 +29,7 @@ const provenance = {
     {
       id: "candidate-rule-artifact",
       kind: "candidate_rule" as const,
-      uri: "codepawl-artifact://run-1/memory/rule.json",
+      uri: "orynt-artifact://run-1/memory/rule.json",
       label: "Candidate rule",
     },
   ],
@@ -46,7 +46,7 @@ function acceptedRule(overrides: Partial<CandidateRule> = {}): CandidateRule {
     title: "Keep package fixes scoped",
     rule: "Keep source-only fixes under packages/** unless the contract says otherwise.",
     scope: {
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       allowedPaths: ["packages/**"],
       protectedPaths: [".env", "pnpm-lock.yaml"],
       commands: ["pnpm test:contracts"],
@@ -131,7 +131,7 @@ function verification(overrides: Partial<VerificationResult> = {}): Verification
       {
         id: "verification-artifact",
         kind: "validation_report",
-        uri: "codepawl-artifact://run-1/verification.json",
+        uri: "orynt-artifact://run-1/verification.json",
         label: "Verification result",
       },
     ],
@@ -161,8 +161,8 @@ function codexContract(): CodexContract {
       providerId: "codex-contract-generator",
       executionMode: "contract_only",
       repository: {
-        repositoryPath: "/repo/codepawl",
-        gitRoot: "/repo/codepawl",
+        repositoryPath: "/repo/orynt",
+        gitRoot: "/repo/orynt",
         currentBranch: "main",
         currentCommit: "abc123",
         isDirty: false,
@@ -173,10 +173,10 @@ function codexContract(): CodexContract {
         id: "sandbox-1",
         runId: "run-1",
         taskId: "task-skill",
-        repositoryPath: "/repo/codepawl",
-        gitRoot: "/repo/codepawl",
-        worktreePath: "/tmp/codepawl-worktrees/run-1",
-        branchName: "codepawl/run-1",
+        repositoryPath: "/repo/orynt",
+        gitRoot: "/repo/orynt",
+        worktreePath: "/tmp/orynt-worktrees/run-1",
+        branchName: "orynt/run-1",
         baseRef: "HEAD",
         currentCommit: "abc123",
         createdAt: "2026-06-26T00:00:00.000Z",
@@ -204,7 +204,7 @@ function activeSkill(overrides: Partial<SkillDefinition> = {}): SkillDefinition 
     episodes: [episode()],
     verificationResult: verification(),
     codexContract: codexContract(),
-    sandbox: { repositoryPath: "/repo/codepawl", worktreePath: "/tmp/codepawl-worktrees/run-1", baseRef: "HEAD" },
+    sandbox: { repositoryPath: "/repo/orynt", worktreePath: "/tmp/orynt-worktrees/run-1", baseRef: "HEAD" },
   });
 
   return {
@@ -226,7 +226,7 @@ function activeSkill(overrides: Partial<SkillDefinition> = {}): SkillDefinition 
 
 function replayPolicy(overrides: Partial<CorePolicy> = {}): CorePolicy {
   return {
-    ...createConservativeCodingApprenticePolicy("/repo/codepawl", "/tmp/codepawl-worktrees"),
+    ...createConservativeCodingApprenticePolicy("/repo/orynt", "/tmp/orynt-worktrees"),
     ...overrides,
   };
 }
@@ -251,7 +251,7 @@ describe("SkillCandidateBuilder", () => {
       episodes: [episode()],
       verificationResult: verification(),
       codexContract: codexContract(),
-      sandbox: { repositoryPath: "/repo/codepawl", worktreePath: "/tmp/codepawl-worktrees/run-1", baseRef: "HEAD" },
+      sandbox: { repositoryPath: "/repo/orynt", worktreePath: "/tmp/orynt-worktrees/run-1", baseRef: "HEAD" },
     });
 
     expect(candidate.skill.status).toBe("candidate");
@@ -464,7 +464,7 @@ describe("LocalSkillReplayPlanner", () => {
       runId,
       taskId: "task-skill",
       mode: "active_dry_run",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       baseRef: "HEAD",
       policy: replayPolicy(),
     });
@@ -495,7 +495,7 @@ describe("LocalSkillReplayPlanner", () => {
       runId: "run-1",
       taskId: "task-skill",
       mode: "candidate_preview",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       baseRef: "HEAD",
       policy: replayPolicy(),
     });
@@ -512,7 +512,7 @@ describe("LocalSkillReplayPlanner", () => {
       runId: "run-1",
       taskId: "task-skill",
       mode: "active_dry_run",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       baseRef: "HEAD",
       policy: replayPolicy(),
     });
@@ -528,7 +528,7 @@ describe("LocalSkillReplayPlanner", () => {
       runId: "run-1",
       taskId: "task-skill",
       mode: "active_dry_run",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       baseRef: "HEAD",
       policy: replayPolicy(),
     });
@@ -555,7 +555,7 @@ describe("LocalSkillReplayPlanner", () => {
       runId: "run-1",
       taskId: "task-skill",
       mode: "active_dry_run",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       baseRef: "HEAD",
       policy: replayPolicy(),
     });
@@ -577,7 +577,7 @@ describe("LocalSkillReplayPlanner", () => {
       runId: "run-1",
       taskId: "task-skill",
       mode: "active_dry_run",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       baseRef: "HEAD",
       policy,
     });
@@ -602,7 +602,7 @@ describe("LocalSkillReplayPlanner", () => {
       runId: "run-1",
       taskId: "task-skill",
       mode: "active_dry_run",
-      repositoryPath: "/repo/codepawl",
+      repositoryPath: "/repo/orynt",
       baseRef: "HEAD",
       policy: replayPolicy(),
     });

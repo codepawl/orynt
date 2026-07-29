@@ -1,0 +1,6 @@
+interface:
+  display_name: "Release Readiness"
+  short_description: "Assess repository release readiness with evidence."
+  default_prompt: "Use $release-readiness to assess whether this repository is ready to release."
+policy:
+  allow_implicit_invocation: false

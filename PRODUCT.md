@@ -6,7 +6,7 @@ brand
 
 ## Users
 
-CodePawl is for technical solo users and small teams who already use AI coding,
+Orynt is for technical solo users and small teams who already use AI coding,
 agent, QA, or automation tools and feel the limits of unsupervised coding
 agents, brittle browser automation, and opaque computer-use tools.
 
@@ -17,13 +17,13 @@ dashboards, and indie builders who need local automation without enterprise RPA
 overhead.
 
 The marketing surface should meet these users in an evaluation mindset: they
-want to understand whether CodePawl gives agents a more reliable operating
+want to understand whether Orynt gives agents a more reliable operating
 loop: memory, skills, verification, measurable feedback, safe tool use, and a
 believable path from supervised coding work to broader computer workflows.
 
 ## Product Purpose
 
-CodePawl is a brain-like operating system for adaptive AI agents. It gives AI
+Orynt is a brain-like operating system for adaptive AI agents from CodePawl. It gives AI
 agents a working brain: structured memory, reusable skills, verification,
 self-improvement loops, and safe tool use.
 
@@ -33,7 +33,7 @@ verify results, learn from experience, and turn successful work into reusable
 skills.
 
 Success for the brand surface means a technical visitor quickly understands that
-CodePawl is not a black-box autonomy pitch. It is a closed-source operating
+Orynt is not a black-box autonomy pitch. It is a closed-source operating
 layer for safer, cheaper, more observable adaptive agents, starting with
 supervised repository and computer-based workflows.
 
@@ -47,7 +47,7 @@ operator control rather than exaggerated autonomy claims.
 
 ## Anti-references
 
-Do not make CodePawl look or sound like:
+Do not make Orynt look or sound like:
 
 - A neon cyberpunk agent dashboard.
 - An overloaded observability wall full of charts before the user understands

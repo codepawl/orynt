@@ -115,17 +115,17 @@ const FIXED_ENDED_AT = "2026-07-04T00:00:08.000Z";
 export function createDefaultEvalSuite(options: CreateDefaultEvalSuiteOptions = {}): EvalSuite {
   const workspaceId = options.workspaceId ?? "workspace-eval-default";
   const userId = options.userId ?? "user-eval";
-  const repositoryPath = options.repositoryPath ?? "/repo/codepawl";
+  const repositoryPath = options.repositoryPath ?? "/repo/orynt";
   const namespace: MemoryNamespace = {
     capabilityId: "coding-apprentice",
     workspaceId,
     repositoryPath,
   };
-  const policy = createConservativeCodingApprenticePolicy(repositoryPath, "/tmp/codepawl-eval-worktrees");
+  const policy = createConservativeCodingApprenticePolicy(repositoryPath, "/tmp/orynt-eval-worktrees");
 
   return {
-    id: "codepawl-deterministic-mvp-evals",
-    title: "CodePawl deterministic MVP evals",
+    id: "orynt-deterministic-mvp-evals",
+    title: "Orynt deterministic MVP evals",
     workspaceId,
     userId,
     namespace,
@@ -186,7 +186,7 @@ export function createDefaultEvalSuite(options: CreateDefaultEvalSuiteOptions = 
   };
 }
 
-export class CodePawlEvalRunner {
+export class OryntEvalRunner {
   private readonly policyEngine = new ConservativePolicyEngine();
 
   runSuite(suite: EvalSuite): EvalSuiteResult {
@@ -245,7 +245,7 @@ export class CodePawlEvalRunner {
       id: `${runId}-trace`,
       runId,
       artifactType: "trace",
-      storageRef: `codepawl-eval://${suite.id}/${scenario.id}/trace.json`,
+      storageRef: `orynt-eval://${suite.id}/${scenario.id}/trace.json`,
       visibility: "admin",
       createdAt: FIXED_STARTED_AT,
     });
@@ -301,7 +301,7 @@ export class CodePawlEvalRunner {
       retryCount: scenario.expected.retryCount,
       loopDetected: scenario.expected.loopDetected,
       costUsd: completedRun.estimatedCostUsd,
-      evidenceArtifacts: [{ id: `${runId}-trace`, kind: "trace", uri: `codepawl-eval://${suite.id}/${scenario.id}/trace.json` }],
+      evidenceArtifacts: [{ id: `${runId}-trace`, kind: "trace", uri: `orynt-eval://${suite.id}/${scenario.id}/trace.json` }],
       memoryItems: scenario.memoryItems ?? [],
       skillInvocationPlan: scenario.skillInvocationPlan,
     };
@@ -452,7 +452,7 @@ function percentile(sortedValues: number[], percentileValue: number): number {
 
 function markdownReport(suite: EvalSuite, metrics: EvalMetrics, results: EvalScenarioResult[]): string {
   return [
-    "# CodePawl Evaluation Report",
+    "# Orynt Evaluation Report",
     "",
     `Suite: ${suite.title}`,
     "",
@@ -518,3 +518,5 @@ function riskForDecision(decision: PolicyDecision): AgentRiskLevel {
   }
   return "review";
 }
+
+export * from "./repoOpsBench";

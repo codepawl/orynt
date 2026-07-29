@@ -2,6 +2,10 @@ import type { ArtifactRef, RunBudget } from "./runSpine";
 import type { CorePolicy, PolicyDecision, RepositoryInspection, RepositorySandbox } from "./corePolicy";
 import type { CodexResultImportRequest } from "./codexResultImportContracts";
 import type { VerificationPlan } from "./verifierContracts";
+import type {
+  OrchestrationRole,
+  OrchestrationThinkingEffort,
+} from "./orchestrationContracts";
 
 export type CodexExecutionMode = "contract_only" | "manual_cli" | "app_server" | "sdk";
 
@@ -15,6 +19,7 @@ export type CodexProvider = {
 export type CodexAdapterStatus = {
   provider: CodexProvider;
   available: boolean;
+  authenticated?: boolean;
   executionMode: CodexExecutionMode;
   executablePath?: string;
   detectedAt: string;
@@ -34,6 +39,12 @@ export type CodexContractRequest = {
   budget: RunBudget;
   validationCommands: string[];
   artifactRoot: string;
+  executionMode?: CodexExecutionMode;
+  modelId?: string;
+  modelLabel?: string;
+  modelRole?: OrchestrationRole;
+  thinkingEffort?: OrchestrationThinkingEffort;
+  parentInvocationId?: string;
 };
 
 export type CodexContract = {
@@ -56,6 +67,11 @@ export type CodexContract = {
     protectedPaths: string[];
     blockedCommands: string[];
     validationCommands: string[];
+    modelId?: string;
+    modelLabel?: string;
+    modelRole?: OrchestrationRole;
+    thinkingEffort?: OrchestrationThinkingEffort;
+    parentInvocationId?: string;
     budget: RunBudget;
     redactionApplied: boolean;
     createdAt: string;
@@ -81,6 +97,7 @@ export type CodexExecutionFailureReason =
   | "approval_denied"
   | "approval_mismatch"
   | "codex_missing"
+  | "codex_auth_missing"
   | "policy_blocked"
   | "budget_exceeded"
   | "sandbox_missing"
@@ -120,6 +137,7 @@ export type CodexExecutionApproval = {
   approvedBy: string;
   reason: string;
   approvedAt?: string;
+  authorizationSource?: "automatic_policy" | "operator" | "headless";
 };
 
 export type CodexProcessRef = {
@@ -154,6 +172,9 @@ export type CodexExecutionPlan = {
   policyDecision?: PolicyDecision;
   verifierPlanId?: string;
   validationCommands: string[];
+  modelRole?: OrchestrationRole;
+  thinkingEffort?: OrchestrationThinkingEffort;
+  parentInvocationId?: string;
   approvalRequired: boolean;
   failureReasons: CodexExecutionFailureReason[];
   artifacts: ArtifactRef[];

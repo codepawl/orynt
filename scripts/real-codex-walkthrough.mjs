@@ -27,7 +27,7 @@ async function createFixtureRepository(root) {
   const repositoryPath = path.join(root, "fixture-repo");
   await mkdir(path.join(repositoryPath, "packages"), { recursive: true });
   await mkdir(path.join(repositoryPath, "scripts"), { recursive: true });
-  await writeFile(path.join(repositoryPath, "README.md"), "# CodePawl real Codex fixture\n", "utf8");
+  await writeFile(path.join(repositoryPath, "README.md"), "# Orynt real Codex fixture\n", "utf8");
   await writeFile(path.join(repositoryPath, "packages", "value.txt"), "initial value\n", "utf8");
   await writeFile(
     path.join(repositoryPath, "scripts", "pass.mjs"),
@@ -45,7 +45,7 @@ async function createFixtureRepository(root) {
   );
   await run("git", ["init"], { cwd: repositoryPath });
   await run("git", ["config", "user.email", "real-codex-walkthrough@example.invalid"], { cwd: repositoryPath });
-  await run("git", ["config", "user.name", "CodePawl Real Codex Walkthrough"], { cwd: repositoryPath });
+  await run("git", ["config", "user.name", "Orynt Real Codex Walkthrough"], { cwd: repositoryPath });
   await run("git", ["add", "."], { cwd: repositoryPath });
   await run("git", ["commit", "-m", "Initial real Codex walkthrough fixture"], { cwd: repositoryPath });
   return repositoryPath;
@@ -91,13 +91,13 @@ async function assertCodexExecutionFinished(result) {
 }
 
 function requireOptIn() {
-  if (process.env.CODEPAWL_RUN_REAL_CODEX === "1") {
+  if (process.env.ORYNT_RUN_REAL_CODEX === "1") {
     return;
   }
   throw new Error(
     [
       "Real Codex walkthrough is opt-in because it may use local Codex auth, network, and model budget.",
-      "Run with: CODEPAWL_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex",
+      "Run with: ORYNT_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex",
     ].join("\n"),
   );
 }
@@ -105,7 +105,7 @@ function requireOptIn() {
 async function runWalkthrough() {
   requireOptIn();
 
-  const root = await mkdtemp(path.join(tmpdir(), "codepawl-real-codex-walkthrough-"));
+  const root = await mkdtemp(path.join(tmpdir(), "orynt-real-codex-walkthrough-"));
   const repositoryPath = await createFixtureRepository(root);
   const sandboxRoot = path.join(root, "sandbox");
   const artifactRoot = path.join(root, "artifacts");
@@ -133,7 +133,7 @@ async function runWalkthrough() {
       planId: plan.id,
       status: "approved",
       approvedBy: "local-operator",
-      reason: "Operator explicitly opted into the real Codex walkthrough with CODEPAWL_RUN_REAL_CODEX=1.",
+      reason: "Operator explicitly opted into the real Codex walkthrough with ORYNT_RUN_REAL_CODEX=1.",
       approvedAt: new Date().toISOString(),
     }),
   });
@@ -185,7 +185,7 @@ async function runWalkthrough() {
   };
 
   console.log(JSON.stringify(output, null, 2));
-  if (process.env.CODEPAWL_KEEP_WALKTHROUGH === "1") {
+  if (process.env.ORYNT_KEEP_WALKTHROUGH === "1") {
     console.log(`Preserved real Codex walkthrough workspace: ${root}`);
   } else {
     await rm(root, { recursive: true, force: true });

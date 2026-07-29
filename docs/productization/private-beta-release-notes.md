@@ -1,10 +1,10 @@
-# CodePawl Desktop Private Beta Release Notes
+# Orynt Desktop Private Beta Release Notes
 
 Release channel: internal Linux beta
 
 ## Scope
 
-This build is a Repository-only scope beta for the supervised Coding Apprentice path. It supports selecting a local git repository, running a gated repository task through the local Codex CLI provider path, persisting run evidence in the Tauri app data directory, and reopening evidence through the desktop artifact viewer.
+This build is a Repository-only scope beta for the supervised Coding Apprentice path. It supports selecting a local directory, running a gated repository task through the local Codex CLI provider path, persisting run evidence in the Tauri app data directory, and reopening evidence through the desktop artifact viewer.
 
 Browser automation, general desktop control, arbitrary file control, terminal autonomy, hosted accounts, cloud sync, team accounts, managed AI credits, and live billing are not enabled.
 
@@ -26,13 +26,13 @@ Signing is not configured for this private beta. Treat the archive as an interna
 
 ## Provider And Billing
 
-Provider readiness depends on a locally installed and authenticated Codex CLI. CodePawl stores only a provider reference and preflight status in local app state; it does not store raw API keys in app data or artifacts.
+Provider readiness depends on a locally installed and authenticated Codex CLI. Orynt detects the existing Codex CLI session with `codex login status`; it does not start browser OAuth, device-code login, or access-token login from inside the app. If no session is detected, run `codex login` in a terminal, complete sign-in, then return and click Check Codex CLI again. Orynt stores only a provider reference and preflight status in local app state; it does not store raw API keys or Codex access tokens in app data or artifacts.
 
 No live billing is present. Paddle, hosted account, license enforcement, managed AI credit, and subscription flows remain out of beta runtime scope.
 
 ## Data Locations
 
-On Linux, Tauri app data resolves under `$XDG_CONFIG_HOME/com.codepawl.desktop` or `~/.config/com.codepawl.desktop`.
+On Linux, Tauri app data resolves under `$XDG_CONFIG_HOME/com.codepawl.orynt` or `~/.config/com.codepawl.orynt`.
 
 Important local paths:
 
@@ -41,4 +41,4 @@ Important local paths:
 - Memory store: `memory/memory-store.json` under app data.
 - Logs and diagnostics: run events, redacted logs, verifier input/result, replay plan, and release manifest in the artifact evidence tree.
 
-Reset instructions: quit CodePawl, archive the app data directory if needed for debugging, then delete the app data directory before relaunching. This resets onboarding, provider references, run history, artifact evidence, memory, and settings for the beta profile.
+Reset instructions: quit Orynt, archive the app data directory if needed for debugging, then delete the app data directory before relaunching. This resets onboarding, provider references, run history, artifact evidence, memory, and settings for the beta profile.

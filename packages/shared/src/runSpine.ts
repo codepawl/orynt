@@ -54,6 +54,8 @@ export const RUN_EVENT_TYPES = [
   "codex_execution_approval_required",
   "codex_execution_approved",
   "codex_execution_started",
+  "codex_reasoning_summary",
+  "codex_agent_message",
   "codex_execution_output_recorded",
   "codex_execution_finished",
   "codex_execution_failed",
@@ -107,6 +109,100 @@ export const RUN_EVENT_TYPES = [
 ] as const;
 
 export type RunEventType = (typeof RUN_EVENT_TYPES)[number];
+
+export const TASK_RUN_PHASES = ["observe", "plan", "act", "verify", "summarize", "approval", "apply"] as const;
+
+export type TaskRunPhase = (typeof TASK_RUN_PHASES)[number];
+
+const RUN_EVENT_TASK_PHASES: Record<RunEventType, TaskRunPhase> = {
+  run_started: "observe",
+  goal_received: "observe",
+  budget_initialized: "plan",
+  budget_checked: "plan",
+  budget_warning: "plan",
+  budget_stop_requested: "plan",
+  budget_exceeded: "plan",
+  workspace_initialized: "plan",
+  workspace_item_added: "plan",
+  context_packet_created: "plan",
+  context_initialized: "plan",
+  policy_checked: "approval",
+  sandbox_inspected: "plan",
+  sandbox_create_requested: "plan",
+  sandbox_create_allowed: "approval",
+  sandbox_planned: "plan",
+  sandbox_ready_mock: "plan",
+  sandbox_created: "act",
+  sandbox_create_failed: "act",
+  sandbox_cleanup_planned: "plan",
+  sandbox_cleanup_blocked: "approval",
+  codex_detected: "observe",
+  codex_missing: "observe",
+  codex_contract_requested: "plan",
+  codex_contract_created: "plan",
+  codex_contract_write_failed: "plan",
+  codex_manual_next_step: "plan",
+  codex_execution_planned: "plan",
+  codex_execution_approval_required: "approval",
+  codex_execution_approved: "approval",
+  codex_execution_started: "act",
+  codex_reasoning_summary: "act",
+  codex_agent_message: "act",
+  codex_execution_output_recorded: "act",
+  codex_execution_finished: "act",
+  codex_execution_failed: "act",
+  codex_execution_cancel_requested: "act",
+  codex_execution_blocked: "approval",
+  codex_execution_result_ready: "verify",
+  codex_result_import_requested: "apply",
+  codex_sandbox_diff_inspected: "verify",
+  codex_manual_log_imported: "verify",
+  codex_result_redacted: "apply",
+  codex_result_imported: "apply",
+  codex_result_import_failed: "apply",
+  manual_review_required: "approval",
+  verifier_input_created: "verify",
+  verification_planned: "verify",
+  verification_policy_checked: "approval",
+  verification_started: "verify",
+  verification_command_started: "verify",
+  verification_command_finished: "verify",
+  verification_diff_checked: "verify",
+  action_proposed: "plan",
+  approval_required: "approval",
+  action_blocked: "approval",
+  action_blocked_or_approved: "approval",
+  policy_violation: "approval",
+  verification_recorded: "verify",
+  verification_failed: "verify",
+  verification_passed: "verify",
+  memory_extraction_started: "summarize",
+  memory_episode_written: "summarize",
+  candidate_rule_proposed: "summarize",
+  candidate_rule_accepted: "summarize",
+  candidate_rule_rejected: "summarize",
+  candidate_rule_superseded: "summarize",
+  skill_candidate_created: "summarize",
+  skill_promoted_manual: "summarize",
+  skill_rejected: "summarize",
+  skill_superseded: "summarize",
+  skill_archived: "summarize",
+  skill_replay_plan_requested: "plan",
+  skill_replay_preconditions_checked: "plan",
+  skill_replay_policy_checked: "approval",
+  skill_replay_budget_estimated: "plan",
+  skill_replay_plan_created: "plan",
+  skill_replay_plan_blocked: "approval",
+  memory_redaction_applied: "summarize",
+  memory_extraction_finished: "summarize",
+  memory_extraction_failed: "summarize",
+  budget_recorded: "summarize",
+  run_finished: "summarize",
+};
+
+export function runEventTaskPhase(type: RunEventType): TaskRunPhase {
+  return RUN_EVENT_TASK_PHASES[type];
+}
 
 export type RunVerdictStatus = "pass" | "partial" | "fail" | "inconclusive";
 
@@ -413,10 +509,25 @@ export function validateRunEvent(event: RunEvent): void {
   }
 }
 
+function normalizeRunIdPrefix(value: string | undefined): string {
+  const normalized = value
+    ?.toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return normalized ? `${normalized}-` : "";
+}
+
 export class InMemoryRunStore implements RunStore {
   private runs = new Map<string, Run>();
   private events = new Map<string, RunEvent[]>();
   private nextRunNumber = 1;
+  private readonly runIdPrefix: string;
+
+  constructor(options: { runIdPrefix?: string } = {}) {
+    this.runIdPrefix = normalizeRunIdPrefix(options.runIdPrefix);
+  }
+
 
   createRun(input: CreateRunInput): Run {
     if (!input.goal.trim()) {
@@ -431,7 +542,7 @@ export class InMemoryRunStore implements RunStore {
 
     const now = new Date().toISOString();
     const run: Run = {
-      id: `run-${this.nextRunNumber++}`,
+      id: `run-${this.runIdPrefix}${this.nextRunNumber++}`,
       capabilityId: input.capabilityId,
       taskId: input.taskId,
       workspaceId: input.workspaceId,
@@ -545,7 +656,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     capabilityId: "coding-apprentice",
     taskId: "task-failing-unit-test",
     workspaceId: "workspace-local-alpha",
-    repositoryPath: "/repos/codepawl",
+    repositoryPath: "/repos/orynt",
     budget: createDefaultRunBudget(),
   });
 
@@ -582,7 +693,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     },
   });
 
-  const corePolicy = createConservativeCodingApprenticePolicy("/repos/codepawl", "/tmp/codepawl-worktrees");
+  const corePolicy = createConservativeCodingApprenticePolicy("/repos/orynt", "/tmp/orynt-worktrees");
   const policyEngine = new ConservativePolicyEngine();
   const sandboxManager = new DryRunSandboxManager();
   governor.checkBeforeOperation(run.id, "inspect_repository");
@@ -684,14 +795,14 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-codex-contract-md",
       kind: "codex_contract",
-      uri: `codepawl-artifact://${run.id}/codex-contract.md`,
+      uri: `orynt-artifact://${run.id}/codex-contract.md`,
       label: "Generated Codex work contract",
       sha256: "mock-codex-contract-md-sha256",
     },
     {
       id: "mock-codex-contract-metadata",
       kind: "codex_contract_metadata",
-      uri: `codepawl-artifact://${run.id}/codex-contract.metadata.json`,
+      uri: `orynt-artifact://${run.id}/codex-contract.metadata.json`,
       label: "Generated Codex contract metadata",
       sha256: "mock-codex-contract-metadata-sha256",
     },
@@ -727,7 +838,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-codex-result-import",
       kind: "codex_result_bundle",
-      uri: `codepawl-artifact://${run.id}/codex-result-import.json`,
+      uri: `orynt-artifact://${run.id}/codex-result-import.json`,
       label: "Imported manual Codex result bundle",
       sha256: "mock-codex-result-import-sha256",
     },
@@ -736,7 +847,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-verifier-input",
       kind: "verifier_input",
-      uri: `codepawl-artifact://${run.id}/verifier-input.json`,
+      uri: `orynt-artifact://${run.id}/verifier-input.json`,
       label: "Verifier input from imported Codex result",
       sha256: "mock-verifier-input-sha256",
     },
@@ -763,7 +874,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     type: "codex_manual_log_imported",
     actor: runtime,
     payload: {
-      summary: "Imported optional manual Codex log from the CodePawl-managed artifact directory",
+      summary: "Imported optional manual Codex log from the Orynt-managed artifact directory",
       malformed: false,
     },
   });
@@ -877,7 +988,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-verification-result",
       kind: "validation_report",
-      uri: `codepawl-artifact://${run.id}/verification-result.json`,
+      uri: `orynt-artifact://${run.id}/verification-result.json`,
       label: "Verification result",
       sha256: "mock-verification-result-sha256",
     },
@@ -979,14 +1090,14 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     {
       id: "mock-memory-episode",
       kind: "memory_episode",
-      uri: `codepawl-artifact://${run.id}/memory/memory-store.json#episode`,
+      uri: `orynt-artifact://${run.id}/memory/memory-store.json#episode`,
       label: "Episodic memory item",
       sha256: "mock-memory-episode-sha256",
     },
     {
       id: "mock-candidate-rule",
       kind: "candidate_rule",
-      uri: `codepawl-artifact://${run.id}/memory/memory-store.json#candidate-rule`,
+      uri: `orynt-artifact://${run.id}/memory/memory-store.json#candidate-rule`,
       label: "Candidate project rule",
       sha256: "mock-candidate-rule-sha256",
     },

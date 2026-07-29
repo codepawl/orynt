@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import codepawlLogoLoading from "../../../assets/pictures/codepawl-logo-loading.gif";
 import App from "./App";
 
 const renderAtRoute = (path = "/") => {
@@ -12,7 +11,7 @@ const renderAtRoute = (path = "/") => {
   return render(<App />);
 };
 
-describe("CodePawl landing page", () => {
+describe("Orynt landing page", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/");
   });
@@ -36,15 +35,17 @@ describe("CodePawl landing page", () => {
   it("renders the landing nav, hero, and primary landing animation", () => {
     render(<App />);
 
-    const brandLink = screen.getByRole("link", { name: "CodePawl home" });
+    const brandLink = screen.getByRole("link", { name: "Orynt home" });
     const logo = brandLink.querySelector(".brand-logo");
-    expect(logo?.tagName.toLowerCase()).toBe("svg");
+    expect(logo?.tagName.toLowerCase()).toBe("img");
+    expect(logo).toHaveAttribute("alt", "");
     expect(logo).toHaveAttribute("aria-hidden", "true");
-    expect(brandLink.querySelector("img")).not.toBeInTheDocument();
+    expect(logo).toHaveAttribute("src", expect.stringContaining("lightbulb-mark-on-dark"));
+    expect(brandLink.querySelector("svg")).not.toBeInTheDocument();
 
-    const loadingStatus = screen.getByRole("status", { name: "Loading CodePawl content" });
-    expect(loadingStatus.querySelector(".loading-screen-logo-motion")).toHaveAttribute("src", codepawlLogoLoading);
-    expect(loadingStatus.querySelector(".loading-screen-logo-static")).toBeInTheDocument();
+    const loadingStatus = screen.getByRole("status", { name: "Loading Orynt content" });
+    expect(loadingStatus.querySelector(".loading-screen-logo")).toHaveAttribute("src", expect.stringContaining("lightbulb-mark-on-dark"));
+    expect(loadingStatus.querySelector(".loading-screen-logo-motion")).not.toBeInTheDocument();
 
     const primaryNav = screen.getByRole("navigation", { name: "Primary navigation" });
     expect(primaryNav).toBeInTheDocument();
@@ -65,10 +66,10 @@ describe("CodePawl landing page", () => {
     expect(screen.queryByRole("link", { name: "View cockpit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "View Animation" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Start Local Walkthrough" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download CodePawl" })).toHaveAttribute("href", "/access");
+    expect(screen.getByRole("link", { name: "Download Orynt" })).toHaveAttribute("href", "/access");
     expect(screen.getByRole("link", { name: "Start here" })).toHaveAttribute("href", "/docs");
     expect(screen.getAllByRole("link", { name: "Start Here" })).toHaveLength(2);
-    expect(screen.getAllByRole("link", { name: "Learn More" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Read Docs" })).toHaveLength(2);
     expect(screen.queryByRole("link", { name: "View plans" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Review workflow" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Start free trial" })).not.toBeInTheDocument();
@@ -77,7 +78,7 @@ describe("CodePawl landing page", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Give AI agents a working brain." }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/codepawl is a brain-like operating system for adaptive ai agents/i)).toBeInTheDocument();
+    expect(screen.getByText(/orynt is a brain-like operating system for adaptive ai agents/i)).toBeInTheDocument();
     expect(
       screen.getByText(/structured memory, reusable skills, verification, self-improvement loops, and safe tool use/i),
     ).toBeInTheDocument();
@@ -87,7 +88,7 @@ describe("CodePawl landing page", () => {
     expect(screen.queryByText(/reviewed memory/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^closed-source product$/i)).not.toBeInTheDocument();
 
-    const preview = screen.getByRole("region", { name: "CodePawl landing page animation" });
+    const preview = screen.getByRole("region", { name: "Orynt landing page animation" });
     expect(within(preview).queryByRole("heading", { level: 2, name: "Working brain loop" })).not.toBeInTheDocument();
     ["Perceive", "Remember", "Plan", "Act", "Verify", "Improve"].forEach((label) => {
       expect(within(preview).queryByText(label)).not.toBeInTheDocument();
@@ -143,18 +144,18 @@ describe("CodePawl landing page", () => {
     vi.useFakeTimers();
     render(<App />);
 
-    expect(screen.getByRole("status", { name: "Loading CodePawl content" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading Orynt content" })).toBeInTheDocument();
 
     act(() => {
       window.dispatchEvent(new Event("load"));
       vi.advanceTimersByTime(649);
     });
-    expect(screen.getByRole("status", { name: "Loading CodePawl content" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading Orynt content" })).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(screen.queryByRole("status", { name: "Loading CodePawl content" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading Orynt content" })).not.toBeInTheDocument();
   });
 
   it("renders value props, workflow, pricing, and footer without removed middle marketing sections", () => {
@@ -253,7 +254,7 @@ describe("CodePawl landing page", () => {
   it("renders pricing and direct application download on the pricing page", () => {
     renderAtRoute("/pricing");
 
-    expect(screen.queryByRole("heading", { level: 1, name: "Choose a CodePawl build." })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "Choose a Orynt build." })).not.toBeInTheDocument();
     expect(screen.queryByText(/compare the early-access package/i)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Simple, predictable pricing." })).toBeInTheDocument();
     const pricingSection = screen.getByRole("region", { name: "Simple, predictable pricing." });
@@ -270,7 +271,7 @@ describe("CodePawl landing page", () => {
     expect(within(billingPeriod).getByRole("button", { name: "Quarterly" })).toHaveAttribute("aria-pressed", "false");
     expect(within(billingPeriod).getByRole("button", { name: "Yearly" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByText("Monthly planning numbers shown.")).not.toBeInTheDocument();
-    expect(screen.getByText("Best for evaluating CodePawl before committing.")).toBeInTheDocument();
+    expect(screen.getByText("Best for evaluating Orynt before committing.")).toBeInTheDocument();
     expect(screen.getByText("Closed-source product access")).toBeInTheDocument();
     expect(screen.getByText("Best for solo operators running recurring browser work.")).toBeInTheDocument();
     expect(screen.getByText("Best for heavier usage, shared skills, and tighter approvals.")).toBeInTheDocument();
@@ -285,7 +286,7 @@ describe("CodePawl landing page", () => {
       "Full-loop trial",
       "Evaluate memory, skills, verification, and approval gates before paying.",
       "Clear base price",
-      "Plan price buys CodePawl control; provider usage stays separate instead of buried in markup.",
+      "Plan price buys Orynt control; provider usage stays separate instead of buried in markup.",
       "Early-access upside",
       "Final package, limits, and support terms are explicit before signup while these anchors stay visible.",
       "No live checkout",
@@ -320,11 +321,11 @@ describe("CodePawl landing page", () => {
   it("gates download actions behind the access page before returning to pricing", () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("link", { name: "Download CodePawl" }));
+    fireEvent.click(screen.getByRole("link", { name: "Download Orynt" }));
 
     expect(window.location.pathname).toBe("/access");
     expect(
-      screen.getByRole("heading", { level: 1, name: "Create access before downloading CodePawl." }),
+      screen.getByRole("heading", { level: 1, name: "Create access before downloading Orynt." }),
     ).toBeInTheDocument();
     expect(screen.getByText(/downloads stay behind a lightweight account step/i)).toBeInTheDocument();
     const accessForm = screen.getByRole("form", { name: "Sign up to continue to downloads." });
@@ -414,7 +415,7 @@ describe("CodePawl landing page", () => {
       "href",
       "/docs",
     );
-    expect(within(headerActions as HTMLElement).getByRole("link", { name: "Download CodePawl" })).toHaveAttribute(
+    expect(within(headerActions as HTMLElement).getByRole("link", { name: "Download Orynt" })).toHaveAttribute(
       "href",
       "/access",
     );
@@ -425,11 +426,11 @@ describe("CodePawl landing page", () => {
         "href",
         "/pricing",
       );
-      expect(within(actions as HTMLElement).getByRole("link", { name: "Learn More" })).toHaveAttribute(
+      expect(within(actions as HTMLElement).getByRole("link", { name: "Read Docs" })).toHaveAttribute(
         "href",
         "/docs",
       );
-      expect(within(actions as HTMLElement).queryByRole("link", { name: "Download CodePawl" })).not.toBeInTheDocument();
+      expect(within(actions as HTMLElement).queryByRole("link", { name: "Download Orynt" })).not.toBeInTheDocument();
       expect(within(actions as HTMLElement).queryByRole("link", { name: "Review workflow" })).not.toBeInTheDocument();
     });
 
@@ -463,7 +464,7 @@ describe("CodePawl landing page", () => {
     const docsPage = screen.getByRole("region", { name: "Future docs for operator-led agents." });
 
     expect(screen.getByRole("heading", { level: 1, name: "Future docs for operator-led agents." })).toBeInTheDocument();
-    expect(screen.getByText(/a preview of the CodePawl documentation structure/i)).toBeInTheDocument();
+    expect(screen.getByText(/a preview of the Orynt documentation structure/i)).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Future documentation sections" })).not.toBeInTheDocument();
     const docsFilters = screen.getByRole("complementary", { name: "Documentation filters" });
     expect(within(docsFilters).getByText("Find useful docs")).toBeInTheDocument();
@@ -474,11 +475,11 @@ describe("CodePawl landing page", () => {
     });
     expect(screen.queryByRole("complementary", { name: "Documentation index" })).not.toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Documentation availability" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "How CodePawl perceives, plans, acts, and verifies" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "How Orynt perceives, plans, acts, and verifies" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Turn reviewed corrections into reusable behavior" })).toBeInTheDocument();
     expect(docsPage.querySelectorAll(".docs-preview-thumb")).toHaveLength(7);
     expect(docsPage.querySelectorAll(".docs-preview-item small")).toHaveLength(0);
-    expect(screen.queryByText("Provider/model billing notes will stay separate from CodePawl plan docs.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Provider/model billing notes will stay separate from Orynt plan docs.")).not.toBeInTheDocument();
     expect(screen.queryByText("These pages are not live docs yet.")).not.toBeInTheDocument();
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
     expect(screen.queryByText("Draft")).not.toBeInTheDocument();
@@ -493,7 +494,7 @@ describe("CodePawl landing page", () => {
     expect(screen.getByRole("heading", { level: 2, name: "What becomes durable context" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Turn reviewed corrections into reusable behavior" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { level: 2, name: "How CodePawl perceives, plans, acts, and verifies" }),
+      screen.queryByRole("heading", { level: 2, name: "How Orynt perceives, plans, acts, and verifies" }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(within(docsFilters).getByRole("button", { name: "All docs" }));
@@ -513,11 +514,11 @@ describe("CodePawl landing page", () => {
     unmount();
     renderAtRoute("/contact");
 
-    const contactPage = screen.getByRole("region", { name: "Reach the right CodePawl inbox." });
-    expect(screen.getByRole("heading", { level: 1, name: "Reach the right CodePawl inbox." })).toBeInTheDocument();
+    const contactPage = screen.getByRole("region", { name: "Reach the right Orynt inbox." });
+    expect(screen.getByRole("heading", { level: 1, name: "Reach the right Orynt inbox." })).toBeInTheDocument();
     expect(screen.getByText(/use the clearest lane for early-access questions/i)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Start with hello for general CodePawl intake." })).toBeInTheDocument();
-    expect(screen.getByRole("form", { name: "Start with hello for general CodePawl intake." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Start with hello for general Orynt intake." })).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: "Start with hello for general Orynt intake." })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Email" })).toHaveAttribute("type", "email");
     expect(screen.getByRole("combobox", { name: "Topic" })).toHaveValue("early-access");
@@ -549,17 +550,17 @@ describe("CodePawl landing page", () => {
       },
       {
         href: "/api-reference",
-        title: "API reference preview for CodePawl integrations.",
+        title: "API reference preview for Orynt integrations.",
         panel: "Run lifecycle contracts",
       },
       {
         href: "/build-log",
-        title: "Build log for CodePawl early access.",
+        title: "Build log for Orynt early access.",
         panel: "Release notes",
       },
       {
         href: "/careers",
-        title: "Careers at CodePawl will open later.",
+        title: "Careers at Orynt will open later.",
         panel: "Product engineering",
       },
     ].forEach(({ href, panel, title }) => {
@@ -581,7 +582,7 @@ describe("CodePawl landing page", () => {
     [
       {
         href: "/legal",
-        title: "Legal center for CodePawl.",
+        title: "Legal center for Orynt.",
         section: "What this covers",
         contact: "hello@codepawl.com",
       },
@@ -648,7 +649,7 @@ describe("CodePawl landing page", () => {
       window.dispatchEvent(new Event("popstate"));
     });
 
-    expect(screen.getByRole("heading", { level: 1, name: "Reach the right CodePawl inbox." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Reach the right Orynt inbox." })).toBeInTheDocument();
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "Footer resource links" })).getByRole("link", { name: "Guides" }));
     expect(window.location.pathname).toBe("/guides");
@@ -932,11 +933,10 @@ describe("CodePawl landing page", () => {
     expect(styles).not.toContain("--brain-frame-delay");
     expect(styles).not.toContain("steps(1");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(styles).toContain(".loading-screen-logo-motion");
-    expect(styles).toContain("display: none;");
-    expect(styles).toContain(".loading-screen-logo-static");
-    expect(styles).toContain("display: block;");
-    expect(styles).toContain(".brand:hover .brand-logo-dot");
+    expect(styles).toContain(".loading-screen-logo");
+    expect(styles).not.toContain(".loading-screen-logo-motion");
+    expect(styles).not.toContain(".loading-screen-logo-static");
+    expect(styles).not.toContain(".brand:hover .brand-logo-dot");
     expect(styles).toContain(".final-cta::before");
     expect(styles).toContain(".final-cta::after");
     expect(styles).toContain(".line-icon svg");
@@ -965,21 +965,17 @@ describe("CodePawl landing page", () => {
     expect(screen.queryByText("swipe")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /swipe/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Loop back to first workflow step" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Previous workflow step" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Next workflow step" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Previous workflow step" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next workflow step" })).not.toBeInTheDocument();
     const workflowTrack = screen.getByLabelText("Workflow steps");
-    const workflowTimeline = workflowTrack.closest(".workflow-timeline");
-    const workflowHitZones = workflowTimeline?.querySelector(".workflow-carousel-hit-zones");
     const perceiveStep = screen.getByRole("heading", { level: 3, name: "Perceive" }).closest("article");
     expect(perceiveStep).toHaveAttribute("aria-current", "step");
     expect(perceiveStep).toHaveAttribute("data-focus", "active");
     expect(document.querySelectorAll(".workflow-card")).toHaveLength(6);
     expect(document.querySelectorAll(".workflow-card[aria-hidden='true']")).toHaveLength(0);
     expect(screen.queryByRole("heading", { level: 3, name: "Perceive again" })).not.toBeInTheDocument();
-    expect(workflowHitZones).toBeInTheDocument();
-    expect(workflowHitZones?.querySelectorAll(".workflow-carousel-hit-zone")).toHaveLength(2);
-    expect(perceiveStep?.querySelector(".workflow-carousel-hit-zones")).not.toBeInTheDocument();
-    expect(workflowHitZones?.closest("article")).not.toBeInTheDocument();
+    expect(document.querySelector(".workflow-carousel-hit-zones")).not.toBeInTheDocument();
+    expect(document.querySelector(".workflow-carousel-hit-zone")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article")).toHaveAttribute(
       "data-focus",
       "near",
@@ -993,26 +989,26 @@ describe("CodePawl landing page", () => {
       "ghost",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Next workflow step" }));
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article")).toHaveAttribute(
       "aria-current",
       "step",
     );
-    expect(screen.getByRole("button", { name: "Previous workflow step" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Next workflow step" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Previous workflow step" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next workflow step" })).not.toBeInTheDocument();
 
     advanceWorkflowNavigationCooldown();
-    fireEvent.click(screen.getByRole("button", { name: "Previous workflow step" }));
+    fireEvent.keyDown(workflowTrack, { key: "ArrowLeft" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Perceive" }).closest("article")).toHaveAttribute(
       "aria-current",
       "step",
     );
-    expect(screen.getByRole("button", { name: "Previous workflow step" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Previous workflow step" })).not.toBeInTheDocument();
 
     advanceWorkflowNavigationCooldown();
-    fireEvent.click(screen.getByRole("button", { name: "Previous workflow step" }));
+    fireEvent.keyDown(workflowTrack, { key: "ArrowLeft" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Improve" }).closest("article")).toHaveAttribute(
       "aria-current",
@@ -1020,7 +1016,7 @@ describe("CodePawl landing page", () => {
     );
 
     advanceWorkflowNavigationCooldown();
-    fireEvent.click(screen.getByRole("button", { name: "Next workflow step" }));
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Perceive" }).closest("article")).toHaveAttribute(
       "aria-current",
@@ -1030,7 +1026,7 @@ describe("CodePawl landing page", () => {
 
     advanceWorkflowNavigationCooldown();
     for (let step = 0; step < 5; step += 1) {
-      fireEvent.click(screen.getByRole("button", { name: "Next workflow step" }));
+      fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
       advanceWorkflowNavigationCooldown();
     }
 
@@ -1045,7 +1041,7 @@ describe("CodePawl landing page", () => {
     const rememberStep = screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article");
     expect(rememberStep).toHaveAttribute("aria-current", "step");
     expect(screen.queryByText("swipe")).not.toBeInTheDocument();
-    expect(rememberStep?.querySelector(".workflow-carousel-hit-zones")).not.toBeInTheDocument();
+    expect(document.querySelector(".workflow-carousel-hit-zones")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Perceive" }).closest("article")).toHaveAttribute(
       "data-focus",
       "near",
@@ -1122,8 +1118,8 @@ describe("CodePawl landing page", () => {
       "aria-current",
       "step",
     );
-    expect(screen.getByRole("button", { name: "Previous workflow step" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Next workflow step" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Previous workflow step" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next workflow step" })).not.toBeInTheDocument();
     advanceWorkflowNavigationCooldown();
     fireEvent.pointerDown(workflowTrack, { button: 0, clientX: 260, clientY: 120, pointerId: 4 });
     fireEvent.pointerUp(workflowTrack, { clientX: 150, clientY: 122, pointerId: 4 });
@@ -1143,17 +1139,16 @@ describe("CodePawl landing page", () => {
     expect(styles).not.toContain(".feature-grid");
     expect(styles).not.toContain(".feature-card");
     const workflowTimelineStyles = styles.match(/\.workflow-timeline \{[\s\S]*?\}/)?.[0] ?? "";
-    const workflowHitZoneLayerStyles = styles.match(/\.workflow-carousel-hit-zones \{[\s\S]*?\}/)?.[0] ?? "";
-    const workflowHitZoneStyles = styles.match(/\.workflow-carousel-hit-zone \{[\s\S]*?\}/)?.[0] ?? "";
     const workflowTrackStyles = styles.match(/\.workflow-track \{[\s\S]*?\}/)?.[0] ?? "";
     const workflowCardStyles = styles.match(/\.workflow-card \{[\s\S]*?\}/)?.[0] ?? "";
     const workflowIconStyles = Array.from(styles.matchAll(/\.workflow-icon \{[\s\S]*?\}/g)).map((match) => match[0]);
     const workflowIconPlacementStyles = workflowIconStyles.find((rule) => rule.includes("grid-column: 2;")) ?? "";
     expect(styles).toContain(".workflow-timeline");
     expect(styles).toContain(".workflow-track");
-    expect(styles).toContain(".workflow-card-hitbox");
-    expect(styles).toContain(".workflow-carousel-hit-zones");
-    expect(styles).toContain(".workflow-carousel-hit-zone");
+    expect(styles).toContain(".workflow-card:focus-visible");
+    expect(styles).not.toContain(".workflow-card-hitbox");
+    expect(styles).not.toContain(".workflow-carousel-hit-zones");
+    expect(styles).not.toContain(".workflow-carousel-hit-zone");
     expect(styles).toContain(".workflow-loop-arrow-button");
     expect(styles).not.toContain(".workflow-loop-trail");
     expect(styles).not.toContain(".workflow-loop-trail-head");
@@ -1176,18 +1171,6 @@ describe("CodePawl landing page", () => {
     expect(workflowTimelineStyles).toContain("overflow: hidden;");
     expect(workflowTimelineStyles).toContain("--workflow-card-width: clamp(320px, 82%, 520px);");
     expect(workflowTimelineStyles).toContain("--workflow-track-edge-padding:");
-    expect(workflowHitZoneLayerStyles).toContain("position: absolute;");
-    expect(workflowHitZoneLayerStyles).toContain("pointer-events: none;");
-    expect(workflowHitZoneLayerStyles).toContain(
-      "grid-template-columns: minmax(56px, 1fr) var(--workflow-card-width) minmax(56px, 1fr);",
-    );
-    expect(styles).toContain(
-      "grid-template-columns: minmax(52px, 1fr) var(--workflow-card-width) minmax(52px, 1fr);",
-    );
-    expect(workflowHitZoneStyles).toContain("pointer-events: auto;");
-    expect(workflowHitZoneStyles).toContain("background: transparent;");
-    expect(workflowHitZoneStyles).toContain("border: 0;");
-    expect(workflowHitZoneStyles).not.toContain("border-radius:");
     expect(workflowTrackStyles).toContain("overflow-x: hidden;");
     expect(workflowTrackStyles).toContain("scroll-snap-type: x mandatory;");
     expect(workflowTrackStyles).toContain("touch-action: pan-y;");
@@ -1234,12 +1217,11 @@ describe("CodePawl landing page", () => {
     vi.useFakeTimers();
     render(<App />);
 
-    const nextWorkflowStep = screen.getByRole("button", { name: "Next workflow step" });
     const workflowTrack = screen.getByLabelText("Workflow steps");
 
-    fireEvent.click(nextWorkflowStep);
-    fireEvent.click(nextWorkflowStep);
-    fireEvent.click(nextWorkflowStep);
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
     fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
 
     expect(screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article")).toHaveAttribute(
@@ -1250,7 +1232,7 @@ describe("CodePawl landing page", () => {
     act(() => {
       vi.advanceTimersByTime(499);
     });
-    fireEvent.click(nextWorkflowStep);
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
     expect(screen.getByRole("heading", { level: 3, name: "Remember" }).closest("article")).toHaveAttribute(
       "aria-current",
       "step",
@@ -1259,7 +1241,7 @@ describe("CodePawl landing page", () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    fireEvent.click(nextWorkflowStep);
+    fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
     expect(screen.getByRole("heading", { level: 3, name: "Plan" }).closest("article")).toHaveAttribute(
       "aria-current",
       "step",
@@ -1283,11 +1265,10 @@ describe("CodePawl landing page", () => {
           vi.advanceTimersByTime(500);
         });
       };
-      const nextWorkflowStep = screen.getByRole("button", { name: "Next workflow step" });
-      const previousWorkflowStep = screen.getByRole("button", { name: "Previous workflow step" });
+      const workflowTrack = screen.getByLabelText("Workflow steps");
 
       for (let step = 0; step < 5; step += 1) {
-        fireEvent.click(nextWorkflowStep);
+        fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
         advanceWorkflowNavigationCooldown();
       }
 
@@ -1315,7 +1296,7 @@ describe("CodePawl landing page", () => {
 
       advanceWorkflowNavigationCooldown();
       scrollTo.mockClear();
-      fireEvent.click(previousWorkflowStep);
+      fireEvent.keyDown(workflowTrack, { key: "ArrowLeft" });
 
       expect(screen.getByRole("heading", { level: 3, name: "Improve" }).closest("article")).toHaveAttribute(
         "aria-current",
@@ -1362,10 +1343,10 @@ describe("CodePawl landing page", () => {
         });
       };
       const primaryNav = screen.getByRole("navigation", { name: "Primary navigation" });
-      const nextWorkflowStep = screen.getByRole("button", { name: "Next workflow step" });
+      const workflowTrack = screen.getByLabelText("Workflow steps");
 
       for (let step = 0; step < 5; step += 1) {
-        fireEvent.click(nextWorkflowStep);
+        fireEvent.keyDown(workflowTrack, { key: "ArrowRight" });
         advanceWorkflowNavigationCooldown();
       }
 
@@ -1532,7 +1513,7 @@ describe("CodePawl landing page", () => {
     expect(actions).toBeInTheDocument();
     expect(within(actions as HTMLElement).getByRole("link", { name: "Start here" })).toHaveAttribute("href", "/docs");
     expect(within(actions as HTMLElement).queryByRole("link", { name: "Learn More" })).not.toBeInTheDocument();
-    expect(within(actions as HTMLElement).getByRole("link", { name: "Download CodePawl" })).toHaveAttribute("href", "/access");
+    expect(within(actions as HTMLElement).getByRole("link", { name: "Download Orynt" })).toHaveAttribute("href", "/access");
 
     const styles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
     const headerStart = styles.indexOf(".site-header {\n  position: sticky");
@@ -1567,15 +1548,24 @@ describe("CodePawl landing page", () => {
     expect(brandHoverStyles).toContain("color: var(--mist-200)");
     expect(brandHoverStyles).not.toContain("background:");
 
-    expect(styles).toContain(".brand-logo-surface");
-    expect(styles).toContain("@keyframes brandLogoChevronUpper");
-    expect(styles).toContain("@keyframes brandLogoChevronLower");
-    expect(styles).toContain("@keyframes brandLogoConnector");
-    expect(styles).toContain("@keyframes brandLogoDot");
+    expect(styles).toContain(".brand-logo");
+    expect(styles).not.toContain(".brand-logo-surface");
+    expect(styles).not.toContain("@keyframes brandLogoChevronUpper");
+    expect(styles).not.toContain("@keyframes brandLogoChevronLower");
+    expect(styles).not.toContain("@keyframes brandLogoConnector");
+    expect(styles).not.toContain("@keyframes brandLogoDot");
     expect(styles).toContain(".loading-screen");
-    expect(styles).toContain(".loading-screen-logo-motion");
-    expect(styles).toContain(".loading-screen-logo-static");
-    expect(styles).toContain(".brand:hover .brand-logo-chevron-upper");
+    expect(styles).toContain(".loading-screen-logo");
+    expect(styles).not.toContain(".loading-screen-logo-motion");
+    expect(styles).not.toContain(".loading-screen-logo-static");
+    expect(styles).not.toContain(".brand:hover .brand-logo-chevron-upper");
+
+    const indexHtml = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
+    expect(indexHtml).toContain('href="/favicon.svg"');
+    expect(indexHtml).toContain('href="/favicon-light.svg"');
+    expect(indexHtml).toContain('href="/favicon-dark.svg"');
+    expect(indexHtml).toContain('media="(prefers-color-scheme: light)"');
+    expect(indexHtml).toContain('media="(prefers-color-scheme: dark)"');
 
     const tabletStyles = styles.slice(styles.indexOf("@media (max-width: 1120px)"), styles.indexOf("@media (max-width: 760px)"));
     expect(tabletStyles).toContain("grid-template-columns: minmax(0, 1fr) auto");
@@ -1598,12 +1588,12 @@ describe("CodePawl landing page", () => {
     expect(actions).toBeInTheDocument();
     expect(within(actions as HTMLElement).queryByRole("link", { name: "View plans" })).not.toBeInTheDocument();
     expect(within(actions as HTMLElement).queryByRole("link", { name: "Review workflow" })).not.toBeInTheDocument();
-    expect(within(actions as HTMLElement).queryByRole("link", { name: "Download CodePawl" })).not.toBeInTheDocument();
+    expect(within(actions as HTMLElement).queryByRole("link", { name: "Download Orynt" })).not.toBeInTheDocument();
     expect(within(actions as HTMLElement).getByRole("link", { name: "Start Here" })).toHaveAttribute(
       "href",
       "/pricing",
     );
-    expect(within(actions as HTMLElement).getByRole("link", { name: "Learn More" })).toHaveAttribute("href", "/docs");
+    expect(within(actions as HTMLElement).getByRole("link", { name: "Read Docs" })).toHaveAttribute("href", "/docs");
 
     const styles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
     const finalCtaStart = styles.indexOf(".final-cta {\n  display: grid");

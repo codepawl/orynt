@@ -1,18 +1,19 @@
 [package]
-name = "codepawl-desktop"
+name = "orynt-desktop"
 version = "0.1.0"
-description = "CodePawl Tauri desktop shell"
+description = "Orynt Tauri desktop shell"
 authors = ["CodePawl"]
 edition = "2021"
 
 [lib]
-name = "codepawl_desktop_lib"
+name = "orynt_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }

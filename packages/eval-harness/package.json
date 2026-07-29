@@ -12,10 +12,11 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/shared build && tsc -p tsconfig.json",
-    "test": "pnpm --filter @codepawl/shared build && vitest run"
+    "build": "pnpm --filter @codepawl/coding-apprentice build && tsc -p tsconfig.json",
+    "test": "pnpm --filter @codepawl/coding-apprentice build && vitest run"
   },
   "dependencies": {
+    "@codepawl/coding-apprentice": "workspace:*",
     "@codepawl/shared": "workspace:*"
   },
   "devDependencies": {

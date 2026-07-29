@@ -235,13 +235,26 @@ export function createDefaultSandboxBudget(): SandboxBudget {
 
 export function createConservativeCodingApprenticePolicy(
   repositoryPath = "/workspace/repository",
-  worktreePath = "/workspace/codepawl-worktrees/run-dry-run",
+  worktreePath = "/workspace/orynt-worktrees/run-dry-run",
 ): CorePolicy {
   const repository: RepositoryScope = {
     repositoryPath,
     worktreePath,
     baseRef: "HEAD",
-    allowedPaths: ["apps/**", "packages/**", ".codex/**", "README.md", "PRODUCT.md"],
+    allowedPaths: [
+      "apps/**",
+      "packages/**",
+      "src/**",
+      "server/**",
+      "api/**",
+      "public/**",
+      "tests/**",
+      ".codex/**",
+      "README.md",
+      "PRODUCT.md",
+      "package.json",
+      "index.html",
+    ],
     protectedPaths: DEFAULT_FILE_WRITE_POLICY.protectedGlobs,
   };
 
@@ -408,9 +421,9 @@ export class DryRunSandboxManager implements SandboxManager {
       repositoryPath: request.repositoryPath,
       gitRoot: inspection.gitRoot,
       baseRef: request.baseRef,
-      branchName: `codepawl/${request.runId}-${request.taskId}`,
+      branchName: `orynt/${request.runId}-${request.taskId}`,
       worktreePath: plan.plannedWorktreePath,
-      gitArgs: ["-C", inspection.gitRoot, "worktree", "add", "-b", `codepawl/${request.runId}-${request.taskId}`, plan.plannedWorktreePath, request.baseRef],
+      gitArgs: ["-C", inspection.gitRoot, "worktree", "add", "-b", `orynt/${request.runId}-${request.taskId}`, plan.plannedWorktreePath, request.baseRef],
       policyDecision,
     };
   }

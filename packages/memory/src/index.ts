@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
+import { MEMORY_STORE_SCHEMA_VERSION } from "@codepawl/shared";
 import type {
   Actor,
   ArtifactRef,
@@ -19,11 +20,17 @@ import type {
   MemoryExtractionResult,
   MemoryExtractor,
   MemoryItemKind,
+  MemoryMutationOptions,
   MemoryNamespace,
   MemoryProvenance,
   MemoryQuery,
   MemoryRedactionResult,
+  MemoryRetrievalHit,
+  MemoryRetrievalQuery,
   MemoryRetentionPolicy,
+  MemoryStoreEnvelopeV2,
+  MemoryTombstone,
+  MemoryReviewDecision,
   SemanticMemoryEditInput,
   SemanticMemoryItem,
   SemanticMemoryQuery,
@@ -37,11 +44,13 @@ import type {
   VerificationResult,
 } from "@codepawl/shared";
 
-type MemoryDatabase = {
+type LegacyMemoryDatabase = {
   episodes: EpisodicMemoryItem[];
   candidateRules: CandidateRule[];
   semanticMemory: SemanticMemoryItem[];
 };
+
+type MemoryDatabase = MemoryStoreEnvelopeV2;
 
 type LocalJsonMemoryStoreOptions = {
   memoryRoot?: string;
@@ -56,7 +65,15 @@ type LocalMemoryExtractorOptions = {
 };
 
 export class MemoryStoreFailure extends Error {
-  readonly code: "unsafe_path" | "episode_not_found" | "candidate_rule_not_found" | "semantic_memory_not_found" | "invalid_status_transition";
+  readonly code:
+    | "unsafe_path"
+    | "episode_not_found"
+    | "candidate_rule_not_found"
+    | "semantic_memory_not_found"
+    | "invalid_status_transition"
+    | "revision_conflict"
+    | "not_restorable"
+    | "purge_not_due";
 
   constructor(code: MemoryStoreFailure["code"], message: string) {
     super(message);
@@ -76,6 +93,11 @@ export class MemoryExtractionFailure extends Error {
 }
 
 const DEFAULT_ACTOR: Actor = { kind: "runtime", id: "memory-extractor", displayName: "Memory Extractor" };
+const TRASH_RETENTION_DAYS = 30;
+const DEFAULT_RETRIEVAL_LIMIT = 20;
+const MAX_RETRIEVAL_LIMIT = 100;
+const mutationQueues = new Map<string, Promise<void>>();
+let atomicWriteSequence = 0;
 const SENSITIVE_KEY_PATTERN = /\b(password|secret|api[-_\s]?key|token|otp|authorization|cookie|credential|private[-_\s]?key|raw[-_\s]?value)\b/i;
 const KEY_VALUE_SECRET_PATTERN = /\b(password|secret|api[-_\s]?key|token|otp|authorization|cookie|credential|private[-_\s]?key|raw[-_\s]?value)\b\s*[:=]\s*[^\s,;]+/gi;
 const SECRET_VALUE_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9_]{8,}|Bearer\s+[A-Za-z0-9._-]{8,})\b/g;
@@ -265,36 +287,133 @@ function limit<T>(values: T[], max?: number): T[] {
   return max === undefined ? values : values.slice(0, max);
 }
 
+function addDays(value: string, days: number): string {
+  const date = new Date(value);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString();
+}
+
+function isExpired(item: EpisodicMemoryItem, at: string): boolean {
+  return item.expiresAt !== undefined && Date.parse(item.expiresAt) <= Date.parse(at);
+}
+
+function emptyDatabase(updatedAt = now()): MemoryDatabase {
+  return {
+    schemaVersion: MEMORY_STORE_SCHEMA_VERSION,
+    revision: 0,
+    updatedAt,
+    episodes: [],
+    candidateRules: [],
+    semanticMemory: [],
+    tombstones: [],
+  };
+}
+
+function migrateDatabase(value: unknown): MemoryDatabase {
+  if (!value || typeof value !== "object") {
+    return emptyDatabase();
+  }
+  const parsed = value as Partial<MemoryDatabase & LegacyMemoryDatabase>;
+  const base = {
+    episodes: Array.isArray(parsed.episodes) ? parsed.episodes : [],
+    candidateRules: Array.isArray(parsed.candidateRules) ? parsed.candidateRules : [],
+    semanticMemory: Array.isArray(parsed.semanticMemory) ? parsed.semanticMemory : [],
+  };
+  if (parsed.schemaVersion === MEMORY_STORE_SCHEMA_VERSION) {
+    return {
+      schemaVersion: MEMORY_STORE_SCHEMA_VERSION,
+      revision: Number.isSafeInteger(parsed.revision) && Number(parsed.revision) >= 0 ? Number(parsed.revision) : 0,
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : now(),
+      ...base,
+      tombstones: Array.isArray(parsed.tombstones) ? parsed.tombstones : [],
+    };
+  }
+  return {
+    schemaVersion: MEMORY_STORE_SCHEMA_VERSION,
+    revision: 0,
+    updatedAt: now(),
+    ...base,
+    tombstones: [],
+  };
+}
+
+function retrievalTokens(text?: string): string[] {
+  return [...new Set((text ?? "").toLowerCase().match(/[a-z0-9._/-]+/g) ?? [])].sort();
+}
+
+function tokenOverlap(value: unknown, tokens: string[]): number {
+  if (tokens.length === 0) {
+    return 1;
+  }
+  const haystack = JSON.stringify(value).toLowerCase();
+  return tokens.filter((token) => haystack.includes(token)).length / tokens.length;
+}
+
+function retrievalScore(base: number, confidence: number, overlap: number): number {
+  return Number((base + Math.max(0, Math.min(1, confidence)) * 0.2 + overlap * 0.2).toFixed(6));
+}
+
+function isAutoActivationEligible(
+  input: SemanticMemoryWriteInput,
+  redaction: MemoryRedactionResult,
+): boolean {
+  const activation = input.activation;
+  return (
+    input.status === "candidate" &&
+    activation?.requested === true &&
+    (activation.basis === "explicit_user_preference" || activation.basis === "verifier_backed_fact") &&
+    activation.conflictsWith.length === 0 &&
+    input.sensitivity !== "sensitive" &&
+    !redaction.applied
+  );
+}
+
 export class LocalJsonMemoryStore implements MemoryStore {
   readonly memoryRoot: string;
   private readonly storePath: string;
 
   constructor(options: LocalJsonMemoryStoreOptions = {}) {
-    this.memoryRoot = path.resolve(options.memoryRoot ?? path.join(tmpdir(), "codepawl", "memory"));
+    this.memoryRoot = path.resolve(options.memoryRoot ?? path.join(tmpdir(), "orynt", "memory"));
     this.storePath = path.join(this.memoryRoot, options.storeFileName ?? "memory-store.json");
   }
 
-  async writeEpisode(input: EpisodeWriteInput, storePath = this.storePath): Promise<EpisodicMemoryItem> {
+  async writeEpisode(
+    input: EpisodeWriteInput,
+    storePath = this.storePath,
+    options: MemoryMutationOptions = {},
+  ): Promise<EpisodicMemoryItem> {
     const safeStorePath = this.validateStorePath(storePath);
-    const database = await this.readDatabase(safeStorePath);
-    const { episode: redactedInput, redaction } = redactEpisodeInput(input);
-    const createdAt = redactedInput.createdAt ?? now();
-    const episode: EpisodicMemoryItem = {
-      id: redactedInput.id ?? id("episode", `${redactedInput.provenance.runId}:${redactedInput.kind}:${redactedInput.summary}:${database.episodes.length}`),
-      namespace: clone(redactedInput.namespace),
-      kind: redactedInput.kind,
-      summary: redactedInput.summary,
-      content: clone(redactedInput.content),
-      provenance: clone(redactedInput.provenance),
-      retention: clone(redactedInput.retention),
-      redaction: mergeRedactions(redaction, redactedInput.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 }),
-      confidence: redactedInput.confidence,
-      createdAt,
-      expiresAt: redactedInput.expiresAt ?? expiresAt(createdAt, redactedInput.retention),
-    };
-    database.episodes.push(episode);
-    await this.writeDatabase(database, safeStorePath);
-    return clone(episode);
+    return this.mutateDatabase(
+      safeStorePath,
+      options,
+      (database) => {
+        const { episode: redactedInput, redaction } = redactEpisodeInput(input);
+        const createdAt = redactedInput.createdAt ?? now();
+        const episode: EpisodicMemoryItem = {
+          id:
+            redactedInput.id ??
+            id(
+              "episode",
+              `${redactedInput.provenance.runId}:${redactedInput.kind}:${redactedInput.summary}:${database.episodes.length}`,
+            ),
+          namespace: clone(redactedInput.namespace),
+          kind: redactedInput.kind,
+          summary: redactedInput.summary,
+          content: clone(redactedInput.content),
+          provenance: clone(redactedInput.provenance),
+          retention: clone(redactedInput.retention),
+          redaction: mergeRedactions(
+            redaction,
+            redactedInput.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 },
+          ),
+          confidence: redactedInput.confidence,
+          createdAt,
+          expiresAt: redactedInput.expiresAt ?? expiresAt(createdAt, redactedInput.retention),
+        };
+        database.episodes.push(episode);
+        return episode;
+      },
+    );
   }
 
   async listEpisodes(query: MemoryQuery = {}): Promise<EpisodicMemoryItem[]> {
@@ -304,14 +423,16 @@ export class LocalJsonMemoryStore implements MemoryStore {
   async getEpisode(idValue: string): Promise<EpisodicMemoryItem | undefined> {
     const database = await this.readDatabase();
     const episode = database.episodes.find((item) => item.id === idValue);
-    return episode ? clone(episode) : undefined;
+    return episode && !isExpired(episode, now()) ? clone(episode) : undefined;
   }
 
   async queryEpisodes(query: MemoryQuery): Promise<EpisodicMemoryItem[]> {
     const database = await this.readDatabase();
+    const currentTime = now();
     return limit(
       database.episodes.filter(
         (episode) =>
+          !isExpired(episode, currentTime) &&
           namespaceMatches(episode.namespace, query.namespace) &&
           (query.kinds === undefined || query.kinds.includes(episode.kind)) &&
           (query.runId === undefined || episode.provenance.runId === query.runId) &&
@@ -321,27 +442,43 @@ export class LocalJsonMemoryStore implements MemoryStore {
     ).map(clone);
   }
 
-  async writeCandidateRule(input: CandidateRuleWriteInput): Promise<CandidateRule> {
-    const database = await this.readDatabase();
-    const { rule: redactedInput, redaction } = redactRuleInput(input);
-    const createdAt = redactedInput.createdAt ?? now();
-    const rule: CandidateRule = {
-      id: redactedInput.id ?? id("candidate-rule", `${redactedInput.provenance.runId}:${redactedInput.title}:${redactedInput.rule}:${database.candidateRules.length}`),
-      namespace: clone(redactedInput.namespace),
-      status: redactedInput.status ?? "candidate",
-      title: redactedInput.title,
-      rule: redactedInput.rule,
-      scope: clone(redactedInput.scope),
-      evidence: clone(redactedInput.evidence),
-      provenance: clone(redactedInput.provenance),
-      redaction: mergeRedactions(redaction, redactedInput.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 }),
-      createdAt,
-      updatedAt: redactedInput.updatedAt ?? createdAt,
-      supersededBy: redactedInput.supersededBy,
-    };
-    database.candidateRules.push(rule);
-    await this.writeDatabase(database);
-    return clone(rule);
+  async writeCandidateRule(
+    input: CandidateRuleWriteInput,
+    options: MemoryMutationOptions = {},
+  ): Promise<CandidateRule> {
+    return this.mutateDatabase(
+      this.storePath,
+      options,
+      (database) => {
+        const { rule: redactedInput, redaction } = redactRuleInput(input);
+        const createdAt = redactedInput.createdAt ?? now();
+        const rule: CandidateRule = {
+          id:
+            redactedInput.id ??
+            id(
+              "candidate-rule",
+              `${redactedInput.provenance.runId}:${redactedInput.title}:${redactedInput.rule}:${database.candidateRules.length}`,
+            ),
+          namespace: clone(redactedInput.namespace),
+          status: redactedInput.status ?? "candidate",
+          title: redactedInput.title,
+          rule: redactedInput.rule,
+          scope: clone(redactedInput.scope),
+          evidence: clone(redactedInput.evidence),
+          provenance: clone(redactedInput.provenance),
+          redaction: mergeRedactions(
+            redaction,
+            redactedInput.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 },
+          ),
+          reviewDecisions: clone(redactedInput.reviewDecisions ?? []),
+          createdAt,
+          updatedAt: redactedInput.updatedAt ?? createdAt,
+          supersededBy: redactedInput.supersededBy,
+        };
+        database.candidateRules.push(rule);
+        return rule;
+      },
+    );
   }
 
   async listCandidateRules(query: CandidateRuleQuery = {}): Promise<CandidateRule[]> {
@@ -362,50 +499,114 @@ export class LocalJsonMemoryStore implements MemoryStore {
     status: CandidateRuleStatus,
     options: CandidateRuleStatusUpdateOptions = {},
   ): Promise<CandidateRule> {
-    const database = await this.readDatabase();
-    const index = database.candidateRules.findIndex((rule) => rule.id === idValue);
-    if (index < 0) {
-      throw new MemoryStoreFailure("candidate_rule_not_found", `candidate rule not found: ${idValue}`);
-    }
-    const current = database.candidateRules[index];
-    if (!canTransition(current.status, status)) {
-      throw new MemoryStoreFailure("invalid_status_transition", `invalid candidate rule status transition: ${current.status} -> ${status}`);
-    }
-    const updated: CandidateRule = {
-      ...current,
-      status,
-      updatedAt: now(),
-      supersededBy: status === "superseded" ? options.supersededBy : current.supersededBy,
-    };
-    database.candidateRules[index] = updated;
-    await this.writeDatabase(database);
-    return clone(updated);
+    return this.mutateDatabase(
+      this.storePath,
+      options,
+      (database) => {
+        const index = database.candidateRules.findIndex((rule) => rule.id === idValue);
+        if (index < 0) {
+          throw new MemoryStoreFailure(
+            "candidate_rule_not_found",
+            `candidate rule not found: ${idValue}`,
+          );
+        }
+        const current = database.candidateRules[index];
+        if (!canTransition(current.status, status)) {
+          throw new MemoryStoreFailure(
+            "invalid_status_transition",
+            `invalid candidate rule status transition: ${current.status} -> ${status}`,
+          );
+        }
+        const decidedAt = options.decidedAt ?? now();
+        const reviewDecisions: MemoryReviewDecision[] = [
+          ...(current.reviewDecisions ?? []),
+          ...(options.actor && options.reason
+            ? [
+                {
+                  status,
+                  actor: options.actor,
+                  reason: options.reason,
+                  runId: options.runId,
+                  decidedAt,
+                },
+              ]
+            : []),
+        ];
+        const updated: CandidateRule = {
+          ...current,
+          status,
+          reviewDecisions,
+          updatedAt: decidedAt,
+          supersededBy:
+            status === "superseded" ? options.supersededBy : current.supersededBy,
+        };
+        database.candidateRules[index] = updated;
+        return updated;
+      },
+    );
   }
 
-  async writeSemanticMemory(input: SemanticMemoryWriteInput): Promise<SemanticMemoryItem> {
-    const database = await this.readDatabase();
-    const { memory: redactedInput, redaction } = redactSemanticMemoryInput(input) as {
-      memory: SemanticMemoryWriteInput;
-      redaction: MemoryRedactionResult;
-    };
-    const createdAt = redactedInput.createdAt ?? now();
-    const item: SemanticMemoryItem = {
-      id: redactedInput.id ?? id("semantic-memory", `${redactedInput.provenance.runId}:${redactedInput.summary}:${database.semanticMemory.length}`),
-      namespace: clone(redactedInput.namespace),
-      status: redactedInput.status,
-      summary: redactedInput.summary,
-      content: clone(redactedInput.content),
-      sensitivity: redactedInput.sensitivity,
-      confidence: redactedInput.confidence,
-      provenance: clone(redactedInput.provenance),
-      redaction: mergeRedactions(redaction, redactedInput.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 }),
-      reviewDecisions: clone(redactedInput.reviewDecisions ?? []),
-      createdAt,
-      updatedAt: redactedInput.updatedAt ?? createdAt,
-    };
-    database.semanticMemory.push(item);
-    await this.writeDatabase(database);
-    return clone(item);
+  async writeSemanticMemory(
+    input: SemanticMemoryWriteInput,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    return this.mutateDatabase(
+      this.storePath,
+      options,
+      (database) => {
+        const { memory: redactedInput, redaction } = redactSemanticMemoryInput(input) as {
+          memory: SemanticMemoryWriteInput;
+          redaction: MemoryRedactionResult;
+        };
+        const createdAt = redactedInput.createdAt ?? now();
+        const combinedRedaction = mergeRedactions(
+          redaction,
+          redactedInput.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 },
+        );
+        const autoActivated = isAutoActivationEligible(redactedInput, combinedRedaction);
+        const status = autoActivated ? "approved" : redactedInput.status;
+        const item: SemanticMemoryItem = {
+          id:
+            redactedInput.id ??
+            id(
+              "semantic-memory",
+              `${redactedInput.provenance.runId}:${redactedInput.summary}:${database.semanticMemory.length}`,
+            ),
+          namespace: clone(redactedInput.namespace),
+          status,
+          summary: redactedInput.summary,
+          content: clone(redactedInput.content),
+          sensitivity: redactedInput.sensitivity,
+          confidence: redactedInput.confidence,
+          provenance: clone(redactedInput.provenance),
+          redaction: combinedRedaction,
+          reviewDecisions: [
+            ...(redactedInput.reviewDecisions ?? []),
+            ...(autoActivated
+              ? [
+                  {
+                    status: "approved" as const,
+                    actor: "memory-policy",
+                    reason: `Low-risk auto-activation: ${redactedInput.activation?.basis}.`,
+                    runId: redactedInput.provenance.runId,
+                    decidedAt: createdAt,
+                  },
+                ]
+              : []),
+          ],
+          activation: redactedInput.activation
+            ? {
+                ...clone(redactedInput.activation),
+                activatedAt: autoActivated ? createdAt : redactedInput.activation.activatedAt,
+              }
+            : undefined,
+          createdAt,
+          updatedAt: redactedInput.updatedAt ?? createdAt,
+        };
+        database.semanticMemory.push(item);
+        return item;
+      },
+    );
   }
 
   async listSemanticMemory(query: SemanticMemoryQuery = {}): Promise<SemanticMemoryItem[]> {
@@ -422,11 +623,20 @@ export class LocalJsonMemoryStore implements MemoryStore {
     ).map(clone);
   }
 
-  async updateSemanticMemoryStatus(input: SemanticMemoryStatusUpdateInput): Promise<SemanticMemoryItem> {
-    return this.updateSemanticMemory(input, { status: input.status });
+  async updateSemanticMemoryStatus(
+    input: SemanticMemoryStatusUpdateInput,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    if (input.status === "deleted") {
+      return this.deleteSemanticMemory(input, options);
+    }
+    return this.updateSemanticMemory(input, { status: input.status }, options);
   }
 
-  async editSemanticMemory(input: SemanticMemoryEditInput): Promise<SemanticMemoryItem> {
+  async editSemanticMemory(
+    input: SemanticMemoryEditInput,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
     const { memory: redactedInput, redaction } = redactSemanticMemoryInput(input) as {
       memory: SemanticMemoryEditInput;
       redaction: MemoryRedactionResult;
@@ -444,11 +654,255 @@ export class LocalJsonMemoryStore implements MemoryStore {
     if (redactedInput.confidence !== undefined) {
       patch.confidence = redactedInput.confidence;
     }
-    return this.updateSemanticMemory(redactedInput, patch);
+    return this.updateSemanticMemory(redactedInput, patch, options);
   }
 
-  async deleteSemanticMemory(input: Omit<SemanticMemoryStatusUpdateInput, "status">): Promise<SemanticMemoryItem> {
-    return this.updateSemanticMemory({ ...input, status: "deleted" }, { status: "deleted", deletedAt: input.decidedAt ?? now() });
+  async deleteSemanticMemory(
+    input: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const deletedAt = input.decidedAt ?? now();
+    return this.mutateDatabase(
+      this.storePath,
+      options,
+      (database) => {
+        const index = database.semanticMemory.findIndex((item) => item.id === input.id);
+        if (index < 0) {
+          throw new MemoryStoreFailure(
+            "semantic_memory_not_found",
+            `semantic memory not found: ${input.id}`,
+          );
+        }
+        const current = database.semanticMemory[index];
+        if (current.status === "deleted") {
+          return current;
+        }
+        const updated: SemanticMemoryItem = {
+          ...current,
+          status: "deleted",
+          statusBeforeTrash: current.status,
+          deletedAt,
+          purgeAfter: addDays(deletedAt, TRASH_RETENTION_DAYS),
+          updatedAt: deletedAt,
+          reviewDecisions: [
+            ...current.reviewDecisions,
+            {
+              status: "deleted",
+              actor: input.actor,
+              reason: input.reason,
+              runId: input.runId,
+              decidedAt: deletedAt,
+            },
+          ],
+        };
+        database.semanticMemory[index] = updated;
+        return updated;
+      },
+    );
+  }
+
+  async restoreSemanticMemory(
+    input: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const restoredAt = input.decidedAt ?? now();
+    return this.mutateDatabase(
+      this.storePath,
+      options,
+      (database) => {
+        const index = database.semanticMemory.findIndex((item) => item.id === input.id);
+        if (index < 0) {
+          throw new MemoryStoreFailure(
+            "semantic_memory_not_found",
+            `semantic memory not found: ${input.id}`,
+          );
+        }
+        const current = database.semanticMemory[index];
+        if (current.status !== "deleted" || current.purgedAt) {
+          throw new MemoryStoreFailure(
+            "not_restorable",
+            `semantic memory is not restorable: ${input.id}`,
+          );
+        }
+        if (current.purgeAfter && Date.parse(restoredAt) >= Date.parse(current.purgeAfter)) {
+          throw new MemoryStoreFailure(
+            "not_restorable",
+            `semantic memory restore window expired: ${input.id}`,
+          );
+        }
+        const restoredStatus = current.statusBeforeTrash ?? "candidate";
+        const updated: SemanticMemoryItem = {
+          ...current,
+          status: restoredStatus,
+          deletedAt: undefined,
+          purgeAfter: undefined,
+          statusBeforeTrash: undefined,
+          updatedAt: restoredAt,
+        };
+        database.semanticMemory[index] = updated;
+        return updated;
+      },
+    );
+  }
+
+  async purgeSemanticMemory(
+    input: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<MemoryTombstone> {
+    const purgedAt = input.decidedAt ?? now();
+    return this.mutateDatabase(
+      this.storePath,
+      options,
+      (database) => {
+        const index = database.semanticMemory.findIndex((item) => item.id === input.id);
+        if (index < 0) {
+          const existing = database.tombstones.find((item) => item.id === input.id);
+          if (existing) {
+            return existing;
+          }
+          throw new MemoryStoreFailure(
+            "semantic_memory_not_found",
+            `semantic memory not found: ${input.id}`,
+          );
+        }
+        const current = database.semanticMemory[index];
+        if (
+          current.status !== "deleted" ||
+          !current.deletedAt ||
+          !current.purgeAfter ||
+          Date.parse(purgedAt) < Date.parse(current.purgeAfter)
+        ) {
+          throw new MemoryStoreFailure(
+            "purge_not_due",
+            `semantic memory purge is not due: ${input.id}`,
+          );
+        }
+        const tombstone: MemoryTombstone = {
+          id: current.id,
+          kind: "semantic_memory",
+          namespace: clone(current.namespace),
+          deletedAt: current.deletedAt,
+          purgedAt,
+          provenanceRunId: current.provenance.runId,
+          reason: input.reason,
+        };
+        database.semanticMemory.splice(index, 1);
+        database.tombstones.push(tombstone);
+        return tombstone;
+      },
+    );
+  }
+
+  async retrieveMemory(query: MemoryRetrievalQuery): Promise<MemoryRetrievalHit[]> {
+    const database = await this.readDatabase();
+    const at = query.now ?? now();
+    const kinds = new Set(query.kinds ?? [
+      "episode",
+      "candidate_rule",
+      "semantic_memory",
+    ]);
+    const tokens = retrievalTokens(query.text);
+    const hits: MemoryRetrievalHit[] = [];
+
+    if (kinds.has("episode")) {
+      for (const episode of database.episodes) {
+        if (
+          isExpired(episode, at) ||
+          !namespaceMatches(episode.namespace, query.namespace)
+        ) {
+          continue;
+        }
+        const overlap = tokenOverlap(episode, tokens);
+        if (tokens.length > 0 && overlap === 0) {
+          continue;
+        }
+        hits.push({
+          id: episode.id,
+          kind: "episode",
+          summary: episode.summary,
+          score: retrievalScore(0.4, episode.confidence, overlap),
+          confidence: episode.confidence,
+          namespace: clone(episode.namespace),
+          provenance: clone(episode.provenance),
+          advisory: true,
+          createdAt: episode.createdAt,
+        });
+      }
+    }
+
+    if (kinds.has("candidate_rule")) {
+      for (const rule of database.candidateRules) {
+        if (
+          rule.status !== "accepted" ||
+          !namespaceMatches(rule.namespace, query.namespace)
+        ) {
+          continue;
+        }
+        const overlap = tokenOverlap(rule, tokens);
+        if (tokens.length > 0 && overlap === 0) {
+          continue;
+        }
+        const confidence =
+          rule.evidence.length === 0
+            ? 0
+            : Math.max(...rule.evidence.map((item) => item.confidence));
+        hits.push({
+          id: rule.id,
+          kind: "candidate_rule",
+          summary: `${rule.title}: ${rule.rule}`,
+          score: retrievalScore(0.6, confidence, overlap),
+          confidence,
+          namespace: clone(rule.namespace),
+          provenance: clone(rule.provenance),
+          advisory: true,
+          createdAt: rule.updatedAt,
+          status: rule.status,
+        });
+      }
+    }
+
+    if (kinds.has("semantic_memory")) {
+      for (const item of database.semanticMemory) {
+        if (
+          item.status !== "approved" ||
+          (!query.includeSensitive && item.sensitivity === "sensitive") ||
+          (item.activation?.conflictsWith.length ?? 0) > 0 ||
+          !namespaceMatches(item.namespace, query.namespace)
+        ) {
+          continue;
+        }
+        const overlap = tokenOverlap(item, tokens);
+        if (tokens.length > 0 && overlap === 0) {
+          continue;
+        }
+        hits.push({
+          id: item.id,
+          kind: "semantic_memory",
+          summary: item.summary,
+          score: retrievalScore(0.55, item.confidence, overlap),
+          confidence: item.confidence,
+          namespace: clone(item.namespace),
+          provenance: clone(item.provenance),
+          advisory: true,
+          createdAt: item.updatedAt,
+          status: item.status,
+        });
+      }
+    }
+
+    return hits
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          right.createdAt.localeCompare(left.createdAt) ||
+          left.id.localeCompare(right.id),
+      )
+      .slice(0, Math.max(0, Math.min(query.limit ?? DEFAULT_RETRIEVAL_LIMIT, MAX_RETRIEVAL_LIMIT)))
+      .map(clone);
+  }
+
+  async getStoreSnapshot(): Promise<MemoryStoreEnvelopeV2> {
+    return clone(await this.readDatabase());
   }
 
   async summarizeMemory(namespace?: Partial<MemoryNamespace>): Promise<MemorySummary> {
@@ -476,29 +930,35 @@ export class LocalJsonMemoryStore implements MemoryStore {
   }
 
   async artifactRef(kind: ArtifactRef["kind"], label: string, source: unknown, suffix: string): Promise<ArtifactRef> {
-    const safeStorePath = this.validateStorePath();
-    const artifactJson = JSON.stringify(source);
+    const artifactJson = `${JSON.stringify(source, null, 2)}\n`;
+    const digest = sha256(artifactJson);
+    const artifactPath = this.validateStorePath(
+      path.join(this.memoryRoot, "artifacts", `${slug(suffix)}-${digest.slice(0, 12)}.json`),
+    );
+    try {
+      await readFile(artifactPath, "utf8");
+    } catch (error) {
+      if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
+        throw error;
+      }
+      await this.writeAtomic(artifactPath, artifactJson);
+    }
     return {
-      id: `${slug(label)}-${sha256(`${safeStorePath}:${suffix}:${artifactJson}`).slice(0, 10)}`,
+      id: `${slug(label)}-${digest.slice(0, 10)}`,
       kind,
-      uri: `file://${safeStorePath}`,
+      uri: `file://${artifactPath}`,
       label,
-      sha256: sha256(artifactJson),
+      sha256: digest,
     };
   }
 
   private async readDatabase(storePath = this.storePath): Promise<MemoryDatabase> {
     const safeStorePath = this.validateStorePath(storePath);
     try {
-      const parsed = JSON.parse(await readFile(safeStorePath, "utf8")) as Partial<MemoryDatabase>;
-      return {
-        episodes: Array.isArray(parsed.episodes) ? parsed.episodes : [],
-        candidateRules: Array.isArray(parsed.candidateRules) ? parsed.candidateRules : [],
-        semanticMemory: Array.isArray(parsed.semanticMemory) ? parsed.semanticMemory : [],
-      };
+      return migrateDatabase(JSON.parse(await readFile(safeStorePath, "utf8")));
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-        return { episodes: [], candidateRules: [], semanticMemory: [] };
+        return emptyDatabase();
       }
       throw error;
     }
@@ -506,50 +966,124 @@ export class LocalJsonMemoryStore implements MemoryStore {
 
   private async writeDatabase(database: MemoryDatabase, storePath = this.storePath): Promise<void> {
     const safeStorePath = this.validateStorePath(storePath);
-    await mkdir(path.dirname(safeStorePath), { recursive: true });
-    await writeFile(safeStorePath, `${JSON.stringify(database, null, 2)}\n`, "utf8");
+    await this.writeAtomic(safeStorePath, `${JSON.stringify(database, null, 2)}\n`);
   }
 
   private async updateSemanticMemory(
     input: SemanticMemoryStatusUpdateInput | SemanticMemoryEditInput,
     patch: Partial<SemanticMemoryItem> & { redaction?: MemoryRedactionResult } = {},
+    options: MemoryMutationOptions = {},
   ): Promise<SemanticMemoryItem> {
-    const database = await this.readDatabase();
-    const index = database.semanticMemory.findIndex((item) => item.id === input.id);
-    if (index < 0) {
-      throw new MemoryStoreFailure("semantic_memory_not_found", `semantic memory not found: ${input.id}`);
+    return this.mutateDatabase(
+      this.storePath,
+      options,
+      (database) => {
+        const index = database.semanticMemory.findIndex((item) => item.id === input.id);
+        if (index < 0) {
+          throw new MemoryStoreFailure(
+            "semantic_memory_not_found",
+            `semantic memory not found: ${input.id}`,
+          );
+        }
+        const current = database.semanticMemory[index];
+        if (current.status === "deleted") {
+          throw new MemoryStoreFailure(
+            "invalid_status_transition",
+            `trashed semantic memory must be restored before mutation: ${input.id}`,
+          );
+        }
+        const updatedAt =
+          "decidedAt" in input && input.decidedAt ? input.decidedAt : now();
+        const reviewStatus = "status" in input ? input.status : undefined;
+        const reviewDecisions = reviewStatus
+          ? [
+              ...current.reviewDecisions,
+              {
+                status: reviewStatus,
+                actor: input.actor,
+                reason: input.reason,
+                runId: "runId" in input ? input.runId : undefined,
+                decidedAt: updatedAt,
+              },
+            ]
+          : current.reviewDecisions;
+        const updated: SemanticMemoryItem = {
+          ...current,
+          ...patch,
+          redaction: mergeRedactions(
+            current.redaction,
+            patch.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 },
+          ),
+          reviewDecisions,
+          updatedAt,
+        };
+        database.semanticMemory[index] = updated;
+        return updated;
+      },
+    );
+  }
+
+  private async mutateDatabase<T>(
+    storePath: string,
+    options: MemoryMutationOptions,
+    mutate: (database: MemoryDatabase) => T,
+  ): Promise<T> {
+    const safeStorePath = this.validateStorePath(storePath);
+    return this.withMutationLock(safeStorePath, async () => {
+      const database = await this.readDatabase(safeStorePath);
+      if (
+        options.expectedRevision !== undefined &&
+        options.expectedRevision !== database.revision
+      ) {
+        throw new MemoryStoreFailure(
+          "revision_conflict",
+          `memory store revision conflict: expected ${options.expectedRevision}, current ${database.revision}`,
+        );
+      }
+      const result = mutate(database);
+      database.revision += 1;
+      database.updatedAt = now();
+      await this.writeDatabase(database, safeStorePath);
+      return clone(result);
+    });
+  }
+
+  private async withMutationLock<T>(storePath: string, work: () => Promise<T>): Promise<T> {
+    const previous = mutationQueues.get(storePath) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queued = previous.then(() => current);
+    mutationQueues.set(storePath, queued);
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release();
+      if (mutationQueues.get(storePath) === queued) {
+        mutationQueues.delete(storePath);
+      }
     }
-    const current = database.semanticMemory[index];
-    const updatedAt = "decidedAt" in input && input.decidedAt ? input.decidedAt : now();
-    const reviewStatus = "status" in input ? input.status : undefined;
-    const reviewDecisions = reviewStatus
-      ? [
-          ...current.reviewDecisions,
-          {
-            status: reviewStatus,
-            actor: input.actor,
-            reason: input.reason,
-            runId: "runId" in input ? input.runId : undefined,
-            decidedAt: updatedAt,
-          },
-        ]
-      : current.reviewDecisions;
-    const updated: SemanticMemoryItem = {
-      ...current,
-      ...patch,
-      redaction: mergeRedactions(current.redaction, patch.redaction ?? { applied: false, redactedPaths: [], redactionCount: 0 }),
-      reviewDecisions,
-      updatedAt,
-    };
-    database.semanticMemory[index] = updated;
-    await this.writeDatabase(database);
-    return clone(updated);
+  }
+
+  private async writeAtomic(targetPath: string, content: string): Promise<void> {
+    const safeTarget = this.validateStorePath(targetPath);
+    await mkdir(path.dirname(safeTarget), { recursive: true });
+    atomicWriteSequence += 1;
+    const temporaryPath = `${safeTarget}.tmp-${process.pid}-${atomicWriteSequence}`;
+    try {
+      await writeFile(temporaryPath, content, "utf8");
+      await rename(temporaryPath, safeTarget);
+    } finally {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+    }
   }
 }
 
 export class InMemoryMemoryStore extends LocalJsonMemoryStore {
   constructor() {
-    super({ memoryRoot: path.join(tmpdir(), "codepawl", "memory", `in-memory-${Date.now()}-${Math.random().toString(36).slice(2)}`) });
+    super({ memoryRoot: path.join(tmpdir(), "orynt", "memory", `in-memory-${Date.now()}-${Math.random().toString(36).slice(2)}`) });
   }
 }
 
@@ -628,7 +1162,7 @@ export class LocalMemoryExtractor implements MemoryExtractor {
     this.actor = options.actor ?? DEFAULT_ACTOR;
     this.managedMemoryRoot =
       options.managedMemoryRoot ??
-      (options.memoryStore instanceof LocalJsonMemoryStore ? options.memoryStore.memoryRoot : path.join(tmpdir(), "codepawl", "memory"));
+      (options.memoryStore instanceof LocalJsonMemoryStore ? options.memoryStore.memoryRoot : path.join(tmpdir(), "orynt", "memory"));
   }
 
   async extractRunMemory(input: MemoryExtractionInput): Promise<MemoryExtractionResult> {
@@ -801,8 +1335,8 @@ export class LocalMemoryExtractor implements MemoryExtractor {
           command: command.command ?? command.label,
           exitCode: command.exitCode,
           timedOut: command.timedOut ?? false,
-          stdout: command.stdout,
-          stderr: command.stderr,
+          stdoutSha256: command.stdout ? sha256(command.stdout) : undefined,
+          stderrSha256: command.stderr ? sha256(command.stderr) : undefined,
         },
         provenance: provenance(input, ["verification_result", "run_event"]),
         retention: input.retention,

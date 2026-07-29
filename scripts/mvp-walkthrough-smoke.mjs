@@ -28,7 +28,7 @@ async function createFixtureRepository(root) {
   const repositoryPath = path.join(root, "fixture-repo");
   await mkdir(path.join(repositoryPath, "packages"), { recursive: true });
   await mkdir(path.join(repositoryPath, "scripts"), { recursive: true });
-  await writeFile(path.join(repositoryPath, "README.md"), "# CodePawl walkthrough fixture\n", "utf8");
+  await writeFile(path.join(repositoryPath, "README.md"), "# Orynt walkthrough fixture\n", "utf8");
   await writeFile(path.join(repositoryPath, "packages", "value.txt"), "initial value\n", "utf8");
   await writeFile(
     path.join(repositoryPath, "scripts", "pass.mjs"),
@@ -46,7 +46,7 @@ async function createFixtureRepository(root) {
   );
   await run("git", ["init"], { cwd: repositoryPath });
   await run("git", ["config", "user.email", "walkthrough@example.invalid"], { cwd: repositoryPath });
-  await run("git", ["config", "user.name", "CodePawl Walkthrough"], { cwd: repositoryPath });
+  await run("git", ["config", "user.name", "Orynt Walkthrough"], { cwd: repositoryPath });
   await run("git", ["add", "."], { cwd: repositoryPath });
   await run("git", ["commit", "-m", "Initial walkthrough fixture"], { cwd: repositoryPath });
   return repositoryPath;
@@ -134,7 +134,7 @@ function createReviewedCandidateRule(result, repositoryPath) {
 }
 
 async function runWalkthrough() {
-  const root = await mkdtemp(path.join(tmpdir(), "codepawl-mvp-walkthrough-"));
+  const root = await mkdtemp(path.join(tmpdir(), "orynt-mvp-walkthrough-"));
   const repositoryPath = await createFixtureRepository(root);
   const { binDir: codexPathEnv, rawSecret } = await createFakeCodex(root);
   const sandboxRoot = path.join(root, "sandbox");
@@ -256,7 +256,7 @@ async function runWalkthrough() {
   };
 
   console.log(JSON.stringify(output, null, 2));
-  if (process.env.CODEPAWL_KEEP_WALKTHROUGH === "1") {
+  if (process.env.ORYNT_KEEP_WALKTHROUGH === "1") {
     console.log(`Preserved walkthrough workspace: ${root}`);
   } else {
     await rm(root, { recursive: true, force: true });

@@ -2,11 +2,7 @@ node_modules/
 dist/
 target/
 .codex/hooks.json
-.impeccable/config.local.json
-.impeccable/hook.cache.json
-.impeccable/audit/
-.impeccable/critique/
-apps/*/.impeccable/live/
+.hermes/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
@@ -17,3 +13,21 @@ vite.config.d.ts
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Sensitive local credentials (never commit)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+service-account*.json
+kaggle.json
+.kaggle/
+.npmrc
+.pypirc
+.netrc

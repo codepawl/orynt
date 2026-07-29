@@ -236,7 +236,7 @@ export class AuditableGateway {
         runId: action.runId,
         actionId: action.id,
         artifactType: "trace",
-        storageRef: `codepawl-artifact://${action.runId}/${action.id}/gateway-failure.json`,
+        storageRef: `orynt-artifact://${action.runId}/${action.id}/gateway-failure.json`,
         visibility: "admin",
         metadata: {
           message: error instanceof Error ? error.message : String(error),

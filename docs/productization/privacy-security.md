@@ -4,7 +4,7 @@ Launch status: private beta draft, not legal advice.
 
 ## Data Handling
 
-- CodePawl keeps the current MVP local-first. Repository work runs through managed local worktrees and local artifact paths.
+- Orynt keeps the current MVP local-first. Repository work runs through managed local worktrees and local artifact paths.
 - Run events, artifacts, memory, skill candidates, and usage summaries are designed for user review and replay.
 - Durable memories must include source provenance and redaction metadata.
 - Secrets, credentials, cookies, private keys, and raw sensitive values must not be stored in memory, skill definitions, reports, or public docs.
@@ -27,4 +27,4 @@ Launch status: private beta draft, not legal advice.
 
 - No hosted multi-tenant backend is implemented in this checkout.
 - No production billing, subscription, Paddle webhook, or payment-processing path is implemented.
-- Private beta users should treat CodePawl as supervised software and review diffs, artifacts, and approvals before trusting outputs.
+- Private beta users should treat Orynt as supervised software and review diffs, artifacts, and approvals before trusting outputs.

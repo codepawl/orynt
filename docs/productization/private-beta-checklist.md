@@ -13,7 +13,7 @@ Status: launch-prep checklist for local/private beta only.
 
 ## Onboarding Copy Requirements
 
-- Explain that CodePawl is supervised and local-first for the MVP.
+- Explain that Orynt is supervised and local-first for the MVP.
 - Explain that repository is the only enabled execution surface in the current beta.
 - Explain that sensitive actions require approval, blocking, or user takeover.
 - Explain BYOK versus managed AI before the user starts a run.

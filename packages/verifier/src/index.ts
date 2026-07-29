@@ -1,4 +1,7 @@
-import { execFile } from "node:child_process";
+import {
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -23,10 +26,23 @@ import {
   type DiffScopeResult,
 } from "@codepawl/shared";
 
+import { parsePorcelainStatusPaths } from "./gitStatus";
+
 type LocalRepositoryVerifierOptions = {
   managedArtifactRoot?: string;
   runStore?: RunStore;
   actor?: Actor;
+  trustedCommandOverrides?: Readonly<
+    Record<
+      string,
+      {
+        command: string;
+        args: readonly string[];
+        stdin?: string;
+        afterExecution?: () => Promise<string | undefined>;
+      }
+    >
+  >;
 };
 
 type ExecOutcome = {
@@ -46,6 +62,13 @@ export class VerifierFailure extends Error {
     this.name = "VerifierFailure";
     this.code = code;
     this.evidence = evidence;
+  }
+}
+
+export class VerificationCancelledError extends Error {
+  constructor() {
+    super("Repository verification cancelled.");
+    this.name = "VerificationCancelledError";
   }
 }
 
@@ -123,28 +146,144 @@ function pathMatchesAllowed(filePath: string, allowedGlobs: string[]): boolean {
   });
 }
 
+function pathMatchesExactAuthorization(
+  filePath: string,
+  authorizedPaths: string[],
+): boolean {
+  const normalizedFile = filePath.replaceAll("\\", "/").replace(/^\.\//, "");
+  return authorizedPaths.some((authorizedPath) => {
+    const normalizedAuthorization = authorizedPath
+      .replaceAll("\\", "/")
+      .replace(/^\.\//, "");
+    return (
+      normalizedAuthorization.length > 0 &&
+      !normalizedAuthorization.includes("*") &&
+      !normalizedAuthorization.includes("?") &&
+      normalizedFile === normalizedAuthorization
+    );
+  });
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values.map(normalizeCommand).filter(Boolean))];
 }
 
-async function runExecFile(command: string, args: string[], cwd: string, timeoutMs: number): Promise<ExecOutcome> {
+async function runExecFile(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+  timeoutMs: number,
+  stdin?: string,
+  signal?: AbortSignal,
+): Promise<ExecOutcome> {
+  if (signal?.aborted) throw new VerificationCancelledError();
   const startedAt = Date.now();
-  return new Promise((resolve) => {
-    execFile(command, args, { cwd, timeout: timeoutMs, maxBuffer: 2_000_000 }, (error, stdout, stderr) => {
-      const maybeError = error as (NodeJS.ErrnoException & { killed?: boolean }) | null;
+  return new Promise((resolve, reject) => {
+    let child: ChildProcessWithoutNullStreams;
+    let cleanupPromise: Promise<void> | undefined;
+    let timedOut = false;
+    let settled = false;
+    let stdout = "";
+    let stderr = "";
+    const signalGroup = (terminationSignal: NodeJS.Signals) => {
+      if (process.platform !== "win32" && child.pid) {
+        try {
+          process.kill(-child.pid, terminationSignal);
+        } catch {
+          // The verifier process group is already gone.
+        }
+      } else if (!child.killed) {
+        child.kill(terminationSignal);
+      }
+    };
+    const groupExists = () => {
+      if (!child.pid) return false;
+      try {
+        process.kill(process.platform === "win32" ? child.pid : -child.pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const waitForGroupExit = async (waitMs: number) => {
+      const deadline = Date.now() + waitMs;
+      while (groupExists() && Date.now() < deadline) {
+        await new Promise((waitResolve) => setTimeout(waitResolve, 10));
+      }
+      return !groupExists();
+    };
+    const cleanupGroup = () => {
+      cleanupPromise ??= (async () => {
+        signalGroup("SIGTERM");
+        if (await waitForGroupExit(200)) return;
+        signalGroup("SIGKILL");
+        await waitForGroupExit(200);
+      })();
+      return cleanupPromise;
+    };
+    const onAbort = () => {
+      void cleanupGroup();
+    };
+    const finish = async (exitCode: number | null, error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      await cleanupGroup();
+      if (signal?.aborted) {
+        reject(new VerificationCancelledError());
+        return;
+      }
       resolve({
-        exitCode: typeof maybeError?.code === "number" ? maybeError.code : maybeError ? 1 : 0,
-        stdout: String(stdout),
-        stderr: String(stderr),
+        exitCode: error ? 1 : exitCode,
+        stdout,
+        stderr: error
+          ? [stderr.trimEnd(), error.message].filter(Boolean).join("\n")
+          : stderr,
         durationMs: Date.now() - startedAt,
-        timedOut: Boolean(maybeError && maybeError.killed),
+        timedOut,
       });
+    };
+    child = spawn(
+      command,
+      [...args],
+      {
+        cwd,
+        detached: process.platform !== "win32",
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    child.stdout.on("data", (chunk) => {
+      stdout = `${stdout}${String(chunk)}`.slice(-2_000_000);
     });
+    child.stderr.on("data", (chunk) => {
+      stderr = `${stderr}${String(chunk)}`.slice(-2_000_000);
+    });
+    child.once("error", (error) => {
+      void finish(1, error);
+    });
+    child.once("close", (exitCode) => {
+      void finish(exitCode);
+    });
+    child.once("exit", () => {
+      void cleanupGroup();
+    });
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void cleanupGroup();
+    }, timeoutMs);
+    child.stdin.end(stdin);
   });
 }
 
-async function runGit(args: string[], cwd: string): Promise<string> {
-  const outcome = await runExecFile("git", args, cwd, 30_000);
+async function runGit(
+  args: string[],
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const outcome = await runExecFile("git", args, cwd, 30_000, undefined, signal);
   if (outcome.exitCode !== 0) {
     throw new Error(outcome.stderr || "git command failed");
   }
@@ -155,12 +294,27 @@ export class LocalRepositoryVerifier implements Verifier {
   private readonly managedArtifactRoot: string;
   private readonly runStore?: RunStore;
   private readonly actor: Actor;
+  private readonly trustedCommandOverrides: ReadonlyMap<
+    string,
+    {
+      command: string;
+      args: readonly string[];
+      stdin?: string;
+      afterExecution?: () => Promise<string | undefined>;
+    }
+  >;
   private readonly policyEngine = new ConservativePolicyEngine();
 
   constructor(options: LocalRepositoryVerifierOptions = {}) {
-    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "codepawl", "verification-artifacts"));
+    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "orynt", "verification-artifacts"));
     this.runStore = options.runStore;
     this.actor = options.actor ?? { kind: "verifier", id: "local-repository-verifier", displayName: "Local Repository Verifier" };
+    this.trustedCommandOverrides = new Map(
+      Object.entries(options.trustedCommandOverrides ?? {}).map(([displayName, command]) => [
+        normalizeCommand(displayName),
+        command,
+      ]),
+    );
   }
 
   createPlan(request: VerificationPlanRequest): VerificationPlan {
@@ -169,6 +323,12 @@ export class LocalRepositoryVerifier implements Verifier {
       commandTimeoutMs: request.config?.commandTimeoutMs ?? 30_000,
       maxOutputBytes: request.config?.maxOutputBytes ?? request.policy.sandbox.budget.maxOutputBytes,
       requireChangedFiles: request.config?.requireChangedFiles ?? false,
+      authorizedChangedPaths: request.config?.authorizedChangedPaths,
+      requireAuthorizedChangedPaths:
+        request.config?.requireAuthorizedChangedPaths ?? false,
+      allowDestructiveChanges: request.config?.allowDestructiveChanges ?? false,
+      allowChangedFileLimitExceeded:
+        request.config?.allowChangedFileLimitExceeded ?? false,
       artifactRoot: request.config?.artifactRoot ?? request.artifactRoot,
     };
     const commands = unique([...(request.commands ?? []), ...config.defaultCommands]).map((command, index) => {
@@ -259,9 +419,15 @@ export class LocalRepositoryVerifier implements Verifier {
     return checkedPlan;
   }
 
-  async runVerification(plan: VerificationPlan, policy: CorePolicy): Promise<VerificationResult> {
+  async runVerification(
+    plan: VerificationPlan,
+    policy: CorePolicy,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<VerificationResult> {
+    if (options.signal?.aborted) throw new VerificationCancelledError();
     const startedAt = new Date().toISOString();
     const worktreePath = await this.validateSandboxPath(plan);
+    if (options.signal?.aborted) throw new VerificationCancelledError();
     const evidence: VerificationEvidence[] = [];
     const allowedCommands = plan.commands.filter((command) => command.allowed);
 
@@ -276,16 +442,51 @@ export class LocalRepositoryVerifier implements Verifier {
     });
 
     for (const command of allowedCommands) {
+      if (options.signal?.aborted) throw new VerificationCancelledError();
+      const trustedCommand = this.trustedCommandOverrides.get(
+        normalizeCommand(command.displayName),
+      );
       this.runStore?.appendEvent(plan.runId, {
         type: "verification_command_started",
         actor: this.actor,
         payload: {
           summary: `Started verification command: ${command.displayName}`,
           command,
+          executionSource: trustedCommand
+            ? {
+                kind: "trusted_process_input",
+                command: trustedCommand.command,
+                args: trustedCommand.args,
+                stdinSha256:
+                  trustedCommand.stdin === undefined
+                    ? undefined
+                    : sha256(trustedCommand.stdin),
+              }
+            : {
+                kind: "verification_plan",
+              },
         },
       });
 
-      const outcome = await runExecFile(command.command, command.args, worktreePath, command.timeoutMs);
+      let outcome = await runExecFile(
+        trustedCommand?.command ?? command.command,
+        trustedCommand?.args ?? command.args,
+        worktreePath,
+        command.timeoutMs,
+        trustedCommand?.stdin,
+        options.signal,
+      );
+      if (options.signal?.aborted) throw new VerificationCancelledError();
+      const trustedCommandFailure = await trustedCommand?.afterExecution?.();
+      if (trustedCommandFailure) {
+        outcome = {
+          ...outcome,
+          exitCode: 1,
+          stderr: [outcome.stderr.trimEnd(), trustedCommandFailure]
+            .filter(Boolean)
+            .join("\n"),
+        };
+      }
       const commandEvidence: VerificationEvidence = {
         id: `${command.id}-evidence`,
         kind: "command",
@@ -322,7 +523,13 @@ export class LocalRepositoryVerifier implements Verifier {
 
     let diffScope: DiffScopeResult;
     try {
-      diffScope = await this.checkDiffScope(plan, policy, worktreePath);
+      if (options.signal?.aborted) throw new VerificationCancelledError();
+      diffScope = await this.checkDiffScope(
+        plan,
+        policy,
+        worktreePath,
+        options.signal,
+      );
     } catch (error) {
       diffScope = {
         baseRef: plan.sandbox.baseRef,
@@ -330,9 +537,12 @@ export class LocalRepositoryVerifier implements Verifier {
         allowedFiles: [],
         protectedFiles: [],
         unexpectedFiles: [],
+        unauthorizedFiles: [],
+        destructiveFiles: [],
         hasChanges: false,
         withinAllowedScope: false,
         protectedPathTouched: false,
+        changedFileLimitExceeded: false,
       };
       evidence.push({
         id: `${plan.id}-diff-error`,
@@ -358,7 +568,9 @@ export class LocalRepositoryVerifier implements Verifier {
       },
     });
 
+    if (options.signal?.aborted) throw new VerificationCancelledError();
     const result = await this.createResult(plan, policy, evidence, diffScope, startedAt);
+    if (options.signal?.aborted) throw new VerificationCancelledError();
     this.runStore?.appendEvent(plan.runId, {
       type: "verification_recorded",
       actor: this.actor,
@@ -405,17 +617,50 @@ export class LocalRepositoryVerifier implements Verifier {
     return worktreePath;
   }
 
-  private async checkDiffScope(plan: VerificationPlan, policy: CorePolicy, worktreePath: string): Promise<DiffScopeResult> {
-    const committedDiff = await runGit(["diff", "--name-only", plan.sandbox.baseRef, "--"], worktreePath);
-    const statusOutput = await runGit(["status", "--porcelain"], worktreePath);
-    const statusFiles = statusOutput
-      .split("\n")
-      .map((line) => line.slice(3).trim())
-      .filter(Boolean)
-      .map((file) => file.replace(/^"|"$/g, ""));
-    const changedFiles = unique([...committedDiff.split("\n").filter(Boolean), ...statusFiles]);
+  private async checkDiffScope(
+    plan: VerificationPlan,
+    policy: CorePolicy,
+    worktreePath: string,
+    signal?: AbortSignal,
+  ): Promise<DiffScopeResult> {
+    const committedDiff = await runGit(
+      ["diff", "--name-only", "-z", plan.sandbox.baseRef, "--"],
+      worktreePath,
+      signal,
+    );
+    const committedDestructiveDiff = await runGit(
+      ["diff", "--name-only", "--diff-filter=DR", "-z", plan.sandbox.baseRef, "--"],
+      worktreePath,
+      signal,
+    );
+    const statusOutput = await runGit(
+      ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+      worktreePath,
+      signal,
+    );
+    const committedFiles = committedDiff
+      .split("\0")
+      .filter((filePath) => filePath.length > 0);
+    const {
+      changedFiles: statusFiles,
+      destructiveFiles: destructiveStatusFiles,
+    } = parsePorcelainStatusPaths(statusOutput);
+    const changedFiles = unique([...committedFiles, ...statusFiles]);
+    const destructiveFiles = unique([
+      ...committedDestructiveDiff.split("\0").filter(Boolean),
+      ...destructiveStatusFiles,
+    ]);
     const protectedFiles = changedFiles.filter((file) => pathLooksProtected(file, policy.sandbox.repository.protectedPaths));
     const unexpectedFiles = changedFiles.filter((file) => !pathMatchesAllowed(file, policy.sandbox.repository.allowedPaths));
+    const authorizedPaths = plan.config.authorizedChangedPaths ?? [];
+    const unauthorizedFiles = changedFiles.filter(
+      (file) =>
+        file !== ".codex/orynt-beta-verify.mjs" &&
+        ((plan.config.requireAuthorizedChangedPaths &&
+          authorizedPaths.length === 0) ||
+          (authorizedPaths.length > 0 &&
+            !pathMatchesExactAuthorization(file, authorizedPaths))),
+    );
     const allowedFiles = changedFiles.filter((file) => !unexpectedFiles.includes(file) && !protectedFiles.includes(file));
 
     return {
@@ -424,9 +669,13 @@ export class LocalRepositoryVerifier implements Verifier {
       allowedFiles,
       protectedFiles,
       unexpectedFiles,
+      unauthorizedFiles,
+      destructiveFiles,
       hasChanges: changedFiles.length > 0,
       withinAllowedScope: unexpectedFiles.length === 0,
       protectedPathTouched: protectedFiles.length > 0,
+      changedFileLimitExceeded:
+        changedFiles.length > policy.sandbox.fileWritePolicy.maxChangedFiles,
     };
   }
 
@@ -454,6 +703,12 @@ export class LocalRepositoryVerifier implements Verifier {
               ? "Diff touched protected paths."
               : failureClass === "unexpected_file_touch"
                 ? "Diff touched files outside allowed scope."
+                : failureClass === "unauthorized_file_touch"
+                  ? "Diff touched files outside the authorized action scope."
+                : failureClass === "changed_file_limit_exceeded"
+                  ? "Diff exceeded the automatic changed-file limit."
+                  : failureClass === "destructive_change_detected"
+                    ? "Diff contains deletion or rename operations."
                 : failureClass === "no_changes"
                   ? "No changed files were detected."
                   : blockedEvidence.length > 0
@@ -519,6 +774,21 @@ export class LocalRepositoryVerifier implements Verifier {
     if (!diffScope.withinAllowedScope) {
       return "unexpected_file_touch";
     }
+    if (diffScope.unauthorizedFiles.length > 0) {
+      return "unauthorized_file_touch";
+    }
+    if (
+      diffScope.changedFileLimitExceeded &&
+      !plan.config.allowChangedFileLimitExceeded
+    ) {
+      return "changed_file_limit_exceeded";
+    }
+    if (
+      diffScope.destructiveFiles.length > 0 &&
+      !plan.config.allowDestructiveChanges
+    ) {
+      return "destructive_change_detected";
+    }
     if (plan.config.requireChangedFiles && !diffScope.hasChanges) {
       return "no_changes";
     }
@@ -529,7 +799,7 @@ export class LocalRepositoryVerifier implements Verifier {
     const resolvedRoot = path.resolve(artifactRoot);
     const managedRoot = path.resolve(this.managedArtifactRoot);
     if (!isInsideOrEqual(resolvedRoot, managedRoot)) {
-      throw new VerifierFailure("artifact_path_unsafe", "Verification artifact path is outside the CodePawl-managed artifact root.", [resolvedRoot, managedRoot]);
+      throw new VerifierFailure("artifact_path_unsafe", "Verification artifact path is outside the Orynt-managed artifact root.", [resolvedRoot, managedRoot]);
     }
     await mkdir(managedRoot, { recursive: true });
     return resolvedRoot;

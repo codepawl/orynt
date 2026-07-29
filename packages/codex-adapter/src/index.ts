@@ -207,6 +207,23 @@ function redactExecutionText(value: string, maxBytes: number): { value: string; 
   };
 }
 
+function previewExecutionText(value: string, maxChars = 1200): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed.length > maxChars ? `${trimmed.slice(0, maxChars).trimEnd()}\n[TRUNCATED]` : trimmed;
+}
+
+function visibleModelResponseText(value: string): { value?: string; redactionCount: number } {
+  const redacted = redactImportText(value);
+  const trimmed = redacted.value.trim();
+  return {
+    value: trimmed || undefined,
+    redactionCount: redacted.redactionCount,
+  };
+}
+
 function safeExecutionEnv(): NodeJS.ProcessEnv {
   const names = ["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "CODEX_HOME"];
   const env: NodeJS.ProcessEnv = {};
@@ -249,6 +266,24 @@ function isAllowedPath(filePath: string, allowedGlobs: string[]): boolean {
   return allowedGlobs.some((glob) => matchesSimpleGlob(filePath, glob));
 }
 
+function isExactlyAuthorizedPath(
+  filePath: string,
+  authorizedPaths: string[],
+): boolean {
+  const normalizedFile = filePath.replaceAll("\\", "/").replace(/^\.\//, "");
+  return authorizedPaths.some((authorizedPath) => {
+    const normalizedAuthorization = authorizedPath
+      .replaceAll("\\", "/")
+      .replace(/^\.\//, "");
+    return (
+      normalizedAuthorization.length > 0 &&
+      !normalizedAuthorization.includes("*") &&
+      !normalizedAuthorization.includes("?") &&
+      normalizedAuthorization === normalizedFile
+    );
+  });
+}
+
 async function executableExists(candidate: string): Promise<boolean> {
   try {
     const info = await stat(candidate);
@@ -270,9 +305,13 @@ export class LocalCodexContractAdapter implements CodexAdapter {
   private readonly pathEnv?: string;
   private readonly policyEngine = new ConservativePolicyEngine();
   private readonly processes = new Map<string, ChildProcessWithoutNullStreams>();
+  private readonly processGroupCleanups = new WeakMap<
+    ChildProcessWithoutNullStreams,
+    Promise<boolean>
+  >();
 
   constructor(options: LocalCodexContractAdapterOptions = {}) {
-    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "codepawl", "codex-artifacts"));
+    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "orynt", "codex-artifacts"));
     this.runStore = options.runStore;
     this.defaultRunId = options.runId;
     this.actor = options.actor ?? { kind: "runtime", id: "codex-adapter", displayName: "Codex Adapter" };
@@ -335,6 +374,8 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     const constraints = redactStringList(request.constraints);
     const doneWhen = redactStringList(request.doneWhen);
     const validationCommands = redactStringList(request.validationCommands);
+    const executionMode = request.executionMode ?? "contract_only";
+    const selectedModelId = request.modelId?.trim();
     const redactionApplied = goal.redacted || context.redacted || constraints.redacted || doneWhen.redacted || validationCommands.redacted;
     const contractId = `codex-contract-${slug(request.runId)}-${slug(request.taskId)}-${shortHash(
       `${request.runId}:${request.taskId}:${request.sandbox.worktreePath}:${goal.value}`,
@@ -348,8 +389,8 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       `Work only inside sandbox path: ${request.sandbox.worktreePath}`,
       `Repository source path is context only: ${request.repository.gitRoot}`,
       "Do not access secrets, credentials, tokens, passwords, cookies, OTPs, or raw sensitive values.",
-      "Do not run network, dependency installation, git push/merge, destructive, privileged, or non-allowlisted commands without CodePawl approval.",
-      "Do not claim success; CodePawl verifier will decide success after deterministic validation.",
+      "Do not run network, dependency installation, git push/merge, destructive, privileged, or non-allowlisted commands without Orynt approval.",
+      "Do not claim success; the Orynt verifier will decide success after deterministic validation.",
       `Allowed paths: ${allowedPaths.join(", ")}`,
       `Protected paths: ${protectedPaths.join(", ")}`,
       `Blocked commands: ${blockedCommands.join(", ")}`,
@@ -360,8 +401,8 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       "# Codex Work Contract",
       "",
       `Contract ID: ${contractId}`,
-      `Provider: ${CONTRACT_PROVIDER.name}`,
-      "Execution mode: contract_only",
+      `Provider: ${executionMode === "contract_only" ? CONTRACT_PROVIDER.name : LOCAL_CLI_PROVIDER.name}`,
+      `Execution mode: ${executionMode}`,
       "",
       "## Goal",
       goal.value,
@@ -370,6 +411,9 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       bullet([
         `Run ID: ${request.runId}`,
         `Task ID: ${request.taskId}`,
+        ...(selectedModelId ? [`Selected model: ${request.modelLabel ?? selectedModelId} (${selectedModelId})`] : []),
+        ...(request.modelRole ? [`Orchestration role: ${request.modelRole}`] : []),
+        ...(request.thinkingEffort ? [`Thinking effort: ${request.thinkingEffort}`] : []),
         `Sandbox path: ${request.sandbox.worktreePath}`,
         `Sandbox branch: ${request.sandbox.branchName}`,
         `Repository root: ${request.repository.gitRoot}`,
@@ -396,10 +440,16 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       ]),
       "",
       "## Validation Expectations",
-      bullet(validationCommands.values.length > 0 ? validationCommands.values : ["CodePawl verifier will select deterministic validation in a later slice."]),
+      bullet(validationCommands.values.length > 0 ? validationCommands.values : ["The Orynt verifier will select deterministic validation in a later slice."]),
       "",
-      "## Provider Boundary",
-      "This artifact is a safe handoff contract only. CodePawl has not executed Codex, spawned an external agent, or run arbitrary shell commands.",
+      "## Execution Instructions",
+      executionMode === "contract_only"
+        ? "This artifact is a safe handoff contract only. Orynt has not executed Codex, spawned an external agent, or run arbitrary shell commands."
+        : [
+            "Implement the requested repository task directly in the sandbox.",
+            "Prefer a complete, runnable vertical slice over placeholders. For fullstack web tasks, include a frontend entry, backend/API code, package.json scripts, and README run instructions.",
+            "Do not stop after planning or scaffolding. Write the files needed for the app to run locally and for the Orynt verifier command to pass.",
+          ].join("\n"),
       "",
     ].join("\n");
 
@@ -407,22 +457,27 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       id: contractId,
       runId: request.runId,
       taskId: request.taskId,
-      provider: CONTRACT_PROVIDER,
-      executionMode: "contract_only",
+      provider: executionMode === "contract_only" ? CONTRACT_PROVIDER : LOCAL_CLI_PROVIDER,
+      executionMode,
       goal: goal.value,
       markdown,
       metadata: {
         id: contractId,
         runId: request.runId,
         taskId: request.taskId,
-        providerId: CONTRACT_PROVIDER.id,
-        executionMode: "contract_only",
+        providerId: executionMode === "contract_only" ? CONTRACT_PROVIDER.id : LOCAL_CLI_PROVIDER.id,
+        executionMode,
         repository: request.repository,
         sandbox: request.sandbox,
         allowedPaths,
         protectedPaths,
         blockedCommands,
         validationCommands: validationCommands.values,
+        modelId: selectedModelId,
+        modelLabel: selectedModelId ? request.modelLabel ?? selectedModelId : undefined,
+        modelRole: request.modelRole,
+        thinkingEffort: request.thinkingEffort,
+        parentInvocationId: request.parentInvocationId,
         budget: request.budget,
         redactionApplied,
         createdAt,
@@ -520,7 +575,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         : "Codex CLI is missing or unconfigured; this slice still generates reviewable contract artifacts.";
     }
     if (mode === "manual_cli") {
-      return "Manual CLI mode is a future handoff path and is not executed by CodePawl in this slice.";
+      return "Manual CLI mode is a future handoff path and is not executed by Orynt in this slice.";
     }
     if (mode === "app_server") {
       return "Codex App Server mode is reserved for the future provider runtime.";
@@ -548,7 +603,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       {
         id: `codex-execution-${slug(runId)}-${slug(taskId)}`,
         kind: "command",
-        summary: "Run local Codex CLI against generated CodePawl contract",
+        summary: "Run local Codex CLI against generated Orynt contract",
         command: "codex exec",
       },
       request.policy,
@@ -596,8 +651,19 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         "exec",
         "--json",
         "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "-c",
+        "model_reasoning_summary=auto",
         "--sandbox",
         "workspace-write",
+        ...(request.contract.metadata.modelId ? ["-m", request.contract.metadata.modelId] : []),
+        ...(request.contract.metadata.thinkingEffort
+          ? [
+              "-c",
+              `model_reasoning_effort=${JSON.stringify(request.contract.metadata.thinkingEffort)}`,
+            ]
+          : []),
         "-C",
         request.sandbox.worktreePath,
         "--output-last-message",
@@ -618,6 +684,9 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       policyDecision,
       verifierPlanId: request.verifierPlan?.id,
       validationCommands: request.contract.metadata.validationCommands,
+      modelRole: request.contract.metadata.modelRole,
+      thinkingEffort: request.contract.metadata.thinkingEffort,
+      parentInvocationId: request.contract.metadata.parentInvocationId,
       approvalRequired,
       failureReasons: uniqueFailures,
       artifacts: [
@@ -705,7 +774,11 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     return approval;
   }
 
-  async executeApprovedContract(plan: CodexExecutionPlan, approval: CodexExecutionApproval): Promise<CodexExecutionResult> {
+  async executeApprovedContract(
+    plan: CodexExecutionPlan,
+    approval: CodexExecutionApproval,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<CodexExecutionResult> {
     if (plan.status === "blocked" || plan.failureReasons.length > 0) {
       return this.failExecution(plan, "policy_blocked", `Controlled Codex execution cannot start: ${plan.failureReasons.join(", ")}`);
     }
@@ -741,6 +814,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         approvalId: approval.id,
         planId: plan.id,
         approvedBy: approval.approvedBy,
+        approvalSource: approval.authorizationSource ?? "operator",
       },
     });
     this.runStore?.appendEvent(plan.runId, {
@@ -755,14 +829,14 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     });
 
     const startedAt = processRef.startedAt ?? new Date().toISOString();
-    const outcome = await this.spawnCodex(plan, contractMarkdown, processRef);
+    const outcome = await this.spawnCodex(plan, contractMarkdown, processRef, options.signal);
     const completedAt = new Date().toISOString();
-    processRef.status = outcome.timedOut ? "failed" : outcome.exitCode === 0 ? "finished" : "failed";
+    processRef.status = outcome.cancelled ? "cancelled" : outcome.timedOut ? "failed" : outcome.exitCode === 0 ? "finished" : "failed";
     processRef.finishedAt = completedAt;
 
     const stdout = redactExecutionText(outcome.stdout, plan.executionPolicy.maxOutputBytes);
     const stderr = redactExecutionText(outcome.stderr, plan.executionPolicy.maxOutputBytes);
-    const lastMessage = await this.readOptionalLastMessage(plan.lastMessagePath, plan.executionPolicy.maxOutputBytes);
+    const lastMessage = await this.readOptionalLastMessage(plan.lastMessagePath);
     const redactedPaths: string[] = [];
     let redactionCount = 0;
     if (stdout.redactionCount > 0) {
@@ -778,7 +852,9 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       redactionCount += lastMessage.redactionCount;
     }
     const failureReasons: CodexExecutionFailureReason[] = [];
-    if (outcome.timedOut) {
+    if (outcome.cancelled) {
+      failureReasons.push("execution_cancelled");
+    } else if (outcome.timedOut) {
       failureReasons.push("execution_timeout");
     } else if (outcome.exitCode !== 0) {
       failureReasons.push("execution_failed");
@@ -823,25 +899,37 @@ export class LocalCodexContractAdapter implements CodexAdapter {
       summary: "",
     };
     result.summary = this.summarizeExecution(result);
+    const lastMessagePreview = lastMessage.value || undefined;
     const resultJson = `${JSON.stringify(result, null, 2)}\n`;
-    const artifacts = [
+    const artifacts: CodexExecutionResult["artifacts"] = [
       {
         id: `${result.id}-stdout`,
-        kind: "codex_execution_log" as const,
+        kind: "codex_execution_log",
         uri: `file://${plan.stdoutPath}`,
         label: "Redacted Codex stdout",
         sha256: sha256(stdout.value),
       },
       {
         id: `${result.id}-stderr`,
-        kind: "codex_execution_log" as const,
+        kind: "codex_execution_log",
         uri: `file://${plan.stderrPath}`,
         label: "Redacted Codex stderr",
         sha256: sha256(stderr.value),
       },
+      ...(lastMessage.path
+        ? [
+            {
+              id: `${result.id}-last-message`,
+              kind: "summary" as const,
+              uri: `file://${plan.lastMessagePath}`,
+              label: "Codex final model response",
+              sha256: sha256(lastMessage.value),
+            },
+          ]
+        : []),
       {
         id: `${result.id}-json`,
-        kind: "codex_execution_result" as const,
+        kind: "codex_execution_result",
         uri: `file://${plan.resultPath}`,
         label: "Controlled Codex execution result",
         sha256: sha256(resultJson),
@@ -857,6 +945,9 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         summary: "Controlled Codex execution output recorded and redacted",
         planId: plan.id,
         redaction: result.redaction,
+        stdoutSummary: previewExecutionText(stdout.value, 600),
+        stderrSummary: previewExecutionText(stderr.value, 600),
+        lastMessagePreview,
       },
       artifacts,
     });
@@ -869,19 +960,22 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         planId: plan.id,
         exitCode: result.exitCode,
         failureReasons: result.failureReasons,
+        lastMessagePreview,
       },
       artifacts: result.artifacts,
     });
-    this.runStore?.appendEvent(plan.runId, {
-      type: "codex_execution_result_ready",
-      actor: this.actor,
-      payload: {
-        summary: "Controlled Codex execution result is ready for import; verification remains a separate stage",
-        resultId: result.id,
-        importReady: true,
-      },
-      artifacts: result.artifacts,
-    });
+    if (result.status === "finished") {
+      this.runStore?.appendEvent(plan.runId, {
+        type: "codex_execution_result_ready",
+        actor: this.actor,
+        payload: {
+          summary: "Controlled Codex execution result is ready for import; verification remains a separate stage",
+          resultId: result.id,
+          importReady: true,
+        },
+        artifacts: result.artifacts,
+      });
+    }
 
     return result;
   }
@@ -897,7 +991,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     });
     const child = this.processes.get(ref.id);
     if (child && !child.killed) {
-      child.kill("SIGTERM");
+      await this.terminateProcessGroup(child);
     }
     const cancelled = {
       ...ref,
@@ -948,50 +1042,211 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     plan: CodexExecutionPlan,
     contractMarkdown: string,
     processRef: CodexProcessRef,
-  ): Promise<{ stdout: string; stderr: string; exitCode: number | null; timedOut: boolean }> {
+    signal?: AbortSignal,
+  ): Promise<{ stdout: string; stderr: string; exitCode: number | null; timedOut: boolean; cancelled: boolean }> {
     return new Promise((resolve) => {
       const child = spawn(plan.executablePath ?? "codex", plan.argv, {
         cwd: plan.cwd,
         env: safeExecutionEnv(),
         stdio: ["pipe", "pipe", "pipe"],
+        detached: process.platform !== "win32",
       });
       processRef.pid = child.pid;
       this.processes.set(processRef.id, child);
       let stdout = "";
+      let stdoutJsonlBuffer = "";
       let stderr = "";
+      const lastStreamedItemText = new Map<string, string>();
+      const emitCodexStreamItem = (line: string) => {
+        let event: unknown;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          return;
+        }
+        if (typeof event !== "object" || event === null || !("type" in event)) {
+          return;
+        }
+        const eventRecord = event as { type?: unknown; item?: unknown };
+        if (eventRecord.type !== "item.started" && eventRecord.type !== "item.updated" && eventRecord.type !== "item.completed") {
+          return;
+        }
+        if (typeof eventRecord.item !== "object" || eventRecord.item === null) {
+          return;
+        }
+        const item = eventRecord.item as { id?: unknown; type?: unknown; text?: unknown };
+        if (item.type !== "reasoning" && item.type !== "agent_message") {
+          return;
+        }
+        if (typeof item.id !== "string" || typeof item.text !== "string" || !item.text.trim()) {
+          return;
+        }
+        const previousText = lastStreamedItemText.get(item.id);
+        if (previousText === item.text) {
+          return;
+        }
+        lastStreamedItemText.set(item.id, item.text);
+        const textPreview = item.type === "agent_message" ? visibleModelResponseText(item.text).value : previewExecutionText(item.text, 1_200);
+        if (!textPreview) {
+          return;
+        }
+        this.runStore?.appendEvent(plan.runId, {
+          type: item.type === "reasoning" ? "codex_reasoning_summary" : "codex_agent_message",
+          actor: this.actor,
+          payload: {
+            summary: item.type === "reasoning" ? textPreview : "Codex agent response streamed",
+            planId: plan.id,
+            processId: processRef.id,
+            itemId: item.id,
+            streamEventType: eventRecord.type,
+            status: eventRecord.type.replace("item.", ""),
+            ...(item.type === "agent_message" ? { message: textPreview } : { text: textPreview }),
+          },
+        });
+      };
       let settled = false;
       let timedOut = false;
+      let cancelled = false;
+      const onAbort = () => {
+        if (settled || cancelled) return;
+        cancelled = true;
+        void this.cancelExecution(processRef);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill("SIGTERM");
+        void this.terminateProcessGroup(child);
       }, plan.executionPolicy.timeoutMs);
 
       child.stdout.on("data", (chunk) => {
-        stdout += String(chunk);
+        const text = String(chunk);
+        stdout += text;
+        stdoutJsonlBuffer += text;
+        const lines = stdoutJsonlBuffer.split(/\r?\n/);
+        stdoutJsonlBuffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed) {
+            emitCodexStreamItem(trimmed);
+          }
+        }
       });
       child.stderr.on("data", (chunk) => {
         stderr += String(chunk);
       });
-      child.on("error", (error) => {
+      const flushBufferedStdoutEvent = () => {
+        const trimmed = stdoutJsonlBuffer.trim();
+        if (trimmed) {
+          emitCodexStreamItem(trimmed);
+        }
+        stdoutJsonlBuffer = "";
+      };
+      child.on("error", async (error) => {
         if (settled) {
           return;
         }
         settled = true;
+        flushBufferedStdoutEvent();
         clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        await this.terminateProcessGroup(child);
         this.processes.delete(processRef.id);
-        resolve({ stdout, stderr: `${stderr}${error.message}`, exitCode: 1, timedOut });
+        resolve({ stdout, stderr: `${stderr}${error.message}`, exitCode: 1, timedOut, cancelled });
       });
-      child.on("close", (code) => {
+      child.on("close", async (code) => {
         if (settled) {
           return;
         }
         settled = true;
+        flushBufferedStdoutEvent();
+        for (const line of stdout.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (trimmed) emitCodexStreamItem(trimmed);
+        }
         clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        const cleanupComplete = await this.terminateProcessGroup(child);
         this.processes.delete(processRef.id);
-        resolve({ stdout, stderr, exitCode: code, timedOut });
+        resolve({
+          stdout,
+          stderr: cleanupComplete
+            ? stderr
+            : `${stderr}${stderr.endsWith("\n") || !stderr ? "" : "\n"}Controlled Codex process group did not terminate.`,
+          exitCode: cleanupComplete ? code : 1,
+          timedOut,
+          cancelled,
+        });
       });
       child.stdin.end(contractMarkdown);
     });
+  }
+
+  private terminateProcessGroup(
+    child: ChildProcessWithoutNullStreams,
+  ): Promise<boolean> {
+    const existing = this.processGroupCleanups.get(child);
+    if (existing) {
+      return existing;
+    }
+    const cleanup = this.performProcessGroupCleanup(child);
+    this.processGroupCleanups.set(child, cleanup);
+    return cleanup;
+  }
+
+  private async performProcessGroupCleanup(
+    child: ChildProcessWithoutNullStreams,
+  ): Promise<boolean> {
+    this.signalProcessGroup(child, "SIGTERM");
+    if (await this.waitForProcessGroupExit(child, 150)) {
+      return true;
+    }
+    this.signalProcessGroup(child, "SIGKILL");
+    return this.waitForProcessGroupExit(child, 150);
+  }
+
+  private signalProcessGroup(
+    child: ChildProcessWithoutNullStreams,
+    signal: NodeJS.Signals,
+  ): void {
+    if (process.platform !== "win32" && child.pid) {
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        // The process group is already gone.
+      }
+      return;
+    }
+    if (!child.killed) {
+      child.kill(signal);
+    }
+  }
+
+  private async waitForProcessGroupExit(
+    child: ChildProcessWithoutNullStreams,
+    timeoutMs: number,
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.processGroupExists(child)) {
+      if (Date.now() >= deadline) {
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return true;
+  }
+
+  private processGroupExists(child: ChildProcessWithoutNullStreams): boolean {
+    const pid = child.pid;
+    if (!pid) {
+      return false;
+    }
+    try {
+      process.kill(process.platform === "win32" ? pid : -pid, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code !== "ESRCH";
+    }
   }
 
   private async validateExecutionSandbox(sandbox: CodexExecutionPlan["sandbox"], policy: CodexExecutionPlan["policy"]): Promise<string> {
@@ -1005,7 +1260,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     const sourceRepository = path.resolve(sandbox.repositoryPath);
     const gitRoot = path.resolve(sandbox.gitRoot);
     if (!isInsideOrEqual(worktree, managedRoot)) {
-      throw new CodexExecutionFailure("unmanaged_sandbox", "Controlled Codex execution sandbox is outside the CodePawl-managed worktree root.", [
+      throw new CodexExecutionFailure("unmanaged_sandbox", "Controlled Codex execution sandbox is outside the Orynt-managed worktree root.", [
         worktree,
         managedRoot,
       ]);
@@ -1042,13 +1297,13 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     }
   }
 
-  private async readOptionalLastMessage(filePath: string, maxBytes: number): Promise<{ path?: string; value: string; redactionCount: number }> {
+  private async readOptionalLastMessage(filePath: string): Promise<{ path?: string; value: string; redactionCount: number }> {
     try {
       const content = await readFile(filePath, "utf8");
-      const redacted = redactExecutionText(content, maxBytes);
+      const redacted = visibleModelResponseText(content);
       return {
         path: filePath,
-        value: redacted.value,
+        value: redacted.value ?? "",
         redactionCount: redacted.redactionCount,
       };
     } catch {
@@ -1060,7 +1315,7 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     const resolvedRoot = path.resolve(artifactRoot);
     const managedRoot = path.resolve(this.managedArtifactRoot);
     if (!isInsideOrEqual(resolvedRoot, managedRoot)) {
-      throw new CodexAdapterFailure("artifact_path_unsafe", "Codex contract artifact path is outside the CodePawl-managed artifact root.", [
+      throw new CodexAdapterFailure("artifact_path_unsafe", "Codex contract artifact path is outside the Orynt-managed artifact root.", [
         resolvedRoot,
         managedRoot,
       ]);
@@ -1088,7 +1343,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
   private readonly actor: Actor;
 
   constructor(options: LocalManualCodexResultImporterOptions = {}) {
-    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "codepawl", "codex-artifacts"));
+    this.managedArtifactRoot = path.resolve(options.managedArtifactRoot ?? path.join(tmpdir(), "orynt", "codex-artifacts"));
     this.runStore = options.runStore;
     this.actor = options.actor ?? { kind: "runtime", id: "codex-result-importer", displayName: "Codex Result Importer" };
   }
@@ -1100,8 +1355,14 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
     let diffStat = "";
 
     try {
-      nameStatus = await this.runGit(["diff", "--name-status", request.sandbox.baseRef, "--"], safeWorktreePath);
-      porcelainStatus = await this.runGit(["status", "--porcelain"], safeWorktreePath);
+      nameStatus = await this.runGit(
+        ["diff", "--name-status", "-z", request.sandbox.baseRef, "--"],
+        safeWorktreePath,
+      );
+      porcelainStatus = await this.runGit(
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        safeWorktreePath,
+      );
       diffStat = await this.runGit(["diff", "--stat", request.sandbox.baseRef, "--"], safeWorktreePath);
     } catch (error) {
       throw new CodexResultImporterFailure("diff_unavailable", error instanceof Error ? error.message : "Failed to inspect sandbox git diff.", [safeWorktreePath]);
@@ -1115,6 +1376,14 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
     const protectedFiles = changedPaths.filter((filePath) => isProtectedPath(filePath, request.policy.sandbox.repository.protectedPaths));
     const allowedFiles = changedPaths.filter((filePath) => isAllowedPath(filePath, request.policy.sandbox.repository.allowedPaths));
     const unexpectedFiles = changedPaths.filter((filePath) => !isAllowedPath(filePath, request.policy.sandbox.repository.allowedPaths));
+    const authorizedPaths = request.expectedPaths ?? [];
+    const unauthorizedFiles = changedPaths.filter(
+      (filePath) =>
+        filePath !== ".codex/orynt-beta-verify.mjs" &&
+        ((request.requireExpectedPaths && authorizedPaths.length === 0) ||
+          (authorizedPaths.length > 0 &&
+            !isExactlyAuthorizedPath(filePath, authorizedPaths))),
+    );
 
     return {
       baseRef: request.sandbox.baseRef,
@@ -1123,6 +1392,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
       allowedFiles,
       protectedFiles,
       unexpectedFiles,
+      unauthorizedFiles,
       withinAllowedScope: unexpectedFiles.length === 0 && protectedFiles.length === 0,
       protectedPathTouched: protectedFiles.length > 0,
       diffStat,
@@ -1157,6 +1427,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
           changedFiles: patch.changedFiles.map((file) => file.path),
           protectedFiles: patch.protectedFiles,
           unexpectedFiles: patch.unexpectedFiles,
+          unauthorizedFiles: patch.unauthorizedFiles ?? [],
           hasChanges: patch.hasChanges,
         },
       });
@@ -1170,6 +1441,24 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
       }
       if (!patch.withinAllowedScope) {
         failureReasons.push("unexpected_file_touch");
+      }
+      if ((patch.unauthorizedFiles?.length ?? 0) > 0) {
+        failureReasons.push("unauthorized_file_touch");
+      }
+      if (
+        patch.changedFiles.length >
+          request.policy.sandbox.fileWritePolicy.maxChangedFiles &&
+        !request.allowChangedFileLimitExceeded
+      ) {
+        failureReasons.push("changed_file_limit_exceeded");
+      }
+      if (
+        patch.changedFiles.some((file) =>
+          file.status === "deleted" || file.status === "renamed"
+        ) &&
+        !request.allowDestructiveChanges
+      ) {
+        failureReasons.push("destructive_change_detected");
       }
 
       const manualLog = safeRequest.manualLogPath ? await this.importCommandLog(safeRequest.manualLogPath, safeArtifactRoot, "manual_log") : undefined;
@@ -1408,7 +1697,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
     const managedRoot = path.resolve(this.managedArtifactRoot);
     const resolvedWorktree = path.resolve(worktreePath);
     if (!isInsideOrEqual(resolvedRoot, managedRoot)) {
-      throw new CodexResultImporterFailure("artifact_path_unsafe", "Codex result artifact path is outside the CodePawl-managed artifact root.", [
+      throw new CodexResultImporterFailure("artifact_path_unsafe", "Codex result artifact path is outside the Orynt-managed artifact root.", [
         resolvedRoot,
         managedRoot,
       ]);
@@ -1439,7 +1728,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
     const sourceRepository = path.resolve(request.sandbox.repositoryPath);
     const gitRoot = path.resolve(request.sandbox.gitRoot);
     if (!isInsideOrEqual(worktree, managedRoot)) {
-      throw new CodexResultImporterFailure("unmanaged_sandbox", "Sandbox worktree is outside the CodePawl-managed worktree root.", [worktree, managedRoot]);
+      throw new CodexResultImporterFailure("unmanaged_sandbox", "Sandbox worktree is outside the Orynt-managed worktree root.", [worktree, managedRoot]);
     }
     if (worktree === sourceRepository || worktree === gitRoot) {
       throw new CodexResultImporterFailure("unsafe_path", "Sandbox worktree must not be the source repository or git root.", [worktree, sourceRepository, gitRoot]);
@@ -1483,7 +1772,7 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
     const resolvedRoot = await realpath(path.resolve(artifactRoot));
     const resolvedFile = path.resolve(filePath);
     if (!isInsideOrEqual(resolvedFile, resolvedRoot)) {
-      throw new CodexResultImporterFailure("unsafe_path", "Imported Codex result log path is outside the CodePawl-managed artifact directory.", [
+      throw new CodexResultImporterFailure("unsafe_path", "Imported Codex result log path is outside the Orynt-managed artifact directory.", [
         resolvedFile,
         resolvedRoot,
       ]);
@@ -1512,45 +1801,48 @@ export class LocalManualCodexResultImporter implements CodexResultImporter {
   }
 
   private parseNameStatus(output: string): ImportedChangedFile[] {
-    return output
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line): ImportedChangedFile => {
-        const parts = line.split(/\s+/);
-        const code = parts[0] ?? "";
-        if (code.startsWith("R")) {
-          return { status: "renamed", previousPath: parts[1] ?? "", path: parts[2] ?? parts[1] ?? "" };
-        }
-        if (code.startsWith("C")) {
-          return { status: "copied", previousPath: parts[1] ?? "", path: parts[2] ?? parts[1] ?? "" };
-        }
-        return {
-          status: this.mapGitStatus(code),
-          path: parts[1] ?? "",
-        };
-      })
-      .filter((file) => Boolean(file.path));
+    const fields = output.split("\0").filter((field) => field.length > 0);
+    const files: ImportedChangedFile[] = [];
+    for (let index = 0; index < fields.length;) {
+      const code = fields[index++] ?? "";
+      const firstPath = fields[index++] ?? "";
+      if (code.startsWith("R") || code.startsWith("C")) {
+        const nextPath = fields[index++] ?? firstPath;
+        files.push({
+          status: code.startsWith("R") ? "renamed" : "copied",
+          previousPath: firstPath,
+          path: nextPath,
+        });
+      } else if (firstPath) {
+        files.push({ status: this.mapGitStatus(code), path: firstPath });
+      }
+    }
+    return files;
   }
 
   private parsePorcelainStatus(output: string): ImportedChangedFile[] {
-    return output
-      .split("\n")
-      .filter(Boolean)
-      .map((line): ImportedChangedFile => {
-        const code = line.slice(0, 2);
-        const rawPath = line.slice(3).trim();
-        const renameSeparator = " -> ";
-        if (rawPath.includes(renameSeparator)) {
-          const [previousPath, nextPath] = rawPath.split(renameSeparator);
-          return { status: "renamed", previousPath, path: nextPath };
-        }
-        return {
-          status: code === "??" ? "untracked" : this.mapGitStatus(code.trim()),
-          path: rawPath,
-        };
-      })
-      .filter((file) => Boolean(file.path));
+    const records = output.split("\0").filter((record) => record.length > 0);
+    const files: ImportedChangedFile[] = [];
+    for (let index = 0; index < records.length;) {
+      const record = records[index++] ?? "";
+      const code = record.slice(0, 2);
+      const filePath = record.slice(3);
+      if (!filePath) continue;
+      if (code.includes("R") || code.includes("C")) {
+        const previousPath = records[index++] ?? "";
+        files.push({
+          status: code.includes("R") ? "renamed" : "copied",
+          previousPath,
+          path: filePath,
+        });
+      } else {
+        files.push({
+          status: code === "??" ? "untracked" : this.mapGitStatus(code),
+          path: filePath,
+        });
+      }
+    }
+    return files;
   }
 
   private mapGitStatus(code: string): ImportedChangedFile["status"] {

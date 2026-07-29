@@ -1,20 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CODEPAWL_ERROR_CODES,
   CODEX_EXECUTION_IPC_METHODS,
   MEMORY_IPC_METHODS,
+  ORYNT_ERROR_CODES,
   RUN_IPC_METHODS,
   RUN_EVENTS,
   SETTINGS_IPC_METHODS,
   SKILL_IPC_METHODS,
+  SKILL_MANAGER_IPC_METHODS,
   createRpcEvent,
   isRpcEvent,
   isRpcRequest,
   isRpcResponse,
 } from "./index";
 
-describe("CodePawl IPC contracts", () => {
+describe("Orynt IPC contracts", () => {
   it("validates newline-delimited JSON-RPC request, response, and event envelopes", () => {
     expect(
       isRpcRequest({
@@ -41,11 +42,19 @@ describe("CodePawl IPC contracts", () => {
   });
 
   it("keeps the MVP runtime error vocabulary explicit", () => {
-    expect(CODEPAWL_ERROR_CODES).toContain("APPROVAL_REQUIRED");
-    expect(CODEPAWL_ERROR_CODES).toContain("BUDGET_EXCEEDED");
-    expect(CODEPAWL_ERROR_CODES).toContain("SIDECAR_PROTOCOL_MISMATCH");
-    expect(CODEPAWL_ERROR_CODES).toContain("REPOSITORY_CONTEXT_FAILED");
-    expect(CODEPAWL_ERROR_CODES).not.toContain("SHELL_EXEC_FAILED");
+    expect(ORYNT_ERROR_CODES).toContain("APPROVAL_REQUIRED");
+    expect(ORYNT_ERROR_CODES).toContain("BUDGET_EXCEEDED");
+    expect(ORYNT_ERROR_CODES).toContain("SIDECAR_PROTOCOL_MISMATCH");
+    expect(ORYNT_ERROR_CODES).toContain("REPOSITORY_CONTEXT_FAILED");
+    expect(ORYNT_ERROR_CODES).not.toContain("SHELL_EXEC_FAILED");
+    expect(ORYNT_ERROR_CODES).toEqual(
+      expect.arrayContaining([
+        "SKILL_MANIFEST_INVALID",
+        "SKILL_TRUST_BLOCKED",
+        "SKILL_PLAN_STALE",
+        "SKILL_TRANSACTION_FAILED",
+      ]),
+    );
   });
 
   it("declares durable repository run and settings IPC methods", () => {
@@ -124,6 +133,26 @@ describe("CodePawl IPC contracts", () => {
 
     expect(isRpcEvent(event)).toBe(true);
     expect(event.payload).toMatchObject({ status: "active" });
+  });
+
+  it("keeps installed Agent Skill package management separate from learned skills", () => {
+    expect(SKILL_MANAGER_IPC_METHODS).toEqual([
+      "skillInventory.scan",
+      "skillInventory.list",
+      "skillInventory.get",
+      "skillHub.listSources",
+      "skillHub.refresh",
+      "skillHub.search",
+      "skillHub.get",
+      "skillMutation.plan",
+      "skillMutation.approve",
+      "skillMutation.execute",
+      "skillMutation.history",
+      "skillMutation.recover",
+      "skillContext.snapshot",
+    ]);
+    expect(SKILL_IPC_METHODS).not.toContain("skillInventory.scan");
+    expect(RUN_EVENTS).toContain("skill_context_snapshot_created");
   });
 
   it("declares controlled Codex execution IPC methods and lifecycle events", () => {

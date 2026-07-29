@@ -65,7 +65,7 @@ function createRequest(overrides: Partial<CodexContractRequest> = {}): CodexCont
       repositoryPath,
       gitRoot: repositoryPath,
       worktreePath,
-      branchName: "codepawl/run-1-task-1",
+      branchName: "orynt/run-1-task-1",
       baseRef: "HEAD",
       currentCommit: "0123456789abcdef0123456789abcdef01234567",
       createdAt: "2026-06-26T00:00:00.000Z",
@@ -85,8 +85,8 @@ async function createImportFixture() {
   await mkdir(path.join(repositoryPath, "packages"), { recursive: true });
   await mkdir(path.join(repositoryPath, "scripts"), { recursive: true });
   await git(["init"], repositoryPath);
-  await git(["config", "user.email", "codepawl@example.test"], repositoryPath);
-  await git(["config", "user.name", "CodePawl Test"], repositoryPath);
+  await git(["config", "user.email", "orynt@example.test"], repositoryPath);
+  await git(["config", "user.name", "Orynt Test"], repositoryPath);
   await writeFile(path.join(repositoryPath, "packages", "README.md"), "initial\n");
   await writeFile(path.join(repositoryPath, "README.md"), "# Fixture\n");
   await git(["add", "README.md", "packages/README.md"], repositoryPath);
@@ -94,7 +94,7 @@ async function createImportFixture() {
   const baseCommit = await git(["rev-parse", "HEAD"], repositoryPath);
   const worktreePath = path.join(sandboxRoot, "repo-import-worktree");
   await mkdir(sandboxRoot, { recursive: true });
-  await git(["worktree", "add", "-b", "codepawl/run-import", worktreePath, "HEAD"], repositoryPath);
+  await git(["worktree", "add", "-b", "orynt/run-import", worktreePath, "HEAD"], repositoryPath);
 
   const policy = createConservativeCodingApprenticePolicy(repositoryPath, sandboxRoot);
   const sandbox: RepositorySandbox = {
@@ -104,7 +104,7 @@ async function createImportFixture() {
     repositoryPath,
     gitRoot: repositoryPath,
     worktreePath,
-    branchName: "codepawl/run-import",
+    branchName: "orynt/run-import",
     baseRef: baseCommit,
     currentCommit: baseCommit,
     createdAt: "2026-06-26T00:00:00.000Z",
@@ -186,7 +186,7 @@ function approved(planId: string, runId = "run-1"): CodexExecutionApproval {
 
 describe("LocalCodexContractAdapter", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-codex-adapter-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-codex-adapter-test-"));
   });
 
   afterEach(async () => {
@@ -202,11 +202,31 @@ describe("LocalCodexContractAdapter", () => {
     expect(contract.markdown).toContain("## Constraints");
     expect(contract.markdown).toContain("## Done when");
     expect(contract.markdown).toContain(`Sandbox path: ${request.sandbox.worktreePath}`);
-    expect(contract.markdown).toContain("Allowed paths: apps/**, packages/**, .codex/**, README.md, PRODUCT.md");
+    expect(contract.markdown).toContain("Allowed paths: apps/**, packages/**, src/**, server/**, api/**, public/**, tests/**, .codex/**, README.md, PRODUCT.md, package.json, index.html");
     expect(contract.markdown).toContain("Blocked commands: git push, git merge, git branch -D, rm -rf, sudo, credential, secret");
     expect(contract.markdown).toContain("Max model tokens: 120000");
     expect(contract.markdown).toContain("- pnpm test:contracts");
     expect(contract.metadata.validationCommands).toEqual(["pnpm test:contracts", "pnpm build:desktop"]);
+  });
+
+  it("generates executable local CLI contracts for controlled repository tasks", () => {
+    const request = createRequest({
+      executionMode: "manual_cli",
+      goal: "Create a complex fullstack tech web app with a frontend dashboard and backend API.",
+      constraints: ["Keep changes inside the repository sandbox."],
+      doneWhen: ["The app has package.json scripts.", "The app has frontend and backend/API files."],
+      validationCommands: ["node .codex/orynt-beta-verify.mjs"],
+    });
+
+    const contract = new LocalCodexContractAdapter({ managedArtifactRoot: path.join(tempRoot, "artifacts") }).createContract(request);
+
+    expect(contract.executionMode).toBe("manual_cli");
+    expect(contract.markdown).toContain("Execution mode: manual_cli");
+    expect(contract.markdown).toContain("Create a complex fullstack tech web app");
+    expect(contract.markdown).toContain("Implement the requested repository task directly in the sandbox");
+    expect(contract.markdown).toContain("node .codex/orynt-beta-verify.mjs");
+    expect(contract.markdown).not.toContain("This artifact is a safe handoff contract only. Orynt has not executed Codex");
+    expect(contract.metadata.executionMode).toBe("manual_cli");
   });
 
   it("redacts secret-like values from generated markdown and metadata", () => {
@@ -297,10 +317,17 @@ describe("LocalCodexContractAdapter", () => {
     ]);
   });
 
-  it("blocks controlled execution until the matching approval is granted", async () => {
+  it("plans controlled execution with isolated config and selected model", async () => {
     const store = new InMemoryRunStore();
     const run = createRun(store);
-    const request = createRequest({ runId: run.id });
+    const request = createRequest({
+      runId: run.id,
+      executionMode: "manual_cli",
+      modelId: "gpt-5.5",
+      modelLabel: "GPT-5.5",
+      modelRole: "implementer",
+      thinkingEffort: "high",
+    });
     await mkdir(request.sandbox.worktreePath, { recursive: true });
     const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
 console.log("fake codex should not run without approval");
@@ -318,6 +345,20 @@ console.log("fake codex should not run without approval");
       verifierPlan: createVerificationPlan(request),
     });
 
+    expect(plan.argv).toEqual(
+      expect.arrayContaining([
+        "--ignore-user-config",
+        "--ignore-rules",
+        "-m",
+        "gpt-5.5",
+        "-c",
+        'model_reasoning_effort="high"',
+      ]),
+    );
+    expect(plan).toMatchObject({
+      modelRole: "implementer",
+      thinkingEffort: "high",
+    });
     await expect(adapter.executeApprovedContract(plan, { ...approved(plan.id, run.id), status: "pending" })).rejects.toMatchObject({
       code: "approval_missing",
     });
@@ -462,9 +503,12 @@ const cwd = process.cwd();
 const stdin = fs.readFileSync(0, "utf8");
 const outputIndex = process.argv.indexOf("--output-last-message");
 if (outputIndex >= 0) {
-  fs.writeFileSync(process.argv[outputIndex + 1], "token=sk-fakelastmessagesecret123\\n");
+  const longFinalResponse = "Implemented final model response for regression coverage.\\n" + "Long visible response line. ".repeat(100) + "\\nFinal visible sentence after preview limit.\\ntoken=«redacted:sk-…»\\n";
+  fs.writeFileSync(process.argv[outputIndex + 1], longFinalResponse);
 }
 fs.writeFileSync(path.join(cwd, "packages", "fake-codex.txt"), "changed by fake codex\\n");
+process.stdout.write(JSON.stringify({ type: "item.updated", item: { id: "reason-1", type: "reasoning", text: "I inspected the repository and found the target file." } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "item.completed", item: { id: "message-1", type: "agent_message", text: "Changed packages/fake-codex.txt and verified it. " + "Streamed agent response remains visible. ".repeat(180) + "Streamed sentinel after six thousand chars." } }) + "\\n");
 console.log("token=sk-fakecodexsecret123 contract=" + stdin.includes("Codex Work Contract"));
 console.error("authorization=Bearer-fakecodexstderr12345");
 `);
@@ -494,7 +538,18 @@ console.error("authorization=Bearer-fakecodexstderr12345");
     expect(result.stdoutSummary).not.toContain("sk-fakecodexsecret123");
     expect(result.stderrSummary).not.toContain("Bearer fakecodexstderr12345");
     expect(result.redaction.applied).toBe(true);
-    expect(result.artifacts.map((item) => item.kind)).toEqual(expect.arrayContaining(["codex_execution_log", "codex_execution_result"]));
+    expect(result.lastMessagePath).toBe(path.join(request.artifactRoot, "codex-execution-last-message.redacted.md"));
+    if (!result.lastMessagePath) {
+      throw new Error("Expected controlled Codex execution to persist the final model response.");
+    }
+    const lastMessage = await readFile(result.lastMessagePath, "utf8");
+    expect(lastMessage).toContain("Implemented final model response for regression coverage.");
+    expect(lastMessage).not.toContain("sk-fakelastmessagesecret123");
+    expect(result.artifacts.map((item) => item.kind)).toEqual(expect.arrayContaining(["codex_execution_log", "codex_execution_result", "summary"]));
+    expect(result.artifacts.find((item) => item.label === "Codex final model response")).toMatchObject({
+      kind: "summary",
+      uri: `file://${result.lastMessagePath}`,
+    });
     expect(await readFile(path.join(request.sandbox.worktreePath, "packages", "fake-codex.txt"), "utf8")).toContain("changed by fake codex");
     expect(importRequest).toMatchObject({
       runId: run.id,
@@ -503,24 +558,168 @@ console.error("authorization=Bearer-fakecodexstderr12345");
       artifactRoot: request.artifactRoot,
       validationCommands: request.validationCommands,
     });
-    expect(importRequest.manualLogPath).toBe(result.lastMessagePath ?? result.stdoutPath);
-    expect(store.listEvents(run.id).map((event) => event.type)).toEqual(
+    expect(importRequest.manualLogPath).toBe(result.lastMessagePath);
+    const events = store.listEvents(run.id);
+    const outputRecordedEvent = events.find((event) => event.type === "codex_execution_output_recorded");
+    const executionFinishedEvent = events.find((event) => event.type === "codex_execution_finished");
+    expect(outputRecordedEvent?.payload).toMatchObject({
+      lastMessagePreview: expect.stringContaining("Implemented final model response for regression coverage."),
+    });
+    expect(outputRecordedEvent?.payload).toMatchObject({
+      lastMessagePreview: expect.stringContaining("Final visible sentence after preview limit."),
+    });
+    expect(executionFinishedEvent?.payload).toMatchObject({
+      lastMessagePreview: expect.stringContaining("Implemented final model response for regression coverage."),
+    });
+    expect(executionFinishedEvent?.payload).toMatchObject({
+      lastMessagePreview: expect.stringContaining("Final visible sentence after preview limit."),
+    });
+    expect(String((outputRecordedEvent?.payload as { lastMessagePreview?: string } | undefined)?.lastMessagePreview ?? "")).not.toContain("[TRUNCATED]");
+    expect(String((executionFinishedEvent?.payload as { lastMessagePreview?: string } | undefined)?.lastMessagePreview ?? "")).not.toContain("[TRUNCATED]");
+    expect(JSON.stringify(outputRecordedEvent?.payload)).not.toContain("sk-fakelastmessagesecret123");
+    expect(JSON.stringify(executionFinishedEvent?.payload)).not.toContain("sk-fakelastmessagesecret123");
+    const reasoningEvent = events.find((event) => event.type === "codex_reasoning_summary");
+    const agentMessageEvent = events.find((event) => event.type === "codex_agent_message");
+    expect(reasoningEvent?.payload).toMatchObject({
+      summary: "I inspected the repository and found the target file.",
+      text: "I inspected the repository and found the target file.",
+      status: "updated",
+    });
+    expect(agentMessageEvent?.payload).toMatchObject({
+      summary: "Codex agent response streamed",
+      message: expect.stringContaining("Changed packages/fake-codex.txt and verified it."),
+      status: "completed",
+    });
+    expect(agentMessageEvent?.payload).toMatchObject({
+      message: expect.stringContaining("Streamed sentinel after six thousand chars."),
+    });
+    expect(JSON.stringify(agentMessageEvent?.payload)).not.toContain("[TRUNCATED]");
+    expect(outputRecordedEvent?.artifacts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "summary", label: "Codex final model response" })]),
+    );
+    expect(executionFinishedEvent?.artifacts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "summary", label: "Codex final model response" })]),
+    );
+    expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         "codex_execution_planned",
         "codex_execution_approval_required",
         "codex_execution_approved",
         "codex_execution_started",
+        "codex_reasoning_summary",
+        "codex_agent_message",
         "codex_execution_output_recorded",
         "codex_execution_finished",
         "codex_execution_result_ready",
       ]),
     );
   });
+
+  it("cancels an active controlled execution through AbortSignal without marking it import-ready", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id, taskId: run.taskId });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+process.stdin.resume();
+setInterval(() => process.stdout.write("still running\\n"), 25);
+`);
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+      runStore: store,
+      pathEnv: binDir,
+    });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+      executionPolicy: { timeoutMs: 10_000 },
+    });
+    const controller = new AbortController();
+    const execution = adapter.executeApprovedContract(plan, approved(plan.id, run.id), { signal: controller.signal });
+    setTimeout(() => controller.abort(), 40);
+
+    const result = await execution;
+
+    expect(result.status).toBe("cancelled");
+    expect(result.failureReasons).toContain("execution_cancelled");
+    const eventTypes = store.listEvents(run.id).map((event) => event.type);
+    expect(eventTypes).toContain("codex_execution_cancel_requested");
+    expect(eventTypes).toContain("codex_execution_failed");
+    expect(eventTypes).not.toContain("codex_execution_result_ready");
+  });
+
+  it("escalates cleanup when a same-group descendant ignores SIGTERM", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id, taskId: run.taskId });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const orphanMarker = path.join(
+      request.sandbox.worktreePath,
+      "packages",
+      "orphan-marker.txt",
+    );
+    const readyMarker = path.join(
+      request.sandbox.worktreePath,
+      "packages",
+      "descendant-ready.txt",
+    );
+    await mkdir(path.dirname(readyMarker), { recursive: true });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const marker = ${JSON.stringify(orphanMarker)};
+const ready = ${JSON.stringify(readyMarker)};
+spawn(process.execPath, ["-e", "const fs=require('node:fs');const marker=" + JSON.stringify(marker) + ";const ready=" + JSON.stringify(ready) + ";process.on('SIGTERM',()=>{});fs.writeFileSync(ready,'ready\\\\n');setTimeout(()=>fs.writeFileSync(marker,'orphan\\\\n'),400);"], {
+  stdio: "ignore",
+}).unref();
+const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+const deadline = Date.now() + 1000;
+while (!fs.existsSync(ready) && Date.now() < deadline) Atomics.wait(waitBuffer, 0, 0, 5);
+const outputIndex = process.argv.indexOf("--output-last-message");
+if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Parent completed\\n");
+`);
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+      runStore: store,
+      pathEnv: binDir,
+    });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(
+      contract,
+      request.artifactRoot,
+    );
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+    });
+
+    const result = await adapter.executeApprovedContract(
+      plan,
+      approved(plan.id, run.id),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(result.status).toBe("finished");
+    await expect(readFile(readyMarker, "utf8")).resolves.toContain("ready");
+    await expect(readFile(orphanMarker, "utf8")).rejects.toThrow();
+  });
 });
 
 describe("LocalManualCodexResultImporter", () => {
   beforeEach(async () => {
-    tempRoot = await mkdtemp(path.join(tmpdir(), "codepawl-codex-result-import-test-"));
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-codex-result-import-test-"));
   });
 
   afterEach(async () => {
@@ -556,6 +755,62 @@ describe("LocalManualCodexResultImporter", () => {
     });
   });
 
+  it("preserves exact tracked, renamed, and untracked paths containing spaces and quotes", async () => {
+    const fixture = await createImportFixture();
+    await writeFile(
+      path.join(fixture.worktreePath, "packages", "README.md"),
+      "modified tracked file\n",
+    );
+    await git(
+      [
+        "mv",
+        "README.md",
+        'renamed "guide" file.md',
+      ],
+      fixture.worktreePath,
+    );
+    const untrackedPath = path.join(
+      fixture.worktreePath,
+      "packages",
+      'nested dir',
+      'untracked "quote".txt',
+    );
+    await mkdir(path.dirname(untrackedPath), { recursive: true });
+    await writeFile(untrackedPath, "untracked\n");
+    const importer = new LocalManualCodexResultImporter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+    });
+
+    const patch = await importer.inspectSandboxChanges(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+      }),
+    );
+
+    expect(patch.changedFiles).toEqual(
+      expect.arrayContaining([
+        {
+          status: "modified",
+          path: "packages/README.md",
+        },
+        {
+          status: "renamed",
+          previousPath: "README.md",
+          path: 'renamed "guide" file.md',
+        },
+        {
+          status: "untracked",
+          path: 'packages/nested dir/untracked "quote".txt',
+        },
+      ]),
+    );
+    expect(patch.changedFiles.map((file) => file.path)).not.toContain(
+      '"packages/nested dir/untracked \\"quote\\".txt"',
+    );
+  });
+
   it("supports no-change imports but requires manual review", async () => {
     const fixture = await createImportFixture();
     const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
@@ -571,6 +826,115 @@ describe("LocalManualCodexResultImporter", () => {
     expect(bundle.status).toBe("manual_review_required");
     expect(bundle.failureReasons).toContain("no_changes");
     expect(bundle.patch.hasChanges).toBe(false);
+  });
+
+  it("re-checks the actual diff size and destructive operations before import", async () => {
+    const broadFixture = await createImportFixture();
+    for (let index = 0; index < broadFixture.policy.sandbox.fileWritePolicy.maxChangedFiles + 1; index += 1) {
+      await writeFile(
+        path.join(broadFixture.worktreePath, "packages", `change-${index}.txt`),
+        `change ${index}\n`,
+      );
+    }
+    const importer = new LocalManualCodexResultImporter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+    });
+
+    const broadBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: broadFixture.artifactRoot,
+        sandbox: broadFixture.sandbox,
+        policy: broadFixture.policy,
+      }),
+    );
+
+    expect(broadBundle.status).toBe("manual_review_required");
+    expect(broadBundle.failureReasons).toContain("changed_file_limit_exceeded");
+
+    const approvedBroadBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: broadFixture.artifactRoot,
+        sandbox: broadFixture.sandbox,
+        policy: broadFixture.policy,
+        overrides: { allowChangedFileLimitExceeded: true },
+      }),
+    );
+    expect(approvedBroadBundle.status).toBe("imported");
+    expect(approvedBroadBundle.failureReasons).not.toContain(
+      "changed_file_limit_exceeded",
+    );
+
+    await git(["rm", "packages/README.md"], broadFixture.worktreePath);
+    const destructiveBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: broadFixture.artifactRoot,
+        sandbox: broadFixture.sandbox,
+        policy: broadFixture.policy,
+      }),
+    );
+
+    expect(destructiveBundle.status).toBe("manual_review_required");
+    expect(destructiveBundle.failureReasons).toContain("destructive_change_detected");
+
+    const approvedDestructiveBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: broadFixture.artifactRoot,
+        sandbox: broadFixture.sandbox,
+        policy: broadFixture.policy,
+        overrides: {
+          allowChangedFileLimitExceeded: true,
+          allowDestructiveChanges: true,
+        },
+      }),
+    );
+    expect(approvedDestructiveBundle.status).toBe("imported");
+    expect(approvedDestructiveBundle.failureReasons).not.toContain(
+      "destructive_change_detected",
+    );
+  });
+
+  it("fails import when the actual diff exceeds an exact interactive path grant", async () => {
+    const fixture = await createImportFixture();
+    await writeImportChange(fixture.worktreePath);
+    const importer = new LocalManualCodexResultImporter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+    });
+
+    const rejectedBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+        overrides: {
+          expectedPaths: ["packages/feature.txt"],
+          requireExpectedPaths: true,
+        },
+      }),
+    );
+    expect(rejectedBundle.status).toBe("manual_review_required");
+    expect(rejectedBundle.failureReasons).toContain("unauthorized_file_touch");
+    expect(rejectedBundle.patch.unauthorizedFiles).toEqual([
+      "packages/README.md",
+    ]);
+
+    const acceptedBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+        overrides: {
+          expectedPaths: [
+            "packages/feature.txt",
+            "packages/README.md",
+          ],
+          requireExpectedPaths: true,
+        },
+      }),
+    );
+    expect(acceptedBundle.status).toBe("imported");
+    expect(acceptedBundle.failureReasons).not.toContain(
+      "unauthorized_file_touch",
+    );
   });
 
   it("imports an optional validation transcript and creates verifier input without running verification", async () => {
@@ -623,7 +987,7 @@ describe("LocalManualCodexResultImporter", () => {
     ).rejects.toMatchObject({ code: "unsafe_path" });
   });
 
-  it("rejects sandbox paths that are not inside the CodePawl-managed worktree root", async () => {
+  it("rejects sandbox paths that are not inside the Orynt-managed worktree root", async () => {
     const fixture = await createImportFixture();
     const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
 

@@ -1,9 +1,9 @@
-export type CodePawlPlanId = "core-byok" | "managed-ai" | "pro-gateway";
+export type OryntPlanId = "core-byok" | "managed-ai" | "pro-gateway";
 
 export type BillingCadence = "monthly" | "quarterly" | "annual";
 
-export type CodePawlPlanConfig = {
-  id: CodePawlPlanId;
+export type OryntPlanConfig = {
+  id: OryntPlanId;
   name: string;
   paddleProductName: string;
   paddleDescription: string;
@@ -18,7 +18,7 @@ export type CodePawlPlanConfig = {
 };
 
 export type PlanQuotaSummaryInput = {
-  planId: CodePawlPlanId;
+  planId: OryntPlanId;
   billingCadence: BillingCadence;
   creditsConsumed: number;
   runsThisMonth: number;
@@ -26,7 +26,7 @@ export type PlanQuotaSummaryInput = {
 };
 
 export type PlanQuotaSummary = {
-  planId: CodePawlPlanId;
+  planId: OryntPlanId;
   planName: string;
   billingCadence: BillingCadence;
   creditResetCadence: "monthly";
@@ -39,11 +39,11 @@ export type PlanQuotaSummary = {
   summary: string;
 };
 
-const CODEPAWL_PLANS: CodePawlPlanConfig[] = [
+const ORYNT_PLANS: OryntPlanConfig[] = [
   {
     id: "core-byok",
     name: "Core BYOK",
-    paddleProductName: "CodePawl Core BYOK",
+    paddleProductName: "Orynt Core BYOK",
     paddleDescription: "Local supervised agent control plane for customers who bring their own model provider keys.",
     byokRequired: true,
     managedAiIncluded: false,
@@ -57,8 +57,8 @@ const CODEPAWL_PLANS: CodePawlPlanConfig[] = [
   {
     id: "managed-ai",
     name: "Managed AI",
-    paddleProductName: "CodePawl Managed AI",
-    paddleDescription: "Supervised CodePawl runs with included managed AI credits, local permission controls, and monthly usage limits.",
+    paddleProductName: "Orynt Managed AI",
+    paddleDescription: "Supervised Orynt runs with included managed AI credits, local permission controls, and monthly usage limits.",
     byokRequired: false,
     managedAiIncluded: true,
     monthlyManagedAiCredits: 2500,
@@ -71,7 +71,7 @@ const CODEPAWL_PLANS: CodePawlPlanConfig[] = [
   {
     id: "pro-gateway",
     name: "Pro/Gateway",
-    paddleProductName: "CodePawl Pro Gateway",
+    paddleProductName: "Orynt Pro Gateway",
     paddleDescription: "Advanced supervised computer-use controls, audit evidence, and gateway action quotas for private beta operators.",
     byokRequired: false,
     managedAiIncluded: true,
@@ -84,20 +84,20 @@ const CODEPAWL_PLANS: CodePawlPlanConfig[] = [
   },
 ];
 
-export function listCodePawlPlans(): CodePawlPlanConfig[] {
-  return CODEPAWL_PLANS.map((plan) => ({ ...plan }));
+export function listOryntPlans(): OryntPlanConfig[] {
+  return ORYNT_PLANS.map((plan) => ({ ...plan }));
 }
 
-export function getCodePawlPlan(id: CodePawlPlanId): CodePawlPlanConfig {
-  const plan = CODEPAWL_PLANS.find((item) => item.id === id);
+export function getOryntPlan(id: OryntPlanId): OryntPlanConfig {
+  const plan = ORYNT_PLANS.find((item) => item.id === id);
   if (!plan) {
-    throw new Error(`unknown CodePawl plan: ${id}`);
+    throw new Error(`unknown Orynt plan: ${id}`);
   }
   return { ...plan };
 }
 
 export function summarizePlanQuota(input: PlanQuotaSummaryInput): PlanQuotaSummary {
-  const plan = getCodePawlPlan(input.planId);
+  const plan = getOryntPlan(input.planId);
   const remainingManagedAiCredits = Math.max(0, plan.monthlyManagedAiCredits - input.creditsConsumed);
   const remainingRuns = Math.max(0, plan.monthlyRunLimit - input.runsThisMonth);
   const remainingGatewayActions = Math.max(0, plan.monthlyGatewayActionLimit - input.gatewayActionsThisMonth);

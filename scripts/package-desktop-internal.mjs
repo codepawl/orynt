@@ -9,12 +9,20 @@ const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"
 const version = packageJson.version ?? "0.0.0";
 const platform = process.platform;
 const arch = process.arch;
-const releaseName = `codepawl-desktop-${version}-${platform}-${arch}`;
+const releaseName = `orynt-desktop-${version}-${platform}-${arch}`;
 const distRoot = join(root, "dist", "private-beta");
 const stagingRoot = join(distRoot, releaseName);
-const binaryName = platform === "win32" ? "codepawl-desktop.exe" : "codepawl-desktop";
+const binaryName = platform === "win32" ? "orynt-desktop.exe" : "orynt-desktop";
 const binaryPath = join(root, "apps", "desktop", "src-tauri", "target", "release", binaryName);
-const runnerRoot = join(stagingRoot, "codepawl-runner");
+const runnerRoot = join(stagingRoot, "orynt-runner");
+const builtinSkillNames = [
+  "repository-onboarding",
+  "change-planner",
+  "bug-fixer",
+  "code-reviewer",
+  "release-readiness",
+];
+const builtinSkillRoot = join(root, "packages", "skill-registry", "builtins");
 
 const runnerPackages = [
   "codex-adapter",
@@ -103,6 +111,14 @@ await cp(
   join(runnerRoot, "scripts", "desktop-repository-run.mjs"),
 );
 await cp(
+  join(root, "scripts", "desktop-skill-manager.mjs"),
+  join(runnerRoot, "scripts", "desktop-skill-manager.mjs"),
+);
+await cp(
+  join(root, "scripts", "desktop-memory-manager.mjs"),
+  join(runnerRoot, "scripts", "desktop-memory-manager.mjs"),
+);
+await cp(
   join(root, "scripts", "register-extensionless-esm-loader.mjs"),
   join(runnerRoot, "scripts", "register-extensionless-esm-loader.mjs"),
 );
@@ -111,6 +127,11 @@ for (const packageName of runnerPackages) {
   await copyPackage(packageName, join(runnerRoot, "packages", packageName));
   await copyPackage(packageName, join(runnerRoot, "node_modules", "@codepawl", packageName));
 }
+await cp(
+  builtinSkillRoot,
+  join(runnerRoot, "packages", "skill-registry", "builtins"),
+  { recursive: true },
+);
 
 for (const doc of [
   "docs/productization/private-beta-release-notes.md",
@@ -122,21 +143,25 @@ for (const doc of [
 }
 
 const manifest = {
-  product: "CodePawl Desktop",
+  product: "Orynt Desktop",
   version,
   target: `${platform}-${arch}`,
   generatedAt: new Date().toISOString(),
   binary: binaryName,
-  runnerRoot: "codepawl-runner",
+  runnerRoot: "orynt-runner",
   distribution: "Unsigned internal Linux beta tarball.",
   updater: "Disabled; no updater artifacts are produced for this private beta.",
   signing: "Unsigned; verify SHA256SUMS from the trusted internal channel.",
   scope: "Repository-only supervised Coding Apprentice. Browser, desktop, arbitrary files, terminal, cloud sync, hosted accounts, and live billing are not enabled.",
   appData: {
-    linux: "$XDG_CONFIG_HOME/com.codepawl.desktop or ~/.config/com.codepawl.desktop",
+    linux: "$XDG_CONFIG_HOME/com.codepawl.orynt or ~/.config/com.codepawl.orynt",
     artifacts: "artifacts/",
     memory: "memory/",
     runs: "runs/",
+  },
+  builtinSkills: {
+    root: "orynt-runner/packages/skill-registry/builtins",
+    names: builtinSkillNames,
   },
   smokeChecklist: "docs/private-beta-release-smoke.md",
 };
@@ -144,10 +169,10 @@ await writeFile(join(stagingRoot, "RELEASE_MANIFEST.json"), `${JSON.stringify(ma
 await writeFile(
   join(stagingRoot, "README-INTERNAL-BETA.txt"),
   [
-    "CodePawl Desktop private beta",
+    "Orynt Desktop private beta",
     "",
-    "Run ./codepawl-desktop from this directory.",
-    "Keep codepawl-runner next to the binary; it contains the repository runner sidecar.",
+    "Run ./orynt-desktop from this directory.",
+    "Keep orynt-runner next to the binary; it contains the repository and skill-manager sidecars.",
     "This build is unsigned and manually distributed. The updater is disabled.",
     "Use docs/private-beta-release-smoke.md for the local release smoke checklist.",
     "",
