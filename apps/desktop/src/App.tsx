@@ -58,6 +58,7 @@ import type { CSSProperties, FocusEvent, FormEvent, KeyboardEvent, PointerEvent 
 
 import lightbulbLogoOnDark from "../../../assets/pictures/lightbulb-mark-on-dark.svg";
 
+import { SkillsManager } from "./features/skills/SkillsManager";
 import { orynt } from "./oryntClient";
 import type {
   ArtifactEvidenceContent,
@@ -75,6 +76,7 @@ import type {
   PersistedRunSummary,
   SettingsSnapshot,
   ThinkingEffort,
+  InstalledAgentSkill,
 } from "./oryntClient";
 import "./styles.css";
 
@@ -1255,7 +1257,7 @@ const settingsSections = [
 ] as const;
 
 type AccountMenuItem = {
-  action: "future" | "logout" | "settings";
+  action: "future" | "logout" | "settings" | "skills";
   hasSubmenu?: boolean;
   Icon: LucideIcon;
   id: string;
@@ -1270,7 +1272,7 @@ const accountMenuGroups = [
   ],
   [
     { id: "upgrade", label: "Upgrade plan", Icon: CreditCard, action: "future" },
-    { id: "apps", label: "Get apps and extensions", Icon: Download, action: "future" },
+    { id: "apps", label: "Get apps and extensions", Icon: Download, action: "skills" },
     { id: "gift", label: "Gift Orynt", Icon: Gift, action: "future" },
     { id: "learn", label: "Learn more", Icon: Info, action: "future", hasSubmenu: true },
   ],
@@ -2032,6 +2034,13 @@ function ShellModal({ bodyClassName, children, id, label, modalClassName, onClos
   const closeLabel = `Dismiss ${label.toLowerCase()}`;
   const shellModalClassName = [variant === "atmospheric" ? "shell-modal shell-modal-atmospheric" : "shell-modal", modalClassName].filter(Boolean).join(" ");
   const shellModalBodyClassName = ["shell-modal-body", bodyClassName].filter(Boolean).join(" ");
+  const modalRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    modalRef.current?.focus({ preventScroll: true });
+    return () => previouslyFocused?.focus({ preventScroll: true });
+  }, []);
 
   return (
     <div className="shell-modal-backdrop" aria-label="Modal backdrop" onClick={onClose}>
@@ -2041,11 +2050,34 @@ function ShellModal({ bodyClassName, children, id, label, modalClassName, onClos
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        ref={modalRef}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             onClose();
+            return;
+          }
+          if (event.key === "Tab") {
+            const focusable = Array.from(
+              event.currentTarget.querySelectorAll<HTMLElement>(
+                'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])',
+              ),
+            ).filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+            if (focusable.length === 0) {
+              event.preventDefault();
+              event.currentTarget.focus();
+              return;
+            }
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
           }
         }}
       >
@@ -2152,6 +2184,9 @@ function App({
   const [isMobileWorkspaceDrawerOpen, setIsMobileWorkspaceDrawerOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [showSettingsSidebar, setShowSettingsSidebar] = useState(false);
+  const [showSkillsManager, setShowSkillsManager] = useState(false);
+  const [eligibleAgentSkills, setEligibleAgentSkills] = useState<InstalledAgentSkill[]>([]);
+  const [selectedAgentSkillIds, setSelectedAgentSkillIds] = useState<string[]>([]);
   const [showSetupDialog, setShowSetupDialog] = useState(() => !seedUxrayAgentResponse && !readPrivateBetaOnboardingDismissed());
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
@@ -2181,6 +2216,7 @@ function App({
   const [isComposerMetaMenuOpen, setIsComposerMetaMenuOpen] = useState(false);
   const [composerMetaMenuPlacement, setComposerMetaMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
   const [isComposerAttachmentMenuOpen, setIsComposerAttachmentMenuOpen] = useState(false);
+  const [isComposerSkillsMenuOpen, setIsComposerSkillsMenuOpen] = useState(false);
   const [composerAttachmentMenuPlacement, setComposerAttachmentMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
   const [composerQuickDialog, setComposerQuickDialog] = useState<"model" | "effort" | null>(null);
   const [composerQuickMenuPlacement, setComposerQuickMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
@@ -2631,11 +2667,27 @@ function App({
         },
       }));
     });
-
     return () => {
       mounted = false;
     };
   }, [shouldHydrateClientState]);
+
+  useEffect(() => {
+    if (!shouldHydrateClientState) {
+      return;
+    }
+    let mounted = true;
+    orynt.listInstalledAgentSkills(repositoryPath).then((inventory) => {
+      if (mounted) {
+        setEligibleAgentSkills(inventory.skills.filter((skill) => skill.enabled && skill.eligible && skill.health !== "blocked"));
+      }
+    }).catch(() => {
+      // The package manager may be unavailable while an older desktop backend is still running.
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [repositoryPath, shouldHydrateClientState]);
 
   useEffect(() => {
     if (!shouldHydrateClientState) {
@@ -2773,7 +2825,7 @@ function App({
   }, [isAccountMenuOpen]);
 
   useEffect(() => {
-    if (!isComposerMetaMenuOpen && !isComposerAttachmentMenuOpen && !composerQuickDialog) {
+    if (!isComposerMetaMenuOpen && !isComposerAttachmentMenuOpen && !isComposerSkillsMenuOpen && !composerQuickDialog) {
       return;
     }
 
@@ -2796,6 +2848,7 @@ function App({
 
       setIsComposerMetaMenuOpen(false);
       setIsComposerAttachmentMenuOpen(false);
+      setIsComposerSkillsMenuOpen(false);
       setComposerQuickDialog(null);
     };
 
@@ -2806,6 +2859,7 @@ function App({
 
       setIsComposerMetaMenuOpen(false);
       setIsComposerAttachmentMenuOpen(false);
+      setIsComposerSkillsMenuOpen(false);
       setComposerQuickDialog(null);
       if (composerQuickDialog === "model") {
         composerModelButtonRef.current?.focus();
@@ -2849,7 +2903,7 @@ function App({
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("resize", handleResize);
     };
-  }, [composerQuickDialog, isComposerAttachmentMenuOpen, isComposerMetaMenuOpen]);
+  }, [composerQuickDialog, isComposerAttachmentMenuOpen, isComposerMetaMenuOpen, isComposerSkillsMenuOpen]);
 
   useEffect(() => {
     try {
@@ -3001,7 +3055,10 @@ function App({
           setShowSetupDialog(true);
           throw new Error(`Provider check failed before starting the repository run. ${preflightFailureMessage}`);
         }
-        const run = await orynt.createRun({
+        if (selectedAgentSkillIds.length > 0) {
+          await orynt.createSkillContextSnapshot(selectedAgentSkillIds, effectiveRepositoryPath);
+        }
+        const runInput: Parameters<typeof orynt.createRun>[0] & { selectedSkillIds?: string[] } = {
           goal,
           capabilityId: "coding-apprentice",
           taskId: runState.activeTask.id,
@@ -3014,7 +3071,10 @@ function App({
             maxUsd: runState.usageBudget.runLimitUsd,
             stopOnBudgetExceeded: true,
           },
-        });
+          selectedSkillIds: [...selectedAgentSkillIds],
+        };
+        const run = await orynt.createRun(runInput);
+        setSelectedAgentSkillIds([]);
         setCurrentRunId(run.id);
         let runOutcomeDetail = "Open persisted evidence from the run list to inspect events, artifacts, verification, memory, and replay outputs.";
         let finalModelResponse: string | null = null;
@@ -3733,7 +3793,7 @@ function App({
     ? visibleWorkspaces.filter((space) => space.label.toLowerCase().includes(normalizedWorkspaceSearchQuery))
     : visibleWorkspaces;
   const shouldShowWorkspaceSearch = isWorkspaceSearchOpen || workspaceSearchQuery.trim().length > 0;
-  const hasOpenShellModal = showSettingsSidebar || showSetupDialog || Boolean(deleteWorkspaceId) || showWorkspaceArchive;
+  const hasOpenShellModal = showSettingsSidebar || showSkillsManager || showSetupDialog || Boolean(deleteWorkspaceId) || showWorkspaceArchive;
   const shellClassName = [
     "app-shell",
     "app-shell-cockpit",
@@ -4221,12 +4281,28 @@ function App({
       setComposerAttachmentMenuPlacement(resolveComposerMenuPlacement(composerAttachmentButtonRef.current, composerAttachmentMenuEstimatedHeight));
     }
     setIsComposerMetaMenuOpen(false);
+    setIsComposerSkillsMenuOpen(false);
     setComposerQuickDialog(null);
     setIsComposerAttachmentMenuOpen((current) => !current);
   };
 
-  const handleSelectComposerAttachmentOption = () => {
+  const handleSelectComposerAttachmentOption = (optionId: string) => {
+    if (optionId === "skills") {
+      setIsComposerSkillsMenuOpen(true);
+      return;
+    }
     setIsComposerAttachmentMenuOpen(false);
+  };
+
+  const handleToggleSelectedAgentSkill = (skillId: string) => {
+    setSelectedAgentSkillIds((current) => (current.includes(skillId) ? current.filter((id) => id !== skillId) : [...current, skillId]));
+  };
+
+  const handleOpenSkillsManager = () => {
+    setIsComposerAttachmentMenuOpen(false);
+    setIsComposerSkillsMenuOpen(false);
+    setIsAccountMenuOpen(false);
+    setShowSkillsManager(true);
   };
 
   const renderComposerModelDialog = () => {
@@ -5381,6 +5457,14 @@ function App({
       );
     }
 
+    if (item.action === "skills") {
+      return (
+        <button className="account-menu-item" type="button" role="menuitem" onClick={handleOpenSkillsManager} key={item.id}>
+          {content}
+        </button>
+      );
+    }
+
     if (item.action === "logout") {
       return (
         <a className="account-menu-item account-menu-item-logout" role="menuitem" href={landingUrl} onClick={() => setIsAccountMenuOpen(false)} key={item.id}>
@@ -5444,6 +5528,20 @@ function App({
           onChange={(event) => setComposerValue(event.target.value)}
           onKeyDown={handleComposerKeyDown}
         />
+        {selectedAgentSkillIds.length > 0 ? (
+          <div className="composer-skill-attachments" aria-label="Attached skills">
+            {selectedAgentSkillIds.map((skillId) => {
+              const skill = eligibleAgentSkills.find((item) => item.id === skillId);
+              return skill ? (
+                <button type="button" key={skill.id} aria-label={`Remove ${skill.name} skill`} onClick={() => handleToggleSelectedAgentSkill(skill.id)}>
+                  <Blocks className="ui-icon" aria-hidden="true" strokeWidth={2} />
+                  <span>{skill.name}</span>
+                  <X className="ui-icon" aria-hidden="true" strokeWidth={2} />
+                </button>
+              ) : null;
+            })}
+          </div>
+        ) : null}
         {composerStatusMessage ? (
           <p className="composer-codex-connection-status" role="status">
             {composerStatusMessage}
@@ -5499,7 +5597,37 @@ function App({
                 role="menu"
                 aria-label="Add content options"
               >
-                {composerAttachmentOptionGroups.map((group, groupIndex) => (
+                {isComposerSkillsMenuOpen ? (
+                  <div className="composer-attachment-menu-section composer-skills-submenu" role="none">
+                    <button className="composer-attachment-menu-item composer-skills-back" type="button" role="menuitem" onClick={() => setIsComposerSkillsMenuOpen(false)}>
+                      <ChevronRight className="composer-attachment-menu-icon composer-skills-back-icon" aria-hidden="true" strokeWidth={2} />
+                      <span>Back</span>
+                    </button>
+                    <span className="composer-skills-menu-label">Eligible skills</span>
+                    {eligibleAgentSkills.length === 0 ? <small className="composer-skills-empty">No enabled skills are eligible for this repository.</small> : eligibleAgentSkills.map((skill) => {
+                      const isSelected = selectedAgentSkillIds.includes(skill.id);
+                      return (
+                        <button
+                          className="composer-attachment-menu-item"
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={isSelected}
+                          key={skill.id}
+                          onClick={() => handleToggleSelectedAgentSkill(skill.id)}
+                        >
+                          <Blocks className="composer-attachment-menu-icon" aria-hidden="true" strokeWidth={2} />
+                          <span>{skill.name}</span>
+                          <small>{skill.scope}</small>
+                          {isSelected ? <Check className="composer-attachment-menu-accessory" aria-hidden="true" strokeWidth={2} /> : null}
+                        </button>
+                      );
+                    })}
+                    <button className="composer-attachment-menu-item composer-skills-manage" type="button" role="menuitem" onClick={handleOpenSkillsManager}>
+                      <SettingsIcon className="composer-attachment-menu-icon" aria-hidden="true" strokeWidth={2} />
+                      <span>Manage skills…</span>
+                    </button>
+                  </div>
+                ) : composerAttachmentOptionGroups.map((group, groupIndex) => (
                   <div className="composer-attachment-menu-section" role="none" key={`attachment-group-${groupIndex}`}>
                     {group.map((option) => {
                       const OptionIcon = option.Icon;
@@ -5519,7 +5647,7 @@ function App({
                           aria-haspopup={hasSubmenu ? "menu" : undefined}
                           disabled={isDisabled}
                           key={option.id}
-                          onClick={handleSelectComposerAttachmentOption}
+                          onClick={() => handleSelectComposerAttachmentOption(option.id)}
                         >
                           <OptionIcon className="composer-attachment-menu-icon" aria-hidden="true" strokeWidth={2} />
                           <span>{option.label}</span>
@@ -5925,6 +6053,27 @@ function App({
       {renderSettingsDialog()}
       {renderDeleteWorkspaceDialog()}
       {renderWorkspaceArchiveDialog()}
+      {showSkillsManager ? (
+        <ShellModal
+          id="skills-manager-dialog"
+          label="Skills Manager"
+          modalClassName="skills-manager-modal"
+          bodyClassName="skills-manager-modal-body"
+          onClose={() => setShowSkillsManager(false)}
+        >
+          <SkillsManager
+            learnedSkills={skillRegistry.skills}
+            onEligibleSkillsChange={(skills) => {
+              setEligibleAgentSkills(skills);
+              setSelectedAgentSkillIds((current) => current.filter((id) => skills.some((skill) => skill.id === id)));
+            }}
+            onLearnedSkillAction={async (skill, action) => {
+              await handleSkillDecision(skill, action);
+            }}
+            repositoryPath={repositoryPath.trim()}
+          />
+        </ShellModal>
+      ) : null}
       {notifications.length > 0 ? (
         <div className="app-notifications" role="status" aria-live="polite" aria-label="Orynt notifications">
           {notifications.map((notification) => (

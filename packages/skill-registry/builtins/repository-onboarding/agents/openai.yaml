@@ -1,0 +1,6 @@
+interface:
+  display_name: "Repository Onboarding"
+  short_description: "Map an unfamiliar repository before making changes."
+  default_prompt: "Use $repository-onboarding to map this repository's architecture, instructions, and validation commands."
+policy:
+  allow_implicit_invocation: false

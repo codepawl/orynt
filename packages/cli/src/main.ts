@@ -12,6 +12,8 @@ const [
   { TtyComposer },
   { resolveTerminalColor, terminalColorRequested, terminalMotionRequested },
   { terminalSafeText },
+  { runSkillCli },
+  { LocalSkillCliManager },
 ] = await Promise.all([
   import("./app.js"),
   import("./agent.js"),
@@ -20,6 +22,8 @@ const [
   import("./composer.js"),
   import("./terminal-theme.js"),
   import("./ui.js"),
+  import("./skills.js"),
+  import("./skillRuntime.js"),
 ]);
 
 const terminal = Boolean(input.isTTY && output.isTTY);
@@ -40,6 +44,7 @@ const lineIterator = interface_?.[Symbol.asyncIterator]();
 const stateRoot = oryntStateRoot();
 const sessionStore = new FileCliSessionStore(stateRoot);
 const preferencesStore = new FileCliPreferencesStore(stateRoot);
+const skillManager = new LocalSkillCliManager(stateRoot);
 let activeOperationController: AbortController | undefined;
 let ttyComposer: InstanceType<typeof TtyComposer> | undefined;
 
@@ -128,7 +133,23 @@ const runWithInterrupt = async (request: Parameters<typeof runCliRepositoryTask>
 };
 
 try {
-  process.exitCode = await runCliApplication(process.argv.slice(2), {
+  const argv = process.argv.slice(2);
+  if (argv[0] === "skills") {
+    process.exitCode = await runSkillCli(argv.slice(1), {
+      cwd: process.cwd(),
+      isTTY: terminal,
+      manager: skillManager,
+      write,
+      confirm: terminal
+        ? async (prompt) => {
+            const answer = await (ttyComposer
+              ? ttyComposer.ask(`${prompt} [y/N] `)
+              : Promise.resolve("no"));
+            return /^(?:y|yes)$/i.test(answer.trim());
+          }
+        : undefined,
+    });
+  } else process.exitCode = await runCliApplication(argv, {
     cwd: process.cwd(),
     isTTY: terminal,
     color: colorEnabled,
@@ -163,6 +184,20 @@ try {
       color: colorEnabled,
       term: process.env.TERM,
     }),
+    listSkills: async (repositoryPath) => {
+      const inventory = (await skillManager.list({
+        repositoryPath,
+      })) as {
+        skills?: Array<{
+          id: string;
+          name: string;
+          scope: string;
+          eligible: boolean;
+          health: string;
+        }>;
+      };
+      return inventory.skills ?? [];
+    },
     persistSession: (session) => sessionStore.save(session),
     loadSession: (sessionId) => sessionId === "latest" ? sessionStore.loadLatest() : sessionStore.load(sessionId),
     loadPreferences: () => preferencesStore.load(),

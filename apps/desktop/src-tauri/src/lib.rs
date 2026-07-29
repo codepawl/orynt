@@ -15,11 +15,10 @@ const DEFAULT_REPOSITORY_PATH_ENV: &str = "ORYNT_DEFAULT_REPOSITORY_PATH";
 #[derive(Debug, Default)]
 pub struct AppState {
     runs: Mutex<Vec<String>>,
-    candidate_rule_statuses: Mutex<HashMap<String, CandidateRuleReviewStatus>>,
     skill_statuses: Mutex<HashMap<String, SkillLifecycleStatus>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetPolicy {
     max_steps: u32,
@@ -37,6 +36,8 @@ pub struct CreateRunInput {
     task_id: String,
     workspace_id: String,
     repository_path: Option<String>,
+    #[serde(default)]
+    selected_skill_ids: Vec<String>,
     budget: BudgetPolicy,
 }
 
@@ -460,6 +461,7 @@ pub enum ArtifactEvidenceKind {
     Contract,
     ContractMetadata,
     EventLog,
+    CognitiveTrace,
     VerifierInput,
     VerificationResult,
     RedactedLog,
@@ -530,8 +532,11 @@ struct DesktopRepositoryRunRequest {
     sandbox_root: String,
     artifact_root: String,
     memory_root: String,
+    budget: BudgetPolicy,
     model_connection: ModelConnectionReference,
     thinking_effort: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skill_context: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -588,6 +593,10 @@ pub enum AppError {
     RepositoryRun(String),
     #[error("{0}")]
     Persistence(String),
+    #[error("skill manager failed: {0}")]
+    SkillManager(String),
+    #[error("memory manager failed: {0}")]
+    MemoryManager(String),
 }
 
 impl serde::Serialize for AppError {
@@ -1510,6 +1519,12 @@ fn artifact_evidence_specs(
             "eventLog",
             "Event log",
             ArtifactEvidenceKind::EventLog,
+            "application/json",
+        ),
+        (
+            "cognitiveTrace",
+            "Cognitive trace",
+            ArtifactEvidenceKind::CognitiveTrace,
             "application/json",
         ),
         (
@@ -2757,10 +2772,85 @@ fn resolve_desktop_repository_runner() -> Result<(PathBuf, PathBuf), AppError> {
     ))
 }
 
+fn resolve_desktop_skill_manager() -> Result<(PathBuf, PathBuf), AppError> {
+    if let Ok(script_path) = std::env::var("ORYNT_DESKTOP_SKILL_MANAGER") {
+        let script = PathBuf::from(script_path);
+        if !script.is_file() {
+            return Err(AppError::SkillManager(
+                "configured desktop skill manager script does not exist".into(),
+            ));
+        }
+        let root = find_repository_root(&script).ok_or_else(|| {
+            AppError::SkillManager(
+                "could not locate Orynt runner root for desktop skill manager".into(),
+            )
+        })?;
+        return Ok((root, script));
+    }
+
+    let (root, _) = resolve_desktop_repository_runner()
+        .map_err(|error| AppError::SkillManager(error.to_string()))?;
+    let script = root.join("scripts").join("desktop-skill-manager.mjs");
+    if !script.is_file() {
+        return Err(AppError::SkillManager(
+            "could not locate scripts/desktop-skill-manager.mjs".into(),
+        ));
+    }
+    Ok((root, script))
+}
+
+fn resolve_desktop_memory_manager() -> Result<(PathBuf, PathBuf), AppError> {
+    if let Ok(script_path) = std::env::var("ORYNT_DESKTOP_MEMORY_MANAGER") {
+        let script = PathBuf::from(script_path);
+        if !script.is_file() {
+            return Err(AppError::MemoryManager(
+                "configured desktop memory manager script does not exist".into(),
+            ));
+        }
+        let root = find_repository_root(&script).ok_or_else(|| {
+            AppError::MemoryManager(
+                "could not locate Orynt runner root for desktop memory manager".into(),
+            )
+        })?;
+        return Ok((root, script));
+    }
+
+    let (root, _) = resolve_desktop_repository_runner()
+        .map_err(|error| AppError::MemoryManager(error.to_string()))?;
+    let script = root.join("scripts").join("desktop-memory-manager.mjs");
+    if !script.is_file() {
+        return Err(AppError::MemoryManager(
+            "could not locate scripts/desktop-memory-manager.mjs".into(),
+        ));
+    }
+    Ok((root, script))
+}
+
 fn run_data_root(app: &AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("orynt-desktop"))
+}
+
+fn orynt_skill_state_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("ORYNT_STATE_HOME").filter(|value| !value.is_empty()) {
+        return PathBuf::from(root).join("skills");
+    }
+    if let Some(root) = std::env::var_os("XDG_STATE_HOME").filter(|value| !value.is_empty()) {
+        return PathBuf::from(root).join("orynt").join("skills");
+    }
+    real_user_home()
+        .unwrap_or_else(std::env::temp_dir)
+        .join(".local")
+        .join("state")
+        .join("orynt")
+        .join("skills")
+}
+
+fn user_skill_root() -> Result<PathBuf, AppError> {
+    real_user_home()
+        .map(|home| home.join(".agents").join("skills"))
+        .ok_or_else(|| AppError::SkillManager("could not resolve the operating-system user home".into()))
 }
 
 fn build_desktop_repository_run_request(
@@ -2769,6 +2859,7 @@ fn build_desktop_repository_run_request(
     data_root: &Path,
     model_connection: &ModelConnectionReference,
     thinking_effort: &str,
+    skill_context: Option<serde_json::Value>,
 ) -> DesktopRepositoryRunRequest {
     DesktopRepositoryRunRequest {
         goal: input.goal.clone(),
@@ -2778,8 +2869,10 @@ fn build_desktop_repository_run_request(
         sandbox_root: data_root.join("sandboxes").to_string_lossy().to_string(),
         artifact_root: data_root.join("artifacts").to_string_lossy().to_string(),
         memory_root: data_root.join("memory").to_string_lossy().to_string(),
+        budget: input.budget.clone(),
         model_connection: model_connection.clone(),
         thinking_effort: thinking_effort.to_string(),
+        skill_context,
     }
 }
 
@@ -2912,6 +3005,7 @@ fn run_desktop_repository_sidecar(
     repository_path: &Path,
     model_connection: &ModelConnectionReference,
     thinking_effort: &str,
+    skill_context: Option<serde_json::Value>,
 ) -> Result<DesktopRepositoryRunOutput, AppError> {
     let (repo_root, script_path) = resolve_desktop_repository_runner()?;
     let loader_path = repo_root
@@ -2924,6 +3018,7 @@ fn run_desktop_repository_sidecar(
         &data_root,
         model_connection,
         thinking_effort,
+        skill_context,
     );
     let request_json = serde_json::to_string(&request).map_err(|error| {
         AppError::RepositoryRun(format!("could not encode run request: {error}"))
@@ -3005,6 +3100,182 @@ fn run_desktop_repository_sidecar(
     }
 
     Ok(output)
+}
+
+fn run_skill_manager_sidecar(
+    app: &AppHandle,
+    operation: &str,
+    mut input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    if operation.trim().is_empty()
+        || !operation
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+    {
+        return Err(AppError::Validation(
+            "skill manager operation is invalid".into(),
+        ));
+    }
+
+    let (runner_root, script_path) = resolve_desktop_skill_manager()?;
+    let loader_path = runner_root
+        .join("scripts")
+        .join("register-extensionless-esm-loader.mjs");
+    let manager_root = orynt_skill_state_root();
+    let shared_skill_root = user_skill_root()?;
+    if let Some(input_object) = input.as_object_mut() {
+        if !input_object.contains_key("repositoryPath") {
+            let settings = persistence_store(app).load_settings()?;
+            if !settings.default_repository_path.trim().is_empty() {
+                input_object.insert(
+                    "repositoryPath".into(),
+                    serde_json::Value::String(settings.default_repository_path),
+                );
+            }
+        }
+    }
+    let request = serde_json::json!({
+        "schemaVersion": 1,
+        "operation": operation,
+        "input": input,
+        "managerRoot": manager_root,
+        "userSkillRoot": shared_skill_root,
+    });
+    let request_json = serde_json::to_vec(&request).map_err(|error| {
+        AppError::SkillManager(format!("could not encode skill manager request: {error}"))
+    })?;
+
+    let mut command = Command::new("node");
+    apply_real_user_home_env(&mut command);
+    let mut child = command
+        .arg("--import")
+        .arg(&loader_path)
+        .arg(&script_path)
+        .current_dir(runner_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            AppError::SkillManager(format!("could not start skill manager sidecar: {error}"))
+        })?;
+
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| AppError::SkillManager("skill manager stdin was unavailable".into()))?
+        .write_all(&request_json)
+        .map_err(|error| {
+            AppError::SkillManager(format!("could not write skill manager request: {error}"))
+        })?;
+
+    let output = child.wait_with_output().map_err(|error| {
+        AppError::SkillManager(format!("could not read skill manager result: {error}"))
+    })?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let detail = stderr.trim();
+        return Err(AppError::SkillManager(if detail.is_empty() {
+            "skill manager sidecar failed without diagnostics".into()
+        } else {
+            detail.chars().take(4_096).collect()
+        }));
+    }
+    if output.stdout.len() > 4 * 1024 * 1024 {
+        return Err(AppError::SkillManager(
+            "skill manager response exceeded the 4 MiB limit".into(),
+        ));
+    }
+
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        AppError::SkillManager(format!("could not parse skill manager response: {error}"))
+    })?;
+    if let Some(events) = response.get("events").and_then(serde_json::Value::as_array) {
+        for event in events {
+            let _ = app.emit("skill_manager_event", event.clone());
+        }
+    }
+    response
+        .get("result")
+        .cloned()
+        .ok_or_else(|| AppError::SkillManager("skill manager response did not include result".into()))
+}
+
+fn run_memory_manager_sidecar(
+    app: &AppHandle,
+    operation: &str,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    if operation.trim().is_empty()
+        || !operation
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character == '.')
+    {
+        return Err(AppError::Validation(
+            "memory manager operation is invalid".into(),
+        ));
+    }
+
+    let (runner_root, script_path) = resolve_desktop_memory_manager()?;
+    let loader_path = runner_root
+        .join("scripts")
+        .join("register-extensionless-esm-loader.mjs");
+    let request = serde_json::json!({
+        "schemaVersion": 1,
+        "operation": operation,
+        "input": input,
+        "memoryRoot": run_data_root(app).join("memory"),
+    });
+    let request_json = serde_json::to_vec(&request).map_err(|error| {
+        AppError::MemoryManager(format!("could not encode memory manager request: {error}"))
+    })?;
+
+    let mut command = Command::new("node");
+    apply_real_user_home_env(&mut command);
+    let mut child = command
+        .arg("--import")
+        .arg(&loader_path)
+        .arg(&script_path)
+        .current_dir(runner_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            AppError::MemoryManager(format!("could not start memory manager sidecar: {error}"))
+        })?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| AppError::MemoryManager("memory manager stdin was unavailable".into()))?
+        .write_all(&request_json)
+        .map_err(|error| {
+            AppError::MemoryManager(format!("could not write memory manager request: {error}"))
+        })?;
+
+    let output = child.wait_with_output().map_err(|error| {
+        AppError::MemoryManager(format!("could not read memory manager result: {error}"))
+    })?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::MemoryManager(if detail.trim().is_empty() {
+            "memory manager sidecar failed without diagnostics".into()
+        } else {
+            detail.trim().chars().take(4_096).collect()
+        }));
+    }
+    if output.stdout.len() > 4 * 1024 * 1024 {
+        return Err(AppError::MemoryManager(
+            "memory manager response exceeded the 4 MiB limit".into(),
+        ));
+    }
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        AppError::MemoryManager(format!("could not parse memory manager response: {error}"))
+    })?;
+    response
+        .get("result")
+        .cloned()
+        .ok_or_else(|| AppError::MemoryManager("memory manager response did not include result".into()))
 }
 
 fn validate_candidate_rule_status_update(
@@ -3110,153 +3381,6 @@ fn memory_namespace() -> serde_json::Value {
         "workspaceId": "workspace-local-alpha",
         "repositoryPath": "/repos/orynt",
     })
-}
-
-fn memory_provenance(run_id: &str) -> serde_json::Value {
-    serde_json::json!({
-        "runId": run_id,
-        "taskId": "task-failing-unit-test",
-        "eventIds": [format!("{run_id}-event-30"), format!("{run_id}-event-34")],
-        "artifactRefs": [
-            {
-                "id": "mock-memory-episode",
-                "kind": "memory_episode",
-                "uri": format!("orynt-artifact://{run_id}/memory/memory-store.json#episode"),
-                "label": "Episodic memory item",
-                "sha256": "mock-memory-episode-sha256",
-            },
-            {
-                "id": "mock-candidate-rule",
-                "kind": "candidate_rule",
-                "uri": format!("orynt-artifact://{run_id}/memory/memory-store.json#candidate-rule"),
-                "label": "Candidate project rule",
-                "sha256": "mock-candidate-rule-sha256",
-            },
-        ],
-        "sources": ["verification_result", "import_summary", "run_event"],
-        "sourceTimestamps": ["2026-06-26T00:00:00.000Z"],
-        "verificationResultId": "mock-verification-result",
-        "importBundleId": "mock-codex-result-import",
-    })
-}
-
-fn mock_memory_episode(run_id: &str) -> serde_json::Value {
-    serde_json::json!({
-        "id": "episode-latest-successful-run",
-        "namespace": memory_namespace(),
-        "kind": "run_episode",
-        "summary": "Latest successful run episode: verifier passed after a package-only imported correction.",
-        "content": {
-            "status": "pass",
-            "changedFiles": ["packages/shared/src/index.ts"],
-            "redactedNote": "[REDACTED]",
-        },
-        "provenance": memory_provenance(run_id),
-        "retention": { "ttlDays": 30, "archiveAfterDays": 90 },
-        "redaction": { "applied": true, "redactedPaths": ["content.redactedNote"], "redactionCount": 1 },
-        "confidence": 1,
-        "createdAt": "2026-06-26T00:00:00.000Z",
-    })
-}
-
-fn mock_candidate_rule(
-    id: &str,
-    title: &str,
-    rule: &str,
-    evidence_kind: &str,
-    evidence_summary: &str,
-    confidence: f64,
-    status: &str,
-    run_id: &str,
-    redacted: bool,
-    superseded_by: Option<&str>,
-) -> serde_json::Value {
-    serde_json::json!({
-        "id": id,
-        "namespace": memory_namespace(),
-        "status": status,
-        "title": title,
-        "rule": rule,
-        "scope": {
-            "repositoryPath": "/repos/orynt",
-            "allowedPaths": ["apps/desktop/**", "packages/**"],
-            "protectedPaths": [".env", "pnpm-lock.yaml"],
-        },
-        "evidence": [
-            {
-                "kind": evidence_kind,
-                "summary": evidence_summary,
-                "eventIds": [format!("{run_id}-event-30")],
-                "artifactRefs": [
-                    {
-                        "id": "mock-candidate-rule",
-                        "kind": "candidate_rule",
-                        "uri": format!("orynt-artifact://{run_id}/memory/memory-store.json#candidate-rule"),
-                        "label": "Candidate project rule",
-                        "sha256": "mock-candidate-rule-sha256",
-                    }
-                ],
-                "confidence": confidence,
-            }
-        ],
-        "provenance": memory_provenance(run_id),
-        "redaction": {
-            "applied": redacted,
-            "redactedPaths": if redacted { vec!["rule", "evidence[0].summary"] } else { vec![] },
-            "redactionCount": if redacted { 2 } else { 0 },
-        },
-        "createdAt": "2026-06-26T00:00:00.000Z",
-        "updatedAt": "2026-06-26T00:00:00.000Z",
-        "supersededBy": superseded_by,
-    })
-}
-
-fn mock_candidate_rules(
-    statuses: &HashMap<String, CandidateRuleReviewStatus>,
-) -> Vec<serde_json::Value> {
-    let run_id = "run-1";
-    let package_status = statuses
-        .get("candidate-rule-package-scope")
-        .map(CandidateRuleReviewStatus::as_str)
-        .unwrap_or("candidate");
-    let redacted_status = statuses
-        .get("candidate-rule-redacted-log")
-        .map(CandidateRuleReviewStatus::as_str)
-        .unwrap_or("candidate");
-    vec![
-        mock_candidate_rule(
-            "candidate-rule-package-scope",
-            "Keep package fixes scoped",
-            "Keep source-only fixes under packages/** unless the contract says otherwise.",
-            "allowed_scope_pattern",
-            "Verifier passed after changed files stayed inside packages/**.",
-            0.86,
-            package_status,
-            run_id,
-            false,
-            if package_status == "superseded" {
-                Some("candidate-rule-replacement-demo")
-            } else {
-                None
-            },
-        ),
-        mock_candidate_rule(
-            "candidate-rule-redacted-log",
-            "Avoid secret-bearing logs",
-            "Do not persist imported manual logs containing [REDACTED]; keep only redacted summaries and artifact references.",
-            "command_observation",
-            "Manual import evidence contained [REDACTED] and was redacted before display.",
-            0.78,
-            redacted_status,
-            run_id,
-            true,
-            if redacted_status == "superseded" {
-                Some("candidate-rule-replacement-demo")
-            } else {
-                None
-            },
-        ),
-    ]
 }
 
 fn mock_skill(
@@ -3523,12 +3647,31 @@ async fn run_create(
     let store = persistence_store(&app);
     let model_connection = ensure_model_connection_ready_for_run(&store)?;
     let thinking_effort = store.load_settings()?.thinking_effort;
+    let skill_context = if input.selected_skill_ids.is_empty() {
+        None
+    } else {
+        Some(run_skill_manager_sidecar(
+            &app,
+            "context.snapshot",
+            serde_json::json!({
+                "runId": input.task_id.clone(),
+                "skillIds": input.selected_skill_ids.clone(),
+                "repositoryPath": repository_path.to_string_lossy(),
+            }),
+        )?
+        .get("context")
+        .cloned()
+        .ok_or_else(|| {
+            AppError::SkillManager("skill context snapshot was incomplete".into())
+        })?)
+    };
     let output = run_desktop_repository_sidecar(
         &app,
         &input,
         &repository_path,
         &model_connection,
         &thinking_effort,
+        skill_context,
     )?;
     let persisted_run = persisted_run_from_output(&app, &input, &repository_path, &output)?;
     store.save_run(&persisted_run)?;
@@ -3628,37 +3771,44 @@ async fn approval_respond(app: AppHandle, input: ApprovalDecisionInput) -> Resul
 }
 
 #[tauri::command]
-async fn memory_list_episodes() -> Result<Vec<serde_json::Value>, AppError> {
-    Ok(vec![mock_memory_episode("run-1")])
+async fn memory_list_episodes(app: AppHandle) -> Result<Vec<serde_json::Value>, AppError> {
+    let result = run_memory_manager_sidecar(&app, "episode.list", serde_json::json!({
+        "query": {}
+    }))?;
+    serde_json::from_value(result).map_err(|error| {
+        AppError::MemoryManager(format!("memory episode list was invalid: {error}"))
+    })
 }
 
 #[tauri::command]
 async fn memory_list_candidate_rules(
-    state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<Vec<serde_json::Value>, AppError> {
-    let statuses = state
-        .candidate_rule_statuses
-        .lock()
-        .map_err(|_| AppError::StateLock)?;
-
-    Ok(mock_candidate_rules(&statuses))
+    let result = run_memory_manager_sidecar(&app, "rule.list", serde_json::json!({
+        "query": {}
+    }))?;
+    serde_json::from_value(result).map_err(|error| {
+        AppError::MemoryManager(format!("candidate rule list was invalid: {error}"))
+    })
 }
 
 #[tauri::command]
 async fn memory_update_candidate_rule_status(
     app: AppHandle,
-    state: State<'_, AppState>,
     input: CandidateRuleStatusUpdateInput,
 ) -> Result<serde_json::Value, AppError> {
     validate_candidate_rule_status_update(&input)?;
-
-    {
-        let mut statuses = state
-            .candidate_rule_statuses
-            .lock()
-            .map_err(|_| AppError::StateLock)?;
-        statuses.insert(input.id.clone(), input.status.clone());
-    }
+    let updated = run_memory_manager_sidecar(
+        &app,
+        "rule.status",
+        serde_json::json!({
+            "id": input.id.clone(),
+            "status": input.status.as_str(),
+            "options": {
+                "supersededBy": input.superseded_by.clone(),
+            },
+        }),
+    )?;
 
     let run_id = input.run_id.clone().unwrap_or_else(|| "run-1".into());
     let event_type = candidate_rule_review_event_type(&input.status);
@@ -3682,23 +3832,6 @@ async fn memory_update_candidate_rule_status(
         },
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
-
-    let statuses = state
-        .candidate_rule_statuses
-        .lock()
-        .map_err(|_| AppError::StateLock)?;
-    let rule = mock_candidate_rules(&statuses)
-        .into_iter()
-        .find(|rule| rule.get("id").and_then(serde_json::Value::as_str) == Some(input.id.as_str()))
-        .ok_or_else(|| AppError::Validation("candidate rule not found".into()))?;
-    let mut updated = rule;
-    if input.status == CandidateRuleReviewStatus::Superseded {
-        updated["supersededBy"] = serde_json::Value::String(
-            input
-                .superseded_by
-                .unwrap_or_else(|| "candidate-rule-replacement-demo".into()),
-        );
-    }
 
     Ok(updated)
 }
@@ -3917,6 +4050,122 @@ async fn skill_create_replay_plan(
     }
 
     Ok(plan)
+}
+
+fn skill_manager_input(input: Option<serde_json::Value>) -> serde_json::Value {
+    input.unwrap_or_else(|| serde_json::json!({}))
+}
+
+#[tauri::command]
+async fn skill_inventory_scan(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "inventory.scan", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_inventory_list(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "inventory.list", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_inventory_get(
+    app: AppHandle,
+    skill_id: String,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(
+        &app,
+        "inventory.get",
+        serde_json::json!({ "skillId": skill_id }),
+    )
+}
+
+#[tauri::command]
+async fn skill_hub_list_sources(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "hub.listSources", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_hub_refresh(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "hub.refresh", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_hub_search(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "hub.search", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_hub_get(
+    app: AppHandle,
+    skill_id: String,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(
+        &app,
+        "hub.get",
+        serde_json::json!({ "skillId": skill_id }),
+    )
+}
+
+#[tauri::command]
+async fn skill_mutation_plan(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.plan", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_mutation_approve(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.approve", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_mutation_execute(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.execute", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_mutation_history(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.history", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_mutation_recover(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "mutation.recover", skill_manager_input(input))
+}
+
+#[tauri::command]
+async fn skill_context_snapshot(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "context.snapshot", skill_manager_input(input))
 }
 
 #[tauri::command]
@@ -4171,6 +4420,19 @@ pub fn run() {
             skill_supersede,
             skill_archive,
             skill_create_replay_plan,
+            skill_inventory_scan,
+            skill_inventory_list,
+            skill_inventory_get,
+            skill_hub_list_sources,
+            skill_hub_refresh,
+            skill_hub_search,
+            skill_hub_get,
+            skill_mutation_plan,
+            skill_mutation_approve,
+            skill_mutation_execute,
+            skill_mutation_history,
+            skill_mutation_recover,
+            skill_context_snapshot,
             codex_execution_approve,
             codex_execution_blocked_preview,
             settings_get,
@@ -4243,6 +4505,7 @@ mod tests {
             task_id: "task-1".into(),
             workspace_id: "workspace-1".into(),
             repository_path: Some(local_directory_path("valid")),
+            selected_skill_ids: vec![],
             budget: BudgetPolicy {
                 max_steps: 40,
                 max_wall_time_ms: 1_800_000,
@@ -5367,6 +5630,13 @@ mod tests {
             &PathBuf::from("/tmp/orynt-data"),
             &model_connection,
             "high",
+            Some(serde_json::json!({
+                "schemaVersion": 1,
+                "runId": "run-skill-context",
+                "createdAt": "2026-07-29T00:00:00.000Z",
+                "skills": [],
+                "digest": "context-digest",
+            })),
         );
         let value = serde_json::to_value(request).expect("serialize request");
 
@@ -5374,6 +5644,12 @@ mod tests {
         assert_eq!(value["modelConnection"]["modelId"], "gpt-5.5");
         assert_eq!(value["modelConnection"]["envKey"], "ORYNT_TEST_OPENAI_API_KEY");
         assert_eq!(value["thinkingEffort"], "high");
+        assert_eq!(value["skillContext"]["digest"], "context-digest");
+        assert_eq!(value["budget"]["maxSteps"], 40);
+        assert_eq!(value["budget"]["maxWallTimeMs"], 1_800_000);
+        assert_eq!(value["budget"]["maxModelTokens"], 120_000);
+        assert_eq!(value["budget"]["maxUsd"], 1.0);
+        assert_eq!(value["budget"]["stopOnBudgetExceeded"], true);
     }
 
     #[test]

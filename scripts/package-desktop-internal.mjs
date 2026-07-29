@@ -15,6 +15,14 @@ const stagingRoot = join(distRoot, releaseName);
 const binaryName = platform === "win32" ? "orynt-desktop.exe" : "orynt-desktop";
 const binaryPath = join(root, "apps", "desktop", "src-tauri", "target", "release", binaryName);
 const runnerRoot = join(stagingRoot, "orynt-runner");
+const builtinSkillNames = [
+  "repository-onboarding",
+  "change-planner",
+  "bug-fixer",
+  "code-reviewer",
+  "release-readiness",
+];
+const builtinSkillRoot = join(root, "packages", "skill-registry", "builtins");
 
 const runnerPackages = [
   "codex-adapter",
@@ -103,6 +111,14 @@ await cp(
   join(runnerRoot, "scripts", "desktop-repository-run.mjs"),
 );
 await cp(
+  join(root, "scripts", "desktop-skill-manager.mjs"),
+  join(runnerRoot, "scripts", "desktop-skill-manager.mjs"),
+);
+await cp(
+  join(root, "scripts", "desktop-memory-manager.mjs"),
+  join(runnerRoot, "scripts", "desktop-memory-manager.mjs"),
+);
+await cp(
   join(root, "scripts", "register-extensionless-esm-loader.mjs"),
   join(runnerRoot, "scripts", "register-extensionless-esm-loader.mjs"),
 );
@@ -111,6 +127,11 @@ for (const packageName of runnerPackages) {
   await copyPackage(packageName, join(runnerRoot, "packages", packageName));
   await copyPackage(packageName, join(runnerRoot, "node_modules", "@codepawl", packageName));
 }
+await cp(
+  builtinSkillRoot,
+  join(runnerRoot, "packages", "skill-registry", "builtins"),
+  { recursive: true },
+);
 
 for (const doc of [
   "docs/productization/private-beta-release-notes.md",
@@ -138,6 +159,10 @@ const manifest = {
     memory: "memory/",
     runs: "runs/",
   },
+  builtinSkills: {
+    root: "orynt-runner/packages/skill-registry/builtins",
+    names: builtinSkillNames,
+  },
   smokeChecklist: "docs/private-beta-release-smoke.md",
 };
 await writeFile(join(stagingRoot, "RELEASE_MANIFEST.json"), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -147,7 +172,7 @@ await writeFile(
     "Orynt Desktop private beta",
     "",
     "Run ./orynt-desktop from this directory.",
-    "Keep orynt-runner next to the binary; it contains the repository runner sidecar.",
+    "Keep orynt-runner next to the binary; it contains the repository and skill-manager sidecars.",
     "This build is unsigned and manually distributed. The updater is disabled.",
     "Use docs/private-beta-release-smoke.md for the local release smoke checklist.",
     "",

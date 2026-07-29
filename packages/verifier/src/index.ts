@@ -26,6 +26,8 @@ import {
   type DiffScopeResult,
 } from "@codepawl/shared";
 
+import { parsePorcelainStatusPaths } from "./gitStatus";
+
 type LocalRepositoryVerifierOptions = {
   managedArtifactRoot?: string;
   runStore?: RunStore;
@@ -639,25 +641,10 @@ export class LocalRepositoryVerifier implements Verifier {
     const committedFiles = committedDiff
       .split("\0")
       .filter((filePath) => filePath.length > 0);
-    const statusFiles: string[] = [];
-    const destructiveStatusFiles: string[] = [];
-    const statusRecords = statusOutput
-      .split("\0")
-      .filter((record) => record.length > 0);
-    for (let index = 0; index < statusRecords.length;) {
-      const record = statusRecords[index++] ?? "";
-      const code = record.slice(0, 2);
-      const filePath = record.slice(3);
-      if (filePath) {
-        statusFiles.push(filePath);
-        if (code.includes("D") || code.includes("R")) {
-          destructiveStatusFiles.push(filePath);
-        }
-      }
-      if (code.includes("R") || code.includes("C")) {
-        index += 1;
-      }
-    }
+    const {
+      changedFiles: statusFiles,
+      destructiveFiles: destructiveStatusFiles,
+    } = parsePorcelainStatusPaths(statusOutput);
     const changedFiles = unique([...committedFiles, ...statusFiles]);
     const destructiveFiles = unique([
       ...committedDestructiveDiff.split("\0").filter(Boolean),

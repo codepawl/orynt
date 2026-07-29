@@ -34,6 +34,7 @@ export type InteractiveCommand =
   | { kind: "doctor" }
   | { kind: "repo"; value: string }
   | { kind: "model"; value: string }
+  | { kind: "skills"; value: string }
   | { kind: "effort"; value: string }
   | { kind: "goal"; value: string }
   | { kind: "criteria"; value: string }
@@ -178,6 +179,14 @@ export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
     description: "Show, set, or clear the active objective",
     argument: "optional",
     parse: (argument) => ({ kind: "goal", value: argument }),
+  },
+  {
+    command: "/skills",
+    aliases: [],
+    usage: "/skills [list|use <id>|remove <id>|clear]",
+    description: "List or attach explicit Agent Skills to this session",
+    argument: "optional",
+    parse: (argument) => ({ kind: "skills", value: argument || "list" }),
   },
   valueCommand("/criteria", "/criteria <a; b>", "Set acceptance criteria", "criteria"),
   simpleCommand("/plan", "Show the bounded operator plan", "plan"),

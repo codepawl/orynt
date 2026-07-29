@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -9,6 +10,7 @@ import {
   InMemoryRunStore,
   type CodexResultBundle,
   type MemoryNamespace,
+  type MemoryProvenance,
   type VerificationResult,
 } from "@codepawl/shared";
 
@@ -21,6 +23,16 @@ const namespace: MemoryNamespace = {
   workspaceId: "workspace-memory",
   repositoryPath: "/repo/orynt",
 };
+
+function memoryProvenance(runId: string): MemoryProvenance {
+  return {
+    runId,
+    taskId: "task-memory",
+    eventIds: [`${runId}-event-1`],
+    artifactRefs: [],
+    sources: ["user_feedback"],
+  };
+}
 
 function createRunWithEvents(store = new InMemoryRunStore()) {
   const run = store.createRun({
@@ -197,7 +209,7 @@ describe("LocalJsonMemoryStore", () => {
         sources: ["verification_result"],
         sourceTimestamps: ["2026-06-26T00:00:00.000Z"],
       },
-      retention: { retainUntil: "2026-07-26T00:00:00.000Z", ttlDays: 30, archiveAfterDays: 90 },
+      retention: { retainUntil: "2099-07-26T00:00:00.000Z", ttlDays: 30, archiveAfterDays: 90 },
       confidence: 1,
     });
 
@@ -355,6 +367,302 @@ describe("LocalJsonMemoryStore", () => {
         path.join(tempRoot, "..", "outside.json"),
       ),
     ).rejects.toThrow("memory store path is outside the managed memory root");
+  });
+
+  it("migrates legacy envelopes and serializes concurrent mutations with optimistic revisions", async () => {
+    await writeFile(
+      path.join(tempRoot, "memory-store.json"),
+      `${JSON.stringify({ episodes: [], candidateRules: [], semanticMemory: [] }, null, 2)}\n`,
+      "utf8",
+    );
+    const firstStore = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
+    const secondStore = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
+
+    expect(await firstStore.getStoreSnapshot()).toMatchObject({
+      schemaVersion: 2,
+      revision: 0,
+      tombstones: [],
+    });
+
+    await Promise.all(
+      Array.from({ length: 12 }, (_, index) =>
+        (index % 2 === 0 ? firstStore : secondStore).writeEpisode({
+          id: `episode-concurrent-${index}`,
+          namespace,
+          kind: "run_episode",
+          summary: `Concurrent episode ${index}`,
+          content: { index },
+          provenance: memoryProvenance(`run-concurrent-${index}`),
+          retention: { ttlDays: 30 },
+          confidence: 0.8,
+          createdAt: "2026-07-30T00:00:00.000Z",
+        }),
+      ),
+    );
+
+    const afterConcurrentWrites = await firstStore.getStoreSnapshot();
+    expect(afterConcurrentWrites.revision).toBe(12);
+    expect(afterConcurrentWrites.episodes).toHaveLength(12);
+    expect(new Set(afterConcurrentWrites.episodes.map((item) => item.id)).size).toBe(12);
+    expect((await readdir(tempRoot)).some((entry) => entry.includes(".tmp-"))).toBe(false);
+
+    await firstStore.writeEpisode(
+      {
+        id: "episode-revision-winner",
+        namespace,
+        kind: "run_episode",
+        summary: "Revision winner",
+        content: {},
+        provenance: memoryProvenance("run-revision-winner"),
+        retention: { ttlDays: 30 },
+        confidence: 1,
+      },
+      undefined,
+      { expectedRevision: 12 },
+    );
+    await expect(
+      secondStore.writeEpisode(
+        {
+          id: "episode-revision-loser",
+          namespace,
+          kind: "run_episode",
+          summary: "Revision loser",
+          content: {},
+          provenance: memoryProvenance("run-revision-loser"),
+          retention: { ttlDays: 30 },
+          confidence: 1,
+        },
+        undefined,
+        { expectedRevision: 12 },
+      ),
+    ).rejects.toThrow("memory store revision conflict: expected 12, current 13");
+  });
+
+  it("filters expired episodes from direct queries, retrieval, and summaries", async () => {
+    const store = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
+    await store.writeEpisode({
+      id: "episode-expired",
+      namespace,
+      kind: "run_episode",
+      summary: "Expired pnpm observation",
+      content: {},
+      provenance: memoryProvenance("run-expired"),
+      retention: { ttlDays: 1 },
+      confidence: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    await store.writeEpisode({
+      id: "episode-active",
+      namespace,
+      kind: "run_episode",
+      summary: "Active pnpm observation",
+      content: {},
+      provenance: memoryProvenance("run-active"),
+      retention: { retainUntil: "2099-01-01T00:00:00.000Z" },
+      confidence: 0.8,
+      createdAt: "2026-07-30T00:00:00.000Z",
+    });
+
+    expect((await store.listEpisodes()).map((item) => item.id)).toEqual(["episode-active"]);
+    expect(await store.getEpisode("episode-expired")).toBeUndefined();
+    expect(
+      (
+        await store.retrieveMemory({
+          namespace,
+          text: "pnpm",
+          now: "2026-07-30T00:00:00.000Z",
+        })
+      ).map((item) => item.id),
+    ).toEqual(["episode-active"]);
+    expect(await store.summarizeMemory(namespace)).toMatchObject({ episodeCount: 1 });
+  });
+
+  it("auto-activates only clean non-sensitive low-risk facts and retrieves approved advisory memory deterministically", async () => {
+    const store = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
+    const preference = await store.writeSemanticMemory({
+      id: "semantic-preference",
+      namespace,
+      status: "candidate",
+      summary: "Prefer pnpm test for repository validation",
+      content: { preference: "pnpm test" },
+      sensitivity: "internal",
+      confidence: 0.9,
+      provenance: memoryProvenance("run-preference"),
+      activation: {
+        basis: "explicit_user_preference",
+        requested: true,
+        conflictsWith: [],
+      },
+      createdAt: "2026-07-30T00:00:00.000Z",
+    });
+    const sensitive = await store.writeSemanticMemory({
+      id: "semantic-sensitive",
+      namespace,
+      status: "candidate",
+      summary: "Prefer pnpm test with sensitive context",
+      content: { preference: "pnpm test" },
+      sensitivity: "sensitive",
+      confidence: 1,
+      provenance: memoryProvenance("run-sensitive"),
+      activation: {
+        basis: "explicit_user_preference",
+        requested: true,
+        conflictsWith: [],
+      },
+    });
+    const redacted = await store.writeSemanticMemory({
+      id: "semantic-redacted",
+      namespace,
+      status: "candidate",
+      summary: "Prefer pnpm test token=sk-redactedactivation123",
+      content: { preference: "pnpm test" },
+      sensitivity: "internal",
+      confidence: 1,
+      provenance: memoryProvenance("run-redacted"),
+      activation: {
+        basis: "explicit_user_preference",
+        requested: true,
+        conflictsWith: [],
+      },
+    });
+    await store.writeCandidateRule({
+      id: "candidate-accepted",
+      namespace,
+      status: "accepted",
+      title: "Validate with pnpm",
+      rule: "Run pnpm test before completion.",
+      scope: { repositoryPath: namespace.repositoryPath, allowedPaths: ["packages/**"], protectedPaths: [] },
+      evidence: [
+        {
+          kind: "command_observation",
+          summary: "Verifier-backed pnpm test passed.",
+          eventIds: ["run-rule-event-1"],
+          artifactRefs: [],
+          confidence: 0.95,
+        },
+      ],
+      provenance: memoryProvenance("run-rule"),
+      createdAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-07-29T00:00:00.000Z",
+    });
+    await store.writeCandidateRule({
+      id: "candidate-pending",
+      namespace,
+      title: "Pending pnpm advice",
+      rule: "This candidate must not be retrieved.",
+      scope: { repositoryPath: namespace.repositoryPath, allowedPaths: [], protectedPaths: [] },
+      evidence: [],
+      provenance: memoryProvenance("run-pending"),
+    });
+
+    expect(preference.status).toBe("approved");
+    expect(preference.reviewDecisions.at(-1)).toMatchObject({ actor: "memory-policy" });
+    expect(sensitive.status).toBe("candidate");
+    expect(redacted.status).toBe("candidate");
+
+    const query = { namespace, text: "pnpm test", limit: 10 } as const;
+    const first = await store.retrieveMemory(query);
+    const second = await store.retrieveMemory(query);
+    expect(first).toEqual(second);
+    expect(first.map((item) => item.id)).toEqual(["candidate-accepted", "semantic-preference"]);
+    expect(first.every((item) => item.advisory)).toBe(true);
+    expect(first.map((item) => item.kind)).toEqual(["candidate_rule", "semantic_memory"]);
+  });
+
+  it("trashes memory immediately, restores it within 30 days, and purges content to a minimal tombstone", async () => {
+    const store = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
+    const item = await store.writeSemanticMemory({
+      id: "semantic-lifecycle",
+      namespace,
+      status: "approved",
+      summary: "Use pnpm test before completion",
+      content: { preference: "pnpm test" },
+      sensitivity: "internal",
+      confidence: 0.9,
+      provenance: memoryProvenance("run-lifecycle"),
+    });
+
+    const trashed = await store.deleteSemanticMemory({
+      id: item.id,
+      actor: "operator",
+      reason: "Remove this preference.",
+      decidedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(trashed).toMatchObject({
+      status: "deleted",
+      statusBeforeTrash: "approved",
+      purgeAfter: "2026-01-31T00:00:00.000Z",
+    });
+    expect(await store.listSemanticMemory({ text: "pnpm" })).toHaveLength(0);
+    expect(await store.retrieveMemory({ namespace, text: "pnpm" })).toHaveLength(0);
+    await expect(
+      store.purgeSemanticMemory({
+        id: item.id,
+        actor: "operator",
+        reason: "Purge too early.",
+        decidedAt: "2026-01-15T00:00:00.000Z",
+      }),
+    ).rejects.toThrow("semantic memory purge is not due");
+
+    expect(
+      await store.restoreSemanticMemory({
+        id: item.id,
+        actor: "operator",
+        reason: "Restore within the recovery window.",
+        decidedAt: "2026-01-15T00:00:00.000Z",
+      }),
+    ).toMatchObject({ status: "approved", deletedAt: undefined, purgeAfter: undefined });
+
+    await store.deleteSemanticMemory({
+      id: item.id,
+      actor: "operator",
+      reason: "Remove permanently after recovery window.",
+      decidedAt: "2026-02-01T00:00:00.000Z",
+    });
+    const tombstone = await store.purgeSemanticMemory({
+      id: item.id,
+      actor: "operator",
+      reason: "Recovery window elapsed.",
+      decidedAt: "2026-03-03T00:00:00.000Z",
+    });
+    expect(tombstone).toEqual({
+      id: item.id,
+      kind: "semantic_memory",
+      namespace,
+      deletedAt: "2026-02-01T00:00:00.000Z",
+      purgedAt: "2026-03-03T00:00:00.000Z",
+      provenanceRunId: "run-lifecycle",
+      reason: "Recovery window elapsed.",
+    });
+    const snapshot = await store.getStoreSnapshot();
+    expect(snapshot.semanticMemory).toHaveLength(0);
+    expect(snapshot.tombstones).toEqual([tombstone]);
+    expect(JSON.stringify(snapshot.tombstones)).not.toContain("pnpm");
+  });
+
+  it("writes immutable content-addressed extraction artifacts", async () => {
+    const store = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
+    const source = { id: "episode-artifact", summary: "Stable extraction artifact" };
+    const artifact = await store.artifactRef(
+      "memory_episode",
+      "Episodic memory item",
+      source,
+      source.id,
+    );
+    const artifactPath = artifact.uri.replace("file://", "");
+    const original = await readFile(artifactPath, "utf8");
+
+    expect(createHash("sha256").update(original).digest("hex")).toBe(artifact.sha256);
+    await store.writeEpisode({
+      namespace,
+      kind: "run_episode",
+      summary: "A later store mutation",
+      content: {},
+      provenance: memoryProvenance("run-later"),
+      retention: { ttlDays: 30 },
+      confidence: 0.8,
+    });
+    expect(await readFile(artifactPath, "utf8")).toBe(original);
   });
 });
 

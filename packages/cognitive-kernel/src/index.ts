@@ -305,6 +305,680 @@ export class StaticMemoryProvider implements KernelMemoryProvider {
   }
 }
 
+export type CognitiveRuntimeStatusV1 =
+  | "running"
+  | "waiting_for_approval"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "budget_exceeded";
+
+export type CognitiveRuntimePhaseV1 =
+  | "observe"
+  | "retrieve"
+  | "plan"
+  | "gate"
+  | "execute"
+  | "verify"
+  | "learn"
+  | "summarize";
+
+export type CognitiveEventTypeV1 =
+  | "runtime.started"
+  | "observation.captured"
+  | "memory.retrieved"
+  | "plan.created"
+  | "policy.decided"
+  | "approval.requested"
+  | "approval.approved"
+  | "approval.rejected"
+  | "usage.recorded"
+  | "budget.exceeded"
+  | "action.executed"
+  | "verification.completed"
+  | "learning.completed"
+  | "run.completed"
+  | "run.blocked"
+  | "run.failed";
+
+export type UsageDeltaV1 = {
+  steps?: number;
+  elapsedMs?: number;
+  modelTokens?: number;
+  estimatedUsd?: number;
+  toolCalls?: number;
+};
+
+export type CognitiveUsageSnapshotV1 = {
+  stepCount: number;
+  elapsedMs: number;
+  modelTokens: number;
+  estimatedUsd: number;
+  toolCalls: number;
+};
+
+export type CognitiveRuntimeBudgetV1 = {
+  maxSteps: number;
+  maxWallTimeMs: number;
+  maxModelTokens: number;
+  maxUsd?: number;
+  stopOnBudgetExceeded: true;
+};
+
+export type CognitiveEventV1 = {
+  schemaVersion: 1;
+  id: string;
+  runId: string;
+  taskId: string;
+  sequence: number;
+  checkpointRevision: number;
+  timestamp: string;
+  eventType: CognitiveEventTypeV1;
+  phase: CognitiveRuntimePhaseV1;
+  summary: string;
+  actionId?: string;
+  approvalId?: string;
+  evidenceRefs: string[];
+  usage: CognitiveUsageSnapshotV1;
+};
+
+export type CognitiveApprovalCheckpointV1 = {
+  id: string;
+  actionId: string;
+  nonce: string;
+  requestedRevision: number;
+  status: "pending" | "approved" | "rejected";
+};
+
+export type CognitiveRunCheckpointV1 = {
+  schemaVersion: 1;
+  runId: string;
+  taskId: string;
+  workspaceId: string;
+  goal: string;
+  constraints: string[];
+  status: CognitiveRuntimeStatusV1;
+  phase: CognitiveRuntimePhaseV1;
+  revision: number;
+  budget: CognitiveRuntimeBudgetV1;
+  usage: CognitiveUsageSnapshotV1;
+  events: CognitiveEventV1[];
+  observationSummary: string;
+  memoryHits: KernelMemoryHit[];
+  actionPlans: KernelActionPlan[];
+  actionDecisions: KernelActionDecision[];
+  pendingAction: KernelActionPlan | null;
+  approval: CognitiveApprovalCheckpointV1 | null;
+  gatewayResults: KernelGatewayResult[];
+  verifications: KernelVerification[];
+  learningSummary: string | null;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CognitiveRuntimeStartInputV1 = {
+  runId: string;
+  taskId: string;
+  workspaceId: string;
+  goal: string;
+  constraints: string[];
+  budget: CognitiveRuntimeBudgetV1;
+};
+
+export type CognitiveRuntimeResumeInputV1 = {
+  runId: string;
+  taskId: string;
+  approvalId: string;
+  approvalNonce: string;
+  expectedRevision: number;
+  decision: "approved" | "rejected";
+};
+
+export type CognitiveRuntimeObservationV1 = {
+  summary: string;
+  evidenceRefs?: string[];
+  usage?: UsageDeltaV1;
+};
+
+export type CognitiveRuntimeMemoryResultV1 = {
+  hits: KernelMemoryHit[];
+  usage?: UsageDeltaV1;
+};
+
+export type CognitiveRuntimePlanResultV1 = {
+  action: KernelActionPlan;
+  usage?: UsageDeltaV1;
+};
+
+export type CognitiveRuntimeGatewayResultV1 = {
+  result: KernelGatewayResult;
+  usage?: UsageDeltaV1;
+};
+
+export type CognitiveRuntimeVerificationResultV1 = {
+  verification: KernelVerification;
+  usage?: UsageDeltaV1;
+};
+
+export type CognitiveRuntimeLearningResultV1 = {
+  summary: string;
+  evidenceRefs?: string[];
+  usage?: UsageDeltaV1;
+};
+
+export interface CognitiveRuntimeObserverV1 {
+  observe(input: CognitiveRuntimeStartInputV1): Promise<CognitiveRuntimeObservationV1> | CognitiveRuntimeObservationV1;
+}
+
+export interface CognitiveRuntimeMemoryProviderV1 {
+  retrieve(input: CognitiveTaskInput): Promise<CognitiveRuntimeMemoryResultV1> | CognitiveRuntimeMemoryResultV1;
+}
+
+export interface CognitiveRuntimePlannerV1 {
+  plan(input: {
+    task: CognitiveTaskInput;
+    observationSummary: string;
+    memoryHits: KernelMemoryHit[];
+  }): Promise<CognitiveRuntimePlanResultV1> | CognitiveRuntimePlanResultV1;
+}
+
+export interface CognitiveRuntimeGatewayV1 {
+  execute(input: {
+    task: CognitiveTaskInput;
+    action: KernelActionPlan;
+  }): Promise<CognitiveRuntimeGatewayResultV1> | CognitiveRuntimeGatewayResultV1;
+}
+
+export interface CognitiveRuntimeVerifierV1 {
+  verify(input: {
+    task: CognitiveTaskInput;
+    action: KernelActionPlan;
+    gatewayResult: KernelGatewayResult;
+  }): Promise<CognitiveRuntimeVerificationResultV1> | CognitiveRuntimeVerificationResultV1;
+}
+
+export interface CognitiveRuntimeLearnerV1 {
+  learn(input: {
+    task: CognitiveTaskInput;
+    action: KernelActionPlan;
+    verification: KernelVerification;
+    memoryHits: KernelMemoryHit[];
+  }): Promise<CognitiveRuntimeLearningResultV1> | CognitiveRuntimeLearningResultV1;
+}
+
+export interface CognitiveRuntimeEventSinkV1 {
+  append(event: CognitiveEventV1): Promise<void> | void;
+}
+
+export type CognitiveRuntimeOptionsV1 = {
+  policy: CorePolicy;
+  observer: CognitiveRuntimeObserverV1;
+  memoryProvider: CognitiveRuntimeMemoryProviderV1;
+  planner: CognitiveRuntimePlannerV1;
+  gateway: CognitiveRuntimeGatewayV1;
+  verifier: CognitiveRuntimeVerifierV1;
+  learner?: CognitiveRuntimeLearnerV1;
+  eventSink?: CognitiveRuntimeEventSinkV1;
+  now?: () => string;
+  approvalNonceFactory?: (input: { runId: string; actionId: string; revision: number }) => string;
+};
+
+function cloneRuntimeValue<T>(value: T): T {
+  return typeof globalThis.structuredClone === "function"
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value));
+}
+
+function validateUsageDelta(delta: UsageDeltaV1): void {
+  for (const [name, value] of Object.entries(delta)) {
+    if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+      throw new Error(`usage delta ${name} must be a finite non-negative number`);
+    }
+  }
+}
+
+export class CognitiveRuntimeV1 {
+  private readonly policy: CorePolicy;
+  private readonly observer: CognitiveRuntimeObserverV1;
+  private readonly memoryProvider: CognitiveRuntimeMemoryProviderV1;
+  private readonly planner: CognitiveRuntimePlannerV1;
+  private readonly gateway: CognitiveRuntimeGatewayV1;
+  private readonly verifier: CognitiveRuntimeVerifierV1;
+  private readonly learner?: CognitiveRuntimeLearnerV1;
+  private readonly eventSink?: CognitiveRuntimeEventSinkV1;
+  private readonly now: () => string;
+  private readonly approvalNonceFactory: NonNullable<CognitiveRuntimeOptionsV1["approvalNonceFactory"]>;
+  private readonly policyEngine = new ConservativePolicyEngine();
+  private readonly consumedApprovals = new Set<string>();
+
+  constructor(options: CognitiveRuntimeOptionsV1) {
+    this.policy = options.policy;
+    this.observer = options.observer;
+    this.memoryProvider = options.memoryProvider;
+    this.planner = options.planner;
+    this.gateway = options.gateway;
+    this.verifier = options.verifier;
+    this.learner = options.learner;
+    this.eventSink = options.eventSink;
+    this.now = options.now ?? (() => new Date().toISOString());
+    this.approvalNonceFactory =
+      options.approvalNonceFactory ??
+      ((input) => `${input.runId}:${input.actionId}:${input.revision}`);
+  }
+
+  async start(input: CognitiveRuntimeStartInputV1): Promise<CognitiveRunCheckpointV1> {
+    this.validateStartInput(input);
+    const createdAt = this.now();
+    const checkpoint: CognitiveRunCheckpointV1 = {
+      schemaVersion: 1,
+      runId: input.runId,
+      taskId: input.taskId,
+      workspaceId: input.workspaceId,
+      goal: input.goal,
+      constraints: [...input.constraints],
+      status: "running",
+      phase: "observe",
+      revision: 0,
+      budget: cloneRuntimeValue(input.budget),
+      usage: {
+        stepCount: 0,
+        elapsedMs: 0,
+        modelTokens: 0,
+        estimatedUsd: 0,
+        toolCalls: 0,
+      },
+      events: [],
+      observationSummary: "",
+      memoryHits: [],
+      actionPlans: [],
+      actionDecisions: [],
+      pendingAction: null,
+      approval: null,
+      gatewayResults: [],
+      verifications: [],
+      learningSummary: null,
+      summary: "",
+      createdAt,
+      updatedAt: createdAt,
+    };
+    await this.emit(checkpoint, "runtime.started", "Cognitive runtime started.");
+
+    const observation = await this.observer.observe(input);
+    checkpoint.observationSummary = observation.summary;
+    await this.emit(
+      checkpoint,
+      "observation.captured",
+      observation.summary,
+      undefined,
+      undefined,
+      observation.evidenceRefs ?? [],
+    );
+    if (observation.usage && await this.applyUsage(checkpoint, observation.usage)) {
+      return cloneRuntimeValue(checkpoint);
+    }
+
+    checkpoint.phase = "retrieve";
+    const task = this.toTask(checkpoint);
+    const memory = await this.memoryProvider.retrieve(task);
+    checkpoint.memoryHits = memory.hits.map((hit) => ({ ...hit }));
+    await this.emit(
+      checkpoint,
+      "memory.retrieved",
+      `Retrieved ${checkpoint.memoryHits.length} memory item(s).`,
+      undefined,
+      undefined,
+      checkpoint.memoryHits.map((hit) => hit.id),
+    );
+    if (memory.usage && await this.applyUsage(checkpoint, memory.usage)) {
+      return cloneRuntimeValue(checkpoint);
+    }
+
+    checkpoint.phase = "plan";
+    const plan = await this.planner.plan({
+      task,
+      observationSummary: checkpoint.observationSummary,
+      memoryHits: checkpoint.memoryHits.map((hit) => ({ ...hit })),
+    });
+    checkpoint.actionPlans.push(cloneRuntimeValue(plan.action));
+    checkpoint.pendingAction = cloneRuntimeValue(plan.action);
+    await this.emit(checkpoint, "plan.created", plan.action.summary, plan.action.id);
+    if (plan.usage && await this.applyUsage(checkpoint, plan.usage)) {
+      return cloneRuntimeValue(checkpoint);
+    }
+
+    checkpoint.phase = "gate";
+    const decision = this.evaluate(plan.action);
+    checkpoint.actionDecisions.push(decision);
+    await this.emit(
+      checkpoint,
+      "policy.decided",
+      `${decision.decision}: ${decision.reasons.join(" ")}`,
+      plan.action.id,
+    );
+    if (decision.decision === "block") {
+      checkpoint.status = "blocked";
+      checkpoint.summary = `Blocked by policy: ${decision.reasons.join(" ")}`;
+      await this.emit(checkpoint, "run.blocked", checkpoint.summary, plan.action.id);
+      return cloneRuntimeValue(checkpoint);
+    }
+    if (decision.decision === "require_approval") {
+      const requestedRevision = checkpoint.revision + 1;
+      const approvalId = `approval-${checkpoint.runId}-${plan.action.id}`;
+      checkpoint.approval = {
+        id: approvalId,
+        actionId: plan.action.id,
+        nonce: this.approvalNonceFactory({
+          runId: checkpoint.runId,
+          actionId: plan.action.id,
+          revision: requestedRevision,
+        }),
+        requestedRevision,
+        status: "pending",
+      };
+      checkpoint.status = "waiting_for_approval";
+      checkpoint.summary = "Paused for explicit approval before execution.";
+      await this.emit(
+        checkpoint,
+        "approval.requested",
+        checkpoint.summary,
+        plan.action.id,
+        approvalId,
+      );
+      return cloneRuntimeValue(checkpoint);
+    }
+
+    return this.executeAndFinish(checkpoint, plan.action);
+  }
+
+  async resume(
+    sourceCheckpoint: CognitiveRunCheckpointV1,
+    input: CognitiveRuntimeResumeInputV1,
+  ): Promise<CognitiveRunCheckpointV1> {
+    const checkpoint = cloneRuntimeValue(sourceCheckpoint);
+    this.validateResumeInput(checkpoint, input);
+    const approval = checkpoint.approval!;
+    const consumptionKey = `${approval.id}:${approval.nonce}:${approval.requestedRevision}`;
+    if (this.consumedApprovals.has(consumptionKey)) {
+      throw new Error("approval has already been consumed");
+    }
+    this.consumedApprovals.add(consumptionKey);
+
+    if (input.decision === "rejected") {
+      approval.status = "rejected";
+      checkpoint.status = "blocked";
+      checkpoint.summary = "Execution was rejected by the operator.";
+      await this.emit(
+        checkpoint,
+        "approval.rejected",
+        checkpoint.summary,
+        approval.actionId,
+        approval.id,
+      );
+      await this.emit(
+        checkpoint,
+        "run.blocked",
+        checkpoint.summary,
+        approval.actionId,
+        approval.id,
+      );
+      return cloneRuntimeValue(checkpoint);
+    }
+
+    approval.status = "approved";
+    checkpoint.status = "running";
+    await this.emit(
+      checkpoint,
+      "approval.approved",
+      "Execution approved by the operator.",
+      approval.actionId,
+      approval.id,
+    );
+    return this.executeAndFinish(checkpoint, checkpoint.pendingAction!);
+  }
+
+  private async executeAndFinish(
+    checkpoint: CognitiveRunCheckpointV1,
+    action: KernelActionPlan,
+  ): Promise<CognitiveRunCheckpointV1> {
+    if (checkpoint.usage.stepCount >= checkpoint.budget.maxSteps) {
+      await this.stopForBudget(checkpoint, "Step budget exhausted before execution.");
+      return cloneRuntimeValue(checkpoint);
+    }
+    if (await this.applyUsage(checkpoint, { steps: 1 })) {
+      return cloneRuntimeValue(checkpoint);
+    }
+
+    checkpoint.phase = "execute";
+    const task = this.toTask(checkpoint);
+    const gateway = await this.gateway.execute({ task, action });
+    checkpoint.gatewayResults.push(cloneRuntimeValue(gateway.result));
+    await this.emit(
+      checkpoint,
+      "action.executed",
+      gateway.result.observation,
+      action.id,
+      checkpoint.approval?.id,
+      gateway.result.evidence.map((evidence) => evidence.id),
+    );
+    if (gateway.usage && await this.applyUsage(checkpoint, gateway.usage)) {
+      return cloneRuntimeValue(checkpoint);
+    }
+
+    checkpoint.phase = "verify";
+    const verified = await this.verifier.verify({
+      task,
+      action,
+      gatewayResult: gateway.result,
+    });
+    checkpoint.verifications.push(cloneRuntimeValue(verified.verification));
+    await this.emit(
+      checkpoint,
+      "verification.completed",
+      `Verification ${verified.verification.status}.`,
+      action.id,
+      checkpoint.approval?.id,
+      verified.verification.evidence.map((evidence) => evidence.id),
+    );
+    if (verified.usage && await this.applyUsage(checkpoint, verified.usage)) {
+      return cloneRuntimeValue(checkpoint);
+    }
+    if (verified.verification.status !== "pass") {
+      checkpoint.status = "failed";
+      checkpoint.summary = `Verification failed: expected ${verified.verification.expectedObservation}; observed ${verified.verification.actualObservation}.`;
+      await this.emit(checkpoint, "run.failed", checkpoint.summary, action.id);
+      return cloneRuntimeValue(checkpoint);
+    }
+
+    checkpoint.phase = "learn";
+    if (this.learner) {
+      const learning = await this.learner.learn({
+        task,
+        action,
+        verification: verified.verification,
+        memoryHits: checkpoint.memoryHits.map((hit) => ({ ...hit })),
+      });
+      checkpoint.learningSummary = learning.summary;
+      await this.emit(
+        checkpoint,
+        "learning.completed",
+        learning.summary,
+        action.id,
+        undefined,
+        learning.evidenceRefs ?? [],
+      );
+      if (learning.usage && await this.applyUsage(checkpoint, learning.usage)) {
+        return cloneRuntimeValue(checkpoint);
+      }
+    }
+
+    checkpoint.phase = "summarize";
+    checkpoint.status = "completed";
+    checkpoint.pendingAction = null;
+    checkpoint.summary = "Cognitive runtime completed with verified evidence.";
+    await this.emit(checkpoint, "run.completed", checkpoint.summary, action.id);
+    return cloneRuntimeValue(checkpoint);
+  }
+
+  private toTask(checkpoint: CognitiveRunCheckpointV1): CognitiveTaskInput {
+    return {
+      runId: checkpoint.runId,
+      taskId: checkpoint.taskId,
+      workspaceId: checkpoint.workspaceId,
+      goal: checkpoint.goal,
+      constraints: [...checkpoint.constraints],
+      maxSteps: checkpoint.budget.maxSteps,
+    };
+  }
+
+  private evaluate(action: KernelActionPlan): KernelActionDecision {
+    const decision = this.policyEngine.evaluateAction(action.policyAction, this.policy);
+    return {
+      actionId: action.id,
+      decision: decision.decision,
+      risk: decision.risk,
+      reasons: [...decision.reasons],
+    };
+  }
+
+  private async applyUsage(
+    checkpoint: CognitiveRunCheckpointV1,
+    delta: UsageDeltaV1,
+  ): Promise<boolean> {
+    validateUsageDelta(delta);
+    checkpoint.usage = {
+      stepCount: checkpoint.usage.stepCount + (delta.steps ?? 0),
+      elapsedMs: checkpoint.usage.elapsedMs + (delta.elapsedMs ?? 0),
+      modelTokens: checkpoint.usage.modelTokens + (delta.modelTokens ?? 0),
+      estimatedUsd: Number(
+        (checkpoint.usage.estimatedUsd + (delta.estimatedUsd ?? 0)).toFixed(8),
+      ),
+      toolCalls: checkpoint.usage.toolCalls + (delta.toolCalls ?? 0),
+    };
+    await this.emit(checkpoint, "usage.recorded", "Runtime usage recorded.");
+    if (!this.budgetExceeded(checkpoint)) {
+      return false;
+    }
+    await this.stopForBudget(checkpoint, "Runtime resource budget exceeded.");
+    return true;
+  }
+
+  private budgetExceeded(checkpoint: CognitiveRunCheckpointV1): boolean {
+    return (
+      checkpoint.usage.stepCount > checkpoint.budget.maxSteps ||
+      checkpoint.usage.elapsedMs > checkpoint.budget.maxWallTimeMs ||
+      checkpoint.usage.modelTokens > checkpoint.budget.maxModelTokens ||
+      (checkpoint.budget.maxUsd !== undefined &&
+        checkpoint.usage.estimatedUsd > checkpoint.budget.maxUsd)
+    );
+  }
+
+  private async stopForBudget(
+    checkpoint: CognitiveRunCheckpointV1,
+    summary: string,
+  ): Promise<void> {
+    checkpoint.status = "budget_exceeded";
+    checkpoint.summary = summary;
+    await this.emit(
+      checkpoint,
+      "budget.exceeded",
+      summary,
+      checkpoint.pendingAction?.id,
+      checkpoint.approval?.id,
+    );
+  }
+
+  private async emit(
+    checkpoint: CognitiveRunCheckpointV1,
+    eventType: CognitiveEventTypeV1,
+    summary: string,
+    actionId?: string,
+    approvalId?: string,
+    evidenceRefs: string[] = [],
+  ): Promise<void> {
+    const timestamp = this.now();
+    const checkpointRevision = checkpoint.revision + 1;
+    const event: CognitiveEventV1 = {
+      schemaVersion: 1,
+      id: `${checkpoint.runId}-cognitive-event-${checkpointRevision}`,
+      runId: checkpoint.runId,
+      taskId: checkpoint.taskId,
+      sequence: checkpoint.events.length + 1,
+      checkpointRevision,
+      timestamp,
+      eventType,
+      phase: checkpoint.phase,
+      summary,
+      ...(actionId ? { actionId } : {}),
+      ...(approvalId ? { approvalId } : {}),
+      evidenceRefs: [...evidenceRefs],
+      usage: cloneRuntimeValue(checkpoint.usage),
+    };
+    checkpoint.revision = checkpointRevision;
+    checkpoint.updatedAt = timestamp;
+    checkpoint.events.push(event);
+    await this.eventSink?.append(cloneRuntimeValue(event));
+  }
+
+  private validateStartInput(input: CognitiveRuntimeStartInputV1): void {
+    if (
+      !input.runId.trim() ||
+      !input.taskId.trim() ||
+      !input.workspaceId.trim() ||
+      !input.goal.trim()
+    ) {
+      throw new Error("runId, taskId, workspaceId, and goal are required");
+    }
+    const values = [
+      input.budget.maxSteps,
+      input.budget.maxWallTimeMs,
+      input.budget.maxModelTokens,
+    ];
+    if (values.some((value) => !Number.isFinite(value) || value <= 0)) {
+      throw new Error("runtime budget limits must be finite and greater than zero");
+    }
+    if (
+      input.budget.maxUsd !== undefined &&
+      (!Number.isFinite(input.budget.maxUsd) || input.budget.maxUsd <= 0)
+    ) {
+      throw new Error("runtime maxUsd must be finite and greater than zero");
+    }
+    if (!input.budget.stopOnBudgetExceeded) {
+      throw new Error("runtime budget must stop on budget exceeded");
+    }
+  }
+
+  private validateResumeInput(
+    checkpoint: CognitiveRunCheckpointV1,
+    input: CognitiveRuntimeResumeInputV1,
+  ): void {
+    if (
+      checkpoint.schemaVersion !== 1 ||
+      checkpoint.status !== "waiting_for_approval" ||
+      !checkpoint.pendingAction ||
+      !checkpoint.approval ||
+      checkpoint.approval.status !== "pending"
+    ) {
+      throw new Error("checkpoint is not waiting for a pending approval");
+    }
+    if (input.runId !== checkpoint.runId || input.taskId !== checkpoint.taskId) {
+      throw new Error("approval does not belong to this run checkpoint");
+    }
+    if (
+      input.approvalId !== checkpoint.approval.id ||
+      input.approvalNonce !== checkpoint.approval.nonce
+    ) {
+      throw new Error("approval id or nonce does not match the checkpoint");
+    }
+    if (
+      input.expectedRevision !== checkpoint.revision ||
+      checkpoint.approval.requestedRevision !== checkpoint.revision
+    ) {
+      throw new Error("approval checkpoint revision is stale");
+    }
+  }
+}
+
 export class DeterministicCognitiveKernel {
   private readonly policy: CorePolicy;
   private readonly memoryProvider: KernelMemoryProvider;

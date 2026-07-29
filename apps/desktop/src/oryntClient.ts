@@ -117,6 +117,116 @@ export type SettingsUpdateInput = {
   voicePreferences?: Partial<VoicePreferencesSnapshot>;
 };
 
+export type AgentSkillScope = "project" | "user" | "runtime";
+export type AgentSkillHealth = "ready" | "warning" | "blocked";
+export type AgentSkillTrust = "trusted" | "community" | "untrusted";
+
+export type InstalledAgentSkill = {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  scope: AgentSkillScope;
+  sourceId: string;
+  sourceLabel: string;
+  digest: string;
+  enabled: boolean;
+  eligible: boolean;
+  managed: boolean;
+  pinned: boolean;
+  drifted: boolean;
+  health: AgentSkillHealth;
+  trust: AgentSkillTrust;
+  updateVersion?: string | null;
+  updateRequiresReview?: boolean;
+  path?: string | null;
+  manifest?: string;
+};
+
+export type SkillCatalogItem = {
+  id: string;
+  name: string;
+  description: string;
+  publisher: string;
+  version: string;
+  sourceId: string;
+  sourceLabel: string;
+  trust: AgentSkillTrust;
+  license?: string | null;
+  compatibility?: string | null;
+  installedSkillId?: string | null;
+  capabilities: string[];
+};
+
+export type SkillSourceSnapshot = {
+  id: string;
+  label: string;
+  kind: "github" | "marketplace" | "community" | "local" | "runtime";
+  uri: string;
+  trust: AgentSkillTrust;
+  enabled: boolean;
+  stale: boolean;
+  lastRefreshedAt?: string | null;
+  message?: string | null;
+};
+
+export type SkillInventorySnapshot = {
+  scannedAt: string;
+  skills: InstalledAgentSkill[];
+  collisions: Array<{ name: string; skillIds: string[]; message: string }>;
+  warnings: string[];
+};
+
+export type SkillHubSearchInput = {
+  query?: string;
+  sourceIds?: string[];
+  repositoryPath?: string;
+};
+
+export type SkillMutationKind = "install" | "update" | "enable" | "disable" | "pin" | "unpin" | "remove" | "restore";
+
+export type SkillMutationPlan = {
+  id: string;
+  kind: SkillMutationKind;
+  skillId: string;
+  skillName: string;
+  scope: AgentSkillScope;
+  summary: string;
+  trust: AgentSkillTrust;
+  expiresAt: string;
+  approved: boolean;
+  changes: Array<{ kind: "add" | "change" | "remove"; label: string; detail: string }>;
+  warnings: string[];
+};
+
+export type SkillMutationPlanInput = {
+  kind: SkillMutationKind;
+  skillId: string;
+  scope?: Exclude<AgentSkillScope, "runtime">;
+  catalogItem?: SkillCatalogItem;
+  repositoryPath?: string;
+};
+
+export type SkillMutationApprovalInput = {
+  planId: string;
+  actor: "operator";
+  reason: string;
+};
+
+export type SkillMutationExecutionResult = {
+  planId: string;
+  status: "completed" | "recovered";
+  inventory: SkillInventorySnapshot;
+  message: string;
+};
+
+export type SkillContextSnapshot = {
+  createdAt: string;
+  skillIds: string[];
+  digest: string;
+  warnings: string[];
+};
+
 export type CodexConnectionStatus = "missing" | "authRequired" | "ready" | "failed";
 
 export type CodexConnectionPreflightResult = {
@@ -296,6 +406,188 @@ const initialMockState = createMockRunState();
 let mockMemoryReview: MemoryReviewSnapshot = initialMockState.memoryReview;
 let mockSkillRegistry: SkillRegistrySnapshot = initialMockState.skillRegistry;
 let mockReviewEventSequence = 20_000;
+let mockInstalledAgentSkills: InstalledAgentSkill[] = [
+  {
+    id: "openai:skill-creator@1.0.0",
+    name: "skill-creator",
+    description: "Create and validate portable Agent Skills.",
+    version: "1.0.0",
+    scope: "user",
+    sourceId: "openai-curated",
+    sourceLabel: "OpenAI curated",
+    digest: "sha256:9be1…71c2",
+    enabled: true,
+    eligible: true,
+    managed: true,
+    pinned: false,
+    drifted: false,
+    health: "ready",
+    trust: "trusted",
+    updateVersion: null,
+    manifest: "---\nname: skill-creator\ndescription: Create portable Agent Skills.\n---",
+  },
+  {
+    id: "orynt-builtin:repository-onboarding",
+    name: "repository-onboarding",
+    description: "Map an unfamiliar repository before making changes.",
+    version: "bundled",
+    scope: "runtime",
+    sourceId: "orynt-builtin",
+    sourceLabel: "Orynt built-ins",
+    digest: "sha256:01a1…b001",
+    enabled: true,
+    eligible: true,
+    managed: false,
+    pinned: false,
+    drifted: false,
+    health: "ready",
+    trust: "trusted",
+    updateVersion: null,
+  },
+  {
+    id: "orynt-builtin:change-planner",
+    name: "change-planner",
+    description: "Plan a bounded repository change from live evidence.",
+    version: "bundled",
+    scope: "runtime",
+    sourceId: "orynt-builtin",
+    sourceLabel: "Orynt built-ins",
+    digest: "sha256:02a2…b002",
+    enabled: true,
+    eligible: true,
+    managed: false,
+    pinned: false,
+    drifted: false,
+    health: "ready",
+    trust: "trusted",
+    updateVersion: null,
+  },
+  {
+    id: "orynt-builtin:bug-fixer",
+    name: "bug-fixer",
+    description: "Reproduce and fix bugs with focused regression tests.",
+    version: "bundled",
+    scope: "runtime",
+    sourceId: "orynt-builtin",
+    sourceLabel: "Orynt built-ins",
+    digest: "sha256:03a3…b003",
+    enabled: true,
+    eligible: true,
+    managed: false,
+    pinned: false,
+    drifted: false,
+    health: "ready",
+    trust: "trusted",
+    updateVersion: null,
+  },
+  {
+    id: "orynt-builtin:code-reviewer",
+    name: "code-reviewer",
+    description: "Review repository changes for correctness and risk.",
+    version: "bundled",
+    scope: "runtime",
+    sourceId: "orynt-builtin",
+    sourceLabel: "Orynt built-ins",
+    digest: "sha256:04a4…b004",
+    enabled: true,
+    eligible: true,
+    managed: false,
+    pinned: false,
+    drifted: false,
+    health: "ready",
+    trust: "trusted",
+    updateVersion: null,
+  },
+  {
+    id: "orynt-builtin:release-readiness",
+    name: "release-readiness",
+    description: "Assess repository release readiness with evidence.",
+    version: "bundled",
+    scope: "runtime",
+    sourceId: "orynt-builtin",
+    sourceLabel: "Orynt built-ins",
+    digest: "sha256:05a5…b005",
+    enabled: true,
+    eligible: true,
+    managed: false,
+    pinned: false,
+    drifted: false,
+    health: "ready",
+    trust: "trusted",
+    updateVersion: null,
+  },
+];
+const mockSkillCatalog: SkillCatalogItem[] = [
+  {
+    id: "openai:docs-writer@1.2.0",
+    name: "docs-writer",
+    description: "Draft evidence-led product and engineering documentation.",
+    publisher: "openai",
+    version: "1.2.0",
+    sourceId: "openai-curated",
+    sourceLabel: "OpenAI curated",
+    trust: "trusted",
+    license: "MIT",
+    compatibility: "Agent Skills",
+    capabilities: ["repository-read", "repository-write"],
+  },
+  {
+    id: "community:test-scenarios@0.4.1",
+    name: "test-scenarios",
+    description: "Generate structured test scenarios from requirements.",
+    publisher: "community",
+    version: "0.4.1",
+    sourceId: "skills-sh",
+    sourceLabel: "skills.sh",
+    trust: "community",
+    license: "Apache-2.0",
+    compatibility: "Agent Skills",
+    capabilities: ["repository-read"],
+  },
+];
+let mockSkillSources: SkillSourceSnapshot[] = [
+  {
+    id: "orynt-builtin",
+    label: "Orynt built-ins",
+    kind: "runtime",
+    uri: "orynt://builtins",
+    trust: "trusted",
+    enabled: true,
+    stale: false,
+    lastRefreshedAt: null,
+    message: "Shipped with this Orynt build. Attach explicitly per run.",
+  },
+  {
+    id: "openai-curated",
+    label: "OpenAI curated",
+    kind: "github",
+    uri: "https://github.com/openai/skills",
+    trust: "trusted",
+    enabled: true,
+    stale: false,
+    lastRefreshedAt: new Date().toISOString(),
+  },
+  {
+    id: "skills-sh",
+    label: "skills.sh community",
+    kind: "community",
+    uri: "https://skills.sh",
+    trust: "community",
+    enabled: true,
+    stale: false,
+    lastRefreshedAt: new Date().toISOString(),
+  },
+];
+const mockSkillMutationPlans = new Map<string, SkillMutationPlan>();
+
+function mockInventorySnapshot(): SkillInventorySnapshot {
+  return {
+    scannedAt: new Date().toISOString(),
+    skills: structuredClone(mockInstalledAgentSkills),
+    collisions: [],
+    warnings: [],
+  };
+}
 
 function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -1041,6 +1333,205 @@ export const orynt = {
     };
     queueMicrotask(() => emitCandidateRuleReviewEvent(updated, input.runId));
     return structuredClone(updated);
+  },
+
+  async scanAgentSkills(repositoryPath?: string): Promise<SkillInventorySnapshot> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillInventorySnapshot>("skill_inventory_scan", { input: { repositoryPath } });
+    }
+    return mockInventorySnapshot();
+  },
+
+  async listInstalledAgentSkills(repositoryPath?: string): Promise<SkillInventorySnapshot> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillInventorySnapshot>("skill_inventory_list", { input: { repositoryPath } });
+    }
+    return mockInventorySnapshot();
+  },
+
+  async getInstalledAgentSkill(skillId: string): Promise<InstalledAgentSkill> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<InstalledAgentSkill>("skill_inventory_get", { skillId });
+    }
+    const skill = mockInstalledAgentSkills.find((item) => item.id === skillId);
+    if (!skill) {
+      throw new Error(`installed skill not found: ${skillId}`);
+    }
+    return structuredClone(skill);
+  },
+
+  async listSkillSources(): Promise<SkillSourceSnapshot[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillSourceSnapshot[]>("skill_hub_list_sources");
+    }
+    return structuredClone(mockSkillSources);
+  },
+
+  async refreshSkillHub(): Promise<SkillSourceSnapshot[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillSourceSnapshot[]>("skill_hub_refresh");
+    }
+    mockSkillSources = mockSkillSources.map((source) => ({ ...source, stale: false, lastRefreshedAt: new Date().toISOString(), message: null }));
+    return structuredClone(mockSkillSources);
+  },
+
+  async searchSkillHub(input: SkillHubSearchInput): Promise<SkillCatalogItem[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillCatalogItem[]>("skill_hub_search", { input });
+    }
+    const normalizedQuery = input.query?.trim().toLowerCase() ?? "";
+    const enabledSourceIds = new Set(mockSkillSources.filter((source) => source.enabled).map((source) => source.id));
+    return structuredClone(
+      mockSkillCatalog
+        .filter((item) => enabledSourceIds.has(item.sourceId))
+        .filter((item) => !input.sourceIds?.length || input.sourceIds.includes(item.sourceId))
+        .filter((item) => !normalizedQuery || `${item.name} ${item.description} ${item.publisher}`.toLowerCase().includes(normalizedQuery))
+        .map((item) => ({
+          ...item,
+          installedSkillId: mockInstalledAgentSkills.find((skill) => skill.name === item.name)?.id ?? null,
+        })),
+    );
+  },
+
+  async getSkillHubItem(skillId: string): Promise<SkillCatalogItem> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillCatalogItem>("skill_hub_get", { skillId });
+    }
+    const item = mockSkillCatalog.find((candidate) => candidate.id === skillId);
+    if (!item) {
+      throw new Error(`catalog skill not found: ${skillId}`);
+    }
+    return structuredClone(item);
+  },
+
+  async planSkillMutation(input: SkillMutationPlanInput): Promise<SkillMutationPlan> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillMutationPlan>("skill_mutation_plan", { input });
+    }
+    const installed = mockInstalledAgentSkills.find((skill) => skill.id === input.skillId);
+    const catalogItem = input.catalogItem ?? mockSkillCatalog.find((item) => item.id === input.skillId);
+    const skillName = installed?.name ?? catalogItem?.name ?? input.skillId;
+    const trust = installed?.trust ?? catalogItem?.trust ?? "untrusted";
+    const scope = input.scope ?? (installed?.scope === "project" ? "project" : "user");
+    const plan: SkillMutationPlan = {
+      id: `skill-plan-${Date.now()}-${input.kind}-${skillName}`,
+      kind: input.kind,
+      skillId: input.skillId,
+      skillName,
+      scope,
+      summary: `${input.kind[0].toUpperCase()}${input.kind.slice(1)} ${skillName} in ${scope} scope.`,
+      trust,
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      approved: false,
+      changes: [
+        {
+          kind: input.kind === "remove" ? "remove" : installed ? "change" : "add",
+          label: skillName,
+          detail:
+            input.kind === "install"
+              ? `Install ${catalogItem?.version ?? "selected release"} without enabling it.`
+              : `${input.kind} the managed skill receipt and local policy.`,
+        },
+      ],
+      warnings: trust === "trusted" ? [] : ["Community content is untrusted until the operator reviews its instructions and capabilities."],
+    };
+    mockSkillMutationPlans.set(plan.id, plan);
+    return structuredClone(plan);
+  },
+
+  async approveSkillMutation(input: SkillMutationApprovalInput): Promise<SkillMutationPlan> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillMutationPlan>("skill_mutation_approve", { input });
+    }
+    const plan = mockSkillMutationPlans.get(input.planId);
+    if (!plan) {
+      throw new Error(`skill mutation plan not found: ${input.planId}`);
+    }
+    const approved = { ...plan, approved: true };
+    mockSkillMutationPlans.set(plan.id, approved);
+    return structuredClone(approved);
+  },
+
+  async executeSkillMutation(planId: string, repositoryPath?: string): Promise<SkillMutationExecutionResult> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillMutationExecutionResult>("skill_mutation_execute", { input: { planId, repositoryPath } });
+    }
+    const plan = mockSkillMutationPlans.get(planId);
+    if (!plan?.approved) {
+      throw new Error("Operator approval is required before executing this skill change.");
+    }
+    const currentIndex = mockInstalledAgentSkills.findIndex((skill) => skill.id === plan.skillId);
+    const current = currentIndex >= 0 ? mockInstalledAgentSkills[currentIndex] : undefined;
+    if (plan.kind === "install") {
+      const catalogItem = mockSkillCatalog.find((item) => item.id === plan.skillId);
+      if (!catalogItem) {
+        throw new Error(`catalog skill not found: ${plan.skillId}`);
+      }
+      const installed: InstalledAgentSkill = {
+        id: catalogItem.id,
+        name: catalogItem.name,
+        description: catalogItem.description,
+        version: catalogItem.version,
+        scope: plan.scope,
+        sourceId: catalogItem.sourceId,
+        sourceLabel: catalogItem.sourceLabel,
+        digest: `sha256:mock-${catalogItem.name}`,
+        enabled: false,
+        eligible: false,
+        managed: true,
+        pinned: false,
+        drifted: false,
+        health: "ready",
+        trust: catalogItem.trust,
+      };
+      mockInstalledAgentSkills = [...mockInstalledAgentSkills, installed];
+    } else if (plan.kind === "remove") {
+      mockInstalledAgentSkills = mockInstalledAgentSkills.filter((skill) => skill.id !== plan.skillId);
+    } else if (current) {
+      const updated: InstalledAgentSkill = {
+        ...current,
+        enabled: plan.kind === "enable" ? true : plan.kind === "disable" ? false : current.enabled,
+        eligible: plan.kind === "enable" ? current.health !== "blocked" : plan.kind === "disable" ? false : current.eligible,
+        pinned: plan.kind === "pin" ? true : plan.kind === "unpin" ? false : current.pinned,
+        version: plan.kind === "update" ? (current.updateVersion ?? current.version) : current.version,
+        updateVersion: plan.kind === "update" ? null : current.updateVersion,
+      };
+      mockInstalledAgentSkills = mockInstalledAgentSkills.map((skill) => (skill.id === updated.id ? updated : skill));
+    }
+    mockSkillMutationPlans.delete(planId);
+    return {
+      planId,
+      status: "completed",
+      inventory: mockInventorySnapshot(),
+      message: `${plan.skillName} ${plan.kind} completed.`,
+    };
+  },
+
+  async createSkillContextSnapshot(skillIds: string[], repositoryPath?: string): Promise<SkillContextSnapshot> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SkillContextSnapshot>("skill_context_snapshot", { input: { skillIds, repositoryPath } });
+    }
+    const missing = skillIds.filter((id) => !mockInstalledAgentSkills.some((skill) => skill.id === id && skill.enabled && skill.eligible));
+    if (missing.length > 0) {
+      throw new Error(`Selected skill is no longer eligible: ${missing.join(", ")}`);
+    }
+    return {
+      createdAt: new Date().toISOString(),
+      skillIds: [...skillIds],
+      digest: `sha256:mock-context-${skillIds.join("-") || "empty"}`,
+      warnings: [],
+    };
   },
 
   async listSkills(): Promise<SkillDefinition[]> {

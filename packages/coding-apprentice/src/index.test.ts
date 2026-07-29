@@ -12,6 +12,7 @@ import {
   type OrchestrationPlan,
   type RunEvent,
 } from "@codepawl/shared";
+import { LocalJsonMemoryStore } from "@codepawl/memory";
 
 import { LocalCodingApprenticeDemoOrchestrator, runDesktopRepositoryBeta } from "./index";
 
@@ -1223,6 +1224,58 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       expectedObservation: "verification pass",
       actualObservation: "verification pass",
     });
+  });
+
+  it("retrieves approved memory from an earlier run before building the repository contract", async () => {
+    const repositoryPath = await createFixtureRepository();
+    const memoryRoot = path.join(tempRoot, "shared-memory");
+    const memoryStore = new LocalJsonMemoryStore({ memoryRoot });
+    await memoryStore.writeSemanticMemory({
+      namespace: {
+        capabilityId: "coding-apprentice",
+        workspaceId: "workspace-test",
+        repositoryPath,
+      },
+      status: "approved",
+      summary: "Run node scripts/pass.mjs before reporting repository completion.",
+      content: {
+        preference: "Use the repository-owned verification script.",
+      },
+      sensitivity: "internal",
+      confidence: 0.92,
+      provenance: {
+        runId: "prior-run",
+        taskId: "prior-task",
+        eventIds: ["prior-feedback"],
+        artifactRefs: [],
+        sources: ["user_feedback"],
+      },
+    });
+    const result = await new LocalCodingApprenticeDemoOrchestrator({
+      memoryStore,
+    }).runDemo(
+      demoRequest(repositoryPath, {
+        memoryRoot,
+        applyManualChange: async ({ sandbox }) => {
+          await writeFile(
+            path.join(sandbox.worktreePath, "packages", "value.txt"),
+            "manual pass\n",
+          );
+        },
+      }),
+    );
+
+    const contract = await readFile(result.contractArtifact.markdownPath, "utf8");
+    expect(contract).toContain("Approved prior Orynt memory (semantic, advisory only)");
+    expect(contract).toContain("Run node scripts/pass.mjs before reporting repository completion.");
+    expect(result.cognitiveKernelResult.memoryHits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "semantic",
+          sourceRunId: "prior-run",
+        }),
+      ]),
+    );
   });
 
   it("captures user feedback as candidate semantic memory and falls back when no approved skill is available", async () => {

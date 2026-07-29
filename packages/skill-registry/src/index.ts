@@ -31,6 +31,10 @@ import type {
 } from "@codepawl/shared";
 import { ConservativePolicyEngine } from "@codepawl/shared";
 
+export * from "./catalogProviders";
+export * from "./packageManager";
+export * from "./packageScanner";
+
 export class SkillRegistryFailure extends Error {
   readonly code: "skill_not_found" | "invalid_status_transition" | "invalid_candidate";
 

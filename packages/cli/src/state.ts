@@ -57,6 +57,7 @@ export type CliSessionSnapshot = {
   mode: "plan" | "bounded_execute";
   goal?: string;
   acceptanceCriteria: string[];
+  selectedSkillIds?: string[];
   conversationSummary?: string;
   turnCount?: number;
   lastRun?: CliRunSnapshot;
@@ -169,6 +170,7 @@ export function createSessionSnapshot(input: CreateSessionSnapshotInput): CliSes
     thinkingEffort: orchestrationProfile.roles.coordinator.thinkingEffort,
     mode: "plan",
     acceptanceCriteria: [],
+    selectedSkillIds: [],
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -275,6 +277,13 @@ function isLegacySessionSnapshot(
     VALID_THINKING_EFFORTS.has(candidate.thinkingEffort as ThinkingEffort) &&
     (candidate.mode === "plan" || candidate.mode === "bounded_execute") &&
     Array.isArray(candidate.acceptanceCriteria) &&
+    (candidate.selectedSkillIds === undefined ||
+      (Array.isArray(candidate.selectedSkillIds) &&
+        candidate.selectedSkillIds.every(
+          (skillId) =>
+            typeof skillId === "string" &&
+            /^[a-zA-Z0-9._:-]{1,200}$/.test(skillId),
+        ))) &&
     (candidate.conversationSummary === undefined ||
       typeof candidate.conversationSummary === "string") &&
     (candidate.turnCount === undefined ||

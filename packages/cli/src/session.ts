@@ -92,6 +92,7 @@ export type CliRunRequest = {
   >;
   activeGoal?: string;
   acceptanceCriteria: string[];
+  selectedSkillIds?: string[];
   authorization: AgentActionAuthorization & {
     source: "automatic_policy" | "operator" | "headless";
     expectedPaths: string[];
@@ -115,6 +116,7 @@ export type InteractiveSessionState = WelcomeState & {
   mode?: CliSessionSnapshot["mode"];
   goal?: string;
   acceptanceCriteria?: string[];
+  selectedSkillIds?: string[];
   conversationSummary?: string;
   turnCount?: number;
   lastRun?: CliRunSnapshot;
@@ -151,6 +153,17 @@ export type InteractiveSessionOptions = {
   probeProvider: () => Promise<ProviderStatus>;
   listModels?: () => Promise<CliModelOption[]>;
   diagnose?: (repositoryPath?: string) => Promise<string[]>;
+  listSkills?: (
+    repositoryPath: string,
+  ) => Promise<
+    Array<{
+      id: string;
+      name: string;
+      scope: string;
+      eligible: boolean;
+      health: string;
+    }>
+  >;
   persistSession?: (session: CliSessionSnapshot) => Promise<void>;
   loadSession?: (sessionId: string) => Promise<CliSessionSnapshot | undefined>;
   persistWorkingConfig?: (patch: CliWorkingConfig) => Promise<void>;
@@ -512,6 +525,7 @@ function sessionSnapshot(state: InteractiveSessionState): CliSessionSnapshot {
     mode: state.mode ?? "plan",
     ...(state.goal ? { goal: state.goal } : {}),
     acceptanceCriteria: state.acceptanceCriteria ?? [],
+    selectedSkillIds: state.selectedSkillIds ?? [],
     ...(state.conversationSummary
       ? { conversationSummary: state.conversationSummary }
       : {}),
@@ -538,6 +552,7 @@ export async function runInteractiveSession(
     sessionId: options.state.sessionId ?? `session-${Date.now()}`,
     mode: options.state.mode ?? "plan",
     acceptanceCriteria: [...(options.state.acceptanceCriteria ?? [])],
+    selectedSkillIds: [...(options.state.selectedSkillIds ?? [])],
     turnCount: options.state.turnCount ?? 0,
     createdAt: options.state.createdAt ?? new Date().toISOString(),
   };
@@ -629,6 +644,74 @@ export async function runInteractiveSession(
       state.goal = command.value;
       await persist();
       terminal.write(`Goal set: ${terminalSafeText(state.goal)}`);
+      continue;
+    }
+    if (command.kind === "skills") {
+      const [operation = "list", ...arguments_] = command.value
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      if (operation === "list") {
+        if (!options.listSkills) {
+          terminal.write("Skill inventory is unavailable in this host.");
+          continue;
+        }
+        try {
+          const inventory = await options.listSkills(state.repositoryPath);
+          const attached = new Set(state.selectedSkillIds ?? []);
+          terminal.write(
+            inventory.length
+              ? [
+                  "Agent Skills",
+                  ...inventory.map(
+                    (skill) =>
+                      `  ${attached.has(skill.id) ? "●" : "○"} ${terminalSafeText(skill.id)} · ${terminalSafeText(skill.scope)} · ${terminalSafeText(skill.health)}${skill.eligible ? "" : " · unavailable"}`,
+                  ),
+                ].join("\n")
+              : "No Agent Skills were discovered for this repository.",
+          );
+        } catch (error) {
+          terminal.write(
+            `Skill inventory failed: ${terminalSafeText(
+              error instanceof Error ? error.message : String(error),
+            )}`,
+          );
+        }
+        continue;
+      }
+      if (operation === "clear") {
+        state.selectedSkillIds = [];
+        await persist();
+        terminal.write("All Agent Skill attachments cleared.");
+        continue;
+      }
+      const skillId = arguments_.join(" ").trim();
+      if (
+        (operation !== "use" && operation !== "remove") ||
+        !/^[a-zA-Z0-9._:-]{1,200}$/.test(skillId)
+      ) {
+        terminal.write("Usage: /skills [list|use <id>|remove <id>|clear]");
+        continue;
+      }
+      const selected = new Set(state.selectedSkillIds ?? []);
+      if (operation === "use") {
+        const inventory = await options.listSkills?.(state.repositoryPath);
+        const skill = inventory?.find((candidate) => candidate.id === skillId);
+        if (!skill?.eligible) {
+          terminal.write(
+            `Skill cannot be attached: ${terminalSafeText(skillId)} is missing or unavailable.`,
+          );
+          continue;
+        }
+        selected.add(skillId);
+      } else {
+        selected.delete(skillId);
+      }
+      state.selectedSkillIds = [...selected].sort();
+      await persist();
+      terminal.write(
+        `${operation === "use" ? "Attached" : "Detached"} Agent Skill: ${terminalSafeText(skillId)}`,
+      );
       continue;
     }
     if (command.kind === "criteria") {
@@ -725,7 +808,8 @@ export async function runInteractiveSession(
         delete state.conversationSummary;
         delete state.goal;
         delete state.lastRun;
-        state.acceptanceCriteria = [];
+      state.acceptanceCriteria = [];
+      state.selectedSkillIds = [];
         state.turnCount = 0;
         recentTurns.splice(0);
       }
@@ -1476,6 +1560,7 @@ export async function runInteractiveSession(
           : {}),
         activeGoal: state.goal,
         acceptanceCriteria: state.acceptanceCriteria ?? [],
+        selectedSkillIds: state.selectedSkillIds ?? [],
         authorization: {
           ...authorization,
           source: authorizationSource,

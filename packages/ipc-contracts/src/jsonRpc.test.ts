@@ -8,6 +8,7 @@ import {
   RUN_EVENTS,
   SETTINGS_IPC_METHODS,
   SKILL_IPC_METHODS,
+  SKILL_MANAGER_IPC_METHODS,
   createRpcEvent,
   isRpcEvent,
   isRpcRequest,
@@ -46,6 +47,14 @@ describe("Orynt IPC contracts", () => {
     expect(ORYNT_ERROR_CODES).toContain("SIDECAR_PROTOCOL_MISMATCH");
     expect(ORYNT_ERROR_CODES).toContain("REPOSITORY_CONTEXT_FAILED");
     expect(ORYNT_ERROR_CODES).not.toContain("SHELL_EXEC_FAILED");
+    expect(ORYNT_ERROR_CODES).toEqual(
+      expect.arrayContaining([
+        "SKILL_MANIFEST_INVALID",
+        "SKILL_TRUST_BLOCKED",
+        "SKILL_PLAN_STALE",
+        "SKILL_TRANSACTION_FAILED",
+      ]),
+    );
   });
 
   it("declares durable repository run and settings IPC methods", () => {
@@ -124,6 +133,26 @@ describe("Orynt IPC contracts", () => {
 
     expect(isRpcEvent(event)).toBe(true);
     expect(event.payload).toMatchObject({ status: "active" });
+  });
+
+  it("keeps installed Agent Skill package management separate from learned skills", () => {
+    expect(SKILL_MANAGER_IPC_METHODS).toEqual([
+      "skillInventory.scan",
+      "skillInventory.list",
+      "skillInventory.get",
+      "skillHub.listSources",
+      "skillHub.refresh",
+      "skillHub.search",
+      "skillHub.get",
+      "skillMutation.plan",
+      "skillMutation.approve",
+      "skillMutation.execute",
+      "skillMutation.history",
+      "skillMutation.recover",
+      "skillContext.snapshot",
+    ]);
+    expect(SKILL_IPC_METHODS).not.toContain("skillInventory.scan");
+    expect(RUN_EVENTS).toContain("skill_context_snapshot_created");
   });
 
   it("declares controlled Codex execution IPC methods and lifecycle events", () => {

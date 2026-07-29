@@ -6,6 +6,7 @@ export * from "./verifierContracts";
 export * from "./contextWorkspace";
 export * from "./memoryContracts";
 export * from "./skillContracts";
+export * from "./skillManagerContracts";
 export * from "./agentLedger";
 export * from "./productPlans";
 export * from "./orchestrationContracts";

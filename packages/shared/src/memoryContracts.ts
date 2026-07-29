@@ -47,6 +47,22 @@ export type MemoryRedactionResult = {
   redactionCount: number;
 };
 
+export const MEMORY_STORE_SCHEMA_VERSION = 2 as const;
+
+export type MemoryStoreRevision = number;
+
+export type MemoryMutationOptions = {
+  expectedRevision?: MemoryStoreRevision;
+};
+
+export type MemoryReviewDecision = {
+  status: string;
+  actor: string;
+  reason: string;
+  runId?: string;
+  decidedAt: string;
+};
+
 export type EpisodicMemoryItem = {
   id: string;
   namespace: MemoryNamespace;
@@ -95,6 +111,7 @@ export type CandidateRule = {
   evidence: CandidateRuleEvidence[];
   provenance: MemoryProvenance;
   redaction: MemoryRedactionResult;
+  reviewDecisions?: MemoryReviewDecision[];
   createdAt: string;
   updatedAt: string;
   supersededBy?: string;
@@ -112,6 +129,15 @@ export type SemanticMemoryReviewDecision = {
   decidedAt: string;
 };
 
+export type SemanticMemoryActivationBasis = "explicit_user_preference" | "verifier_backed_fact" | "manual_review";
+
+export type SemanticMemoryActivation = {
+  basis: SemanticMemoryActivationBasis;
+  requested: boolean;
+  conflictsWith: string[];
+  activatedAt?: string;
+};
+
 export type SemanticMemoryItem = {
   id: string;
   namespace: MemoryNamespace;
@@ -123,9 +149,33 @@ export type SemanticMemoryItem = {
   provenance: MemoryProvenance;
   redaction: MemoryRedactionResult;
   reviewDecisions: SemanticMemoryReviewDecision[];
+  activation?: SemanticMemoryActivation;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
+  purgeAfter?: string;
+  purgedAt?: string;
+  statusBeforeTrash?: Exclude<SemanticMemoryStatus, "deleted">;
+};
+
+export type MemoryTombstone = {
+  id: string;
+  kind: "semantic_memory";
+  namespace: MemoryNamespace;
+  deletedAt: string;
+  purgedAt: string;
+  provenanceRunId: string;
+  reason: string;
+};
+
+export type MemoryStoreEnvelopeV2 = {
+  schemaVersion: typeof MEMORY_STORE_SCHEMA_VERSION;
+  revision: MemoryStoreRevision;
+  updatedAt: string;
+  episodes: EpisodicMemoryItem[];
+  candidateRules: CandidateRule[];
+  semanticMemory: SemanticMemoryItem[];
+  tombstones: MemoryTombstone[];
 };
 
 export type MemoryExtractionResult = {
@@ -165,7 +215,41 @@ export type SemanticMemoryQuery = {
   limit?: number;
 };
 
-export type SemanticMemoryWriteInput = Omit<SemanticMemoryItem, "id" | "redaction" | "reviewDecisions" | "createdAt" | "updatedAt" | "deletedAt"> & {
+export type MemoryRetrievalKind = "episode" | "candidate_rule" | "semantic_memory";
+
+export type MemoryRetrievalQuery = {
+  namespace: Partial<MemoryNamespace>;
+  text?: string;
+  kinds?: MemoryRetrievalKind[];
+  limit?: number;
+  now?: string;
+  includeSensitive?: boolean;
+};
+
+export type MemoryRetrievalHit = {
+  id: string;
+  kind: MemoryRetrievalKind;
+  summary: string;
+  score: number;
+  confidence: number;
+  namespace: MemoryNamespace;
+  provenance: MemoryProvenance;
+  advisory: true;
+  createdAt: string;
+  status?: CandidateRuleStatus | SemanticMemoryStatus;
+};
+
+export type MemoryLifecycleResult = {
+  revision: MemoryStoreRevision;
+  trashed?: SemanticMemoryItem;
+  restored?: SemanticMemoryItem;
+  tombstone?: MemoryTombstone;
+};
+
+export type SemanticMemoryWriteInput = Omit<
+  SemanticMemoryItem,
+  "id" | "redaction" | "reviewDecisions" | "createdAt" | "updatedAt" | "deletedAt" | "purgeAfter" | "purgedAt" | "statusBeforeTrash"
+> & {
   id?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -192,8 +276,12 @@ export type SemanticMemoryEditInput = {
   reason: string;
 };
 
-export type CandidateRuleStatusUpdateOptions = {
+export type CandidateRuleStatusUpdateOptions = MemoryMutationOptions & {
   supersededBy?: string;
+  actor?: string;
+  reason?: string;
+  runId?: string;
+  decidedAt?: string;
 };
 
 export type CandidateRuleStatusUpdateInput = {
@@ -234,18 +322,22 @@ export type MemorySummary = {
 };
 
 export interface MemoryStore {
-  writeEpisode(input: EpisodeWriteInput, storePath?: string): Promise<EpisodicMemoryItem>;
+  writeEpisode(input: EpisodeWriteInput, storePath?: string, options?: MemoryMutationOptions): Promise<EpisodicMemoryItem>;
   listEpisodes(query?: MemoryQuery): Promise<EpisodicMemoryItem[]>;
   getEpisode(id: string): Promise<EpisodicMemoryItem | undefined>;
   queryEpisodes(query: MemoryQuery): Promise<EpisodicMemoryItem[]>;
-  writeCandidateRule(input: CandidateRuleWriteInput): Promise<CandidateRule>;
+  writeCandidateRule(input: CandidateRuleWriteInput, options?: MemoryMutationOptions): Promise<CandidateRule>;
   listCandidateRules(query?: CandidateRuleQuery): Promise<CandidateRule[]>;
   updateCandidateRuleStatus(id: string, status: CandidateRuleStatus, options?: CandidateRuleStatusUpdateOptions): Promise<CandidateRule>;
-  writeSemanticMemory(input: SemanticMemoryWriteInput): Promise<SemanticMemoryItem>;
+  writeSemanticMemory(input: SemanticMemoryWriteInput, options?: MemoryMutationOptions): Promise<SemanticMemoryItem>;
   listSemanticMemory(query?: SemanticMemoryQuery): Promise<SemanticMemoryItem[]>;
-  updateSemanticMemoryStatus(input: SemanticMemoryStatusUpdateInput): Promise<SemanticMemoryItem>;
-  editSemanticMemory(input: SemanticMemoryEditInput): Promise<SemanticMemoryItem>;
-  deleteSemanticMemory(input: Omit<SemanticMemoryStatusUpdateInput, "status">): Promise<SemanticMemoryItem>;
+  updateSemanticMemoryStatus(input: SemanticMemoryStatusUpdateInput, options?: MemoryMutationOptions): Promise<SemanticMemoryItem>;
+  editSemanticMemory(input: SemanticMemoryEditInput, options?: MemoryMutationOptions): Promise<SemanticMemoryItem>;
+  deleteSemanticMemory(input: Omit<SemanticMemoryStatusUpdateInput, "status">, options?: MemoryMutationOptions): Promise<SemanticMemoryItem>;
+  restoreSemanticMemory(input: Omit<SemanticMemoryStatusUpdateInput, "status">, options?: MemoryMutationOptions): Promise<SemanticMemoryItem>;
+  purgeSemanticMemory(input: Omit<SemanticMemoryStatusUpdateInput, "status">, options?: MemoryMutationOptions): Promise<MemoryTombstone>;
+  retrieveMemory(query: MemoryRetrievalQuery): Promise<MemoryRetrievalHit[]>;
+  getStoreSnapshot(): Promise<MemoryStoreEnvelopeV2>;
   summarizeMemory(namespace?: Partial<MemoryNamespace>): Promise<MemorySummary>;
 }
 

@@ -3,5 +3,7 @@ export * from "./app.js";
 export * from "./composer.js";
 export * from "./runtime.js";
 export * from "./session.js";
+export * from "./skills.js";
+export * from "./skillRuntime.js";
 export * from "./state.js";
 export * from "./ui.js";

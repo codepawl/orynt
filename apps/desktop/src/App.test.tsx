@@ -2095,7 +2095,7 @@ describe("Orynt desktop shell", () => {
     expect(within(accountMenu).getByRole("menuitem", { name: "Language" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Get help" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Upgrade plan" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(accountMenu).getByRole("menuitem", { name: "Get apps and extensions" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(accountMenu).getByRole("menuitem", { name: "Get apps and extensions" })).not.toHaveAttribute("aria-disabled");
     expect(within(accountMenu).getByRole("menuitem", { name: "Gift Orynt" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Learn more" })).toHaveAttribute("aria-disabled", "true");
     expect(within(accountMenu).getByRole("menuitem", { name: "Log out" })).toHaveAttribute("href", defaultLandingUrl);
@@ -5540,5 +5540,35 @@ describe("Orynt desktop shell", () => {
     expect(within(settings).queryByRole("region", { name: "Skill registry" })).not.toBeInTheDocument();
     expect(updateRuleSpy).not.toHaveBeenCalled();
     expect(promoteSkillSpy).not.toHaveBeenCalled();
+  });
+
+  it("opens the same dedicated Skills Manager from account extensions", async () => {
+    render(<App initialRunState={createEmptyMockRunState()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open account menu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Get apps and extensions" }));
+
+    const manager = screen.getByRole("dialog", { name: "Skills Manager" });
+    expect(within(manager).getByRole("tab", { name: "Installed" })).toHaveAttribute("aria-selected", "true");
+    expect(within(manager).getByRole("tab", { name: "Discover" })).toBeInTheDocument();
+    expect(within(manager).getByRole("tab", { name: "Learned" })).toBeInTheDocument();
+    expect(within(manager).getByRole("tab", { name: "Sources & policy" })).toBeInTheDocument();
+    expect(within(manager).queryByText("Preferences")).not.toBeInTheDocument();
+    expect(await within(manager).findByRole("list", { name: "Installed skills" })).toBeInTheDocument();
+  });
+
+  it("opens Skills Manager from the composer skills submenu and attaches only eligible skills", async () => {
+    render(<App />);
+    const composer = screen.getByRole("form", { name: "Task composer" });
+    fireEvent.click(within(composer).getByRole("button", { name: "Add content" }));
+    fireEvent.click(within(composer).getByRole("menuitem", { name: "Skills" }));
+
+    expect(within(composer).getByText("Eligible skills")).toBeInTheDocument();
+    const skillOption = await within(composer).findByRole("menuitemcheckbox", { name: /skill-creator/i });
+    fireEvent.click(skillOption);
+    expect(skillOption).toHaveAttribute("aria-checked", "true");
+    expect(within(composer).getByRole("button", { name: "Remove skill-creator skill" })).toBeInTheDocument();
+
+    fireEvent.click(within(composer).getByRole("menuitem", { name: "Manage skills…" }));
+    expect(screen.getByRole("dialog", { name: "Skills Manager" })).toBeInTheDocument();
   });
 });

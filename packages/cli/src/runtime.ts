@@ -16,6 +16,7 @@ import {
 } from "@codepawl/shared";
 
 import type { CliRunRequest, CliRunResult, ProviderStatus } from "./session.js";
+import { LocalSkillCliManager } from "./skillRuntime.js";
 import { normalizeCliWorkingConfig, readRunSnapshot } from "./state.js";
 import type { CliModelOption, ThinkingEffort } from "./ui.js";
 
@@ -419,6 +420,18 @@ export async function runCliRepositoryTask(request: CliRunRequest): Promise<CliR
   const taskSuffix = randomUUID().replaceAll("-", "").slice(0, 12);
   const defaultBudget = createDefaultRunBudget();
   const implementerBudget = request.orchestration?.profile.roles.implementer;
+  const skillContextResult = request.selectedSkillIds?.length
+    ? (await new LocalSkillCliManager(root).snapshotContext({
+        repositoryPath: request.repositoryPath,
+        runId: `cli-${taskSuffix}`,
+        skillIds: request.selectedSkillIds,
+      })) as {
+        context?: Parameters<typeof runDesktopRepositoryBeta>[0]["skillContext"];
+      }
+    : undefined;
+  if (request.selectedSkillIds?.length && !skillContextResult?.context) {
+    throw new Error("Skill context snapshot was incomplete");
+  }
   const result = await runDesktopRepositoryBeta({
     goal: request.instruction,
     activeGoal: request.activeGoal,
@@ -437,6 +450,9 @@ export async function runCliRepositoryTask(request: CliRunRequest): Promise<CliR
     sandboxRoot: path.join(root, "sandboxes"),
     artifactRoot: path.join(root, "artifacts"),
     memoryRoot: path.join(root, "memory"),
+    ...(skillContextResult?.context
+      ? { skillContext: skillContextResult.context }
+      : {}),
     budget: {
       ...defaultBudget,
       ...(implementerBudget

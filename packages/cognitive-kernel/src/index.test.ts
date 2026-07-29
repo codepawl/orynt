@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createConservativeCodingApprenticePolicy } from "@codepawl/shared";
 
-import { DeterministicCognitiveKernel, StaticMemoryProvider, type KernelActionPlan } from "./index";
+import {
+  CognitiveRuntimeV1,
+  DeterministicCognitiveKernel,
+  StaticMemoryProvider,
+  type CognitiveRuntimeBudgetV1,
+  type CognitiveRuntimeOptionsV1,
+  type KernelActionPlan,
+} from "./index";
 
 const policy = createConservativeCodingApprenticePolicy("/repo/orynt", "/tmp/orynt-worktree");
 
@@ -269,5 +276,313 @@ describe("DeterministicCognitiveKernel", () => {
     expect(result.status).toBe("failed");
     expect(result.stopReason).toBe("loop_budget_exceeded");
     expect(result.retryCount).toBe(1);
+  });
+});
+
+const runtimeBudget: CognitiveRuntimeBudgetV1 = {
+  maxSteps: 3,
+  maxWallTimeMs: 30_000,
+  maxModelTokens: 1_000,
+  maxUsd: 1,
+  stopOnBudgetExceeded: true,
+};
+
+function runtimeOptions(
+  overrides: Partial<CognitiveRuntimeOptionsV1> = {},
+): CognitiveRuntimeOptionsV1 {
+  return {
+    policy,
+    observer: {
+      observe: async () => ({
+        summary: "Repository state observed.",
+        evidenceRefs: ["observation-1"],
+        usage: { elapsedMs: 5 },
+      }),
+    },
+    memoryProvider: {
+      retrieve: async () => ({
+        hits: [
+          {
+            id: "memory-1",
+            kind: "episodic",
+            summary: "Prior run used a focused repository check.",
+            relevance: 0.9,
+          },
+        ],
+        usage: { modelTokens: 10 },
+      }),
+    },
+    planner: {
+      plan: async () => ({
+        action: plan(),
+        usage: { modelTokens: 20, estimatedUsd: 0.01 },
+      }),
+    },
+    gateway: {
+      execute: async ({ action }) => ({
+        result: {
+          actionId: action.id,
+          observation: "working tree clean",
+          evidence: [
+            {
+              id: "gateway-evidence-1",
+              kind: "command_log",
+              label: "Repository status",
+            },
+          ],
+        },
+        usage: { elapsedMs: 10, toolCalls: 1 },
+      }),
+    },
+    verifier: {
+      verify: async ({ action, gatewayResult }) => ({
+        verification: {
+          actionId: action.id,
+          status:
+            gatewayResult.observation === action.expectedObservation
+              ? "pass"
+              : "fail",
+          expectedObservation: action.expectedObservation,
+          actualObservation: gatewayResult.observation,
+          evidence: gatewayResult.evidence,
+        },
+        usage: { elapsedMs: 2 },
+      }),
+    },
+    learner: {
+      learn: async () => ({
+        summary: "Created a source-backed learning candidate.",
+        evidenceRefs: ["learning-candidate-1"],
+      }),
+    },
+    now: () => "2026-07-30T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function runtimeInput(
+  budget: CognitiveRuntimeBudgetV1 = runtimeBudget,
+) {
+  return {
+    runId: "runtime-run-1",
+    taskId: "runtime-task-1",
+    workspaceId: "workspace-1",
+    goal: "Inspect repository status",
+    constraints: ["Do not mutate files"],
+    budget,
+  };
+}
+
+describe("CognitiveRuntimeV1", () => {
+  it("runs a safe repository action from observation through durable completion events", async () => {
+    const persistedEvents: string[] = [];
+    const runtime = new CognitiveRuntimeV1(
+      runtimeOptions({
+        eventSink: {
+          append: async (event) => {
+            persistedEvents.push(event.eventType);
+          },
+        },
+      }),
+    );
+
+    const checkpoint = await runtime.start(runtimeInput());
+
+    expect(checkpoint).toMatchObject({
+      schemaVersion: 1,
+      status: "completed",
+      phase: "summarize",
+      usage: {
+        stepCount: 1,
+        elapsedMs: 17,
+        modelTokens: 30,
+        estimatedUsd: 0.01,
+        toolCalls: 1,
+      },
+      learningSummary: "Created a source-backed learning candidate.",
+    });
+    expect(checkpoint.events.map((event) => event.eventType)).toEqual([
+      "runtime.started",
+      "observation.captured",
+      "usage.recorded",
+      "memory.retrieved",
+      "usage.recorded",
+      "plan.created",
+      "usage.recorded",
+      "policy.decided",
+      "usage.recorded",
+      "action.executed",
+      "usage.recorded",
+      "verification.completed",
+      "usage.recorded",
+      "learning.completed",
+      "run.completed",
+    ]);
+    expect(persistedEvents).toEqual(
+      checkpoint.events.map((event) => event.eventType),
+    );
+    expect(
+      checkpoint.events.every(
+        (event, index) =>
+          event.sequence === index + 1 &&
+          event.checkpointRevision === index + 1,
+      ),
+    ).toBe(true);
+  });
+
+  it("suspends for approval and resumes exactly once with matching nonce and revision", async () => {
+    let gatewayCalls = 0;
+    const options = runtimeOptions({
+      planner: {
+        plan: async () => ({
+          action: plan({
+            policyAction: {
+              id: "policy-action-install",
+              kind: "command",
+              summary: "Install dependencies",
+              command: "pnpm install",
+            },
+            expectedObservation: "working tree clean",
+          }),
+        }),
+      },
+      gateway: {
+        execute: async ({ action }) => {
+          gatewayCalls += 1;
+          return {
+            result: {
+              actionId: action.id,
+              observation: "working tree clean",
+              evidence: [],
+            },
+          };
+        },
+      },
+      approvalNonceFactory: ({ revision }) => `nonce-${revision}`,
+    });
+    const runtime = new CognitiveRuntimeV1(options);
+
+    const waiting = await runtime.start(runtimeInput());
+
+    expect(waiting.status).toBe("waiting_for_approval");
+    expect(waiting.approval).toMatchObject({
+      status: "pending",
+      nonce: `nonce-${waiting.revision}`,
+      requestedRevision: waiting.revision,
+    });
+    expect(gatewayCalls).toBe(0);
+
+    const resumeInput = {
+      runId: waiting.runId,
+      taskId: waiting.taskId,
+      approvalId: waiting.approval!.id,
+      approvalNonce: waiting.approval!.nonce,
+      expectedRevision: waiting.revision,
+      decision: "approved" as const,
+    };
+    const completed = await runtime.resume(waiting, resumeInput);
+
+    expect(completed.status).toBe("completed");
+    expect(completed.approval?.status).toBe("approved");
+    expect(completed.events.map((event) => event.eventType)).toContain(
+      "approval.approved",
+    );
+    expect(gatewayCalls).toBe(1);
+    await expect(runtime.resume(waiting, resumeInput)).rejects.toThrow(
+      "already been consumed",
+    );
+  });
+
+  it("rejects stale or mismatched approval continuations before execution", async () => {
+    let gatewayCalls = 0;
+    const runtime = new CognitiveRuntimeV1(
+      runtimeOptions({
+        planner: {
+          plan: async () => ({
+            action: plan({
+              policyAction: {
+                id: "policy-action-install",
+                kind: "command",
+                summary: "Install dependencies",
+                command: "pnpm install",
+              },
+            }),
+          }),
+        },
+        gateway: {
+          execute: async ({ action }) => {
+            gatewayCalls += 1;
+            return {
+              result: {
+                actionId: action.id,
+                observation: "working tree clean",
+                evidence: [],
+              },
+            };
+          },
+        },
+      }),
+    );
+    const waiting = await runtime.start(runtimeInput());
+
+    await expect(
+      runtime.resume(waiting, {
+        runId: waiting.runId,
+        taskId: waiting.taskId,
+        approvalId: waiting.approval!.id,
+        approvalNonce: "wrong-nonce",
+        expectedRevision: waiting.revision,
+        decision: "approved",
+      }),
+    ).rejects.toThrow("does not match");
+    await expect(
+      runtime.resume(waiting, {
+        runId: waiting.runId,
+        taskId: waiting.taskId,
+        approvalId: waiting.approval!.id,
+        approvalNonce: waiting.approval!.nonce,
+        expectedRevision: waiting.revision - 1,
+        decision: "approved",
+      }),
+    ).rejects.toThrow("revision is stale");
+    expect(gatewayCalls).toBe(0);
+  });
+
+  it("stops before gateway execution when accumulated model usage exceeds budget", async () => {
+    let gatewayCalls = 0;
+    const runtime = new CognitiveRuntimeV1(
+      runtimeOptions({
+        planner: {
+          plan: async () => ({
+            action: plan(),
+            usage: { modelTokens: 51, estimatedUsd: 0.02 },
+          }),
+        },
+        gateway: {
+          execute: async ({ action }) => {
+            gatewayCalls += 1;
+            return {
+              result: {
+                actionId: action.id,
+                observation: "working tree clean",
+                evidence: [],
+              },
+            };
+          },
+        },
+      }),
+    );
+
+    const checkpoint = await runtime.start(
+      runtimeInput({
+        ...runtimeBudget,
+        maxModelTokens: 50,
+      }),
+    );
+
+    expect(checkpoint.status).toBe("budget_exceeded");
+    expect(checkpoint.usage.modelTokens).toBe(61);
+    expect(checkpoint.events.at(-1)?.eventType).toBe("budget.exceeded");
+    expect(gatewayCalls).toBe(0);
   });
 });

@@ -68,6 +68,7 @@ export type CliApplicationDependencies = {
   readOnlyRole?: InteractiveSessionOptions["readOnlyRole"];
   run: (request: CliRunRequest) => Promise<CliRunResult>;
   diagnose?: (repositoryPath?: string) => Promise<string[]>;
+  listSkills?: InteractiveSessionOptions["listSkills"];
   persistSession?: (session: CliSessionSnapshot) => Promise<void>;
   loadSession?: (sessionId: string) => Promise<CliSessionSnapshot | undefined>;
   loadPreferences?: () => Promise<CliPreferences>;
@@ -505,6 +506,7 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
     readOnlyRole: dependencies.readOnlyRole,
     run: dependencies.run,
     diagnose: dependencies.diagnose,
+    listSkills: dependencies.listSkills,
     persistSession: dependencies.persistSession,
     loadSession: dependencies.loadSession,
     persistWorkingConfig: dependencies.persistWorkingConfig,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 async function readJson(path) {
@@ -21,6 +21,34 @@ test("internal desktop beta packaging contract is wired", async () => {
   assert.equal(tauriConfig.bundle.active, true);
   assert.deepEqual(tauriConfig.bundle.targets, ["appimage"]);
   assert.equal(tauriConfig.bundle.createUpdaterArtifacts, false);
+});
+
+test("internal desktop beta packages the exact Orynt built-in skill set", async () => {
+  const expected = [
+    "bug-fixer",
+    "change-planner",
+    "code-reviewer",
+    "release-readiness",
+    "repository-onboarding",
+  ];
+  const entries = await readdir("packages/skill-registry/builtins", {
+    withFileTypes: true,
+  });
+  assert.deepEqual(
+    entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(),
+    expected,
+  );
+
+  const packagingScript = await readText("scripts/package-desktop-internal.mjs");
+  assert.match(packagingScript, /desktop-memory-manager\.mjs/);
+  assert.match(packagingScript, /packages", "skill-registry", "builtins/);
+  assert.match(
+    packagingScript,
+    /orynt-runner\/packages\/skill-registry\/builtins/,
+  );
+  for (const name of expected) {
+    assert.match(packagingScript, new RegExp(`"${name}"`));
+  }
 });
 
 test("Fedora desktop dev launcher hydrates KDE session environment", async () => {
@@ -55,6 +83,8 @@ test("internal desktop beta docs describe release stance and smoke gates", async
     "First-run onboarding",
     "Provider readiness",
     "Repository run",
+    "Skills inventory",
+    "Skill context",
     "Persistence reload",
     "Evidence viewer",
     "Disabled surfaces",

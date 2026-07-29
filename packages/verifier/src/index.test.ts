@@ -14,6 +14,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { LocalRepositoryVerifier } from "./index";
+import { parsePorcelainStatusPaths } from "./gitStatus";
 
 const execFileAsync = promisify(execFile);
 
@@ -447,6 +448,71 @@ describe("LocalRepositoryVerifier", () => {
     expect(result.status).toBe("fail");
     expect(result.verdict.failureClass).toBe("unauthorized_file_touch");
     expect(result.diffScope.unauthorizedFiles).toEqual(["packages/actual.txt"]);
+  });
+
+  it("checks both source and destination paths for porcelain rename records", async () => {
+    const fixture = await createTempGitRepository("repo-rename-authorization");
+    await writeFile(path.join(fixture.worktreePath, ".env"), "SECRET=value\n");
+    await git(["add", ".env"], fixture.worktreePath);
+    await git(["commit", "-m", "add protected source"], fixture.worktreePath);
+    const baseRef = await git(["rev-parse", "HEAD"], fixture.worktreePath);
+    await git(
+      ["mv", ".env", "packages/renamed-protected.env"],
+      fixture.worktreePath,
+    );
+    const policy = policyWithAllowlist(
+      fixture.repoPath,
+      fixture.worktreePath,
+      [],
+    );
+    const verifier = new LocalRepositoryVerifier({
+      managedArtifactRoot: path.join(tempRoot, "artifacts-rename-authorization"),
+    });
+    const plan = verifier.createPlan({
+      runId: "run-rename-authorization",
+      taskId: "task-verify",
+      sandbox: createSandbox(
+        fixture.repoPath,
+        fixture.worktreePath,
+        baseRef,
+      ),
+      policy,
+      budget: createDefaultRunBudget(),
+      artifactRoot: path.join(
+        tempRoot,
+        "artifacts-rename-authorization",
+        "run-rename-authorization",
+      ),
+      config: {
+        defaultCommands: [],
+        authorizedChangedPaths: ["packages/renamed-protected.env"],
+        allowDestructiveChanges: true,
+      },
+    });
+
+    const result = await verifier.runVerification(plan, policy);
+
+    expect(result.status).toBe("fail");
+    expect(result.diffScope.changedFiles).toEqual(
+      expect.arrayContaining([".env", "packages/renamed-protected.env"]),
+    );
+    expect(result.diffScope.protectedFiles).toContain(".env");
+    expect(result.diffScope.unauthorizedFiles).toContain(".env");
+    expect(result.diffScope.destructiveFiles).toEqual(
+      expect.arrayContaining([".env", "packages/renamed-protected.env"]),
+    );
+  });
+
+  it("parses both paths for copy records without classifying them as destructive", () => {
+    const parsed = parsePorcelainStatusPaths(
+      "C  packages/copied-pass.mjs\0scripts/pass.mjs\0",
+    );
+
+    expect(parsed.changedFiles).toEqual([
+      "packages/copied-pass.mjs",
+      "scripts/pass.mjs",
+    ]);
+    expect(parsed.destructiveFiles).toEqual([]);
   });
 
   it("fails closed for empty interactive grants and does not expand directory grants", async () => {

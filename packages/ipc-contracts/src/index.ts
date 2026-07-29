@@ -11,6 +11,15 @@ export const ORYNT_ERROR_CODES = [
   "VERIFICATION_FAILED",
   "BUDGET_EXCEEDED",
   "USER_CANCELED",
+  "SKILL_MANIFEST_INVALID",
+  "SKILL_SOURCE_UNAVAILABLE",
+  "SKILL_TRUST_BLOCKED",
+  "SKILL_COLLISION",
+  "SKILL_PLAN_STALE",
+  "SKILL_DIGEST_MISMATCH",
+  "SKILL_LOCAL_DRIFT",
+  "SKILL_TRANSACTION_FAILED",
+  "SKILL_RECOVERY_REQUIRED",
 ] as const;
 
 export type OryntErrorCode = (typeof ORYNT_ERROR_CODES)[number];
@@ -72,6 +81,22 @@ export const SKILL_IPC_METHODS = [
   "skill.reject",
   "skill.supersede",
   "skill.archive",
+] as const;
+
+export const SKILL_MANAGER_IPC_METHODS = [
+  "skillInventory.scan",
+  "skillInventory.list",
+  "skillInventory.get",
+  "skillHub.listSources",
+  "skillHub.refresh",
+  "skillHub.search",
+  "skillHub.get",
+  "skillMutation.plan",
+  "skillMutation.approve",
+  "skillMutation.execute",
+  "skillMutation.history",
+  "skillMutation.recover",
+  "skillContext.snapshot",
 ] as const;
 
 export const CODEX_EXECUTION_IPC_METHODS = [
@@ -158,6 +183,7 @@ export type RunEvent =
   | "skill_replay_budget_estimated"
   | "skill_replay_plan_created"
   | "skill_replay_plan_blocked"
+  | "skill_context_snapshot_created"
   | "memory_redaction_applied"
   | "memory_extraction_finished"
   | "memory_extraction_failed"
@@ -241,6 +267,7 @@ export const RUN_EVENTS = [
   "skill_replay_budget_estimated",
   "skill_replay_plan_created",
   "skill_replay_plan_blocked",
+  "skill_context_snapshot_created",
   "memory_redaction_applied",
   "memory_extraction_finished",
   "memory_extraction_failed",
@@ -254,6 +281,7 @@ export type CreateRunInput = {
   taskId: string;
   workspaceId: string;
   repositoryPath: string;
+  selectedSkillIds?: string[];
   budget: {
     maxSteps: number;
     maxWallTimeMs: number;

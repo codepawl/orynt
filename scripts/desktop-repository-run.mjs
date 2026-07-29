@@ -44,8 +44,10 @@ async function main() {
     sandboxRoot: requireString(input, "sandboxRoot"),
     artifactRoot: requireString(input, "artifactRoot"),
     memoryRoot: typeof input.memoryRoot === "string" && input.memoryRoot.trim() ? input.memoryRoot.trim() : undefined,
+    budget: optionalObject(input, "budget"),
     modelConnection: optionalObject(input, "modelConnection"),
     thinkingEffort: optionalString(input, "thinkingEffort"),
+    skillContext: optionalObject(input, "skillContext"),
     onRunEvent: (event) => {
       process.stderr.write(`ORYNT_RUN_EVENT ${JSON.stringify(event)}\n`);
     },
