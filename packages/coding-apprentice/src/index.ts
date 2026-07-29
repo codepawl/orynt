@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -21,6 +21,8 @@ import {
   InMemoryAgentLedger,
   InMemoryRunStore,
   policyDecisionToSafetySnapshot,
+  redactSensitivePayload,
+  validateOrchestrationRecoveryTask,
   type AgentRun,
   type Actor,
   type ArtifactRef,
@@ -36,7 +38,11 @@ import {
   type MemoryExtractionResult,
   type MemoryNamespace,
   type MemoryStore,
+  type ModelInvocationRecord,
   type MonthlyUsageSummary,
+  type OrchestrationChildTask,
+  type OrchestrationPlan,
+  type ResolvedOrchestrationProfile,
   type RepositoryInspection,
   type RepositorySandbox,
   type Run,
@@ -81,8 +87,25 @@ export type DesktopModelConnectionReference = {
 
 export type DesktopThinkingEffort = "minimal" | "none" | "low" | "medium" | "high" | "xhigh";
 
+export type PostVerificationReviewResult = {
+  invocation: ModelInvocationRecord;
+  summary: string;
+  recoveryTask?: OrchestrationChildTask;
+};
+
+export type PostVerificationReviewContext = {
+  runId: string;
+  repositoryPath: string;
+  sandboxWorktreePath: string;
+  status: VerificationStatus;
+  summary: string;
+  signal?: AbortSignal;
+};
+
 export type CodingApprenticeDemoRequest = {
   goal: string;
+  activeGoal?: string;
+  acceptanceCriteria?: string[];
   taskId: string;
   workspaceId: string;
   userId?: string;
@@ -111,6 +134,20 @@ export type CodingApprenticeDemoRequest = {
   applyManualChange?: (context: ManualDemoChangeContext) => Promise<ManualDemoChangeResult | void> | ManualDemoChangeResult | void;
   modelConnection?: DesktopModelConnectionReference | null;
   thinkingEffort?: DesktopThinkingEffort | string | null;
+  signal?: AbortSignal;
+  postVerificationReview?: (
+    context: PostVerificationReviewContext,
+  ) => Promise<PostVerificationReviewResult | undefined>;
+  orchestration?: {
+    profile: ResolvedOrchestrationProfile;
+    plan?: OrchestrationPlan;
+  };
+  authorization?: {
+    expectedPaths: string[];
+    requireExpectedPaths?: boolean;
+    allowDestructiveChanges: boolean;
+    allowChangedFileLimitExceeded: boolean;
+  };
 };
 
 export type CodingApprenticeDemoResult = {
@@ -121,11 +158,16 @@ export type CodingApprenticeDemoResult = {
   contractArtifact: CodexContractArtifact;
   codexExecutionPlan?: CodexExecutionPlan;
   codexExecutionResult?: CodexExecutionResult;
+  codexExecutionResults: CodexExecutionResult[];
   importBundle: CodexResultBundle;
   verifierInput: VerificationPlanRequest;
   verifierInputPath: string;
   verificationPlan: VerificationPlan;
   verificationResult: VerificationResult;
+  verificationAttempts: VerificationResult[];
+  postVerificationReviewResult?: PostVerificationReviewResult;
+  postVerificationReviewError?: string;
+  recoveryAttempts: number;
   memoryExtractionResult: MemoryExtractionResult;
   cognitiveKernelResult: CognitiveKernelResult;
   cognitiveGatewayResult: GatewayExecutionResult;
@@ -143,15 +185,34 @@ export type CodingApprenticeDemoResult = {
 
 export type DesktopRepositoryRunRequest = {
   goal: string;
+  activeGoal?: string;
+  acceptanceCriteria?: string[];
+  authorization?: {
+    source: "automatic_policy" | "operator" | "headless";
+    reason: string;
+    expectedPaths?: string[];
+    allowDestructiveChanges?: boolean;
+    allowChangedFileLimitExceeded?: boolean;
+  };
   taskId: string;
   workspaceId: string;
   repositoryPath: string;
   sandboxRoot: string;
   artifactRoot: string;
   memoryRoot?: string;
+  budget?: RunBudget;
   modelConnection?: DesktopModelConnectionReference | null;
   thinkingEffort?: DesktopThinkingEffort | string | null;
+  orchestration?: {
+    profile: ResolvedOrchestrationProfile;
+    plan?: OrchestrationPlan;
+    priorInvocations: ModelInvocationRecord[];
+  };
+  postVerificationReview?: (
+    context: PostVerificationReviewContext,
+  ) => Promise<PostVerificationReviewResult | undefined>;
   onRunEvent?: (event: RunEvent) => void;
+  signal?: AbortSignal;
 };
 
 export type DesktopRepositoryRunOutput = {
@@ -162,6 +223,13 @@ export type DesktopRepositoryRunOutput = {
   eventCount: number;
   events: RunEvent[];
 };
+
+export class RepositoryRunCancelledError extends Error {
+  constructor() {
+    super("Repository action cancelled.");
+    this.name = "RepositoryRunCancelledError";
+  }
+}
 
 class ForwardingRunStore implements RunStore {
   constructor(
@@ -263,14 +331,41 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
   const runStore = request.onRunEvent ? new ForwardingRunStore(innerRunStore, request.onRunEvent) : innerRunStore;
   const result = await new LocalCodingApprenticeDemoOrchestrator({ runStore }).runDemo({
     goal: request.goal,
+    activeGoal: request.activeGoal,
+    acceptanceCriteria: request.acceptanceCriteria,
     taskId: request.taskId,
     workspaceId: request.workspaceId,
     repositoryPath,
     sandboxRoot: request.sandboxRoot,
     artifactRoot: request.artifactRoot,
     memoryRoot: request.memoryRoot,
+    budget: request.budget,
     modelConnection: request.modelConnection,
     thinkingEffort: request.thinkingEffort,
+    ...(request.postVerificationReview
+      ? { postVerificationReview: request.postVerificationReview }
+      : {}),
+    ...(request.orchestration
+      ? {
+          orchestration: {
+            profile: request.orchestration.profile,
+            ...(request.orchestration.plan
+              ? { plan: request.orchestration.plan }
+              : {}),
+          },
+        }
+      : {}),
+    signal: request.signal,
+    authorization: {
+      expectedPaths: request.authorization?.expectedPaths ?? [],
+      requireExpectedPaths:
+        request.authorization !== undefined &&
+        request.authorization.source !== "headless",
+      allowDestructiveChanges:
+        request.authorization?.allowDestructiveChanges ?? false,
+      allowChangedFileLimitExceeded:
+        request.authorization?.allowChangedFileLimitExceeded ?? false,
+    },
     validationCommands: ["node .codex/orynt-beta-verify.mjs"],
     allowedVerificationCommands: ["node .codex/orynt-beta-verify.mjs"],
     enableControlledCodexExecution: useControlledCodexExecution,
@@ -282,9 +377,15 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
           runId: run.id,
           planId: plan.id,
           status: "approved",
-          approvedBy: "desktop-operator",
-          reason: "Operator submitted a repository-scoped Codex CLI run from Orynt desktop.",
+          approvedBy:
+            request.authorization?.source === "automatic_policy"
+              ? "orynt-policy-engine"
+              : "desktop-operator",
+          reason:
+            request.authorization?.reason ??
+            "Operator submitted a repository-scoped Codex CLI run from Orynt desktop.",
           approvedAt: new Date().toISOString(),
+          authorizationSource: request.authorization?.source ?? "operator",
         })
       : undefined,
     applyManualChange: useControlledCodexExecution
@@ -302,6 +403,7 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
           return { manualLogPath };
         },
   });
+  if (request.signal?.aborted) throw new RepositoryRunCancelledError();
 
   const runArtifactRoot = result.contractArtifact.artifactRoot;
   redactedLogPath = result.codexExecutionResult?.lastMessagePath ?? redactedLogPath;
@@ -309,8 +411,129 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
   const skillPlanPath = path.join(runArtifactRoot, "skill-invocation-plan.json");
   const manifestPath = path.join(runArtifactRoot, "artifact-manifest.json");
   const verificationResultPath = path.join(runArtifactRoot, "verification-result.json");
+  const modelInvocationLedgerPath = path.join(
+    runArtifactRoot,
+    "model-invocations.json",
+  );
+  const orchestrationAttemptLedgerPath = path.join(
+    runArtifactRoot,
+    "orchestration-attempts.json",
+  );
   const memoryStorePath = path.join(request.memoryRoot ?? path.join(runArtifactRoot, "memory"), "memory-store.json");
 
+  const modelInvocations = [
+    ...(request.orchestration?.priorInvocations ?? []).map((invocation) => ({
+      ...invocation,
+      runId: result.run.id,
+    })),
+  ];
+  let postVerificationReviewError = result.postVerificationReviewError;
+  let postVerificationReviewSummary: string | undefined;
+  if (request.orchestration && result.codexExecutionResults.length > 0) {
+    const implementer = request.orchestration.profile.roles.implementer;
+    result.codexExecutionResults.forEach((execution, retryIndex) => {
+      modelInvocations.push({
+        schemaVersion: 1,
+        id: execution.id,
+        runId: result.run.id,
+        ...(retryIndex > 0 && result.postVerificationReviewResult
+          ? {
+              parentInvocationId:
+                result.postVerificationReviewResult.invocation.id,
+            }
+          : {}),
+        taskId:
+          retryIndex > 0
+            ? result.postVerificationReviewResult?.recoveryTask?.id ??
+              `${request.taskId}-recovery-${retryIndex}`
+            : request.taskId,
+        role: "implementer",
+        providerId: "codex-cli",
+        modelId: implementer.modelId,
+        thinkingEffort: implementer.thinkingEffort,
+        contextHash: createHash("sha256")
+          .update(
+            retryIndex > 0
+              ? result.postVerificationReviewResult?.recoveryTask
+                  ?.instruction ?? request.goal
+              : request.goal,
+          )
+          .digest("hex"),
+        status: execution.status === "finished" ? "completed" : "failed",
+        inputTokens: null,
+        outputTokens: null,
+        estimatedCostUsd: null,
+        startedAt: execution.startedAt,
+        completedAt: execution.completedAt,
+        retryIndex,
+        artifactRefs: execution.artifacts.map((artifact) => artifact.uri),
+      });
+    });
+  }
+  if (result.postVerificationReviewResult) {
+    modelInvocations.push(result.postVerificationReviewResult.invocation);
+    const redacted = redactSensitivePayload(
+      result.postVerificationReviewResult.summary,
+    ).payload;
+    postVerificationReviewSummary =
+      typeof redacted === "string" ? redacted.slice(0, 8_000) : undefined;
+  }
+  if (request.orchestration) {
+    if (request.signal?.aborted) throw new RepositoryRunCancelledError();
+    await writeFile(
+      modelInvocationLedgerPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          runId: result.run.id,
+          profile: request.orchestration.profile,
+          invocations: modelInvocations,
+          ...(postVerificationReviewSummary
+            ? { reviewerSummary: postVerificationReviewSummary }
+            : {}),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    await writeFile(
+      orchestrationAttemptLedgerPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          runId: result.run.id,
+          recoveryAttempts: result.recoveryAttempts,
+          attempts: result.verificationAttempts.map(
+            (verification, retryIndex) => ({
+              retryIndex,
+              verificationResultId: verification.id,
+              status: verification.status,
+              summary: verification.verdict.reason,
+              artifactRefs: verification.artifacts,
+            }),
+          ),
+          reviewerDecision: result.postVerificationReviewResult
+            ? {
+                invocationId:
+                  result.postVerificationReviewResult.invocation.id,
+                recoveryTaskId:
+                  result.postVerificationReviewResult.recoveryTask?.id ?? null,
+              }
+            : null,
+          finalVerificationResultId: result.verificationResult.id,
+          ...(postVerificationReviewError
+            ? { recoveryError: postVerificationReviewError }
+            : {}),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }
+
+  if (request.signal?.aborted) throw new RepositoryRunCancelledError();
   await writeFile(eventLogPath, `${JSON.stringify(result.events, null, 2)}\n`, "utf8");
   await writeFile(skillPlanPath, `${JSON.stringify(result.skillInvocationPlan, null, 2)}\n`, "utf8");
   await writeFile(
@@ -326,6 +549,25 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
         artifactRoot: runArtifactRoot,
         modelConnection: request.modelConnection ?? null,
         thinkingEffort: request.thinkingEffort ?? null,
+        orchestration: request.orchestration
+          ? {
+              sourcePreset: request.orchestration.profile.sourcePreset,
+              effectivePreset: request.orchestration.profile.preset,
+              omittedRoles: request.orchestration.profile.omittedRoles,
+              invocationCount: modelInvocations.length,
+              recoveryAttempts: result.recoveryAttempts,
+              reviewerStatus: postVerificationReviewError
+                ? "unavailable"
+                : modelInvocations.some(
+                      (invocation) => invocation.role === "reviewer",
+                    )
+                  ? "completed"
+                  : "not_requested",
+              ...(postVerificationReviewError
+                ? { reviewerError: postVerificationReviewError }
+                : {}),
+            }
+          : null,
         status: result.verificationResult.status,
         summary: result.summary,
         budgetedAgent: {
@@ -346,6 +588,12 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
           redactedLog: redactedLogPath || null,
           memoryStore: memoryStorePath,
           replayPlan: skillPlanPath,
+          modelInvocations: request.orchestration
+            ? modelInvocationLedgerPath
+            : null,
+          orchestrationAttempts: request.orchestration
+            ? orchestrationAttemptLedgerPath
+            : null,
         },
         artifactRefs: result.artifacts,
         memory: {
@@ -366,6 +614,7 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
     )}\n`,
     "utf8",
   );
+  if (request.signal?.aborted) throw new RepositoryRunCancelledError();
 
   return {
     runId: result.run.id,
@@ -449,6 +698,12 @@ export class LocalCodingApprenticeDemoOrchestrator {
       repositoryPath: request.repositoryPath,
       budget,
     });
+    const assertNotCancelled = () => {
+      if (!request.signal?.aborted) return;
+      this.runStore.updateRunStatus(run.id, "cancelled");
+      throw new RepositoryRunCancelledError();
+    };
+    assertNotCancelled();
     const userId = request.userId ?? "local-operator";
     const ledgerRun = this.agentLedger.createRun({
       id: run.id,
@@ -477,6 +732,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
     const managedArtifactRoot = path.resolve(request.artifactRoot);
     const runArtifactRoot = path.join(managedArtifactRoot, run.id);
     await mkdir(runArtifactRoot, { recursive: true });
+    assertNotCancelled();
 
     this.runStore.appendEvent(run.id, {
       type: "run_started",
@@ -508,6 +764,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
       baseRef,
     };
     const inspection = await sandboxManager.inspectRepository(sandboxRequest, policy);
+    assertNotCancelled();
     this.runStore.appendEvent(run.id, {
       type: "sandbox_create_requested",
       actor: this.actor,
@@ -530,6 +787,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
       safety: policyDecisionToSafetySnapshot(policy, worktreePlan.policyDecision),
     });
     const sandbox = await sandboxManager.createWorktree(worktreePlan);
+    assertNotCancelled();
     this.runStore.appendEvent(run.id, {
       type: "sandbox_created",
       actor: this.actor,
@@ -539,11 +797,53 @@ export class LocalCodingApprenticeDemoOrchestrator {
       },
     });
 
+    let managedVerifier:
+      | {
+          path: string;
+          content: string;
+        }
+      | undefined;
     if ((request.validationCommands ?? []).includes("node .codex/orynt-beta-verify.mjs")) {
-      const verifyScriptPath = path.join(sandbox.worktreePath, ".codex", "orynt-beta-verify.mjs");
+      const verifyScriptPath = path.join(
+        sandbox.worktreePath,
+        ".codex",
+        "orynt-beta-verify.mjs",
+      );
+      const verifyScriptContent = desktopRepositoryVerifierScript();
       await mkdir(path.dirname(verifyScriptPath), { recursive: true });
-      await writeFile(verifyScriptPath, desktopRepositoryVerifierScript(), "utf8");
+      await writeFile(verifyScriptPath, verifyScriptContent, "utf8");
+      managedVerifier = {
+        path: verifyScriptPath,
+        content: verifyScriptContent,
+      };
     }
+    const enforceManagedVerifierIntegrity = async (
+      stage: "before import" | "after trusted verification",
+    ): Promise<string | undefined> => {
+      if (!managedVerifier) {
+        return undefined;
+      }
+      const actualVerifierContent = await readFile(managedVerifier.path, "utf8").catch(
+        () => undefined,
+      );
+      if (actualVerifierContent === managedVerifier.content) {
+        return undefined;
+      }
+      await mkdir(path.dirname(managedVerifier.path), { recursive: true });
+      await writeFile(managedVerifier.path, managedVerifier.content, "utf8");
+      const summary =
+        `Managed verifier integrity check failed ${stage}: the repository run modified Orynt's trusted verifier.`;
+      this.runStore.appendEvent(run.id, {
+        type: "policy_violation",
+        actor: this.actor,
+        payload: {
+          summary,
+          path: ".codex/orynt-beta-verify.mjs",
+          stage,
+        },
+      });
+      return summary;
+    };
 
     const codexAdapter = new LocalCodexContractAdapter({
       managedArtifactRoot,
@@ -568,6 +868,13 @@ export class LocalCodingApprenticeDemoOrchestrator {
             ]
           : []),
         ...(request.thinkingEffort ? [`Thinking effort: ${request.thinkingEffort}.`] : []),
+        ...(request.activeGoal?.trim()
+          ? [`Active Orynt objective: ${request.activeGoal.trim()}`]
+          : []),
+        ...((request.acceptanceCriteria ?? [])
+          .map((criterion) => criterion.trim())
+          .filter(Boolean)
+          .map((criterion) => `Orynt acceptance criterion: ${criterion}`)),
       ],
       constraints: useControlledCodexExecution
         ? readOnlyRepositoryRun
@@ -590,11 +897,13 @@ export class LocalCodingApprenticeDemoOrchestrator {
               "Repository has been inspected without modifying source files.",
               "Final answer explains the codebase structure and relevant implementation entry points.",
               "Verifier records final evidence from repository inspection and the local smoke script.",
+              ...((request.acceptanceCriteria ?? []).map((criterion) => criterion.trim()).filter(Boolean)),
             ]
           : [
               "Requested repository task is implemented in the sandbox.",
               "Verifier input is created.",
               "Verifier records final evidence from changed files and the local smoke script.",
+              ...((request.acceptanceCriteria ?? []).map((criterion) => criterion.trim()).filter(Boolean)),
             ]
         : ["Manual result is imported.", "Verifier input is created.", "Verifier records final evidence."],
       repository: inspection,
@@ -606,17 +915,36 @@ export class LocalCodingApprenticeDemoOrchestrator {
       executionMode: useControlledCodexExecution ? "manual_cli" : "contract_only",
       modelId: request.modelConnection?.modelId,
       modelLabel: request.modelConnection?.modelLabel,
+      modelRole: "implementer",
+      thinkingEffort:
+        typeof request.thinkingEffort === "string"
+          ? request.thinkingEffort as DesktopThinkingEffort
+          : undefined,
     });
     const contractArtifact = await codexAdapter.writeContractArtifact(contract, runArtifactRoot);
 
     const verifier = new LocalRepositoryVerifier({
       managedArtifactRoot,
       runStore: this.runStore,
+      ...(managedVerifier
+        ? {
+            trustedCommandOverrides: {
+              "node .codex/orynt-beta-verify.mjs": {
+                command: process.execPath,
+                args: ["--input-type=module", "-"],
+                stdin: managedVerifier.content,
+                afterExecution: () =>
+                  enforceManagedVerifierIntegrity("after trusted verification"),
+              },
+            },
+          }
+        : {}),
     });
 
     let verificationPlan: VerificationPlan | undefined;
     let codexExecutionPlan: CodexExecutionPlan | undefined;
     let codexExecutionResult: CodexExecutionResult | undefined;
+    const codexExecutionResults: CodexExecutionResult[] = [];
     let manualLogPath = request.manualLogPath;
     let validationTranscriptPath = request.validationTranscriptPath;
 
@@ -656,15 +984,23 @@ export class LocalCodingApprenticeDemoOrchestrator {
         id: `${approval.id}-ledger`,
         runId: run.id,
         actionId: codexExecutionPlan.id,
-        permissionTier: "review",
-        decision: "approved",
+        permissionTier:
+          approval.authorizationSource === "automatic_policy" ? "safe" : "review",
+        decision:
+          approval.authorizationSource === "automatic_policy"
+            ? "auto_allowed"
+            : "approved",
         reason: approval.reason,
         policyVersion: policy.id,
         requestedAt: codexExecutionPlan.createdAt,
         decidedAt: approval.approvedAt,
-        decidedByUserId: approval.approvedBy,
+        decidedByUserId:
+          approval.authorizationSource === "automatic_policy"
+            ? null
+            : approval.approvedBy,
       });
-      codexExecutionResult = await codexAdapter.executeApprovedContract(codexExecutionPlan, approval);
+      codexExecutionResult = await codexAdapter.executeApprovedContract(codexExecutionPlan, approval, { signal: request.signal });
+      codexExecutionResults.push(codexExecutionResult);
       this.agentLedger.recordGatewayUsage({
         id: `${codexExecutionResult.id}-repository-gateway`,
         runId: run.id,
@@ -678,6 +1014,13 @@ export class LocalCodingApprenticeDemoOrchestrator {
         requestCount: 1,
         createdAt: codexExecutionResult.completedAt,
       });
+      if (
+        codexExecutionResult.status === "cancelled" ||
+        request.signal?.aborted
+      ) {
+        this.runStore.updateRunStatus(run.id, "cancelled");
+        throw new RepositoryRunCancelledError();
+      }
       if (codexExecutionResult.status !== "finished") {
         const failureSummary = codexAdapter.summarizeExecution(codexExecutionResult);
         this.runStore.updateRunStatus(run.id, "failed");
@@ -717,6 +1060,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
       validationTranscriptPath = executionImportRequest.validationTranscriptPath;
     }
 
+    assertNotCancelled();
     const manualChangeResult = await request.applyManualChange?.({
       run,
       inspection,
@@ -726,12 +1070,21 @@ export class LocalCodingApprenticeDemoOrchestrator {
     });
     manualLogPath = manualChangeResult?.manualLogPath ?? manualLogPath;
     validationTranscriptPath = manualChangeResult?.validationTranscriptPath ?? validationTranscriptPath;
+    assertNotCancelled();
+
+    const managedVerifierFailure =
+      await enforceManagedVerifierIntegrity("before import");
+    assertNotCancelled();
+    if (managedVerifierFailure) {
+      this.runStore.updateRunStatus(run.id, "failed");
+      throw new Error(managedVerifierFailure);
+    }
 
     const importer = new LocalManualCodexResultImporter({
       managedArtifactRoot,
       runStore: this.runStore,
     });
-    const importBundle = await importer.importResultBundle({
+    let importBundle = await importer.importResultBundle({
       runId: run.id,
       taskId: run.taskId,
       sandbox,
@@ -742,20 +1095,273 @@ export class LocalCodingApprenticeDemoOrchestrator {
       validationTranscriptPath,
       userNotes: request.userNotes,
       validationCommands: request.validationCommands ?? [],
+      expectedPaths: request.authorization?.expectedPaths,
+      requireExpectedPaths:
+        request.authorization?.requireExpectedPaths ?? false,
+      allowDestructiveChanges:
+        request.authorization?.allowDestructiveChanges ?? false,
+      allowChangedFileLimitExceeded:
+        request.authorization?.allowChangedFileLimitExceeded ?? false,
     });
-    const verifierInput = importer.createVerifierInput(importBundle);
+    assertNotCancelled();
+    let verifierInput = importer.createVerifierInput(importBundle);
     verifierInput.config = {
       ...verifierInput.config,
       defaultCommands: [],
       requireChangedFiles: !readOnlyRepositoryRun,
+      authorizedChangedPaths: request.authorization?.expectedPaths,
+      requireAuthorizedChangedPaths:
+        request.authorization?.requireExpectedPaths ?? false,
+      allowDestructiveChanges:
+        request.authorization?.allowDestructiveChanges ?? false,
+      allowChangedFileLimitExceeded:
+        request.authorization?.allowChangedFileLimitExceeded ?? false,
       artifactRoot: runArtifactRoot,
     };
     const verifierInputPath = path.join(runArtifactRoot, "verifier-input.json");
     const verifierInputJson = `${JSON.stringify(verifierInput, null, 2)}\n`;
     await writeFile(verifierInputPath, verifierInputJson, { encoding: "utf8" });
 
-    verificationPlan ??= verifier.createPlan(verifierInput);
-    const verificationResult = await verifier.runVerification(verificationPlan, policy);
+    verificationPlan = verifier.createPlan(verifierInput);
+    let verificationResult: VerificationResult;
+    try {
+      verificationResult = await verifier.runVerification(
+        verificationPlan,
+        policy,
+        { signal: request.signal },
+      );
+    } catch (error) {
+      if (
+        request.signal?.aborted ||
+        (error instanceof Error &&
+          error.name === "VerificationCancelledError")
+      ) {
+        this.runStore.updateRunStatus(run.id, "cancelled");
+        throw new RepositoryRunCancelledError();
+      }
+      throw error;
+    }
+    assertNotCancelled();
+    const verificationAttempts: VerificationResult[] = [verificationResult];
+    let postVerificationReviewResult: PostVerificationReviewResult | undefined;
+    let postVerificationReviewError: string | undefined;
+    let recoveryAttempts = 0;
+    if (request.postVerificationReview) {
+      try {
+        postVerificationReviewResult = await request.postVerificationReview({
+          runId: run.id,
+          repositoryPath: inspection.gitRoot,
+          sandboxWorktreePath: sandbox.worktreePath,
+          status: verificationResult.status,
+          summary: verifier.summarizeResult(verificationResult),
+          signal: request.signal,
+        });
+      } catch (error) {
+        if (
+          request.signal?.aborted ||
+          (error instanceof Error && error.name === "AbortError")
+        ) {
+          throw new RepositoryRunCancelledError();
+        }
+        postVerificationReviewError =
+          "Reviewer invocation failed after verification.";
+      }
+    }
+    assertNotCancelled();
+    const recoveryReview = postVerificationReviewResult;
+    const recoveryTask = recoveryReview?.recoveryTask;
+    if (
+      verificationResult.status !== "pass" &&
+      recoveryReview &&
+      recoveryTask &&
+      request.enableControlledCodexExecution &&
+      request.orchestration?.plan &&
+      request.orchestration.profile.maxRecoveryAttempts > 0
+    ) {
+      try {
+        validateOrchestrationRecoveryTask(
+          recoveryTask,
+          request.orchestration.plan,
+          request.orchestration.profile,
+        );
+        recoveryAttempts = 1;
+        const recoveryArtifactRoot = path.join(
+          runArtifactRoot,
+          "attempts",
+          "recovery-1",
+        );
+        await mkdir(recoveryArtifactRoot, { recursive: true });
+        await writeFile(
+          path.join(
+            runArtifactRoot,
+            "attempts",
+            "initial-verification-result.json",
+          ),
+          `${JSON.stringify(verificationResult, null, 2)}\n`,
+          "utf8",
+        );
+        const recoveryVerificationPlan = verifier.createPlan({
+          runId: run.id,
+          taskId: recoveryTask.id,
+          sandbox,
+          policy,
+          budget,
+          commands: request.validationCommands ?? [],
+          artifactRoot: recoveryArtifactRoot,
+          config: {
+            defaultCommands: [],
+            requireChangedFiles: !readOnlyRepositoryRun,
+            authorizedChangedPaths: request.authorization?.expectedPaths,
+            requireAuthorizedChangedPaths:
+              request.authorization?.requireExpectedPaths ?? false,
+            allowDestructiveChanges:
+              request.authorization?.allowDestructiveChanges ?? false,
+            allowChangedFileLimitExceeded:
+              request.authorization?.allowChangedFileLimitExceeded ?? false,
+            artifactRoot: recoveryArtifactRoot,
+          },
+        });
+        const recoveryContract = codexAdapter.createContract({
+          runId: run.id,
+          taskId: recoveryTask.id,
+          goal: recoveryTask.instruction,
+          context: [
+            "Verifier-driven recovery attempt 1 of 1.",
+            `Original goal: ${request.goal}`,
+            `Failed verifier result: ${verifier.summarizeResult(verificationResult)}`,
+            `Reviewer summary: ${postVerificationReviewResult?.summary ?? "not available"}`,
+            "The original operator approval covers only this bounded retry in the same sandbox.",
+          ],
+          constraints: [
+            "Keep all changes within the original approved repository paths.",
+            "Do not broaden operations, path scope, permissions, or dependencies.",
+            "Address only the recorded verifier failure.",
+          ],
+          doneWhen: [
+            "The recorded verifier failure is repaired.",
+            "The original acceptance criteria remain satisfied.",
+          ],
+          repository: inspection,
+          sandbox,
+          policy,
+          budget,
+          validationCommands: request.validationCommands ?? [],
+          artifactRoot: recoveryArtifactRoot,
+          executionMode: "manual_cli",
+          modelId: request.modelConnection?.modelId,
+          modelLabel: request.modelConnection?.modelLabel,
+          modelRole: "implementer",
+          thinkingEffort:
+            typeof request.thinkingEffort === "string"
+              ? request.thinkingEffort as DesktopThinkingEffort
+              : undefined,
+          parentInvocationId: recoveryReview.invocation.id,
+        });
+        const recoveryContractArtifact =
+          await codexAdapter.writeContractArtifact(
+            recoveryContract,
+            recoveryArtifactRoot,
+          );
+        const recoveryExecutionPlan = await codexAdapter.planExecution({
+          contract: recoveryContract,
+          contractArtifact: recoveryContractArtifact,
+          sandbox,
+          policy,
+          budget,
+          artifactRoot: recoveryArtifactRoot,
+          verifierPlan: recoveryVerificationPlan,
+        });
+        const recoveryApproval = await request.createExecutionApproval?.({
+          run,
+          plan: recoveryExecutionPlan,
+          artifactRoot: recoveryArtifactRoot,
+        });
+        if (!recoveryApproval) {
+          throw new Error(
+            "Bounded recovery requires the original run approval.",
+          );
+        }
+        const recoveryExecutionResult =
+          await codexAdapter.executeApprovedContract(
+            recoveryExecutionPlan,
+            recoveryApproval,
+            { signal: request.signal },
+          );
+        codexExecutionResults.push(recoveryExecutionResult);
+        if (
+          recoveryExecutionResult.status === "cancelled" ||
+          request.signal?.aborted
+        ) {
+          throw new RepositoryRunCancelledError();
+        }
+        if (recoveryExecutionResult.status !== "finished") {
+          postVerificationReviewError =
+            "The bounded recovery implementer did not finish.";
+        } else {
+          codexExecutionResult = recoveryExecutionResult;
+          const recoveryImportRequest =
+            codexAdapter.createResultImportRequest(recoveryExecutionResult);
+          importBundle = await importer.importResultBundle({
+            runId: run.id,
+            taskId: recoveryTask.id,
+            sandbox,
+            policy,
+            budget,
+            artifactRoot: recoveryArtifactRoot,
+            manualLogPath: recoveryImportRequest.manualLogPath,
+            validationTranscriptPath:
+              recoveryImportRequest.validationTranscriptPath,
+            validationCommands: request.validationCommands ?? [],
+            expectedPaths: request.authorization?.expectedPaths,
+            requireExpectedPaths:
+              request.authorization?.requireExpectedPaths ?? false,
+            allowDestructiveChanges:
+              request.authorization?.allowDestructiveChanges ?? false,
+            allowChangedFileLimitExceeded:
+              request.authorization?.allowChangedFileLimitExceeded ?? false,
+          });
+          verifierInput = importer.createVerifierInput(importBundle);
+          verifierInput.config = {
+            ...verifierInput.config,
+            defaultCommands: [],
+            requireChangedFiles: !readOnlyRepositoryRun,
+            authorizedChangedPaths: request.authorization?.expectedPaths,
+            requireAuthorizedChangedPaths:
+              request.authorization?.requireExpectedPaths ?? false,
+            allowDestructiveChanges:
+              request.authorization?.allowDestructiveChanges ?? false,
+            allowChangedFileLimitExceeded:
+              request.authorization?.allowChangedFileLimitExceeded ?? false,
+            artifactRoot: runArtifactRoot,
+          };
+          await writeFile(
+            verifierInputPath,
+            `${JSON.stringify(verifierInput, null, 2)}\n`,
+            { encoding: "utf8" },
+          );
+          verificationPlan = verifier.createPlan(verifierInput);
+          verificationResult = await verifier.runVerification(
+            verificationPlan,
+            policy,
+            { signal: request.signal },
+          );
+          verificationAttempts.push(verificationResult);
+        }
+      } catch (error) {
+        if (
+          request.signal?.aborted ||
+          error instanceof RepositoryRunCancelledError ||
+          (error instanceof Error && error.name === "AbortError")
+        ) {
+          throw new RepositoryRunCancelledError();
+        }
+        postVerificationReviewError =
+          error instanceof Error
+            ? `Recovery blocked: ${error.message}`
+            : "Recovery blocked by deterministic validation.";
+      }
+    }
+    assertNotCancelled();
     const memoryRoot = path.resolve(request.memoryRoot ?? path.join(runArtifactRoot, "memory"));
     const memoryStore = this.memoryStore ?? new LocalJsonMemoryStore({ memoryRoot });
     const memoryExtractor = new LocalMemoryExtractor({
@@ -792,6 +1398,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
             verificationResult,
             retention: { ttlDays: 30, archiveAfterDays: 90 },
           });
+    assertNotCancelled();
     const summary = verifier.summarizeResult(verificationResult);
     const cognitiveTrace = await this.runCognitiveKernel({
       run,
@@ -800,6 +1407,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
       verificationResult,
       memoryExtractionResult,
     });
+    assertNotCancelled();
     const feedbackMemory = request.userNotes?.trim()
       ? await memoryStore.writeSemanticMemory({
           namespace: memoryNamespace,
@@ -823,12 +1431,14 @@ export class LocalCodingApprenticeDemoOrchestrator {
           },
         })
       : undefined;
+    assertNotCancelled();
     const skillInvocationPlan = await new LocalSkillRegistry().planSkillInvocation({
       namespace: memoryNamespace,
       runId: run.id,
       taskId: run.taskId,
       text: request.goal,
     });
+    assertNotCancelled();
     this.agentLedger.appendEvent(run.id, {
       id: `${run.id}-ledger-event-${verificationResult.status === "pass" ? "verification-passed" : "verification-failed"}`,
       eventType: verificationResult.status === "pass" ? "verification.passed" : "verification.failed",
@@ -885,7 +1495,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
     });
     const finalLedgerRun = this.agentLedger.completeRun(run.id, {
       endedAt: verificationResult.completedAt,
-      retryCount: 0,
+      retryCount: recoveryAttempts,
       finalSummary: summary,
       failureReason: verificationResult.status === "pass" ? null : verificationResult.verdict.reason,
     });
@@ -911,11 +1521,20 @@ export class LocalCodingApprenticeDemoOrchestrator {
       contractArtifact,
       codexExecutionPlan,
       codexExecutionResult,
+      codexExecutionResults,
       importBundle,
       verifierInput,
       verifierInputPath,
       verificationPlan,
       verificationResult,
+      verificationAttempts,
+      ...(postVerificationReviewResult
+        ? { postVerificationReviewResult }
+        : {}),
+      ...(postVerificationReviewError
+        ? { postVerificationReviewError }
+        : {}),
+      recoveryAttempts,
       memoryExtractionResult,
       cognitiveKernelResult: cognitiveTrace.cognitiveKernelResult,
       cognitiveGatewayResult: cognitiveTrace.cognitiveGatewayResult,

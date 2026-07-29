@@ -16,7 +16,10 @@ export type ImportFailureReason =
   | "policy_blocked"
   | "no_changes"
   | "protected_path_touched"
-  | "unexpected_file_touch";
+  | "unexpected_file_touch"
+  | "unauthorized_file_touch"
+  | "changed_file_limit_exceeded"
+  | "destructive_change_detected";
 
 export type ImportedFileStatus = "added" | "modified" | "deleted" | "renamed" | "copied" | "untracked" | "unknown";
 
@@ -33,6 +36,7 @@ export type ImportedPatchSummary = {
   allowedFiles: string[];
   protectedFiles: string[];
   unexpectedFiles: string[];
+  unauthorizedFiles?: string[];
   withinAllowedScope: boolean;
   protectedPathTouched: boolean;
   diffStat: string;
@@ -84,6 +88,10 @@ export type CodexResultImportRequest = {
   validationTranscriptPath?: string;
   userNotes?: string;
   validationCommands?: string[];
+  expectedPaths?: string[];
+  requireExpectedPaths?: boolean;
+  allowDestructiveChanges?: boolean;
+  allowChangedFileLimitExceeded?: boolean;
 };
 
 export type CodexResultBundle = {

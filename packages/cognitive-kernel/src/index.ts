@@ -1,5 +1,7 @@
 import { ConservativePolicyEngine, type ActionRisk, type ArtifactRef, type CorePolicy, type PolicyAction } from "@codepawl/shared";
 
+export * from "./orchestrationScheduler.js";
+
 export type KernelPhase = "observe" | "retrieve" | "plan" | "ask" | "gate" | "execute" | "verify" | "recover" | "learn" | "summarize";
 
 export type KernelStatus = "completed" | "waiting_for_user" | "blocked" | "failed";

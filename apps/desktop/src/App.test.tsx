@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockRunState, type MockRunState, type RunEvent } from "@codepawl/shared";
 
-import App from "./App";
+import App, { OryntDropdown } from "./App";
 import { getLandingUrl } from "./landingUrl";
 import { orynt } from "./oryntClient";
 import type { CodexConnectionPreflightResult, ModelCatalogResult, ModelConnectionReference, PersistedRunRecord, SettingsSnapshot } from "./oryntClient";
@@ -598,15 +598,17 @@ describe("Orynt desktop shell", () => {
     dismissPrivateBetaOnboarding();
     const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(readyModelSettings({ thinkingEffort: "high" }));
     vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue(initialSettings.codexConnection!.lastPreflight!);
-    const listProviderModelsSpy = vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
-      providerId: "codex-cli",
-      fetchedAt: "2026-07-05T00:00:00.000Z",
-      warnings: [],
-      models: [
-        { id: "gpt-5.5", label: "GPT-5.5", source: "codex-cli" },
-        { id: "gpt-5.5-turbo", label: "GPT-5.5 Turbo", source: "codex-cli" },
-      ],
-    });
+    window.localStorage.setItem(
+      `${modelsDevProviderCatalogStoragePrefix}codex-cli`,
+      JSON.stringify({
+        providerId: "codex-cli",
+        fetchedAt: new Date().toISOString(),
+        models: [
+          { id: "gpt-5.5", label: "GPT-5.5", source: "codex-cli" },
+          { id: "gpt-5.5-turbo", label: "GPT-5.5 Turbo", source: "codex-cli" },
+        ],
+      }),
+    );
     const saveModelConnectionSpy = vi.spyOn(orynt, "saveModelConnection").mockResolvedValue(savedConnection);
     vi.spyOn(orynt, "preflightModelConnection").mockResolvedValue({
       ...initialConnection.lastPreflight!,
@@ -624,26 +626,28 @@ describe("Orynt desktop shell", () => {
     expect(effortButton.querySelector("small")).toBeNull();
 
     fireEvent.click(modelButton);
-    let modelMenu = await screen.findByRole("dialog", { name: "Choose model" });
+    let modelMenu = await screen.findByRole("menu", { name: "Choose model" });
     expect(modelButton).toHaveAttribute("aria-expanded", "true");
-    expect(within(modelMenu).queryByText("Run model")).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("heading", { name: "Choose model" })).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("radiogroup", { name: "Model provider" })).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("textbox", { name: "API key environment variable" })).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByText("Provider")).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("radio", { name: /Codex CLI/ })).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("listbox", { name: "Model" })).not.toBeInTheDocument();
-    expect(within(modelMenu).queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
+    expect(within(modelMenu).queryByRole("button", { name: "Refresh available models" })).not.toBeInTheDocument();
+    expect(within(modelMenu).queryByText(/^Model$/)).not.toBeInTheDocument();
+    expect(within(modelMenu).queryByText(/available(?: - (?:live|cached))?$/)).not.toBeInTheDocument();
+    expect(modelMenu.querySelector(".composer-option-icon")).toBeNull();
+    expect(within(modelMenu).queryByText("gpt-5.5", { exact: true })).not.toBeInTheDocument();
+    const selectedModelOption = within(modelMenu).getByRole("menuitemradio", { name: "GPT-5.5" });
+    const turboModelOption = within(modelMenu).getByRole("menuitemradio", { name: "GPT-5.5 Turbo" });
+    expect(within(modelMenu).getAllByRole("menuitemradio")).toHaveLength(2);
+    expect(selectedModelOption).toHaveAttribute("aria-checked", "true");
+    expect(selectedModelOption.querySelectorAll(".composer-option-check")).toHaveLength(1);
+    expect(turboModelOption).toHaveAttribute("aria-checked", "false");
+    expect(turboModelOption.querySelector(".composer-option-check")).toBeNull();
+    expect(selectedModelOption.querySelector("strong, small")).toBeNull();
+    expect(turboModelOption.querySelector("strong, small")).toBeNull();
     fireEvent.keyDown(document, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose model" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("menu", { name: "Choose model" })).not.toBeInTheDocument());
     expect(modelButton).toHaveFocus();
     fireEvent.click(modelButton);
-    modelMenu = await screen.findByRole("dialog", { name: "Choose model" });
-    fireEvent.click(within(modelMenu).getByRole("button", { name: "Refresh available models" }));
-    await waitFor(() => expect(listProviderModelsSpy).toHaveBeenCalledWith({ providerId: "codex-cli", envKey: null }));
-    fireEvent.click(await within(modelMenu).findByRole("button", { name: /GPT-5\.5 Turbo/ }));
+    modelMenu = await screen.findByRole("menu", { name: "Choose model" });
+    fireEvent.click(within(modelMenu).getByRole("menuitemradio", { name: "GPT-5.5 Turbo" }));
     await waitFor(() =>
       expect(saveModelConnectionSpy).toHaveBeenCalledWith({
         providerId: "codex-cli",
@@ -656,7 +660,7 @@ describe("Orynt desktop shell", () => {
         defaultThinkingEffort: null,
       }),
     );
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose model" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("menu", { name: "Choose model" })).not.toBeInTheDocument());
 
     fireEvent.click(effortButton);
     const effortMenu = await screen.findByRole("menu", { name: "Change thinking effort" });
@@ -668,6 +672,8 @@ describe("Orynt desktop shell", () => {
     expect(effortOptions).toHaveLength(6);
     expect(within(effortMenu).getByRole("menuitemradio", { name: "Medium" })).toHaveAttribute("aria-checked", "true");
     expect(within(effortMenu).getByRole("menuitemradio", { name: "High" })).toHaveAttribute("aria-checked", "false");
+    expect(within(effortMenu).getByRole("menuitemradio", { name: "Medium" }).querySelector(".composer-option-check")).not.toBeNull();
+    expect(within(effortMenu).getByRole("menuitemradio", { name: "High" }).querySelector(".composer-option-check")).toBeNull();
     expect(within(effortMenu).queryByText("Deeper planning for complex or risky changes.")).not.toBeInTheDocument();
     expect(effortMenu.querySelector(".composer-effort-select")).toBeNull();
     expect(effortMenu.querySelector(".composer-effort-slider")).toBeNull();
@@ -695,10 +701,9 @@ describe("Orynt desktop shell", () => {
     const composer = screen.getByRole("form", { name: "Task composer" });
     const modelButton = within(composer).getByRole("button", { name: /Change model/ });
     fireEvent.click(modelButton);
-    const modelPicker = await screen.findByRole("dialog", { name: "Choose model" });
-    fireEvent.click(within(modelPicker).getByRole("button", { name: "Refresh available models" }));
+    const modelPicker = await screen.findByRole("menu", { name: "Choose model" });
 
-    expect(await within(modelPicker).findByRole("button", { name: /GPT-5\.5/ })).toHaveTextContent("Unavailable to verify.");
+    expect(await within(modelPicker).findByRole("menuitemradio", { name: /GPT-5\.5/ })).toHaveAttribute("aria-checked", "true");
   });
 
   it("persists the current composer thinking effort when switching to another supported model", async () => {
@@ -719,15 +724,17 @@ describe("Orynt desktop shell", () => {
     dismissPrivateBetaOnboarding();
     const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(updatedEffortSettings);
     vi.spyOn(orynt, "preflightCodexConnection").mockResolvedValue(initialSettings.codexConnection!.lastPreflight!);
-    vi.spyOn(orynt, "listProviderModels").mockResolvedValue({
-      providerId: "codex-cli",
-      fetchedAt: "2026-07-05T00:00:00.000Z",
-      warnings: [],
-      models: [
-        { id: "gpt-5.5", label: "GPT-5.5", source: "codex-cli", supportedThinkingEfforts: ["low", "medium", "high"], defaultThinkingEffort: "medium" },
-        { id: "gpt-5.5-deep", label: "GPT-5.5 Deep", source: "codex-cli", supportedThinkingEfforts: ["low", "medium", "high"], defaultThinkingEffort: "medium" },
-      ],
-    });
+    window.localStorage.setItem(
+      `${modelsDevProviderCatalogStoragePrefix}codex-cli`,
+      JSON.stringify({
+        providerId: "codex-cli",
+        fetchedAt: new Date().toISOString(),
+        models: [
+          { id: "gpt-5.5", label: "GPT-5.5", source: "codex-cli", supportedThinkingEfforts: ["low", "medium", "high"], defaultThinkingEffort: "medium" },
+          { id: "gpt-5.5-deep", label: "GPT-5.5 Deep", source: "codex-cli", supportedThinkingEfforts: ["low", "medium", "high"], defaultThinkingEffort: "medium" },
+        ],
+      }),
+    );
     const saveModelConnectionSpy = vi.spyOn(orynt, "saveModelConnection").mockResolvedValue({
       ...initialConnection,
       modelId: "gpt-5.5-deep",
@@ -762,9 +769,8 @@ describe("Orynt desktop shell", () => {
 
     const modelButton = within(composer).getByRole("button", { name: /Change model/ });
     fireEvent.click(modelButton);
-    const modelMenu = await screen.findByRole("dialog", { name: "Choose model" });
-    fireEvent.click(within(modelMenu).getByRole("button", { name: "Refresh available models" }));
-    fireEvent.click(await within(modelMenu).findByRole("button", { name: /GPT-5\.5 Deep/ }));
+    const modelMenu = await screen.findByRole("menu", { name: "Choose model" });
+    fireEvent.click(await within(modelMenu).findByRole("menuitemradio", { name: "GPT-5.5 Deep" }));
 
     await waitFor(() =>
       expect(saveModelConnectionSpy).toHaveBeenCalledWith(
@@ -791,6 +797,119 @@ describe("Orynt desktop shell", () => {
     expect(safeTitle).toHaveClass("orynt-dropdown-option-title");
     expect(safeTitle).not.toHaveTextContent("Ask before protected paths");
     expect(safeDescription).toHaveClass("orynt-dropdown-option-description");
+    expect(safeOption.querySelector(".orynt-dropdown-check")).not.toBeNull();
+    expect(within(options).getByRole("option", { name: /^Ask first/ }).querySelector(".orynt-dropdown-check")).toBeNull();
+    const selectedOptionStyles = readFileSync("src/styles.css", "utf8").match(/\.orynt-dropdown-option-selected \{[\s\S]*?\}/)?.[0] ?? "";
+    expect(selectedOptionStyles).not.toContain("background: var(--message-bubble-user)");
+  });
+
+  it("applies custom dropdown root classes and density", () => {
+    render(
+      <OryntDropdown
+        ariaLabel="Custom dropdown"
+        className="custom-dropdown-layout"
+        density="comfortable"
+        id="custom-dropdown"
+        onChange={vi.fn()}
+        options={[{ label: "Option", value: "option" }]}
+        placeholder="Choose option"
+        value=""
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Custom dropdown" }).parentElement).toHaveClass(
+      "orynt-dropdown",
+      "orynt-dropdown-density-comfortable",
+      "custom-dropdown-layout",
+    );
+  });
+
+  it("keeps disabled dropdowns closed without selecting", () => {
+    const onChange = vi.fn();
+    render(
+      <OryntDropdown
+        ariaLabel="Disabled dropdown"
+        disabled
+        id="disabled-dropdown"
+        onChange={onChange}
+        options={[{ label: "Option", value: "option" }]}
+        placeholder="Choose option"
+        value=""
+      />,
+    );
+
+    const trigger = screen.getByRole("combobox", { name: "Disabled dropdown" });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(trigger, { key: "Enter" });
+
+    expect(trigger).toBeDisabled();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("listbox", { name: "Disabled dropdown options" })).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("uses index-based option IDs for raw values", () => {
+    render(
+      <OryntDropdown
+        ariaLabel="Safe ID dropdown"
+        id="safe-id-dropdown"
+        onChange={vi.fn()}
+        options={[
+          { label: "Model with punctuation", value: "gpt 5.5 / special?" },
+          { label: "Second model", value: "second:model" },
+        ]}
+        placeholder="Choose model"
+        value=""
+      />,
+    );
+
+    const trigger = screen.getByRole("combobox", { name: "Safe ID dropdown" });
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAttribute("aria-activedescendant", "safe-id-dropdown-option-0");
+    expect(screen.getByRole("option", { name: "Model with punctuation" })).toHaveAttribute("id", "safe-id-dropdown-option-0");
+    expect(screen.getByRole("option", { name: "Second model" })).toHaveAttribute("id", "safe-id-dropdown-option-1");
+  });
+
+  it("closes dropdowns on Escape while retaining trigger focus", () => {
+    render(
+      <OryntDropdown
+        ariaLabel="Escape dropdown"
+        id="escape-dropdown"
+        onChange={vi.fn()}
+        options={[{ label: "Option", value: "option" }]}
+        placeholder="Choose option"
+        value=""
+      />,
+    );
+
+    const trigger = screen.getByRole("combobox", { name: "Escape dropdown" });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(trigger, { key: "Escape" });
+
+    expect(screen.queryByRole("listbox", { name: "Escape dropdown options" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("does not select from an empty dropdown", () => {
+    const onChange = vi.fn();
+    render(
+      <OryntDropdown
+        ariaLabel="Empty dropdown"
+        id="empty-dropdown"
+        onChange={onChange}
+        options={[]}
+        placeholder="Choose option"
+        value=""
+      />,
+    );
+
+    const trigger = screen.getByRole("combobox", { name: "Empty dropdown" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("listbox", { name: "Empty dropdown options" })).toBeEmptyDOMElement();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("places setup dropdowns away from clipped viewport space and updates placement on scroll", async () => {
@@ -2337,10 +2456,10 @@ describe("Orynt desktop shell", () => {
     expect(styles).toContain(".workspace-search-toggle");
     const workspaceMenuStyles = styles.match(/\.workspace-menu \{[\s\S]*?\}/)?.[0] ?? "";
     expect(workspaceMenuStyles).toContain("position: static;");
-    expect(workspaceMenuStyles).toContain("gap: var(--space-micro);");
+    expect(workspaceMenuStyles).toContain("gap: var(--dropdown-panel-gap);");
     expect(workspaceMenuStyles).toContain("margin: 0;");
-    expect(workspaceMenuStyles).toContain("padding: var(--space-micro) var(--workspace-row-padding-x) var(--space-control);");
-    expect(styles).toMatch(/\.workspace-menu button \{[\s\S]*?padding: var\(--workspace-row-padding-y\) var\(--workspace-row-padding-x\);/);
+    expect(workspaceMenuStyles).toContain("padding: var(--dropdown-panel-padding);");
+    expect(styles).toMatch(/\.workspace-menu button \{[\s\S]*?min-height: var\(--dropdown-item-height\);[\s\S]*?border-radius: var\(--dropdown-item-radius\);/);
     expect(styles).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.workspace-panel \{[\s\S]*?--workspace-panel-inset-x: 14px;[\s\S]*?--workspace-panel-inset-y: 8px;[\s\S]*?padding: var\(--workspace-panel-inset-y\) var\(--workspace-panel-inset-x\);/);
     expect(styles).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.workspace-drawer \{[\s\S]*?--workspace-panel-inset-x: var\(--space-content\);[\s\S]*?--workspace-panel-inset-y: var\(--space-content\);[\s\S]*?padding: var\(--workspace-panel-inset-y\) var\(--workspace-panel-inset-x\);/);
     expect(styles).not.toContain(".purpose-");
@@ -2380,9 +2499,9 @@ describe("Orynt desktop shell", () => {
     expect(workspaceAccountTriggerStyles).toContain("background: transparent;");
     expect(accountMenuStyles).toContain("position: absolute;");
     expect(accountMenuStyles).toContain("bottom: calc(100% + var(--space-control));");
-    expect(accountMenuStyles).toContain("border-radius: 8px;");
+    expect(accountMenuStyles).toContain("border-radius: var(--dropdown-panel-radius);");
     expect(accountMenuItemStyles).toContain("grid-template-columns: 18px minmax(0, 1fr) auto;");
-    expect(accountMenuItemStyles).toContain("min-height: 34px;");
+    expect(accountMenuItemStyles).toContain("min-height: var(--dropdown-item-height);");
     expect(settingsNavButtonStyles).toContain("padding: 0 10px;");
     expect(styles).not.toContain(".workspace-panel-action");
     expect(styles).not.toContain(".workspace-panel-action-label");
@@ -2495,13 +2614,52 @@ describe("Orynt desktop shell", () => {
     expect(styles).toMatch(/\.setup-dialog-form \.settings-field input,[\s\S]*?\.setup-dialog-form \.settings-select \{[\s\S]*?justify-self: stretch;[\s\S]*?max-width: none;/);
     expect(styles).toMatch(/\.setup-dialog-form \.settings-field small \{[\s\S]*?grid-column: 1;/);
     expect(styles).toMatch(/\.setup-dialog-form \.settings-input-action-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto auto;/);
+    expect(styles).toContain("--dropdown-control-height: 36px;");
+    expect(styles).toContain("--dropdown-item-height: 36px;");
+    expect(styles).toContain("--dropdown-item-height-comfortable: 44px;");
+    expect(styles).toContain("--dropdown-panel-padding: 4px;");
+    expect(styles).toContain("--dropdown-panel-radius: 8px;");
+    expect(styles).toContain("--dropdown-item-radius: 6px;");
+    expect(styles).toContain("--dropdown-panel-gap: 4px;");
+    expect(styles).toContain("--dropdown-panel-border: var(--border);");
+    expect(styles).toContain("--dropdown-panel-background: var(--thread-surface);");
+    expect(styles).toContain("--dropdown-panel-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);");
     expect(styles).toMatch(/\.orynt-dropdown \{[\s\S]*?position: relative;[\s\S]*?width: 100%;/);
-    expect(styles).toMatch(/\.orynt-dropdown-menu \{[\s\S]*?position: absolute;[\s\S]*?z-index: 34;[\s\S]*?background: var\(--thread-surface\);/);
+    expect(styles).toMatch(/\.orynt-dropdown-trigger \{[\s\S]*?min-height: var\(--dropdown-control-height\);/);
+    expect(styles).toMatch(/\.orynt-dropdown-menu \{[\s\S]*?position: absolute;[\s\S]*?gap: var\(--dropdown-panel-gap\);[\s\S]*?border-radius: var\(--dropdown-panel-radius\);[\s\S]*?background: var\(--dropdown-panel-background\);[\s\S]*?box-shadow: var\(--dropdown-panel-shadow\);[\s\S]*?padding: var\(--dropdown-panel-padding\);/);
+    expect(styles).toMatch(/\.orynt-dropdown-option \{[\s\S]*?min-height: var\(--dropdown-item-height\);[\s\S]*?border-radius: var\(--dropdown-item-radius\);/);
+    expect(styles).toMatch(/\.orynt-dropdown-density-comfortable \.orynt-dropdown-option \{[\s\S]*?min-height: var\(--dropdown-item-height-comfortable\);/);
     expect(styles).toMatch(/\.orynt-dropdown-menu-dropdown \{[\s\S]*?top: calc\(100% \+ var\(--space-micro\)\);[\s\S]*?bottom: auto;/);
     expect(styles).toMatch(/\.orynt-dropdown-menu-dropup \{[\s\S]*?top: auto;[\s\S]*?bottom: calc\(100% \+ var\(--space-micro\)\);/);
     expect(styles).toMatch(/\.orynt-dropdown-option-title \{[\s\S]*?white-space: nowrap;[\s\S]*?overflow-wrap: normal;[\s\S]*?word-break: normal;/);
     expect(styles).toMatch(/\.orynt-dropdown-option-description \{[\s\S]*?overflow-wrap: normal;[\s\S]*?word-break: normal;/);
     expect(styles).toMatch(/\.orynt-dropdown-option-highlighted \{[\s\S]*?background: var\(--message-bubble-agent\);/);
+    const selectedMenuStyleSelectors = [
+      ".composer-model-menu-option[aria-checked=\"true\"]",
+      ".composer-effort-menu-option[aria-checked=\"true\"]",
+      ".composer-attachment-menu-item[aria-checked=\"true\"]",
+      ".composer-meta-menu-item[aria-checked=\"true\"]",
+    ];
+    selectedMenuStyleSelectors.forEach((selector) => {
+      const selectedStyles = styles.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{[\\s\\S]*?\\}`))?.[0] ?? "";
+      expect(selectedStyles).not.toContain("background: var(--message-bubble-user)");
+    });
+    [".composer-model-menu-option[aria-checked=\"true\"]", ".composer-effort-menu-option[aria-checked=\"true\"]"].forEach((selector) => {
+      const selectedStyles = styles.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{[\\s\\S]*?\\}`))?.[0] ?? "";
+      expect(selectedStyles).not.toContain("border-color: rgba(143, 182, 232, 0.42)");
+    });
+    expect(appSource).toContain('role="menuitemradio"');
+    expect(appSource).toContain('aria-checked={isSelectedModel}');
+    expect(appSource).not.toContain('role="dialog"\n        aria-label="Choose model"');
+    expect(styles).toMatch(/\.composer-model-menu \{[\s\S]*?width: min\(240px, calc\(100vw - 24px\)\);[\s\S]*?max-height: min\(44vh, 320px\);[\s\S]*?border-radius: var\(--dropdown-panel-radius\);[\s\S]*?box-shadow: var\(--dropdown-panel-shadow\);/);
+    expect(styles).toMatch(/\.composer-model-menu-dropdown \{[\s\S]*?top: calc\(100% \+ var\(--space-control\)\);/);
+    expect(styles).toMatch(/\.composer-model-menu-dropup \{[\s\S]*?bottom: calc\(100% \+ var\(--space-control\)\);/);
+    expect(styles).toMatch(/\.composer-model-menu-option \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;[\s\S]*?min-height: var\(--dropdown-item-height\);/);
+    expect(styles).toMatch(/\.composer-model-menu-option:hover:not\(:disabled\) \{[\s\S]*?background: var\(--message-bubble-agent\);/);
+    expect(styles).toMatch(/\.composer-model-menu-option:focus-visible \{[\s\S]*?background: var\(--message-bubble-agent\);[\s\S]*?outline: 2px solid var\(--accent-info\);/);
+    expect(styles).toMatch(/\.composer-meta-menu \{[\s\S]*?border-radius: var\(--dropdown-panel-radius\);[\s\S]*?box-shadow: var\(--dropdown-panel-shadow\);/);
+    expect(styles).toMatch(/\.composer-effort-popover \{[\s\S]*?border-radius: var\(--dropdown-panel-radius\);[\s\S]*?box-shadow: var\(--dropdown-panel-shadow\);/);
+    expect(styles).toMatch(/\.agent-response-more-menu \{[\s\S]*?border-radius: var\(--dropdown-panel-radius\);[\s\S]*?box-shadow: var\(--dropdown-panel-shadow\);/);
     expect(styles).not.toMatch(/\.orynt-dropdown-option span,\s*\.orynt-dropdown-option small \{[\s\S]*?overflow-wrap: anywhere;/);
     expect(styles).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.setup-dialog-form \.settings-input-action-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
     expect(styles).not.toContain(".orynt-dropdown-grid");
@@ -2531,6 +2689,10 @@ describe("Orynt desktop shell", () => {
     expect(appSource).toContain("pendingSystemMessages");
     expect(appSource).toContain("handleStartThreadHeaderEdit");
     expect(appSource).toContain('aria-label="Edit task name and description"');
+    expect(appSource).not.toMatch(/type ThreadMessage = \{[\s\S]*?\bsources\?:/);
+    ["Current thread", "Orynt run store", "Repository runner", "User request", "renderAgentResponseSourcesPanel"].forEach((sourceMetadata) => {
+      expect(appSource).not.toContain(sourceMetadata);
+    });
     expect(appSource).not.toContain("Workspace 4");
     expect(appSource).not.toContain("Custom workspace.");
     expect(appSource).toContain('align = "start"');
@@ -2637,6 +2799,9 @@ describe("Orynt desktop shell", () => {
     expect(agentDetailsSummaryCountStyles).toContain("white-space: nowrap;");
     expect(agentDetailsSummaryCountStyles).toContain("color: rgba(241, 241, 241, 0.42);");
     expect(agentDetailsListStyles).toContain("width: 100%;");
+    expect(agentDetailsListStyles).toContain("gap: var(--space-row);");
+    expect(agentDetailsListStyles).toContain("margin: var(--space-row) 0 0;");
+    expect(agentDetailsListItemStyles).toContain("gap: var(--space-control);");
     expect(agentDetailsListItemStyles).toContain("position: relative;");
     expect(agentDetailsListItemStyles).not.toContain("grid-template-columns: 16px minmax(0, 1fr);");
     expect(agentDetailsRowStyles).toContain("border-radius: 8px;");
@@ -2653,7 +2818,8 @@ describe("Orynt desktop shell", () => {
     expect(agentDetailsSubtaskListStyles).toContain("position: relative;");
     expect(agentDetailsSubtaskListStyles).toContain("width: auto;");
     expect(agentDetailsSubtaskListStyles).toContain("max-width: 100%;");
-    expect(agentDetailsSubtaskListStyles).toContain("margin: calc(var(--space-control) - 2px) 0 0;");
+    expect(agentDetailsSubtaskListStyles).toContain("gap: var(--space-control);");
+    expect(agentDetailsSubtaskListStyles).toContain("margin: var(--space-control) 0 0;");
     expect(agentDetailsSubtaskListStyles).toContain("padding: 0;");
     expect(agentDetailsSubtaskListStyles).not.toContain("\n  width: 100%;");
     expect(agentDetailsSubtaskListStyles).not.toContain("margin: calc(var(--space-control) - 2px) 0 0 var(--space-panel);");
@@ -2691,23 +2857,16 @@ describe("Orynt desktop shell", () => {
     expect(styles).toContain(".agent-response-more-action");
     expect(styles).toContain(".agent-response-more-menu");
     expect(styles).not.toContain(".agent-response-sources-popover");
-    expect(styles).toContain(".agent-response-sources-panel");
-    expect(styles).toContain(".agent-response-source-link");
+    expect(styles).not.toContain(".agent-response-sources-button");
+    expect(styles).not.toContain(".agent-response-sources-panel");
+    expect(styles).not.toContain(".agent-response-source-citation");
+    expect(styles).not.toContain(".agent-response-source-link");
+    expect(styles).not.toContain(".app-shell-sources-open");
+    expect(styles).not.toContain(".app-shell-sources-closed");
     const agentResponseActionsStyles = styles.match(/\.agent-response-actions \{[\s\S]*?\}/)?.[0] ?? "";
     const agentResponseActionButtonStyles = styles.match(/\.agent-response-action-button \{[\s\S]*?\}/)?.[0] ?? "";
     const agentResponseMoreActionStyles = styles.match(/\.agent-response-more-action \{[\s\S]*?\}/)?.[0] ?? "";
     const agentResponseMoreMenuStyles = styles.match(/\.agent-response-more-menu \{[\s\S]*?\}/)?.[0] ?? "";
-    const agentResponseSourcesPanelStyles =
-      Array.from(styles.matchAll(/\.agent-response-sources-panel \{[\s\S]*?\}/g))
-        .map((match) => match[0])
-        .find((block) => block.includes("grid-column: 3;")) ?? "";
-    const appShellSourcesOpenStyles = styles.match(/\.app-shell-sources-open \{[\s\S]*?\}/)?.[0] ?? "";
-    const appShellWorkspaceCollapsedSourcesOpenStyles =
-      styles.match(/\.app-shell-workspace-collapsed\.app-shell-sources-open \{[\s\S]*?\}/)?.[0] ?? "";
-    const mobileSourcesPanelStyles =
-      Array.from(styles.matchAll(/\.agent-response-sources-panel \{[\s\S]*?\}/g))
-        .map((match) => match[0])
-        .find((block) => block.includes("grid-row: 3;")) ?? "";
     expect(agentResponseActionsStyles).toContain("justify-content: flex-start;");
     expect(agentResponseActionsStyles).toContain("position: relative;");
     expect(agentResponseActionsStyles).toContain("z-index: 2;");
@@ -2720,26 +2879,7 @@ describe("Orynt desktop shell", () => {
     expect(agentResponseMoreMenuStyles).toContain("right: 0;");
     expect(agentResponseMoreMenuStyles).not.toContain("left: 0;");
     expect(agentResponseMoreMenuStyles).toContain("z-index:");
-    expect(styles).toContain(".app-shell-sources-closed");
-    expect(appShellSourcesOpenStyles).toContain("grid-template-columns: 240px minmax(0, 1fr) minmax(320px, 360px);");
-    expect(appShellWorkspaceCollapsedSourcesOpenStyles).toContain("grid-template-columns: 48px minmax(0, 1fr) minmax(320px, 360px);");
-    expect(agentResponseSourcesPanelStyles).toContain("position: relative;");
-    expect(agentResponseSourcesPanelStyles).toContain("grid-column: 3;");
-    expect(agentResponseSourcesPanelStyles).toContain("grid-row: 1;");
-    expect(agentResponseSourcesPanelStyles).not.toContain("position: fixed;");
-    expect(agentResponseSourcesPanelStyles).not.toContain("right: var(--space-panel);");
-    expect(agentResponseSourcesPanelStyles).not.toContain("z-index: var(--z-shell-side-panel);");
     expect(styles).not.toContain("--z-shell-side-panel:");
-    expect(agentResponseSourcesPanelStyles).toContain("width: 100%;");
-    expect(agentResponseSourcesPanelStyles).toContain("height: 100%;");
-    expect(agentResponseSourcesPanelStyles).toContain("max-width: none;");
-    expect(agentResponseSourcesPanelStyles).toContain("margin: 0;");
-    expect(agentResponseSourcesPanelStyles).not.toContain("border-radius:");
-    expect(mobileSourcesPanelStyles).toContain("grid-column: 1;");
-    expect(mobileSourcesPanelStyles).toContain("grid-row: 3;");
-    expect(mobileSourcesPanelStyles).toContain("width: 100%;");
-    expect(mobileSourcesPanelStyles).toContain("max-width: none;");
-    expect(mobileSourcesPanelStyles).toContain("margin: 0;");
     expect(chatBubbleApprovalStyles).toContain("padding: calc(var(--space-row) + 2px) var(--space-content);");
     const chatBubbleActionsStyles = styles.match(/\.chat-bubble-actions \{[\s\S]*?\}/)?.[0] ?? "";
     expect(chatBubbleActionsStyles).toContain("justify-content: flex-end;");
@@ -2912,9 +3052,9 @@ describe("Orynt desktop shell", () => {
     expect(composerEffortPopoverStyles).toContain("transform: translateX(-50%);");
     expect(composerEffortPopoverStyles).toContain("width: min(240px, calc(100vw - 24px));");
     expect(composerEffortMenuOptionsStyles).toContain("display: grid;");
-    expect(composerEffortMenuOptionsStyles).toContain("gap: 4px;");
+    expect(composerEffortMenuOptionsStyles).toContain("gap: var(--dropdown-panel-gap);");
     expect(composerEffortMenuOptionStyles).toContain("width: 100%;");
-    expect(composerEffortMenuOptionStyles).toContain("min-height: 42px;");
+    expect(composerEffortMenuOptionStyles).toContain("min-height: var(--dropdown-item-height);");
     expect(composerEffortMenuOptionStyles).toContain("text-align: left;");
     expect(composerEffortMenuOptionStyles).toContain("cursor: pointer;");
     expect(styles).not.toContain(".composer-effort-select");
@@ -3139,15 +3279,43 @@ describe("Orynt desktop shell", () => {
     expect(screen.getAllByText("New thread note").length).toBeGreaterThan(0);
     expect(screen.getByRole("region", { name: "Task conversation" })).not.toHaveClass("thread-empty");
 
-    fireEvent.click(within(spaces).getByRole("button", { name: "First thread message" }));
-    const restoredFirstThread = screen.getByRole("region", { name: "Task conversation" });
-    expect(within(restoredFirstThread).getAllByText("First thread message").length).toBeGreaterThan(0);
-    expect(within(restoredFirstThread).getAllByText("Second thread message").length).toBeGreaterThan(0);
-    expect(within(restoredFirstThread).queryByText("New thread note")).not.toBeInTheDocument();
-    const duplicateKeyWarnings = consoleErrorSpy.mock.calls.filter((args) =>
-      args.some((arg) => String(arg).includes("Encountered two children with the same key")),
-    );
-    expect(duplicateKeyWarnings).toHaveLength(0);
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrollCalls: Array<{ element: HTMLElement; options: ScrollIntoViewOptions }> = [];
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      writable: true,
+      value: function (this: HTMLElement, options: ScrollIntoViewOptions) {
+        scrollCalls.push({ element: this, options });
+      },
+    });
+
+    try {
+      fireEvent.click(within(spaces).getByRole("button", { name: "First thread message" }));
+      const restoredFirstThread = screen.getByRole("region", { name: "Task conversation" });
+      expect(within(restoredFirstThread).getAllByText("First thread message").length).toBeGreaterThan(0);
+      expect(within(restoredFirstThread).getAllByText("Second thread message").length).toBeGreaterThan(0);
+      expect(within(restoredFirstThread).queryByText("New thread note")).not.toBeInTheDocument();
+      const latestMessage = Array.from(restoredFirstThread.querySelectorAll<HTMLElement>("[data-message-id]")).at(-1);
+      expect(latestMessage).toBeDefined();
+      expect(scrollCalls).toContainEqual({
+        element: latestMessage,
+        options: { block: "end", inline: "nearest", behavior: "auto" },
+      });
+      const duplicateKeyWarnings = consoleErrorSpy.mock.calls.filter((args) =>
+        args.some((arg) => String(arg).includes("Encountered two children with the same key")),
+      );
+      expect(duplicateKeyWarnings).toHaveLength(0);
+    } finally {
+      if (originalScrollIntoView) {
+        Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+          configurable: true,
+          writable: true,
+          value: originalScrollIntoView,
+        });
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+      }
+    }
   });
 
   it("persists real threads after the first prompt and restores them on reload", async () => {
@@ -4549,7 +4717,7 @@ describe("Orynt desktop shell", () => {
     expect(styles).toMatch(/\.chat-bubble-user p \{[\s\S]*?word-break: break-word;/);
   });
 
-  it("copies, rates, shares by clipboard fallback, opens current sources, and keeps more actions anchored", async () => {
+  it("copies, rates, shares by clipboard fallback, omits sources, and keeps more actions anchored", async () => {
     render(<App seedDemoThread />);
 
     const clipboardWrite = vi.mocked(navigator.clipboard.writeText);
@@ -4564,7 +4732,8 @@ describe("Orynt desktop shell", () => {
     expect(within(actionRail).getByRole("button", { name: "Bad response" })).toHaveAttribute("aria-pressed", "false");
     expect(within(actionRail).getByRole("button", { name: "Share response" })).toBeInTheDocument();
     expect(within(actionRail).getByRole("button", { name: "Resend task" })).toBeInTheDocument();
-    expect(within(actionRail).getByRole("button", { name: "Show sources" })).toHaveAttribute("aria-expanded", "false");
+    expect(within(actionRail).queryByRole("button", { name: /^(Show|Hide) sources$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Sources" })).not.toBeInTheDocument();
     expect(within(actionRail).getByRole("button", { name: "More response actions" })).toHaveAttribute("aria-expanded", "false");
 
     fireEvent.click(within(actionRail).getByRole("button", { name: "Copy response" }));
@@ -4588,28 +4757,6 @@ describe("Orynt desktop shell", () => {
     await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith(expectedResponseText));
     expect(within(actionRail).getByRole("button", { name: "Shared response" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(within(actionRail).getByRole("button", { name: "Show sources" }));
-    expect(within(actionRail).getByRole("button", { name: "Hide sources" })).toHaveAttribute("aria-expanded", "true");
-    expect(within(actionRail).getByRole("button", { name: "Hide sources" })).toHaveAttribute("aria-controls", "agent-response-sources-panel");
-    expect(screen.getByRole("main")).toHaveClass("app-shell-sources-open");
-    expect(screen.getByRole("main")).not.toHaveClass("app-shell-sources-closed");
-    const sources = screen.getByRole("region", { name: "Sources" });
-    expect(sources).toHaveClass("agent-response-sources-panel");
-    expect(sources).toHaveAttribute("id", "agent-response-sources-panel");
-    expect(agentResponse).not.toContainElement(sources);
-    expect(sources.closest(".app-shell")).not.toBeNull();
-    expect(sources.closest('[role="toolbar"]')).toBeNull();
-    expect(within(sources).getByText("Current response context")).toBeInTheDocument();
-    expect(within(sources).getByText("Agent response")).toBeInTheDocument();
-    expect(within(sources).getByText("Current thread")).toBeInTheDocument();
-    expect(within(sources).getByText("Candidate repository rule from verified correction")).toBeInTheDocument();
-    expect(within(sources).queryByText("Mock web citations")).not.toBeInTheDocument();
-    expect(within(sources).queryByText("OpenAI Docs")).not.toBeInTheDocument();
-    fireEvent.click(within(sources).getByRole("button", { name: "Close sources" }));
-    expect(screen.queryByRole("region", { name: "Sources" })).not.toBeInTheDocument();
-    expect(screen.getByRole("main")).toHaveClass("app-shell-sources-closed");
-    expect(screen.getByRole("main")).not.toHaveClass("app-shell-sources-open");
-    fireEvent.click(within(actionRail).getByRole("button", { name: "Show sources" }));
 
     fireEvent.click(within(actionRail).getByRole("button", { name: "More response actions" }));
     const menu = within(agentResponse).getByRole("menu", { name: "More response actions" });
@@ -4759,6 +4906,8 @@ describe("Orynt desktop shell", () => {
     const modeMenu = within(composer).getByRole("menu", { name: "Permission mode options" });
     expect(modeMenu).toHaveClass("composer-meta-menu-dropdown");
     expect(within(modeMenu).getByRole("menuitemradio", { name: "Safe" })).toHaveAttribute("aria-checked", "true");
+    expect(within(modeMenu).getByRole("menuitemradio", { name: "Safe" }).querySelector(".composer-option-check")).not.toBeNull();
+    expect(within(modeMenu).getByRole("menuitemradio", { name: "Ask first" }).querySelector(".composer-option-check")).toBeNull();
     fireEvent.click(within(modeMenu).getByRole("menuitemradio", { name: "Ask first" }));
     expect(within(composer).getByRole("button", { name: "Permission mode" })).toHaveTextContent("Ask first");
     expect(within(composer).queryByRole("menu", { name: "Permission mode options" })).not.toBeInTheDocument();

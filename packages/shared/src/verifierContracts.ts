@@ -9,6 +9,9 @@ export type VerificationFailureClass =
   | "command_timeout"
   | "protected_path_touched"
   | "unexpected_file_touch"
+  | "unauthorized_file_touch"
+  | "changed_file_limit_exceeded"
+  | "destructive_change_detected"
   | "no_changes"
   | "diff_unavailable"
   | "verifier_error";
@@ -28,6 +31,10 @@ export type VerifierConfig = {
   commandTimeoutMs: number;
   maxOutputBytes: number;
   requireChangedFiles: boolean;
+  authorizedChangedPaths?: string[];
+  requireAuthorizedChangedPaths?: boolean;
+  allowDestructiveChanges?: boolean;
+  allowChangedFileLimitExceeded?: boolean;
   artifactRoot: string;
 };
 
@@ -49,9 +56,12 @@ export type DiffScopeResult = {
   allowedFiles: string[];
   protectedFiles: string[];
   unexpectedFiles: string[];
+  unauthorizedFiles: string[];
+  destructiveFiles: string[];
   hasChanges: boolean;
   withinAllowedScope: boolean;
   protectedPathTouched: boolean;
+  changedFileLimitExceeded: boolean;
 };
 
 export type VerificationEvidence = {
@@ -101,10 +111,18 @@ export type VerificationPlanRequest = {
   config?: Partial<VerifierConfig>;
 };
 
+export type VerificationRunOptions = {
+  signal?: AbortSignal;
+};
+
 export interface Verifier {
   createPlan(request: VerificationPlanRequest): VerificationPlan;
   checkPolicy(plan: VerificationPlan, policy: CorePolicy): VerificationPlan;
-  runVerification(plan: VerificationPlan, policy: CorePolicy): Promise<VerificationResult>;
+  runVerification(
+    plan: VerificationPlan,
+    policy: CorePolicy,
+    options?: VerificationRunOptions,
+  ): Promise<VerificationResult>;
   summarizeResult(result: VerificationResult): string;
   classifyFailure(result: VerificationResult): VerificationFailureClass | undefined;
 }

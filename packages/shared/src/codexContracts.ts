@@ -2,6 +2,10 @@ import type { ArtifactRef, RunBudget } from "./runSpine";
 import type { CorePolicy, PolicyDecision, RepositoryInspection, RepositorySandbox } from "./corePolicy";
 import type { CodexResultImportRequest } from "./codexResultImportContracts";
 import type { VerificationPlan } from "./verifierContracts";
+import type {
+  OrchestrationRole,
+  OrchestrationThinkingEffort,
+} from "./orchestrationContracts";
 
 export type CodexExecutionMode = "contract_only" | "manual_cli" | "app_server" | "sdk";
 
@@ -38,6 +42,9 @@ export type CodexContractRequest = {
   executionMode?: CodexExecutionMode;
   modelId?: string;
   modelLabel?: string;
+  modelRole?: OrchestrationRole;
+  thinkingEffort?: OrchestrationThinkingEffort;
+  parentInvocationId?: string;
 };
 
 export type CodexContract = {
@@ -62,6 +69,9 @@ export type CodexContract = {
     validationCommands: string[];
     modelId?: string;
     modelLabel?: string;
+    modelRole?: OrchestrationRole;
+    thinkingEffort?: OrchestrationThinkingEffort;
+    parentInvocationId?: string;
     budget: RunBudget;
     redactionApplied: boolean;
     createdAt: string;
@@ -127,6 +137,7 @@ export type CodexExecutionApproval = {
   approvedBy: string;
   reason: string;
   approvedAt?: string;
+  authorizationSource?: "automatic_policy" | "operator" | "headless";
 };
 
 export type CodexProcessRef = {
@@ -161,6 +172,9 @@ export type CodexExecutionPlan = {
   policyDecision?: PolicyDecision;
   verifierPlanId?: string;
   validationCommands: string[];
+  modelRole?: OrchestrationRole;
+  thinkingEffort?: OrchestrationThinkingEffort;
+  parentInvocationId?: string;
   approvalRequired: boolean;
   failureReasons: CodexExecutionFailureReason[];
   artifacts: ArtifactRef[];

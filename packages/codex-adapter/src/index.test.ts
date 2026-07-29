@@ -320,7 +320,14 @@ describe("LocalCodexContractAdapter", () => {
   it("plans controlled execution with isolated config and selected model", async () => {
     const store = new InMemoryRunStore();
     const run = createRun(store);
-    const request = createRequest({ runId: run.id, executionMode: "manual_cli", modelId: "gpt-5.5", modelLabel: "GPT-5.5" });
+    const request = createRequest({
+      runId: run.id,
+      executionMode: "manual_cli",
+      modelId: "gpt-5.5",
+      modelLabel: "GPT-5.5",
+      modelRole: "implementer",
+      thinkingEffort: "high",
+    });
     await mkdir(request.sandbox.worktreePath, { recursive: true });
     const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
 console.log("fake codex should not run without approval");
@@ -338,7 +345,20 @@ console.log("fake codex should not run without approval");
       verifierPlan: createVerificationPlan(request),
     });
 
-    expect(plan.argv).toEqual(expect.arrayContaining(["--ignore-user-config", "--ignore-rules", "-m", "gpt-5.5"]));
+    expect(plan.argv).toEqual(
+      expect.arrayContaining([
+        "--ignore-user-config",
+        "--ignore-rules",
+        "-m",
+        "gpt-5.5",
+        "-c",
+        'model_reasoning_effort="high"',
+      ]),
+    );
+    expect(plan).toMatchObject({
+      modelRole: "implementer",
+      thinkingEffort: "high",
+    });
     await expect(adapter.executeApprovedContract(plan, { ...approved(plan.id, run.id), status: "pending" })).rejects.toMatchObject({
       code: "approval_missing",
     });
@@ -594,6 +614,107 @@ console.error("authorization=Bearer-fakecodexstderr12345");
       ]),
     );
   });
+
+  it("cancels an active controlled execution through AbortSignal without marking it import-ready", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id, taskId: run.taskId });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+process.stdin.resume();
+setInterval(() => process.stdout.write("still running\\n"), 25);
+`);
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+      runStore: store,
+      pathEnv: binDir,
+    });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+      executionPolicy: { timeoutMs: 10_000 },
+    });
+    const controller = new AbortController();
+    const execution = adapter.executeApprovedContract(plan, approved(plan.id, run.id), { signal: controller.signal });
+    setTimeout(() => controller.abort(), 40);
+
+    const result = await execution;
+
+    expect(result.status).toBe("cancelled");
+    expect(result.failureReasons).toContain("execution_cancelled");
+    const eventTypes = store.listEvents(run.id).map((event) => event.type);
+    expect(eventTypes).toContain("codex_execution_cancel_requested");
+    expect(eventTypes).toContain("codex_execution_failed");
+    expect(eventTypes).not.toContain("codex_execution_result_ready");
+  });
+
+  it("escalates cleanup when a same-group descendant ignores SIGTERM", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({ runId: run.id, taskId: run.taskId });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const orphanMarker = path.join(
+      request.sandbox.worktreePath,
+      "packages",
+      "orphan-marker.txt",
+    );
+    const readyMarker = path.join(
+      request.sandbox.worktreePath,
+      "packages",
+      "descendant-ready.txt",
+    );
+    await mkdir(path.dirname(readyMarker), { recursive: true });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const marker = ${JSON.stringify(orphanMarker)};
+const ready = ${JSON.stringify(readyMarker)};
+spawn(process.execPath, ["-e", "const fs=require('node:fs');const marker=" + JSON.stringify(marker) + ";const ready=" + JSON.stringify(ready) + ";process.on('SIGTERM',()=>{});fs.writeFileSync(ready,'ready\\\\n');setTimeout(()=>fs.writeFileSync(marker,'orphan\\\\n'),400);"], {
+  stdio: "ignore",
+}).unref();
+const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+const deadline = Date.now() + 1000;
+while (!fs.existsSync(ready) && Date.now() < deadline) Atomics.wait(waitBuffer, 0, 0, 5);
+const outputIndex = process.argv.indexOf("--output-last-message");
+if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Parent completed\\n");
+`);
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+      runStore: store,
+      pathEnv: binDir,
+    });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(
+      contract,
+      request.artifactRoot,
+    );
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+    });
+
+    const result = await adapter.executeApprovedContract(
+      plan,
+      approved(plan.id, run.id),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(result.status).toBe("finished");
+    await expect(readFile(readyMarker, "utf8")).resolves.toContain("ready");
+    await expect(readFile(orphanMarker, "utf8")).rejects.toThrow();
+  });
 });
 
 describe("LocalManualCodexResultImporter", () => {
@@ -634,6 +755,62 @@ describe("LocalManualCodexResultImporter", () => {
     });
   });
 
+  it("preserves exact tracked, renamed, and untracked paths containing spaces and quotes", async () => {
+    const fixture = await createImportFixture();
+    await writeFile(
+      path.join(fixture.worktreePath, "packages", "README.md"),
+      "modified tracked file\n",
+    );
+    await git(
+      [
+        "mv",
+        "README.md",
+        'renamed "guide" file.md',
+      ],
+      fixture.worktreePath,
+    );
+    const untrackedPath = path.join(
+      fixture.worktreePath,
+      "packages",
+      'nested dir',
+      'untracked "quote".txt',
+    );
+    await mkdir(path.dirname(untrackedPath), { recursive: true });
+    await writeFile(untrackedPath, "untracked\n");
+    const importer = new LocalManualCodexResultImporter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+    });
+
+    const patch = await importer.inspectSandboxChanges(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+      }),
+    );
+
+    expect(patch.changedFiles).toEqual(
+      expect.arrayContaining([
+        {
+          status: "modified",
+          path: "packages/README.md",
+        },
+        {
+          status: "renamed",
+          previousPath: "README.md",
+          path: 'renamed "guide" file.md',
+        },
+        {
+          status: "untracked",
+          path: 'packages/nested dir/untracked "quote".txt',
+        },
+      ]),
+    );
+    expect(patch.changedFiles.map((file) => file.path)).not.toContain(
+      '"packages/nested dir/untracked \\"quote\\".txt"',
+    );
+  });
+
   it("supports no-change imports but requires manual review", async () => {
     const fixture = await createImportFixture();
     const importer = new LocalManualCodexResultImporter({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
@@ -649,6 +826,115 @@ describe("LocalManualCodexResultImporter", () => {
     expect(bundle.status).toBe("manual_review_required");
     expect(bundle.failureReasons).toContain("no_changes");
     expect(bundle.patch.hasChanges).toBe(false);
+  });
+
+  it("re-checks the actual diff size and destructive operations before import", async () => {
+    const broadFixture = await createImportFixture();
+    for (let index = 0; index < broadFixture.policy.sandbox.fileWritePolicy.maxChangedFiles + 1; index += 1) {
+      await writeFile(
+        path.join(broadFixture.worktreePath, "packages", `change-${index}.txt`),
+        `change ${index}\n`,
+      );
+    }
+    const importer = new LocalManualCodexResultImporter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+    });
+
+    const broadBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: broadFixture.artifactRoot,
+        sandbox: broadFixture.sandbox,
+        policy: broadFixture.policy,
+      }),
+    );
+
+    expect(broadBundle.status).toBe("manual_review_required");
+    expect(broadBundle.failureReasons).toContain("changed_file_limit_exceeded");
+
+    const approvedBroadBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: broadFixture.artifactRoot,
+        sandbox: broadFixture.sandbox,
+        policy: broadFixture.policy,
+        overrides: { allowChangedFileLimitExceeded: true },
+      }),
+    );
+    expect(approvedBroadBundle.status).toBe("imported");
+    expect(approvedBroadBundle.failureReasons).not.toContain(
+      "changed_file_limit_exceeded",
+    );
+
+    await git(["rm", "packages/README.md"], broadFixture.worktreePath);
+    const destructiveBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: broadFixture.artifactRoot,
+        sandbox: broadFixture.sandbox,
+        policy: broadFixture.policy,
+      }),
+    );
+
+    expect(destructiveBundle.status).toBe("manual_review_required");
+    expect(destructiveBundle.failureReasons).toContain("destructive_change_detected");
+
+    const approvedDestructiveBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: broadFixture.artifactRoot,
+        sandbox: broadFixture.sandbox,
+        policy: broadFixture.policy,
+        overrides: {
+          allowChangedFileLimitExceeded: true,
+          allowDestructiveChanges: true,
+        },
+      }),
+    );
+    expect(approvedDestructiveBundle.status).toBe("imported");
+    expect(approvedDestructiveBundle.failureReasons).not.toContain(
+      "destructive_change_detected",
+    );
+  });
+
+  it("fails import when the actual diff exceeds an exact interactive path grant", async () => {
+    const fixture = await createImportFixture();
+    await writeImportChange(fixture.worktreePath);
+    const importer = new LocalManualCodexResultImporter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+    });
+
+    const rejectedBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+        overrides: {
+          expectedPaths: ["packages/feature.txt"],
+          requireExpectedPaths: true,
+        },
+      }),
+    );
+    expect(rejectedBundle.status).toBe("manual_review_required");
+    expect(rejectedBundle.failureReasons).toContain("unauthorized_file_touch");
+    expect(rejectedBundle.patch.unauthorizedFiles).toEqual([
+      "packages/README.md",
+    ]);
+
+    const acceptedBundle = await importer.importResultBundle(
+      importRequest({
+        artifactRoot: fixture.artifactRoot,
+        sandbox: fixture.sandbox,
+        policy: fixture.policy,
+        overrides: {
+          expectedPaths: [
+            "packages/feature.txt",
+            "packages/README.md",
+          ],
+          requireExpectedPaths: true,
+        },
+      }),
+    );
+    expect(acceptedBundle.status).toBe("imported");
+    expect(acceptedBundle.failureReasons).not.toContain(
+      "unauthorized_file_touch",
+    );
   });
 
   it("imports an optional validation transcript and creates verifier input without running verification", async () => {

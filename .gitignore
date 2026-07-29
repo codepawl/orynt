@@ -2,6 +2,7 @@ node_modules/
 dist/
 target/
 .codex/hooks.json
+.hermes/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts

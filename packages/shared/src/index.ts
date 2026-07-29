@@ -8,6 +8,7 @@ export * from "./memoryContracts";
 export * from "./skillContracts";
 export * from "./agentLedger";
 export * from "./productPlans";
+export * from "./orchestrationContracts";
 
 import { createMockRunSequence } from "./runSpine";
 import { getOryntPlan, summarizePlanQuota } from "./productPlans";

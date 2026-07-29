@@ -188,9 +188,57 @@ describe("LocalRepositoryVerifier", () => {
     expect(result.verdict.failureClass).toBe("command_timeout");
   });
 
+  it("cancels an active verification command", async () => {
+    const { repoPath, worktreePath, commit } =
+      await createTempGitRepository("repo-cancel-verification");
+    const sandbox = createSandbox(repoPath, worktreePath, commit);
+    const policy = policyWithAllowlist(repoPath, worktreePath, [
+      "node scripts/slow.mjs",
+    ]);
+    const verifier = new LocalRepositoryVerifier({
+      managedArtifactRoot: path.join(tempRoot, "artifacts-cancel-verification"),
+    });
+    const plan = verifier.createPlan({
+      runId: "run-cancel-verification",
+      taskId: "task-verify",
+      sandbox,
+      policy,
+      budget: createDefaultRunBudget(),
+      commands: ["node scripts/slow.mjs"],
+      artifactRoot: path.join(
+        tempRoot,
+        "artifacts-cancel-verification",
+        "run-cancel-verification",
+      ),
+      config: { defaultCommands: [], commandTimeoutMs: 5_000 },
+    });
+    const controller = new AbortController();
+    const verification = verifier.runVerification(plan, policy, {
+      signal: controller.signal,
+    });
+    setTimeout(() => controller.abort(), 25);
+
+    await expect(verification).rejects.toThrow(
+      "Repository verification cancelled",
+    );
+    await expect(
+      readFile(
+        path.join(
+          tempRoot,
+          "artifacts-cancel-verification",
+          "run-cancel-verification",
+          "verification-result.json",
+        ),
+        "utf8",
+      ),
+    ).rejects.toThrow();
+  });
+
   it("detects allowed diff scope, protected paths, and unexpected files", async () => {
     const { repoPath, worktreePath, commit } = await createTempGitRepository();
     await writeFile(path.join(worktreePath, "packages", "feature.txt"), "allowed\n");
+    const exactPath = 'packages/file "quoted"\\name.txt';
+    await writeFile(path.join(worktreePath, exactPath), "exact path\n");
     let sandbox = createSandbox(repoPath, worktreePath, commit);
     let policy = policyWithAllowlist(repoPath, worktreePath, []);
     let verifier = new LocalRepositoryVerifier({ managedArtifactRoot: path.join(tempRoot, "artifacts-allowed") });
@@ -205,6 +253,7 @@ describe("LocalRepositoryVerifier", () => {
     });
     let result = await verifier.runVerification(plan, policy);
     expect(result.diffScope.allowedFiles).toContain("packages/feature.txt");
+    expect(result.diffScope.allowedFiles).toContain(exactPath);
     expect(result.diffScope.withinAllowedScope).toBe(true);
 
     const protectedFixture = await createTempGitRepository("repo-protected");
@@ -242,6 +291,209 @@ describe("LocalRepositoryVerifier", () => {
     result = await verifier.runVerification(plan, policy);
     expect(result.status).toBe("fail");
     expect(result.verdict.failureClass).toBe("unexpected_file_touch");
+  });
+
+  it("fails verification when the actual diff is broad or destructive", async () => {
+    const broadFixture = await createTempGitRepository("repo-broad");
+    const broadPolicy = policyWithAllowlist(
+      broadFixture.repoPath,
+      broadFixture.worktreePath,
+      [],
+    );
+    for (
+      let index = 0;
+      index < broadPolicy.sandbox.fileWritePolicy.maxChangedFiles + 1;
+      index += 1
+    ) {
+      await writeFile(
+        path.join(broadFixture.worktreePath, "packages", `broad-${index}.txt`),
+        `${index}\n`,
+      );
+    }
+    let verifier = new LocalRepositoryVerifier({
+      managedArtifactRoot: path.join(tempRoot, "artifacts-broad"),
+    });
+    let plan = verifier.createPlan({
+      runId: "run-broad",
+      taskId: "task-verify",
+      sandbox: createSandbox(
+        broadFixture.repoPath,
+        broadFixture.worktreePath,
+        broadFixture.commit,
+      ),
+      policy: broadPolicy,
+      budget: createDefaultRunBudget(),
+      artifactRoot: path.join(tempRoot, "artifacts-broad", "run-broad"),
+      config: { defaultCommands: [] },
+    });
+    let result = await verifier.runVerification(plan, broadPolicy);
+    expect(result.status).toBe("fail");
+    expect(result.verdict.failureClass).toBe("changed_file_limit_exceeded");
+    expect(result.diffScope.changedFileLimitExceeded).toBe(true);
+
+    plan = verifier.createPlan({
+      runId: "run-broad-approved",
+      taskId: "task-verify",
+      sandbox: createSandbox(
+        broadFixture.repoPath,
+        broadFixture.worktreePath,
+        broadFixture.commit,
+      ),
+      policy: broadPolicy,
+      budget: createDefaultRunBudget(),
+      artifactRoot: path.join(tempRoot, "artifacts-broad", "run-broad-approved"),
+      config: {
+        defaultCommands: [],
+        authorizedChangedPaths: Array.from(
+          {
+            length:
+              broadPolicy.sandbox.fileWritePolicy.maxChangedFiles + 1,
+          },
+          (_, index) => `packages/broad-${index}.txt`,
+        ),
+        allowChangedFileLimitExceeded: true,
+      },
+    });
+    result = await verifier.runVerification(plan, broadPolicy);
+    expect(result.verdict.failureClass).toBeUndefined();
+
+    const destructiveFixture = await createTempGitRepository("repo-destructive");
+    await git(["rm", "packages/README.md"], destructiveFixture.worktreePath);
+    const destructivePolicy = policyWithAllowlist(
+      destructiveFixture.repoPath,
+      destructiveFixture.worktreePath,
+      [],
+    );
+    verifier = new LocalRepositoryVerifier({
+      managedArtifactRoot: path.join(tempRoot, "artifacts-destructive"),
+    });
+    plan = verifier.createPlan({
+      runId: "run-destructive",
+      taskId: "task-verify",
+      sandbox: createSandbox(
+        destructiveFixture.repoPath,
+        destructiveFixture.worktreePath,
+        destructiveFixture.commit,
+      ),
+      policy: destructivePolicy,
+      budget: createDefaultRunBudget(),
+      artifactRoot: path.join(tempRoot, "artifacts-destructive", "run-destructive"),
+      config: { defaultCommands: [] },
+    });
+    result = await verifier.runVerification(plan, destructivePolicy);
+    expect(result.status).toBe("fail");
+    expect(result.verdict.failureClass).toBe("destructive_change_detected");
+    expect(result.diffScope.destructiveFiles).toContain("packages/README.md");
+
+    plan = verifier.createPlan({
+      runId: "run-destructive-approved",
+      taskId: "task-verify",
+      sandbox: createSandbox(
+        destructiveFixture.repoPath,
+        destructiveFixture.worktreePath,
+        destructiveFixture.commit,
+      ),
+      policy: destructivePolicy,
+      budget: createDefaultRunBudget(),
+      artifactRoot: path.join(
+        tempRoot,
+        "artifacts-destructive",
+        "run-destructive-approved",
+      ),
+      config: {
+        defaultCommands: [],
+        authorizedChangedPaths: ["packages/README.md"],
+        allowDestructiveChanges: true,
+      },
+    });
+    result = await verifier.runVerification(plan, destructivePolicy);
+    expect(result.verdict.failureClass).toBeUndefined();
+  });
+
+  it("fails when the real diff exceeds the action-bound path grant", async () => {
+    const fixture = await createTempGitRepository("repo-authorized-scope");
+    await writeFile(path.join(fixture.worktreePath, "packages", "actual.txt"), "changed\n");
+    const policy = policyWithAllowlist(
+      fixture.repoPath,
+      fixture.worktreePath,
+      [],
+    );
+    const verifier = new LocalRepositoryVerifier({
+      managedArtifactRoot: path.join(tempRoot, "artifacts-authorized-scope"),
+    });
+    const plan = verifier.createPlan({
+      runId: "run-authorized-scope",
+      taskId: "task-verify",
+      sandbox: createSandbox(
+        fixture.repoPath,
+        fixture.worktreePath,
+        fixture.commit,
+      ),
+      policy,
+      budget: createDefaultRunBudget(),
+      artifactRoot: path.join(
+        tempRoot,
+        "artifacts-authorized-scope",
+        "run-authorized-scope",
+      ),
+      config: {
+        defaultCommands: [],
+        authorizedChangedPaths: ["packages/declared.txt"],
+      },
+    });
+
+    const result = await verifier.runVerification(plan, policy);
+
+    expect(result.status).toBe("fail");
+    expect(result.verdict.failureClass).toBe("unauthorized_file_touch");
+    expect(result.diffScope.unauthorizedFiles).toEqual(["packages/actual.txt"]);
+  });
+
+  it("fails closed for empty interactive grants and does not expand directory grants", async () => {
+    const fixture = await createTempGitRepository("repo-exact-authorization");
+    await writeFile(
+      path.join(fixture.worktreePath, "packages", "actual.txt"),
+      "changed\n",
+    );
+    const policy = policyWithAllowlist(
+      fixture.repoPath,
+      fixture.worktreePath,
+      [],
+    );
+    const verifier = new LocalRepositoryVerifier({
+      managedArtifactRoot: path.join(tempRoot, "artifacts-exact-authorization"),
+    });
+
+    for (const authorizedChangedPaths of [[], ["packages"]]) {
+      const plan = verifier.createPlan({
+        runId: `run-exact-${authorizedChangedPaths.length}`,
+        taskId: "task-verify",
+        sandbox: createSandbox(
+          fixture.repoPath,
+          fixture.worktreePath,
+          fixture.commit,
+        ),
+        policy,
+        budget: createDefaultRunBudget(),
+        artifactRoot: path.join(
+          tempRoot,
+          "artifacts-exact-authorization",
+          `run-exact-${authorizedChangedPaths.length}`,
+        ),
+        config: {
+          defaultCommands: [],
+          authorizedChangedPaths,
+          requireAuthorizedChangedPaths: true,
+        },
+      });
+
+      const result = await verifier.runVerification(plan, policy);
+      expect(result.status).toBe("fail");
+      expect(result.verdict.failureClass).toBe("unauthorized_file_touch");
+      expect(result.diffScope.unauthorizedFiles).toEqual([
+        "packages/actual.txt",
+      ]);
+    }
   });
 
   it("emits verification lifecycle RunEvents", async () => {

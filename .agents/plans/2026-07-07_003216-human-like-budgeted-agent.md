@@ -1,6 +1,6 @@
 # Human-like Budgeted Agent MVP Implementation Plan
 
-> For Hermes: implement directly with TDD because the user asked to plan and upgrade in the same request.
+> Implement directly with TDD because the user asked to plan and upgrade in the same request.
 
 Goal: Upgrade Orynt's existing cognitive kernel and desktop repository run path so test runs expose a human-like budgeted agent trace: need appraisal, compact state, affordance-aware options, tradeoff scoring, policy selection, budget/cost telemetry, and memory consolidation hooks.
 
@@ -10,7 +10,7 @@ Tech stack: TypeScript pnpm monorepo, Vitest, existing @codepawl/shared policy/b
 
 ## Current context
 
-- Source research: /home/nxank4/Downloads/human_like_budgeted_agent_architecture.md
+- Source research was provided externally; this plan records the derived implementation requirements.
 - Existing kernel already has observe/retrieve/plan/gate/execute/verify/recover/learn/summarize phases.
 - Existing coding apprentice already writes artifact-manifest.json and has memory extraction, skill plans, gateway traces, ledger usage.
 - Practical MVP should focus on coding/debugging agent domain, matching the research's recommended MVP scope.

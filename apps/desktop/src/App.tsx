@@ -10,13 +10,11 @@ import {
   ChevronsUpDown,
   ChevronRight,
   CircleUserRound,
-  Code2,
   Copy,
   CreditCard,
   Cpu,
   Download,
   EllipsisVertical,
-  ExternalLink,
   FolderPlus,
   FolderOpen,
   GitBranch,
@@ -90,13 +88,6 @@ type Workspace = {
 
 type ThreadMessageDetailKind = "thinking" | "tool" | "command" | "model" | "memory" | "done" | "system" | "error";
 
-type AgentResponseSource = {
-  citation: number;
-  domain: string;
-  excerpt: string;
-  title: string;
-  url?: string;
-};
 
 type ThreadMessage = {
   id: string;
@@ -107,7 +98,6 @@ type ThreadMessage = {
   detailKind?: ThreadMessageDetailKind;
   runId?: string;
   detailItems?: string[];
-  sources?: AgentResponseSource[];
 };
 
 type ThreadStateSnapshot = {
@@ -980,21 +970,29 @@ function resolveOryntDropdownLayout(trigger: HTMLElement, menu: HTMLElement): { 
   return { maxHeight: Math.round(maxHeight), placement };
 }
 
-function OryntDropdown({
-  ariaLabel,
-  id,
-  onChange,
-  options,
-  placeholder,
-  value,
-}: {
+type OryntDropdownProps = {
   ariaLabel: string;
+  className?: string;
+  density?: "compact" | "comfortable";
+  disabled?: boolean;
   id: string;
   onChange: (value: string) => void;
   options: OryntDropdownOption[];
   placeholder: string;
   value: string;
-}) {
+};
+
+export function OryntDropdown({
+  ariaLabel,
+  className,
+  density = "compact",
+  disabled = false,
+  id,
+  onChange,
+  options,
+  placeholder,
+  value,
+}: OryntDropdownProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -1006,6 +1004,7 @@ function OryntDropdown({
   const selectedOption = options.find((option) => option.value === value) ?? null;
   const displayLabel = selectedOption?.label ?? placeholder;
   const listboxId = `${id}-listbox`;
+  const highlightedOptionIndex = isOpen ? options.findIndex((option) => option.value === highlightedValue) : -1;
 
   useEffect(() => {
     if (!isOpen) {
@@ -1021,6 +1020,12 @@ function OryntDropdown({
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
 
   useEffect(() => {
     if (isOpen) {
@@ -1080,6 +1085,9 @@ function OryntDropdown({
   }, [isOpen, options.length]);
 
   const selectOption = (nextValue: string) => {
+    if (disabled || !options.some((option) => option.value === nextValue)) {
+      return;
+    }
     setHighlightedValue(nextValue);
     setIsOpen(false);
     triggerRef.current?.blur();
@@ -1104,7 +1112,12 @@ function OryntDropdown({
     setHighlightedValue(options[nextIndex]?.value ?? "");
   };
 
+
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) {
+      return;
+    }
+
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!isOpen) {
@@ -1121,27 +1134,36 @@ function OryntDropdown({
         setIsOpen(true);
         return;
       }
-      selectOption(highlightedValue || value || options[0]?.value || "");
+      const nextValue = highlightedValue || value || options[0]?.value;
+      if (nextValue !== undefined) {
+        selectOption(nextValue);
+      }
       return;
     }
 
     if (event.key === "Escape") {
       event.preventDefault();
       setIsOpen(false);
+      triggerRef.current?.focus();
     }
   };
 
   return (
-    <div className="orynt-dropdown" ref={rootRef}>
+    <div className={`orynt-dropdown orynt-dropdown-density-${density}${className ? ` ${className}` : ""}`} ref={rootRef}>
       <button
-        aria-activedescendant={isOpen && highlightedValue ? `${id}-option-${highlightedValue || "empty"}` : undefined}
+        aria-activedescendant={highlightedOptionIndex >= 0 ? `${id}-option-${highlightedOptionIndex}` : undefined}
         aria-controls={isOpen ? listboxId : undefined}
-        aria-expanded={isOpen}
+        aria-expanded={disabled ? false : isOpen}
         aria-haspopup="listbox"
         aria-label={ariaLabel}
         className={`input-focus-standalone settings-select orynt-dropdown-trigger${selectedOption ? "" : " orynt-dropdown-trigger-placeholder"}`}
+        disabled={disabled}
         id={id}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => {
+          if (!disabled) {
+            setIsOpen((current) => !current);
+          }
+        }}
         onKeyDown={handleKeyDown}
         ref={triggerRef}
         role="combobox"
@@ -1160,10 +1182,10 @@ function OryntDropdown({
           aria-label={`${ariaLabel} options`}
           style={menuMaxHeight ? { maxHeight: `${menuMaxHeight}px` } : undefined}
         >
-          {options.map((option) => {
+          {options.map((option, index) => {
             const isSelected = option.value === value;
             const isHighlighted = option.value === highlightedValue;
-            const optionId = `${id}-option-${option.value || "empty"}`;
+            const optionId = `${id}-option-${index}`;
             return (
               <button
                 aria-selected={isSelected}
@@ -1716,21 +1738,6 @@ function agentResponseText(message: ThreadMessage): string {
   return message.content?.trim() ?? "";
 }
 
-function defaultAgentResponseSources(message: ThreadMessage): AgentResponseSource[] {
-  const content = message.content?.trim();
-  return [
-    {
-      citation: 1,
-      domain: "Current thread",
-      excerpt: content ? truncateUiText(content, 320) : "This response was generated in the active Orynt thread.",
-      title: message.label ?? "Agent response",
-    },
-  ];
-}
-
-function agentResponseSources(message: ThreadMessage): AgentResponseSource[] {
-  return message.sources?.length ? message.sources : defaultAgentResponseSources(message);
-}
 
 async function writeClipboardText(value: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -2115,7 +2122,6 @@ function App({
   const [sharedAgentResponseId, setSharedAgentResponseId] = useState<string | null>(null);
   const [agentResponseRatings, setAgentResponseRatings] = useState<Record<string, AgentResponseRating>>({});
   const [openAgentResponseMenuId, setOpenAgentResponseMenuId] = useState<string | null>(null);
-  const [openAgentResponseSourcesId, setOpenAgentResponseSourcesId] = useState<string | null>(null);
   const [agentResponseSelection, setAgentResponseSelection] = useState<AgentResponseTextSelection | null>(null);
   const [readingAgentResponseId, setReadingAgentResponseId] = useState<string | null>(null);
   const [nextAgentRetryIndex, setNextAgentRetryIndex] = useState(2);
@@ -2201,6 +2207,7 @@ function App({
   const codexSetupAutoCheckKeyRef = useRef<string | null>(null);
   const codexManualLoginActionsRevealedRef = useRef(false);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
+  const activeThreadRef = useRef<HTMLElement>(null);
   const nextNotificationIdRef = useRef(1);
   const setupAutoCompleteInFlightRef = useRef(false);
   const isPendingAction = (key: string) => pendingActions.has(key);
@@ -2405,8 +2412,12 @@ function App({
         setSelectedProviderId(provider.id);
         setSelectedModelId(normalizedModelConnection.modelId);
         setApiKeyEnvName(normalizedModelConnection.envKey ?? provider.defaultEnvKey ?? "OPENAI_API_KEY");
+        const cachedCatalog = readCachedProviderModelCatalog(provider.id);
+        const hydratedModelCatalogOptions = cachedCatalog
+          ? [savedModelOption, ...cachedCatalog.models.filter((model) => model.id !== savedModelOption.id)]
+          : [savedModelOption];
         setModelCatalogProviderId(provider.id);
-        setModelCatalogOptions([savedModelOption]);
+        setModelCatalogOptions(hydratedModelCatalogOptions);
         setModelCatalogStatus("ready");
         setModelCatalogIsLive(false);
         setModelCatalogMessage("");
@@ -2718,6 +2729,14 @@ function App({
     return () => window.cancelAnimationFrame(frameId);
   }, [pendingMessageScrollId, threadMessagesByWorkspace]);
 
+  useLayoutEffect(() => {
+    const messages = activeThreadRef.current?.querySelectorAll<HTMLElement>("[data-message-id]");
+    const latestMessage = messages?.item((messages.length ?? 0) - 1);
+    if (latestMessage && typeof latestMessage.scrollIntoView === "function") {
+      latestMessage.scrollIntoView({ block: "end", inline: "nearest", behavior: "auto" });
+    }
+  }, [activeWorkspaceId]);
+
   useEffect(() => {
     if (!isAccountMenuOpen) {
       return;
@@ -3018,20 +3037,6 @@ function App({
         }
         setThreadMessagesByWorkspace((current) => {
           const currentMessages = current[threadId] ?? [];
-          const completionSources: AgentResponseSource[] = [
-            {
-              citation: 1,
-              domain: "Orynt run store",
-              excerpt: `Run ${run.id} for repository ${effectiveRepositoryPath} completed with persisted evidence.`,
-              title: "Persisted repository run",
-            },
-            {
-              citation: 2,
-              domain: "User request",
-              excerpt: truncateUiText(goal, 320),
-              title: "Original task",
-            },
-          ];
           const outcomeMessages: ThreadMessage[] = finalModelResponse
             ? [
                 {
@@ -3040,7 +3045,6 @@ function App({
                   role: "agent",
                   label: "Agent response",
                   content: finalModelResponse,
-                  sources: completionSources,
                 },
               ]
             : [
@@ -3058,7 +3062,6 @@ function App({
                   role: "agent",
                   label: "Agent response",
                   content: noFinalModelResponseContent(run.id),
-                  sources: completionSources,
                 },
               ];
           return {
@@ -3090,20 +3093,6 @@ function App({
             role: "agent",
             label: "Agent response",
             content: `Repository harness run failed before Orynt received usable output. ${runnerMessage}`,
-            sources: [
-              {
-                citation: 1,
-                domain: "Repository runner",
-                excerpt: runnerMessage,
-                title: "Runner error",
-              },
-              {
-                citation: 2,
-                domain: "User request",
-                excerpt: truncateUiText(goal, 320),
-                title: "Original task",
-              },
-            ],
           };
           return {
             ...current,
@@ -3738,9 +3727,6 @@ function App({
   const activeWorkspace = visibleWorkspaces.find((space) => space.id === activeWorkspaceId) ?? visibleWorkspaces[0] ?? workspaces[0];
   const threadStartCopy = useMemo(() => randomThreadStartCopy(), [activeWorkspace.id]);
   const activeThreadMessages = threadMessagesByWorkspace[activeWorkspace.id] ?? [];
-  const activeAgentResponseSourcesMessage = openAgentResponseSourcesId
-    ? activeThreadMessages.find((message) => message.role === "agent" && message.id === openAgentResponseSourcesId)
-    : undefined;
   const isActiveThreadEmpty = activeThreadMessages.length === 0;
   const normalizedWorkspaceSearchQuery = workspaceSearchQuery.trim().toLowerCase();
   const filteredWorkspaces = normalizedWorkspaceSearchQuery
@@ -3759,7 +3745,6 @@ function App({
         ? "app-shell-mobile-workspace-open"
         : "app-shell-mobile-workspace-closed"
       : "app-shell-desktop-workspace",
-    activeAgentResponseSourcesMessage ? "app-shell-sources-open" : "app-shell-sources-closed",
   ].join(" ");
   const workspacePanelToggleLabel = isMobileWorkspaceViewport
     ? isMobileWorkspaceDrawerOpen
@@ -3774,7 +3759,6 @@ function App({
   const handleSelectWorkspace = (spaceId: string) => {
     setActiveWorkspaceId(spaceId);
     setOpenWorkspaceMenuId(null);
-    setOpenAgentResponseSourcesId(null);
     setDeleteWorkspaceId(null);
     setIsMobileWorkspaceDrawerOpen(false);
   };
@@ -3786,7 +3770,6 @@ function App({
       setWorkspaceSearchQuery("");
       setIsWorkspaceSearchOpen(false);
       setOpenWorkspaceMenuId(null);
-      setOpenAgentResponseSourcesId(null);
       setDeleteWorkspaceId(null);
       setEditingThreadHeaderId(null);
       setIsMobileWorkspaceDrawerOpen(false);
@@ -3806,7 +3789,6 @@ function App({
     setWorkspaceSearchQuery("");
     setIsWorkspaceSearchOpen(false);
     setOpenWorkspaceMenuId(null);
-    setOpenAgentResponseSourcesId(null);
     setDeleteWorkspaceId(null);
     setEditingThreadHeaderId(null);
     setIsMobileWorkspaceDrawerOpen(false);
@@ -3890,7 +3872,6 @@ function App({
       return;
     }
     setOpenAgentResponseMenuId(null);
-    setOpenAgentResponseSourcesId(null);
     void submitComposerGoal(retryGoal);
   };
 
@@ -3908,7 +3889,6 @@ function App({
       label: message.label ?? "Agent response",
       content: message.content ? `Branched from response:\n\n${message.content}` : "Branched from agent response.",
       showContext: false,
-      sources: agentResponseSources(message),
     };
     setNextWorkspaceThreadIndex((current) => current + 1);
     setWorkspaces((current) => [branchSpace, ...current]);
@@ -3921,18 +3901,11 @@ function App({
     setIsWorkspaceSearchOpen(false);
     setOpenWorkspaceMenuId(null);
     setOpenAgentResponseMenuId(null);
-    setOpenAgentResponseSourcesId(null);
     setEditingThreadHeaderId(null);
   };
 
   const handleToggleAgentResponseMenu = (messageId: string) => {
     setOpenAgentResponseMenuId((current) => (current === messageId ? null : messageId));
-    setOpenAgentResponseSourcesId(null);
-  };
-
-  const handleToggleAgentResponseSources = (messageId: string) => {
-    setOpenAgentResponseSourcesId((current) => (current === messageId ? null : messageId));
-    setOpenAgentResponseMenuId(null);
   };
 
   const handleToggleReadAloud = (message: ThreadMessage) => {
@@ -3972,7 +3945,6 @@ function App({
 
     setAgentResponseSelection({ messageId, text: selectedText });
     setOpenAgentResponseMenuId(null);
-    setOpenAgentResponseSourcesId(null);
   };
 
   const handleAppMouseUp = () => {
@@ -4264,68 +4236,34 @@ function App({
 
     return (
       <div
-        className={`composer-quick-dropdown composer-model-dropdown composer-quick-dropdown-${composerQuickMenuPlacement}`}
+        className={`composer-model-menu composer-model-menu-${composerQuickMenuPlacement}`}
         id="composer-model-menu"
-        role="dialog"
+        role="menu"
         aria-label="Choose model"
         ref={composerQuickMenuRef}
       >
-        <section className="composer-quick-section" aria-label="Model choices">
-          <div className="composer-quick-section-header composer-model-section-header">
-            <div>
-              <span>Model</span>
-              <small>
-                {isSelectedProviderModelFetchPending || isSelectedProviderCheckPending
-                  ? "Refreshing available models"
-                  : activeModelCatalogOptions.length > 0
-                    ? `${activeModelCatalogOptions.length} available${modelCatalogIsLive ? " - live" : " - cached"}`
-                    : "No models loaded"}
-              </small>
-            </div>
-            <button
-              className="composer-quick-link-button"
-              type="button"
-              aria-label="Refresh available models"
-              title="Refresh available models"
-              disabled={!selectedProvider || isSelectedProviderCheckPending || isSelectedProviderModelFetchPending}
-              onClick={() => selectedProvider && void preflightSelectedProviderAndLoadModels(selectedProvider)}
-            >
-              {isSelectedProviderCheckPending || isSelectedProviderModelFetchPending ? (
-                <LoaderCircle className="composer-option-icon composer-option-icon-spin" aria-hidden="true" strokeWidth={2} />
-              ) : (
-                <RotateCcw className="composer-option-icon" aria-hidden="true" strokeWidth={2} />
-              )}
-            </button>
-          </div>
-            {modelCatalogMessage ? <p className={`composer-quick-message composer-quick-message-${modelCatalogMessageTone}`} role="status">{modelCatalogMessage}</p> : null}
-            <div className="composer-model-options" aria-label="Available models">
-              {selectedProvider && activeModelCatalogOptions.length > 0 ? (
-                activeModelCatalogOptions.map((model) => {
-                  const isSelectedModel = selectedModelId === model.id;
-                  return (
-                    <button
-                      className="composer-model-option"
-                      type="button"
-                      aria-pressed={isSelectedModel}
-                      aria-busy={isSelectedModel && isModelConnectionSavePending}
-                      disabled={isModelConnectionSavePending}
-                      key={model.id}
-                      onClick={() => selectedProvider && void handleSaveComposerModel(selectedProvider, model)}
-                    >
-                      <Code2 className="composer-option-icon" aria-hidden="true" strokeWidth={2} />
-                      <span>
-                        <strong>{model.label}</strong>
-                        <small>{isSelectedModel && isModelConnectionSavePending ? "Saving model choice" : model.description ?? model.id}</small>
-                      </span>
-                      {isSelectedModel ? <Check className="composer-option-check" aria-hidden="true" strokeWidth={2} /> : null}
-                    </button>
-                  );
-                })
-              ) : (
-                <p className="composer-quick-empty">{selectedProvider ? "Refresh to load provider-available models." : "Choose a provider first."}</p>
-              )}
-            </div>
-          </section>
+        {selectedProvider && activeModelCatalogOptions.length > 0 ? (
+          activeModelCatalogOptions.map((model) => {
+            const isSelectedModel = selectedModelId === model.id;
+            return (
+              <button
+                className="composer-model-menu-option"
+                type="button"
+                role="menuitemradio"
+                aria-checked={isSelectedModel}
+                aria-busy={isSelectedModel && isModelConnectionSavePending}
+                disabled={isModelConnectionSavePending}
+                key={model.id}
+                onClick={() => void handleSaveComposerModel(selectedProvider, model)}
+              >
+                {model.label}
+                {isSelectedModel ? <Check className="composer-option-check" aria-hidden="true" strokeWidth={2} /> : null}
+              </button>
+            );
+          })
+        ) : (
+          <p className="composer-quick-empty">{selectedProvider ? "Refresh to load provider-available models." : "Choose a provider first."}</p>
+        )}
       </div>
     );
   };
@@ -4361,6 +4299,7 @@ function App({
                 onClick={() => void handleSelectComposerThinkingEffortAndClose(option.value)}
               >
                 {option.label}
+                {isSelectedEffort ? <Check className="composer-option-check" aria-hidden="true" strokeWidth={2} /> : null}
               </button>
             );
           })}
@@ -4477,7 +4416,6 @@ function App({
     const isShared = sharedAgentResponseId === message.id;
     const rating = agentResponseRatings[message.id];
     const isMenuOpen = openAgentResponseMenuId === message.id;
-    const isSourcesOpen = openAgentResponseSourcesId === message.id;
     const isReading = readingAgentResponseId === message.id;
 
     return (
@@ -4525,18 +4463,6 @@ function App({
         <button className="agent-response-action-button" type="button" aria-label="Resend task" title="Resend" onClick={() => handleResendAgentResponse(message)}>
           <RotateCcw className="ui-icon" aria-hidden="true" strokeWidth={2} />
         </button>
-        <button
-          className="agent-response-action-button agent-response-sources-button"
-          type="button"
-          aria-label={isSourcesOpen ? "Hide sources" : "Show sources"}
-          aria-expanded={isSourcesOpen}
-          aria-controls={isSourcesOpen ? "agent-response-sources-panel" : undefined}
-          title="Sources"
-          onClick={() => handleToggleAgentResponseSources(message.id)}
-        >
-          <BookOpen className="ui-icon" aria-hidden="true" strokeWidth={2} />
-          <span>Sources</span>
-        </button>
         <div className="agent-response-more-action">
           <button
             className="agent-response-action-button"
@@ -4575,45 +4501,6 @@ function App({
     );
   };
 
-  const renderAgentResponseSourcesPanel = () => {
-    if (!activeAgentResponseSourcesMessage) {
-      return null;
-    }
-    const sources = agentResponseSources(activeAgentResponseSourcesMessage);
-
-    return (
-      <section className="agent-response-sources-panel" id="agent-response-sources-panel" aria-label="Sources">
-        <header>
-          <div>
-            <strong>Sources</strong>
-            <span>Current response context</span>
-          </div>
-          <button type="button" aria-label="Close sources" title="Close sources" onClick={() => setOpenAgentResponseSourcesId(null)}>
-            <X className="ui-icon" aria-hidden="true" strokeWidth={2} />
-          </button>
-        </header>
-        <ol>
-          {sources.map((source) => (
-            <li key={`${source.citation}-${source.title}`}>
-              <span className="agent-response-source-citation">{source.citation}</span>
-              <div>
-                {source.url ? (
-                  <a className="agent-response-source-link" href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title} source`}>
-                    {source.title}
-                    <ExternalLink className="ui-icon" aria-hidden="true" strokeWidth={2} />
-                  </a>
-                ) : (
-                  <strong className="agent-response-source-link">{source.title}</strong>
-                )}
-                <small>{source.domain}</small>
-                <p>{source.excerpt}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
-    );
-  };
 
   const renderAgentMessage = (message: ThreadMessage, detailMessages: ThreadMessage[] = []) => (
     <div className="agent-run-block" key={message.id}>
@@ -4767,11 +4654,13 @@ function App({
             <span>Provider</span>
             <OryntDropdown
               ariaLabel="Provider"
+              density="comfortable"
               id={`${headingId}-provider`}
               onChange={(nextValue) => handleSelectSetupProvider(nextValue as ModelProviderId | "")}
               options={[
                 { value: "", label: "Choose provider" },
                 ...setupProviderOptions.map((provider) => ({
+                  description: provider.description,
                   label: provider.label,
                   value: provider.id,
                 })),
@@ -4948,11 +4837,13 @@ function App({
             <span>Model</span>
             <OryntDropdown
               ariaLabel="Model"
+              density="comfortable"
               id={`${headingId}-model`}
               onChange={handleSelectSetupModel}
               options={[
                 { value: "", label: "Choose model" },
                 ...activeModelCatalogOptions.map((model) => ({
+                  description: model.description ?? undefined,
                   label: model.label,
                   value: model.id,
                 })),
@@ -4966,6 +4857,7 @@ function App({
               <SettingsLabelWithInfo info={selectedModelThinkingEffortCopy.helper} infoLabel="Thinking effort info" label="Thinking effort" />
               <OryntDropdown
                 ariaLabel="Thinking effort"
+                density="comfortable"
                 id={`${headingId}-thinking-effort`}
                 onChange={(nextValue) => void handleThinkingEffortChange(nextValue as ThinkingEffortOption)}
                 options={selectedModelThinkingEffortOptions.map((option) => ({
@@ -5668,20 +5560,24 @@ function App({
                 role="menu"
                 aria-label="Permission mode options"
               >
-                {permissionModeOptions.map((option) => (
-                  <button
-                    className="composer-meta-menu-item"
-                    type="button"
-                    role="menuitemradio"
-                    aria-label={option.label}
-                    aria-checked={permissionMode === option.value}
-                    key={option.value}
-                    onClick={() => handleSelectComposerPermissionMode(option.value)}
-                  >
-                    <span>{option.label}</span>
-                    <small>{option.helper}</small>
-                  </button>
-                ))}
+                {permissionModeOptions.map((option) => {
+                  const isSelectedPermissionMode = permissionMode === option.value;
+                  return (
+                    <button
+                      className="composer-meta-menu-item"
+                      type="button"
+                      role="menuitemradio"
+                      aria-label={option.label}
+                      aria-checked={isSelectedPermissionMode}
+                      key={option.value}
+                      onClick={() => handleSelectComposerPermissionMode(option.value)}
+                    >
+                      <span>{option.label}</span>
+                      <small>{option.helper}</small>
+                      {isSelectedPermissionMode ? <Check className="composer-option-check" aria-hidden="true" strokeWidth={2} /> : null}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
             <button
@@ -5708,7 +5604,7 @@ function App({
     children: ReactNode;
     showComposer?: boolean;
   }) => (
-    <section className={`thread${showComposer && isActiveThreadEmpty ? " thread-empty" : ""}`} aria-label="Task conversation">
+    <section ref={activeThreadRef} className={`thread${showComposer && isActiveThreadEmpty ? " thread-empty" : ""}`} aria-label="Task conversation">
       <header className="thread-header">
         {editingThreadHeaderId === activeWorkspace.id ? (
           <div className="thread-header-title thread-header-title-editing" onBlur={handleThreadHeaderEditBlur}>
@@ -6024,7 +5920,6 @@ function App({
       </aside>
 
       {renderCockpitContent()}
-      {renderAgentResponseSourcesPanel()}
 
       {renderSetupDialog()}
       {renderSettingsDialog()}
