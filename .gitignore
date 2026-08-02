@@ -7,6 +7,10 @@ target/
 vite.config.js
 vite.config.d.ts
 
+# Python bytecode and local caches
+__pycache__/
+*.py[cod]
+
 # Playwright
 /test-results/
 /playwright-report/
