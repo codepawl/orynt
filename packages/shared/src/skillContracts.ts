@@ -100,6 +100,49 @@ export type SkillRegistrySnapshot = {
   summary: SkillSummary;
 };
 
+export type LearnedSkillAuditOperation =
+  | "candidate.created"
+  | "status.decided"
+  | "replay.persisted";
+
+export type LearnedSkillAuditEntryV1 = {
+  id: string;
+  operation: LearnedSkillAuditOperation;
+  skillId: string;
+  namespace: MemoryNamespace;
+  actor: string;
+  reason: string;
+  runId?: string;
+  committedRevision: number;
+  occurredAt: string;
+};
+
+export type LearnedSkillSnapshotV1 = {
+  schemaVersion: 2;
+  revision: number;
+  updatedAt: string;
+  skills: SkillDefinition[];
+  replayPlans: SkillReplayPlan[];
+  auditLog: LearnedSkillAuditEntryV1[];
+};
+
+export type LearnedSkillCandidateInputV1 = {
+  candidate: SkillExtractionCandidate;
+  expectedRevision: number;
+  actor: string;
+  reason: string;
+};
+
+export type LearnedSkillDecisionInputV1 = {
+  decision: SkillPromotionDecision;
+  expectedRevision: number;
+};
+
+export type LearnedSkillMutationResultV1<T> = {
+  value: T;
+  committedRevision: number;
+};
+
 export type SkillReplayMode = "active_dry_run" | "candidate_preview";
 
 export type SkillReplayReadiness = "ready" | "preview_only" | "warning" | "blocked";

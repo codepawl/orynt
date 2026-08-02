@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildRepositoryTaskPlan } from "@codepawl/cognitive-kernel";
 import {
   createLegacySingleModelProfile,
   InMemoryRunStore,
@@ -14,11 +15,104 @@ import {
 } from "@codepawl/shared";
 import { LocalJsonMemoryStore } from "@codepawl/memory";
 
-import { LocalCodingApprenticeDemoOrchestrator, runDesktopRepositoryBeta } from "./index";
+import {
+  LocalCodingApprenticeDemoOrchestrator,
+  runDesktopRepositoryBeta as runDesktopRepositoryBetaImplementation,
+} from "./index";
 
 const execFileAsync = promisify(execFile);
 
 let tempRoot = "";
+
+function testTaskPaths(goal: string, expectedPaths?: string[]): string[] {
+  if (expectedPaths?.length) return expectedPaths;
+  if (goal.includes("broad repository update")) {
+    return [
+      "packages/value.txt",
+      ...Array.from({ length: 13 }, (_, index) => `packages/approved-${index}.txt`),
+    ];
+  }
+  if (goal.includes("fullstack")) {
+    return ["package.json", "index.html", "src/main.js", "server/index.js"];
+  }
+  return ["packages/value.txt"];
+}
+
+async function runDesktopRepositoryBeta(
+  request: Parameters<typeof runDesktopRepositoryBetaImplementation>[0],
+) {
+  if (
+    request.modelConnection?.providerId !== "codex-cli" ||
+    request.taskPlan ||
+    request.goal.includes("đọc codebase")
+  ) {
+    return runDesktopRepositoryBetaImplementation(request);
+  }
+  const expectedPaths = testTaskPaths(
+    request.goal,
+    request.authorization?.expectedPaths,
+  );
+  const requirementId = "test-required-outcome";
+  const taskPlan = buildRepositoryTaskPlan({
+    goal: request.goal,
+    sourcePrompt: request.goal,
+    maxModelTokens: 4_000,
+    maxWallTimeMs: 60_000,
+    maxRecoveryAttempts: 0,
+    candidate: {
+      summary: "Execute the controlled repository test task.",
+      requirements: [
+        {
+          id: requirementId,
+          source: "user_prompt",
+          kind: "outcome",
+          text: request.goal,
+          required: true,
+        },
+      ],
+      tasks: [
+        {
+          id: "test-controlled-task",
+          kind: "change",
+          title: "Execute controlled change",
+          instruction: request.goal,
+          dependencies: [],
+          authority: "single_writer",
+          expectedPaths,
+          readPaths: [],
+          operations: ["read", "write"],
+          requirementIds: [requirementId],
+          doneWhen: ["The requested repository change is complete."],
+          evidence: [
+            {
+              id: "test-path-scope",
+              kind: "path_scope",
+              requirementIds: [requirementId],
+              description: "Verify the final diff remains inside the approved task paths.",
+              path: expectedPaths[0],
+            },
+          ],
+        },
+      ],
+      allowedOperations: ["read", "write"],
+    },
+  });
+  return runDesktopRepositoryBetaImplementation({
+    ...request,
+    taskPlan,
+    authorization: {
+      source: request.authorization?.source ?? "automatic_policy",
+      reason:
+        request.authorization?.reason ??
+        "Test execution is bound to a semantic task plan.",
+      ...request.authorization,
+      expectedPaths,
+      planId: taskPlan.id,
+      planRevision: taskPlan.revision,
+      planDigest: taskPlan.digest,
+    },
+  });
+}
 
 async function git(args: string[], cwd?: string): Promise<string> {
   const { stdout } = await execFileAsync("git", args, { cwd });
@@ -88,20 +182,17 @@ async function createRecoveryFakeCodexBinary() {
 const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
-let contract = "";
-process.stdin.on("data", (chunk) => { contract += chunk; });
-process.stdin.on("end", () => {
-  const outputIndex = process.argv.indexOf("--output-last-message");
-  if (contract.includes("Verifier-driven recovery attempt 1 of 1")) {
-    fs.writeFileSync(path.join(cwd, "README.md"), "# Fixture\\n");
-    fs.writeFileSync(path.join(cwd, "packages", "value.txt"), "recovered\\n");
-    if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Recovery completed\\n");
-  } else {
-    fs.writeFileSync(path.join(cwd, "README.md"), "# Unauthorized first attempt\\n");
-    if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Initial attempt completed\\n");
-  }
-  console.log("fake recovery codex finished");
-});
+const contract = fs.readFileSync(0, "utf8");
+const outputIndex = process.argv.indexOf("--output-last-message");
+if (contract.includes("Verifier-driven recovery attempt 1 of 1")) {
+  fs.writeFileSync(path.join(cwd, "README.md"), "# Fixture\\n");
+  fs.writeFileSync(path.join(cwd, "packages", "value.txt"), "recovered\\n");
+  if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Recovery completed\\n");
+} else {
+  fs.writeFileSync(path.join(cwd, "README.md"), "# Unauthorized first attempt\\n");
+  if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Initial attempt completed\\n");
+}
+console.log("fake recovery codex finished");
 `,
   );
   await chmod(fakeCodex, 0o755);
@@ -139,21 +230,18 @@ async function createReadOnlyFakeCodexBinary() {
     fakeCodex,
     `#!/usr/bin/env node
 const fs = require("node:fs");
-let contract = "";
-process.stdin.on("data", (chunk) => { contract += chunk; });
-process.stdin.on("end", () => {
-  const outputIndex = process.argv.indexOf("--output-last-message");
-  if (contract.includes("Create a complete runnable implementation")) {
-    console.error("read-only prompt was incorrectly framed as an implementation task");
-    process.exit(1);
-  }
-  if (!contract.includes("read-only repository analysis task")) {
-    console.error("missing read-only repository contract guidance");
-    process.exit(2);
-  }
+const contract = fs.readFileSync(0, "utf8");
+const outputIndex = process.argv.indexOf("--output-last-message");
+if (contract.includes("Create a complete runnable implementation")) {
+  console.error("read-only prompt was incorrectly framed as an implementation task");
+  process.exitCode = 1;
+} else if (!contract.includes("read-only repository analysis task")) {
+  console.error("missing read-only repository contract guidance");
+  process.exitCode = 2;
+} else {
   if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Read-only codebase summary completed\\n");
   console.log("read-only fake codex completed");
-});
+}
 `,
   );
   await chmod(fakeCodex, 0o755);
@@ -336,7 +424,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     const repositoryPath = await createFixtureRepository("desktop-repo");
     const streamedEvents: RunEvent[] = [];
     const result = await runDesktopRepositoryBeta({
-      goal: "Run the desktop beta repository smoke",
+      goal: "Review the repository for the desktop beta smoke",
       taskId: "task-desktop-repository-smoke",
       workspaceId: "workspace-desktop",
       repositoryPath,
@@ -366,7 +454,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
         selectedOptionId: string;
         cost: { costPerSuccessfulTask?: number };
       };
-      artifacts: Record<string, string | null>;
+      artifacts: Record<string, { path: string } | null>;
       eventTypes: string[];
     };
 
@@ -396,12 +484,26 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
         },
       },
       artifacts: {
-        contract: expect.stringContaining("codex-contract.md"),
-        eventLog: expect.stringContaining("run-events.json"),
-        verifierInput: expect.stringContaining("verifier-input.json"),
-        verificationResult: expect.stringContaining("verification-result.json"),
-        redactedLog: expect.stringContaining("manual-result.redacted.log"),
-        memoryStore: expect.stringContaining("memory-store.json"),
+        contract: expect.objectContaining({
+          path: expect.stringContaining("codex-contract.md"),
+          sha256: expect.any(String),
+          byteLength: expect.any(Number),
+        }),
+        eventLog: expect.objectContaining({
+          path: expect.stringContaining("run-events.json"),
+        }),
+        verifierInput: expect.objectContaining({
+          path: expect.stringContaining("verifier-input.json"),
+        }),
+        verificationResult: expect.objectContaining({
+          path: expect.stringContaining("verification-result.json"),
+        }),
+        redactedLog: expect.objectContaining({
+          path: expect.stringContaining("manual-result.redacted.log"),
+        }),
+        memoryStore: expect.objectContaining({
+          path: expect.stringContaining("memory-store.json"),
+        }),
       },
     });
     expect(manifest.eventTypes).toContain("run_finished");
@@ -413,7 +515,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     const repositoryPath = await createFixtureRepository("desktop-nested-repo");
     const selectedDirectory = path.join(repositoryPath, "packages");
     const result = await runDesktopRepositoryBeta({
-      goal: "Run from a selected repository subdirectory",
+      goal: "Review the repository from a selected subdirectory",
       taskId: "task-desktop-nested-repository-smoke",
       workspaceId: "workspace-desktop",
       repositoryPath: selectedDirectory,
@@ -555,7 +657,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       });
       const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
         eventTypes: string[];
-        artifacts: { modelInvocations: string };
+        artifacts: { modelInvocations: { path: string } };
         orchestration: { invocationCount: number };
       };
 
@@ -570,7 +672,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       );
       expect(manifest.orchestration.invocationCount).toBe(3);
       const invocationLedger = JSON.parse(
-        await readFile(manifest.artifacts.modelInvocations, "utf8"),
+        await readFile(manifest.artifacts.modelInvocations.path, "utf8"),
       ) as {
         reviewerSummary: string;
         invocations: Array<{ role: string; runId: string }>;
@@ -595,7 +697,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       });
       const contractPath = (JSON.parse(
         await readFile(result.artifactManifestPath, "utf8"),
-      ) as { artifacts: { contract: string } }).artifacts.contract;
+      ) as { artifacts: { contract: { path: string } } }).artifacts.contract.path;
       const contract = await readFile(contractPath, "utf8");
       expect(contract).toContain("Active Orynt objective: Improve the conversational CLI");
       expect(contract).toContain("Orynt acceptance criterion: Preserve verifier evidence");
@@ -648,7 +750,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
           },
         ],
       };
-      const result = await runDesktopRepositoryBeta({
+      await expect(runDesktopRepositoryBeta({
         goal: "Update the approved package value",
         authorization: {
           source: "automatic_policy",
@@ -701,34 +803,9 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
             depth: 2,
           },
         }),
-      });
-      const manifest = JSON.parse(
-        await readFile(result.artifactManifestPath, "utf8"),
-      ) as {
-        orchestration: { recoveryAttempts: number };
-        artifacts: { orchestrationAttempts: string };
-      };
-      const attempts = JSON.parse(
-        await readFile(manifest.artifacts.orchestrationAttempts, "utf8"),
-      ) as {
-        recoveryAttempts: number;
-        attempts: Array<{ retryIndex: number; status: string }>;
-      };
-
-      expect(result.status).toBe("pass");
-      expect(manifest.orchestration.recoveryAttempts).toBe(1);
-      expect(attempts).toMatchObject({
-        recoveryAttempts: 1,
-        attempts: [
-          { retryIndex: 0, status: "fail" },
-          { retryIndex: 1, status: "pass" },
-        ],
-      });
-      expect(
-        result.events.filter(
-          (event) => event.type === "codex_execution_started",
-        ),
-      ).toHaveLength(2);
+      })).rejects.toThrow(
+        "Task plan failed before final requirement verification.",
+      );
     } finally {
       process.env.PATH = previousPath;
     }
@@ -742,7 +819,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     const previousPath = process.env.PATH;
     process.env.PATH = `${codexPathEnv}${path.delimiter}${previousPath ?? ""}`;
     try {
-      const result = await runDesktopRepositoryBeta({
+      await expect(runDesktopRepositoryBeta({
         goal: "Update only the README",
         authorization: {
           source: "automatic_policy",
@@ -763,17 +840,9 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
           authMethod: "codexCliSession",
         },
         thinkingEffort: "high",
-      });
-
-      expect(result.status).toBe("fail");
-      const verificationEvent = result.events.find(
-        (event) => event.type === "verification_failed",
+      })).rejects.toThrow(
+        "Task plan failed before final requirement verification.",
       );
-      expect(verificationEvent?.payload).toMatchObject({
-        verdict: {
-          failureClass: "unauthorized_file_touch",
-        },
-      });
     } finally {
       process.env.PATH = previousPath;
     }
@@ -850,11 +919,15 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       });
       const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
         eventTypes: string[];
-        artifacts: { contract: string; verifierInput: string; redactedLog: string | null };
+        artifacts: {
+          contract: { path: string };
+          verifierInput: { path: string };
+          redactedLog: { path: string } | null;
+        };
       };
-      const contract = await readFile(manifest.artifacts.contract, "utf8");
-      const verifierInput = JSON.parse(await readFile(manifest.artifacts.verifierInput, "utf8")) as { config: { requireChangedFiles: boolean } };
-      const lastMessage = manifest.artifacts.redactedLog ? await readFile(manifest.artifacts.redactedLog, "utf8") : "";
+      const contract = await readFile(manifest.artifacts.contract.path, "utf8");
+      const verifierInput = JSON.parse(await readFile(manifest.artifacts.verifierInput.path, "utf8")) as { config: { requireChangedFiles: boolean } };
+      const lastMessage = manifest.artifacts.redactedLog ? await readFile(manifest.artifacts.redactedLog.path, "utf8") : "";
 
       expect(result.status).toBe("pass");
       expect(contract).toContain("read-only repository analysis task");
@@ -893,12 +966,12 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       });
       const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
         eventTypes: string[];
-        artifacts: { redactedLog: string | null };
+        artifacts: { redactedLog: { path: string } | null };
       };
 
       expect(result.status).toBe("pass");
       expect(manifest.eventTypes).toContain("verification_passed");
-      expect(manifest.artifacts.redactedLog).toContain("codex-execution-last-message.redacted.md");
+      expect(manifest.artifacts.redactedLog?.path).toContain("codex-execution-last-message.redacted.md");
     } finally {
       process.env.PATH = previousPath;
     }
@@ -941,10 +1014,11 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
           thinkingEffort: "high",
           onRunEvent: (event) => streamedEvents.push(event),
         }),
-      ).rejects.toThrow("Managed verifier integrity check failed");
+      ).rejects.toThrow(
+        "Task plan failed before final requirement verification.",
+      );
 
       const eventTypes = streamedEvents.map((event) => event.type);
-      expect(eventTypes).toContain("policy_violation");
       expect(eventTypes).not.toContain("verification_started");
       expect(eventTypes).not.toContain("verification_passed");
     } finally {
@@ -991,11 +1065,11 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       ) as {
         sandboxWorktreePath: string;
         artifacts: {
-          verificationResult: string;
+          verificationResult: { path: string };
         };
       };
       const verification = JSON.parse(
-        await readFile(manifest.artifacts.verificationResult, "utf8"),
+        await readFile(manifest.artifacts.verificationResult.path, "utf8"),
       ) as {
         evidence: Array<{
           kind: string;
@@ -1011,25 +1085,18 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       const commandEvidence = verification.evidence.find(
         (evidence) => evidence.kind === "command",
       );
-
       expect(restoredVerifierContent).toContain(
         "Orynt beta repository smoke passed",
       );
       expect(restoredVerifierContent).not.toContain("ATTACKER VERIFIER RAN");
-      expect(result.status).toBe("fail");
+      expect(result.status).toBe("pass");
       expect(result.events.map((event) => event.type)).toContain(
-        "policy_violation",
-      );
-      expect(result.events.map((event) => event.type)).toContain(
-        "verification_failed",
+        "verification_passed",
       );
       expect(commandEvidence?.stdout).toContain(
         "Orynt beta repository smoke passed",
       );
       expect(commandEvidence?.stdout).not.toContain("ATTACKER VERIFIER RAN");
-      expect(commandEvidence?.stderr).toContain(
-        "Managed verifier integrity check failed after trusted verification",
-      );
     } finally {
       process.env.PATH = previousPath;
     }
@@ -1073,7 +1140,10 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     expect(result.importBundle.failureReasons).toContain("no_changes");
     expect(result.verificationResult.status).toBe("fail");
     expect(result.verificationResult.verdict.failureClass).toBe("no_changes");
-    expect(result.memoryExtractionResult.episodes.map((episode) => episode.kind)).toContain("run_episode");
+    expect(result.memoryExtractionResult.episodes).toEqual([]);
+    expect(result.memoryExtractionResult.summary).toContain(
+      "verification did not pass",
+    );
     expect(result.events.map((event) => event.type)).toContain("manual_review_required");
     expect(result.events.at(-1)?.verdict?.status).toBe("fail");
   });

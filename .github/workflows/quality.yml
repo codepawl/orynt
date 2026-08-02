@@ -1,0 +1,36 @@
+name: Quality
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:contracts
+      - run: pnpm --filter @codepawl/local-state test
+      - run: pnpm --filter @codepawl/skill-registry test
+      - run: pnpm --filter @codepawl/memory test
+      - run: pnpm --filter @codepawl/cognitive-kernel test
+      - run: pnpm --filter @codepawl/coding-apprentice test
+      - run: pnpm --filter @codepawl/verifier test
+      - run: pnpm test:eval
+      - run: pnpm test:cli
+      - run: pnpm test:desktop
+      - run: pnpm build:desktop
+      - run: pnpm test:tauri
+      - run: pnpm release:desktop:check
+      - run: git diff --check

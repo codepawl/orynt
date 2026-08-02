@@ -63,6 +63,7 @@ export type CliArguments = {
   version?: boolean;
   command?: "run" | "doctor";
   jsonl?: boolean;
+  debug?: boolean;
   approveOnce?: boolean;
   resumeSessionId?: string;
 };
@@ -137,6 +138,7 @@ export function parseCliArgs(argv: string[], cwd: string): CliArguments {
   let version = false;
   let command: CliArguments["command"];
   let jsonl = false;
+  let debug = false;
   let approveOnce = false;
   let resumeSessionId: string | undefined;
   let endOfOptions = false;
@@ -213,6 +215,10 @@ export function parseCliArgs(argv: string[], cwd: string): CliArguments {
       jsonl = true;
       continue;
     }
+    if (argument === "--debug") {
+      debug = true;
+      continue;
+    }
     if (argument === "--approve-once") {
       approveOnce = true;
       continue;
@@ -263,6 +269,7 @@ export function parseCliArgs(argv: string[], cwd: string): CliArguments {
     ...(version ? { version } : {}),
     ...(command ? { command } : {}),
     ...(jsonl ? { jsonl } : {}),
+    ...(debug ? { debug } : {}),
     ...(approveOnce ? { approveOnce } : {}),
     ...(resumeSessionId ? { resumeSessionId } : {}),
   };
@@ -436,10 +443,14 @@ export async function runCliRepositoryTask(request: CliRunRequest): Promise<CliR
     goal: request.instruction,
     activeGoal: request.activeGoal,
     acceptanceCriteria: request.acceptanceCriteria,
+    taskPlan: request.taskPlan,
     authorization: {
       source: request.authorization.source,
       reason: request.authorization.reasons.join(" "),
       expectedPaths: request.authorization.expectedPaths,
+      planId: request.authorization.planId,
+      planRevision: request.authorization.planRevision,
+      planDigest: request.authorization.planDigest,
       allowDestructiveChanges: request.authorization.allowDestructiveChanges,
       allowChangedFileLimitExceeded:
         request.authorization.allowChangedFileLimitExceeded,
@@ -549,6 +560,7 @@ export function cliHelp(): string {
     "      --resume <id>      Resume latest or a named typed session",
     "      --approve-once     Authorize exactly one bounded headless run",
     "      --jsonl            Emit headless run events as JSON Lines",
+    "      --debug            Show successful provider and orchestration diagnostics",
     "  -h, --help             Show help",
     "  -v, --version          Show version",
     "",

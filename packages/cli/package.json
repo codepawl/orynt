@@ -15,12 +15,15 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/coding-apprentice build && tsc -p tsconfig.json",
-    "test": "pnpm --filter @codepawl/shared build && vitest run"
+    "build": "pnpm --filter @codepawl/model-runtime build && pnpm --filter @codepawl/coding-apprentice build && tsc -p tsconfig.json",
+    "test": "pnpm --filter @codepawl/model-runtime build && pnpm --filter @codepawl/shared build && vitest run"
   },
   "dependencies": {
+    "@codepawl/codex-adapter": "workspace:*",
     "@codepawl/coding-apprentice": "workspace:*",
-    "@codepawl/shared": "workspace:*"
+    "@codepawl/model-runtime": "workspace:*",
+    "@codepawl/shared": "workspace:*",
+    "lowlight": "^3.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",

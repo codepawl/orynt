@@ -10,6 +10,7 @@ import {
   InMemoryRunStore,
   type CodexContractRequest,
   type CodexExecutionApproval,
+  type CodexTaskAttemptBinding,
   type CorePolicy,
   type RepositorySandbox,
   type VerificationPlan,
@@ -184,13 +185,135 @@ function approved(planId: string, runId = "run-1"): CodexExecutionApproval {
   };
 }
 
+function taskBinding(
+  overrides: Partial<CodexTaskAttemptBinding> = {},
+): CodexTaskAttemptBinding {
+  return {
+    planId: "repository-task-plan-1",
+    revision: 0,
+    digest: "a".repeat(64),
+    semanticTaskId: "task-1",
+    attemptId: "task-1-attempt-1",
+    retryIndex: 0,
+    expectedPaths: ["packages/fake-codex.txt"],
+    operations: ["write"],
+    ...overrides,
+  };
+}
+
 describe("LocalCodexContractAdapter", () => {
+  it("renders read-only execution instructions without mutation guidance", async () => {
+    const store = new InMemoryRunStore();
+    const run = createRun(store);
+    const request = createRequest({
+      runId: run.id,
+      taskId: run.taskId,
+      taskMode: "read_only",
+      executionMode: "manual_cli",
+      goal: "read-only repository analysis task: inspect this codebase",
+    });
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+      runStore: store,
+    });
+
+    const contract = adapter.createContract(request);
+
+    expect(contract.markdown).toContain("Inspect the repository without modifying files.");
+    expect(contract.markdown).not.toContain("Implement the requested repository task directly");
+    expect(contract.markdown).not.toContain("Create a complete runnable implementation");
+  });
+
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-codex-adapter-test-"));
   });
 
   afterEach(async () => {
     await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it("carries a semantic task attempt through contract, plan, and derived approval", async () => {
+    const request = createRequest({
+      executionMode: "manual_cli",
+      taskMode: "read_only",
+      taskBinding: taskBinding({
+        semanticTaskId: "inspect-repository",
+        attemptId: "inspect-repository-attempt-1",
+        expectedPaths: [],
+        operations: ["read"],
+      }),
+    });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+process.exit(0);
+`);
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+      pathEnv: binDir,
+    });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+      taskBinding: request.taskBinding,
+    });
+
+    expect(contract.taskBinding).toEqual(request.taskBinding);
+    expect(contract.metadata.taskBinding).toEqual(request.taskBinding);
+    expect(artifact.taskBinding).toEqual(request.taskBinding);
+    expect(plan.taskBinding).toEqual(request.taskBinding);
+    expect(plan.argv.slice(plan.argv.indexOf("--sandbox"), plan.argv.indexOf("--sandbox") + 2)).toEqual([
+      "--sandbox",
+      "read-only",
+    ]);
+    expect(adapter.requestExecutionApproval(plan).taskBinding).toEqual(request.taskBinding);
+  });
+
+  it("rejects a mismatched semantic task approval before spawning Codex", async () => {
+    const request = createRequest({
+      executionMode: "manual_cli",
+      taskMode: "mutation",
+      taskBinding: taskBinding(),
+    });
+    await mkdir(request.sandbox.worktreePath, { recursive: true });
+    const marker = path.join(request.sandbox.worktreePath, "task-binding-marker.txt");
+    const { binDir } = await createExecutableCodexFixture(`#!/usr/bin/env node
+require("node:fs").writeFileSync(${JSON.stringify(marker)}, "spawned\\n");
+`);
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+      pathEnv: binDir,
+    });
+    const contract = adapter.createContract(request);
+    const artifact = await adapter.writeContractArtifact(contract, request.artifactRoot);
+    const plan = await adapter.planExecution({
+      contract,
+      contractArtifact: artifact,
+      sandbox: request.sandbox,
+      policy: request.policy,
+      budget: request.budget,
+      artifactRoot: request.artifactRoot,
+      verifierPlan: createVerificationPlan(request),
+      taskBinding: request.taskBinding,
+    });
+    const approval = {
+      ...adapter.requestExecutionApproval(plan),
+      status: "approved" as const,
+      approvedBy: "operator",
+      approvedAt: "2026-06-26T00:00:00.000Z",
+      taskBinding: taskBinding({ attemptId: "task-1-attempt-2" }),
+    };
+
+    await expect(adapter.executeApprovedContract(plan, approval)).rejects.toMatchObject({
+      code: "approval_mismatch",
+    });
+    await expect(readFile(marker, "utf8")).rejects.toThrow();
   });
 
   it("generates the canonical work-contract sections and policy constraints", () => {
@@ -508,6 +631,8 @@ if (outputIndex >= 0) {
 }
 fs.writeFileSync(path.join(cwd, "packages", "fake-codex.txt"), "changed by fake codex\\n");
 process.stdout.write(JSON.stringify({ type: "item.updated", item: { id: "reason-1", type: "reasoning", text: "I inspected the repository and found the target file." } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "item.completed", item: { id: "tool-1", type: "command_execution", command: "echo token=sk-faketoolsecret123" } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "item.completed", item: { id: "search-1", type: "web_search", query: "Orynt streaming contract" } }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "item.completed", item: { id: "message-1", type: "agent_message", text: "Changed packages/fake-codex.txt and verified it. " + "Streamed agent response remains visible. ".repeat(180) + "Streamed sentinel after six thousand chars." } }) + "\\n");
 console.log("token=sk-fakecodexsecret123 contract=" + stdin.includes("Codex Work Contract"));
 console.error("authorization=Bearer-fakecodexstderr12345");
@@ -594,6 +719,29 @@ console.error("authorization=Bearer-fakecodexstderr12345");
       message: expect.stringContaining("Streamed sentinel after six thousand chars."),
     });
     expect(JSON.stringify(agentMessageEvent?.payload)).not.toContain("[TRUNCATED]");
+    const toolEvents = events.filter((event) => event.type === "codex_tool_activity");
+    expect(toolEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            itemId: "tool-1",
+            status: "completed",
+            toolKind: "command",
+            toolName: "shell",
+            detail: expect.stringMatching(/REDACTED/u),
+          }),
+        }),
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            itemId: "search-1",
+            status: "completed",
+            toolKind: "web_search",
+            detail: "Orynt streaming contract",
+          }),
+        }),
+      ]),
+    );
+    expect(JSON.stringify(toolEvents)).not.toContain("sk-faketoolsecret123");
     expect(outputRecordedEvent?.artifacts).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: "summary", label: "Codex final model response" })]),
     );
@@ -607,6 +755,7 @@ console.error("authorization=Bearer-fakecodexstderr12345");
         "codex_execution_approved",
         "codex_execution_started",
         "codex_reasoning_summary",
+        "codex_tool_activity",
         "codex_agent_message",
         "codex_execution_output_recorded",
         "codex_execution_finished",

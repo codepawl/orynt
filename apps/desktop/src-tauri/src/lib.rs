@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ const DEFAULT_REPOSITORY_PATH_ENV: &str = "ORYNT_DEFAULT_REPOSITORY_PATH";
 #[derive(Debug, Default)]
 pub struct AppState {
     runs: Mutex<Vec<String>>,
-    skill_statuses: Mutex<HashMap<String, SkillLifecycleStatus>>,
+    active_repository_runs: Mutex<HashMap<String, ()>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -52,6 +52,15 @@ pub struct ApprovalDecisionInput {
     run_id: String,
     approval_id: String,
     decision: ApprovalDecision,
+    expected_revision: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunLifecycleInput {
+    run_id: String,
+    expected_revision: u64,
+    reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,8 +68,12 @@ pub struct ApprovalDecisionInput {
 pub struct CandidateRuleStatusUpdateInput {
     id: String,
     status: CandidateRuleReviewStatus,
+    actor: String,
+    reason: String,
+    expected_revision: u64,
     run_id: Option<String>,
     superseded_by: Option<String>,
+    decided_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,13 +85,27 @@ pub struct SkillStatusUpdateInput {
     reason: String,
     run_id: Option<String>,
     superseded_by: Option<String>,
+    expected_revision: u64,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillReplayPlanInput {
     skill_id: String,
-    run_id: Option<String>,
+    run_id: String,
+    expected_revision: u64,
+    actor: String,
+    reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCandidateCreateInput {
+    candidate_rule_id: String,
+    run_id: String,
+    expected_revision: u64,
+    actor: String,
+    reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -511,15 +538,29 @@ pub struct ArtifactEvidenceContent {
     content: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesktopRepositoryRunOutput {
+    schema_version: u32,
     run_id: String,
     status: String,
-    artifact_root: String,
-    artifact_manifest_path: String,
+    checkpoint_revision: u64,
+    #[serde(default)]
+    approval: Option<serde_json::Value>,
+    #[serde(default)]
+    task_plan: Option<serde_json::Value>,
+    #[serde(default)]
+    execution_attempt_status: Option<String>,
+    terminal: bool,
+    summary: String,
+    #[serde(default)]
+    artifact_root: Option<String>,
+    #[serde(default)]
+    artifact_manifest_path: Option<String>,
     event_count: usize,
     events: Vec<serde_json::Value>,
+    #[serde(default)]
+    verification_status: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -548,6 +589,14 @@ pub struct PersistedRunRecord {
     goal: String,
     repository_path: String,
     status: String,
+    #[serde(default)]
+    checkpoint_revision: Option<u64>,
+    #[serde(default)]
+    runtime_status: Option<String>,
+    #[serde(default)]
+    approval: Option<serde_json::Value>,
+    #[serde(default)]
+    task_plan: Option<serde_json::Value>,
     artifact_root: String,
     artifact_manifest_path: String,
     events: Vec<serde_json::Value>,
@@ -573,6 +622,10 @@ pub struct PersistedRunSummary {
     goal: String,
     repository_path: String,
     status: String,
+    #[serde(default)]
+    checkpoint_revision: Option<u64>,
+    #[serde(default)]
+    runtime_status: Option<String>,
     artifact_manifest_path: String,
     event_count: usize,
     artifact_count: usize,
@@ -1112,6 +1165,8 @@ impl PersistedRunRecord {
             goal: self.goal.clone(),
             repository_path: self.repository_path.clone(),
             status: self.status.clone(),
+            checkpoint_revision: self.checkpoint_revision,
+            runtime_status: self.runtime_status.clone(),
             artifact_manifest_path: self.artifact_manifest_path.clone(),
             event_count: self.events.len(),
             artifact_count: self.artifacts.len(),
@@ -2886,11 +2941,51 @@ fn read_json_file(path: &str) -> Option<serde_json::Value> {
 }
 
 fn manifest_artifact_path(manifest: &serde_json::Value, key: &str) -> Option<String> {
-    manifest
+    let entry = manifest
+        .get("artifacts")
+        .and_then(|artifacts| artifacts.get(key))?;
+    entry
+        .as_str()
+        .or_else(|| entry.get("path").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+}
+
+fn read_owned_run_artifact(
+    run: &PersistedRunRecord,
+    manifest: &serde_json::Value,
+    key: &str,
+) -> Result<serde_json::Value, AppError> {
+    let artifact_path = manifest_artifact_path(manifest, key)
+        .ok_or_else(|| AppError::Validation(format!("run artifact is missing: {key}")))?;
+    let root = fs::canonicalize(&run.artifact_root).map_err(|error| {
+        AppError::Persistence(format!("could not resolve run artifact root: {error}"))
+    })?;
+    let resolved = fs::canonicalize(&artifact_path).map_err(|error| {
+        AppError::Persistence(format!("could not resolve run artifact {key}: {error}"))
+    })?;
+    if resolved != root && !resolved.starts_with(&root) {
+        return Err(AppError::Validation(format!(
+            "run artifact escapes the managed artifact root: {key}"
+        )));
+    }
+    let raw = fs::read_to_string(&resolved).map_err(|error| {
+        AppError::Persistence(format!("could not read run artifact {key}: {error}"))
+    })?;
+    if let Some(expected_length) = manifest
         .get("artifacts")
         .and_then(|artifacts| artifacts.get(key))
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string)
+        .and_then(|entry| entry.get("byteLength"))
+        .and_then(serde_json::Value::as_u64)
+    {
+        if raw.len() as u64 != expected_length {
+            return Err(AppError::Validation(format!(
+                "run artifact length does not match its manifest entry: {key}"
+            )));
+        }
+    }
+    serde_json::from_str(&raw).map_err(|error| {
+        AppError::Persistence(format!("could not parse run artifact {key}: {error}"))
+    })
 }
 
 fn manifest_artifact_refs(
@@ -2959,7 +3054,62 @@ fn persisted_run_from_output(
     output: &DesktopRepositoryRunOutput,
 ) -> Result<PersistedRunRecord, AppError> {
     let store = persistence_store(app);
-    let manifest_path = output.artifact_manifest_path.clone();
+    let artifact_root = output.artifact_root.clone().unwrap_or_else(|| {
+        run_data_root(app)
+            .join("artifacts")
+            .join(&output.run_id)
+            .to_string_lossy()
+            .to_string()
+    });
+    fs::create_dir_all(&artifact_root).map_err(|error| {
+        AppError::Persistence(format!("could not create run artifact root: {error}"))
+    })?;
+    let manifest_path = output.artifact_manifest_path.clone().unwrap_or_else(|| {
+        PathBuf::from(&artifact_root)
+            .join("artifact-manifest.json")
+            .to_string_lossy()
+            .to_string()
+    });
+    if output.artifact_manifest_path.is_none() {
+        fs::write(
+            &manifest_path,
+            format!(
+                "{}\n",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "schemaVersion": 3,
+                    "runId": output.run_id,
+                    "taskId": input.task_id,
+                    "workspaceId": input.workspace_id,
+                    "lifecycle": {
+                        "status": output.status,
+                        "checkpointRevision": output.checkpoint_revision,
+                        "terminal": output.terminal,
+                    },
+                    "artifacts": {
+                        "contract": null,
+                        "contractMetadata": null,
+                        "eventLog": null,
+                        "cognitiveTrace": null,
+                        "verifierInput": null,
+                        "verificationResult": null,
+                        "redactedLog": null,
+                        "memoryStore": null,
+                        "memoryRetrieval": null,
+                        "replayPlan": null,
+                        "skillContext": null,
+                        "modelInvocations": null,
+                        "orchestrationAttempts": null,
+                    }
+                }))
+                .map_err(|error| AppError::Persistence(format!(
+                    "could not encode partial artifact manifest: {error}"
+                )))?
+            ),
+        )
+        .map_err(|error| {
+            AppError::Persistence(format!("could not write partial artifact manifest: {error}"))
+        })?;
+    }
     store.validate_artifact_manifest_path(&manifest_path)?;
     let manifest_raw = fs::read_to_string(&manifest_path).map_err(|error| {
         AppError::Persistence(format!("could not read artifact manifest: {error}"))
@@ -2981,8 +3131,15 @@ fn persisted_run_from_output(
         workspace_id: input.workspace_id.clone(),
         goal: input.goal.clone(),
         repository_path: repository_path.to_string_lossy().to_string(),
-        status: output.status.clone(),
-        artifact_root: output.artifact_root.clone(),
+        status: output
+            .verification_status
+            .clone()
+            .unwrap_or_else(|| output.status.clone()),
+        checkpoint_revision: Some(output.checkpoint_revision),
+        runtime_status: Some(output.status.clone()),
+        approval: output.approval.clone(),
+        task_plan: output.task_plan.clone(),
+        artifact_root,
         artifact_manifest_path: manifest_path,
         events,
         artifacts,
@@ -2999,27 +3156,14 @@ fn persisted_run_from_output(
     })
 }
 
-fn run_desktop_repository_sidecar(
+fn run_desktop_repository_operation(
     app: &AppHandle,
-    input: &CreateRunInput,
-    repository_path: &Path,
-    model_connection: &ModelConnectionReference,
-    thinking_effort: &str,
-    skill_context: Option<serde_json::Value>,
+    request: serde_json::Value,
 ) -> Result<DesktopRepositoryRunOutput, AppError> {
     let (repo_root, script_path) = resolve_desktop_repository_runner()?;
     let loader_path = repo_root
         .join("scripts")
         .join("register-extensionless-esm-loader.mjs");
-    let data_root = run_data_root(app);
-    let request = build_desktop_repository_run_request(
-        input,
-        repository_path,
-        &data_root,
-        model_connection,
-        thinking_effort,
-        skill_context,
-    );
     let request_json = serde_json::to_string(&request).map_err(|error| {
         AppError::RepositoryRun(format!("could not encode run request: {error}"))
     })?;
@@ -3091,14 +3235,66 @@ fn run_desktop_repository_sidecar(
     })?;
     if output.event_count != output.events.len()
         || output.status.trim().is_empty()
-        || output.artifact_root.trim().is_empty()
-        || output.artifact_manifest_path.trim().is_empty()
+        || output.schema_version != 2
+        || output.summary.trim().is_empty()
+        || (output.terminal
+            && (output
+                .artifact_root
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+                || output
+                    .artifact_manifest_path
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()))
     {
         return Err(AppError::RepositoryRun(
             "repository runner returned incomplete run metadata".into(),
         ));
     }
 
+    Ok(output)
+}
+
+fn run_desktop_repository_sidecar(
+    app: &AppHandle,
+    input: &CreateRunInput,
+    repository_path: &Path,
+    model_connection: &ModelConnectionReference,
+    thinking_effort: &str,
+    skill_context: Option<serde_json::Value>,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    let data_root = run_data_root(app);
+    let request = build_desktop_repository_run_request(
+        input,
+        repository_path,
+        &data_root,
+        model_connection,
+        thinking_effort,
+        skill_context,
+    );
+    let mut operation = serde_json::to_value(request).map_err(|error| {
+        AppError::RepositoryRun(format!("could not encode run request: {error}"))
+    })?;
+    operation
+        .as_object_mut()
+        .ok_or_else(|| AppError::RepositoryRun("desktop run request must be an object".into()))?
+        .insert("operation".into(), serde_json::Value::String("plan_and_start".into()));
+    let output = run_desktop_repository_operation(app, operation)?;
+    if output.task_plan.is_none()
+        || output
+            .approval
+            .as_ref()
+            .and_then(|approval| approval.get("planId"))
+            .is_none()
+    {
+        return Err(AppError::RepositoryRun(
+            "desktop planner did not create a trusted task-plan approval checkpoint".into(),
+        ));
+    }
     Ok(output)
 }
 
@@ -3284,6 +3480,11 @@ fn validate_candidate_rule_status_update(
     if input.id.trim().is_empty() {
         return Err(AppError::Validation("candidate rule id is required".into()));
     }
+    if input.actor.trim().is_empty() || input.reason.trim().is_empty() {
+        return Err(AppError::Validation(
+            "candidate rule decision requires actor and reason".into(),
+        ));
+    }
 
     Ok(())
 }
@@ -3306,9 +3507,31 @@ fn validate_skill_status_update(input: &SkillStatusUpdateInput) -> Result<(), Ap
     Ok(())
 }
 
+fn validate_skill_candidate_input(input: &SkillCandidateCreateInput) -> Result<(), AppError> {
+    if input.candidate_rule_id.trim().is_empty() || input.run_id.trim().is_empty() {
+        return Err(AppError::Validation(
+            "candidateRuleId and runId are required".into(),
+        ));
+    }
+    if input.actor.trim().is_empty() || input.reason.trim().is_empty() {
+        return Err(AppError::Validation(
+            "candidate creation actor and reason are required".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_skill_replay_plan_input(input: &SkillReplayPlanInput) -> Result<(), AppError> {
     if input.skill_id.trim().is_empty() {
         return Err(AppError::Validation("skill id is required".into()));
+    }
+    if input.run_id.trim().is_empty()
+        || input.actor.trim().is_empty()
+        || input.reason.trim().is_empty()
+    {
+        return Err(AppError::Validation(
+            "runId, actor, and reason are required".into(),
+        ));
     }
 
     Ok(())
@@ -3641,7 +3864,7 @@ async fn run_create(
     app: AppHandle,
     state: State<'_, AppState>,
     input: CreateRunInput,
-) -> Result<RunId, AppError> {
+) -> Result<DesktopRepositoryRunOutput, AppError> {
     validate_create_run(&input)?;
     let repository_path = validate_repository_path(input.repository_path.as_deref())?;
     let store = persistence_store(&app);
@@ -3687,7 +3910,7 @@ async fn run_create(
             .map_err(|error| AppError::Event(error.to_string()))?;
     }
 
-    Ok(RunId { id: output.run_id })
+    Ok(output)
 }
 
 #[tauri::command]
@@ -3698,6 +3921,293 @@ async fn run_list(app: AppHandle) -> Result<Vec<PersistedRunSummary>, AppError> 
 #[tauri::command]
 async fn run_open(app: AppHandle, run_id: String) -> Result<PersistedRunRecord, AppError> {
     persistence_store(&app).open_run(&run_id)
+}
+
+fn desktop_runtime_memory_root(app: &AppHandle) -> String {
+    run_data_root(app)
+        .join("memory")
+        .to_string_lossy()
+        .to_string()
+}
+
+fn private_desktop_approval_nonce(
+    app: &AppHandle,
+    run_id: &str,
+    approval_id: &str,
+    expected_revision: u64,
+    require_executable_plan: bool,
+) -> Result<String, AppError> {
+    let memory_root = run_data_root(app).join("memory");
+    let checkpoint_path = memory_root
+        .join("desktop-runtime")
+        .join("runs")
+        .join(run_id)
+        .join("checkpoint.json");
+    let canonical_memory_root = fs::canonicalize(&memory_root).map_err(|error| {
+        AppError::Persistence(format!("could not resolve private runtime root: {error}"))
+    })?;
+    let canonical_checkpoint = fs::canonicalize(&checkpoint_path).map_err(|error| {
+        AppError::Persistence(format!("could not resolve private runtime checkpoint: {error}"))
+    })?;
+    if !canonical_checkpoint.starts_with(&canonical_memory_root) {
+        return Err(AppError::Validation(
+            "private runtime checkpoint escaped its managed root".into(),
+        ));
+    }
+    let checkpoint: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(canonical_checkpoint).map_err(|error| {
+            AppError::Persistence(format!("could not read private runtime checkpoint: {error}"))
+        })?,
+    )
+    .map_err(|error| {
+        AppError::Persistence(format!("could not parse private runtime checkpoint: {error}"))
+    })?;
+    if checkpoint
+        .get("revision")
+        .and_then(serde_json::Value::as_u64)
+        != Some(expected_revision)
+    {
+        return Err(AppError::Validation(
+            "approval checkpoint revision is stale".into(),
+        ));
+    }
+    let approval = checkpoint
+        .get("approval")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| AppError::Validation("pending approval was not found".into()))?;
+    if approval
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        != Some(approval_id)
+        || approval
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            != Some("pending")
+    {
+        return Err(AppError::Validation(
+            "approval is stale, invalid, or already consumed".into(),
+        ));
+    }
+    if require_executable_plan {
+        let task_plan = checkpoint
+            .get("taskPlan")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| AppError::Validation(
+                "this legacy run has no trusted task plan; create a new run before approving execution".into(),
+            ))?;
+        let plan_id = task_plan.get("id").and_then(serde_json::Value::as_str);
+        let plan_revision = task_plan.get("revision").and_then(serde_json::Value::as_u64);
+        let plan_digest = task_plan.get("digest").and_then(serde_json::Value::as_str);
+        if plan_id.is_none()
+            || plan_revision.is_none()
+            || plan_digest.is_none()
+            || approval.get("planId").and_then(serde_json::Value::as_str) != plan_id
+            || approval.get("planRevision").and_then(serde_json::Value::as_u64) != plan_revision
+            || approval.get("planDigest").and_then(serde_json::Value::as_str) != plan_digest
+        {
+            return Err(AppError::Validation(
+                "desktop task-plan approval is stale or has been tampered with".into(),
+            ));
+        }
+    }
+    approval
+        .get("nonce")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| AppError::Validation("private approval nonce was missing".into()))
+}
+
+fn update_persisted_run_from_operation(
+    app: &AppHandle,
+    output: &DesktopRepositoryRunOutput,
+) -> Result<(), AppError> {
+    let store = persistence_store(app);
+    let mut run = store.open_run(&output.run_id)?;
+    run.checkpoint_revision = Some(output.checkpoint_revision);
+    run.runtime_status = Some(output.status.clone());
+    run.approval = output.approval.clone();
+    if output.task_plan.is_some() {
+        run.task_plan = output.task_plan.clone();
+    }
+    run.updated_at = now_iso_like();
+    if let Some(artifact_root) = &output.artifact_root {
+        run.artifact_root = artifact_root.clone();
+    }
+    if let Some(manifest_path) = &output.artifact_manifest_path {
+        run.artifact_manifest_path = manifest_path.clone();
+        let raw = fs::read_to_string(manifest_path).map_err(|error| {
+            AppError::Persistence(format!("could not read final artifact manifest: {error}"))
+        })?;
+        let manifest: serde_json::Value = serde_json::from_str(&raw).map_err(|error| {
+            AppError::Persistence(format!("could not parse final artifact manifest: {error}"))
+        })?;
+        run.artifacts = manifest_artifact_refs(&manifest, &output.events);
+        run.memory_candidates = manifest_memory_candidates(&manifest);
+        run.skill_replay_plan = manifest_skill_plan(&manifest);
+        run.skills = manifest_skills(&run.skill_replay_plan);
+        run.usage_summary = manifest
+            .get("usageSummary")
+            .cloned()
+            .unwrap_or_else(|| run.usage_summary.clone());
+    }
+    if !output.events.is_empty() {
+        run.events = output.events.clone();
+    }
+    run.status = output
+        .verification_status
+        .clone()
+        .unwrap_or_else(|| output.status.clone());
+    store.save_run(&run)
+}
+
+fn run_desktop_lifecycle_operation(
+    app: &AppHandle,
+    operation: serde_json::Value,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    let output = run_desktop_repository_operation(app, operation)?;
+    update_persisted_run_from_operation(app, &output)?;
+    Ok(output)
+}
+
+fn private_desktop_runtime_snapshot(
+    app: &AppHandle,
+    run_id: &str,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    let checkpoint_path = run_data_root(app)
+        .join("memory")
+        .join("desktop-runtime")
+        .join("runs")
+        .join(run_id)
+        .join("checkpoint.json");
+    let checkpoint: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&checkpoint_path).map_err(|error| {
+            AppError::Persistence(format!("could not read private runtime checkpoint: {error}"))
+        })?,
+    )
+    .map_err(|error| {
+        AppError::Persistence(format!("could not parse private runtime checkpoint: {error}"))
+    })?;
+    let status = checkpoint
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| AppError::Persistence("runtime checkpoint status was missing".into()))?
+        .to_string();
+    let checkpoint_revision = checkpoint
+        .get("revision")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| AppError::Persistence("runtime checkpoint revision was missing".into()))?;
+    let approval = checkpoint.get("approval").and_then(|value| {
+        let approval = value.as_object()?;
+        let mut public_approval = serde_json::json!({
+            "id": approval.get("id")?,
+            "actionId": approval.get("actionId")?,
+            "requestedRevision": approval.get("requestedRevision")?,
+            "status": approval.get("status")?,
+        });
+        if let Some(object) = public_approval.as_object_mut() {
+            for key in ["planId", "planRevision", "planDigest"] {
+                if let Some(value) = approval.get(key) {
+                    object.insert(key.to_string(), value.clone());
+                }
+            }
+        }
+        Some(public_approval)
+    });
+    let persisted = persistence_store(app).open_run(run_id).ok();
+    let terminal = matches!(
+        status.as_str(),
+        "completed" | "blocked" | "failed" | "cancelled"
+    );
+    Ok(DesktopRepositoryRunOutput {
+        schema_version: 2,
+        run_id: run_id.to_string(),
+        status,
+        checkpoint_revision,
+        approval,
+        task_plan: checkpoint.get("taskPlan").cloned(),
+        execution_attempt_status: checkpoint
+            .get("executionAttempt")
+            .and_then(|attempt| attempt.get("status"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        terminal,
+        summary: checkpoint
+            .get("summary")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Repository runtime status updated.")
+            .to_string(),
+        artifact_root: checkpoint
+            .get("artifactRoot")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        artifact_manifest_path: checkpoint
+            .get("artifactManifestPath")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        event_count: persisted.as_ref().map(|run| run.events.len()).unwrap_or(0),
+        events: persisted.map(|run| run.events).unwrap_or_default(),
+        verification_status: None,
+    })
+}
+
+fn start_background_lifecycle_operation(
+    app: &AppHandle,
+    run_id: &str,
+    expected_revision: u64,
+    request: serde_json::Value,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    {
+        let state = app.state::<AppState>();
+        let mut active = state
+            .active_repository_runs
+            .lock()
+            .map_err(|_| AppError::StateLock)?;
+        if active.contains_key(run_id) {
+            return Err(AppError::Validation(
+                "a repository lifecycle operation is already active for this run".into(),
+            ));
+        }
+        active.insert(run_id.to_string(), ());
+    }
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let app_for_task = app.clone();
+    let run_id_for_task = run_id.to_string();
+    std::thread::spawn(move || {
+        let result = run_desktop_lifecycle_operation(&app_for_task, request);
+        if let Ok(mut active) = app_for_task
+            .state::<AppState>()
+            .active_repository_runs
+            .lock()
+        {
+            active.remove(&run_id_for_task);
+        }
+        let _ = sender.send(result);
+    });
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match receiver.try_recv() {
+            Ok(result) => return result,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                return Err(AppError::RepositoryRun(
+                    "background repository lifecycle task disconnected".into(),
+                ))
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
+        if let Ok(snapshot) = private_desktop_runtime_snapshot(app, run_id) {
+            if snapshot.checkpoint_revision > expected_revision {
+                update_persisted_run_from_operation(app, &snapshot)?;
+                return Ok(snapshot);
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(AppError::RepositoryRun(
+                "background lifecycle operation did not reach a durable checkpoint".into(),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[tauri::command]
@@ -3717,16 +4227,34 @@ async fn artifact_read(
 }
 
 #[tauri::command]
-async fn run_cancel(run_id: String) -> Result<(), AppError> {
-    if run_id.trim().is_empty() {
+async fn run_cancel(
+    app: AppHandle,
+    input: RunLifecycleInput,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    if input.run_id.trim().is_empty() {
         return Err(AppError::Validation("runId is required".into()));
     }
-
-    Ok(())
+    let reason = input
+        .reason
+        .filter(|reason| !reason.trim().is_empty())
+        .ok_or_else(|| AppError::Validation("cancellation reason is required".into()))?;
+    run_desktop_lifecycle_operation(
+        &app,
+        serde_json::json!({
+            "operation": "cancel",
+            "runId": input.run_id,
+            "expectedRevision": input.expected_revision,
+            "reason": reason,
+            "memoryRoot": desktop_runtime_memory_root(&app),
+        }),
+    )
 }
 
 #[tauri::command]
-async fn approval_respond(app: AppHandle, input: ApprovalDecisionInput) -> Result<(), AppError> {
+async fn approval_respond(
+    app: AppHandle,
+    input: ApprovalDecisionInput,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
     if input.run_id.trim().is_empty() {
         return Err(AppError::Validation("runId is required".into()));
     }
@@ -3734,40 +4262,88 @@ async fn approval_respond(app: AppHandle, input: ApprovalDecisionInput) -> Resul
         return Err(AppError::Validation("approvalId is required".into()));
     }
 
-    let decision_label = match &input.decision {
+    let decision = match input.decision {
         ApprovalDecision::Approved => "approved",
-        ApprovalDecision::Denied => "denied",
+        ApprovalDecision::Denied => "rejected",
     };
-
-    app.emit(
-        "run_event",
-        RunEvent {
-            id: format!("{}-event-approval-{}", input.run_id, input.approval_id),
-            run_id: input.run_id,
-            sequence: 10_000,
-            event_type: "action_blocked_or_approved".into(),
-            timestamp: now_iso_like(),
-            actor: serde_json::json!({ "kind": "policy", "id": "tauri-host" }),
-            payload: serde_json::json!({
-                "summary": format!("Approval {} for {}", decision_label, input.approval_id),
-                "approvalId": input.approval_id,
-                "decision": input.decision,
-            }),
-            redaction: serde_json::json!({ "applied": false, "redactedPaths": [] }),
-            artifacts: vec![],
-            safety: Some(serde_json::json!({
-                "policyMode": "safe",
-                "riskLevel": "low",
-                "approvalRequired": false,
-                "protectedPathTouched": false,
-                "commandAllowed": true,
-                "reasons": ["operator decision recorded"],
-            })),
-        },
+    let nonce = private_desktop_approval_nonce(
+        &app,
+        &input.run_id,
+        &input.approval_id,
+        input.expected_revision,
+        decision == "approved",
+    )?;
+    start_background_lifecycle_operation(
+        &app,
+        &input.run_id,
+        input.expected_revision,
+        serde_json::json!({
+            "operation": "resume",
+            "runId": input.run_id,
+            "approvalId": input.approval_id,
+            "approvalNonce": nonce,
+            "expectedRevision": input.expected_revision,
+            "decision": decision,
+            "memoryRoot": desktop_runtime_memory_root(&app),
+        }),
     )
-    .map_err(|error| AppError::Event(error.to_string()))?;
+}
 
-    Ok(())
+#[tauri::command]
+async fn run_status(
+    app: AppHandle,
+    run_id: String,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    if run_id.trim().is_empty() {
+        return Err(AppError::Validation("runId is required".into()));
+    }
+    run_desktop_lifecycle_operation(
+        &app,
+        serde_json::json!({
+            "operation": "status",
+            "runId": run_id,
+            "memoryRoot": desktop_runtime_memory_root(&app),
+        }),
+    )
+}
+
+#[tauri::command]
+async fn run_recover(
+    app: AppHandle,
+    input: RunLifecycleInput,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    start_background_lifecycle_operation(
+        &app,
+        &input.run_id,
+        input.expected_revision,
+        serde_json::json!({
+            "operation": "recover",
+            "runId": input.run_id,
+            "expectedRevision": input.expected_revision,
+            "memoryRoot": desktop_runtime_memory_root(&app),
+        }),
+    )
+}
+
+#[tauri::command]
+async fn run_mark_failed(
+    app: AppHandle,
+    input: RunLifecycleInput,
+) -> Result<DesktopRepositoryRunOutput, AppError> {
+    let reason = input
+        .reason
+        .filter(|reason| !reason.trim().is_empty())
+        .ok_or_else(|| AppError::Validation("mark-failed reason is required".into()))?;
+    run_desktop_lifecycle_operation(
+        &app,
+        serde_json::json!({
+            "operation": "mark_failed",
+            "runId": input.run_id,
+            "expectedRevision": input.expected_revision,
+            "reason": reason,
+            "memoryRoot": desktop_runtime_memory_root(&app),
+        }),
+    )
 }
 
 #[tauri::command]
@@ -3804,8 +4380,15 @@ async fn memory_update_candidate_rule_status(
         serde_json::json!({
             "id": input.id.clone(),
             "status": input.status.as_str(),
+            "actor": input.actor.clone(),
+            "reason": input.reason.clone(),
             "options": {
+                "expectedRevision": input.expected_revision,
                 "supersededBy": input.superseded_by.clone(),
+                "actor": input.actor.clone(),
+                "reason": input.reason.clone(),
+                "runId": input.run_id.clone(),
+                "decidedAt": input.decided_at.clone(),
             },
         }),
     )?;
@@ -3837,40 +4420,301 @@ async fn memory_update_candidate_rule_status(
 }
 
 #[tauri::command]
-async fn skill_list(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, AppError> {
-    let statuses = state
-        .skill_statuses
-        .lock()
-        .map_err(|_| AppError::StateLock)?;
-    Ok(mock_skills(&statuses))
+async fn memory_list_semantic(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<Vec<serde_json::Value>, AppError> {
+    let query = input
+        .and_then(|value| value.get("query").cloned())
+        .unwrap_or_else(|| serde_json::json!({}));
+    let result = run_memory_manager_sidecar(
+        &app,
+        "semantic.list",
+        serde_json::json!({ "query": query }),
+    )?;
+    serde_json::from_value(result).map_err(|error| {
+        AppError::MemoryManager(format!("semantic memory list was invalid: {error}"))
+    })
+}
+
+fn memory_mutation_input(
+    input: serde_json::Value,
+    field: &str,
+) -> Result<serde_json::Value, AppError> {
+    if !input.is_object() {
+        return Err(AppError::Validation(
+            "memory mutation input must be an object".into(),
+        ));
+    }
+    let payload = input
+        .get(field)
+        .cloned()
+        .unwrap_or_else(|| input.clone());
+    if !payload.is_object() {
+        return Err(AppError::Validation(format!(
+            "memory mutation {field} must be an object"
+        )));
+    }
+    let actor = payload
+        .get("actor")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let reason = payload
+        .get("reason")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let expected_revision = input
+        .get("options")
+        .and_then(|options| options.get("expectedRevision"))
+        .and_then(serde_json::Value::as_u64);
+    if actor.is_empty() || reason.is_empty() || expected_revision.is_none() {
+        return Err(AppError::Validation(
+            "memory mutation requires actor, reason, and expectedRevision".into(),
+        ));
+    }
+    let mut normalized = serde_json::Map::new();
+    normalized.insert(field.to_string(), payload);
+    normalized.insert(
+        "options".into(),
+        input
+            .get("options")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+    );
+    Ok(serde_json::Value::Object(normalized))
 }
 
 #[tauri::command]
-async fn skill_create_candidate(app: AppHandle) -> Result<serde_json::Value, AppError> {
-    let run_id = "run-1";
-    let skill = mock_skill(&SkillLifecycleStatus::Candidate, run_id, None);
+async fn memory_update_semantic_status(
+    app: AppHandle,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    run_memory_manager_sidecar(
+        &app,
+        "semantic.status",
+        memory_mutation_input(input, "decision")?,
+    )
+}
+
+#[tauri::command]
+async fn memory_edit_semantic(
+    app: AppHandle,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    run_memory_manager_sidecar(
+        &app,
+        "semantic.edit",
+        memory_mutation_input(input, "edit")?,
+    )
+}
+
+#[tauri::command]
+async fn memory_delete_semantic(
+    app: AppHandle,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    run_memory_manager_sidecar(
+        &app,
+        "semantic.delete",
+        memory_mutation_input(input, "decision")?,
+    )
+}
+
+#[tauri::command]
+async fn memory_restore_semantic(
+    app: AppHandle,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    run_memory_manager_sidecar(
+        &app,
+        "semantic.restore",
+        memory_mutation_input(input, "decision")?,
+    )
+}
+
+#[tauri::command]
+async fn memory_purge_semantic(
+    app: AppHandle,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    run_memory_manager_sidecar(
+        &app,
+        "semantic.purge",
+        memory_mutation_input(input, "decision")?,
+    )
+}
+
+#[tauri::command]
+async fn memory_retrieve(
+    app: AppHandle,
+    input: serde_json::Value,
+) -> Result<Vec<serde_json::Value>, AppError> {
+    let query = input
+        .get("query")
+        .cloned()
+        .unwrap_or_else(|| input.clone());
+    let result = run_memory_manager_sidecar(
+        &app,
+        "memory.retrieve",
+        serde_json::json!({ "query": query }),
+    )?;
+    serde_json::from_value(result).map_err(|error| {
+        AppError::MemoryManager(format!("memory retrieval result was invalid: {error}"))
+    })
+}
+
+#[tauri::command]
+async fn memory_summary(
+    app: AppHandle,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, AppError> {
+    let namespace = input
+        .and_then(|value| value.get("namespace").cloned())
+        .unwrap_or_else(|| serde_json::json!({}));
+    run_memory_manager_sidecar(
+        &app,
+        "summary",
+        serde_json::json!({ "namespace": namespace }),
+    )
+}
+
+#[tauri::command]
+async fn memory_snapshot(app: AppHandle) -> Result<serde_json::Value, AppError> {
+    let settings = persistence_store(&app).load_settings()?;
+    let repository_path = validate_repository_path(Some(&settings.default_repository_path))?;
+    run_memory_manager_sidecar(
+        &app,
+        "snapshot",
+        serde_json::json!({
+            "namespace": {
+                "capabilityId": "coding-apprentice",
+                "repositoryPath": repository_path.to_string_lossy(),
+            }
+        }),
+    )
+}
+
+#[tauri::command]
+async fn skill_list(app: AppHandle) -> Result<Vec<serde_json::Value>, AppError> {
+    let snapshot = run_skill_manager_sidecar(&app, "learned.list", serde_json::json!({}))?;
+    serde_json::from_value(
+        snapshot
+            .get("skills")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([])),
+    )
+    .map_err(|error| AppError::SkillManager(format!("learned skill list was invalid: {error}")))
+}
+
+#[tauri::command]
+async fn skill_snapshot(app: AppHandle) -> Result<serde_json::Value, AppError> {
+    run_skill_manager_sidecar(&app, "learned.list", serde_json::json!({}))
+}
+
+#[tauri::command]
+async fn skill_create_candidate(
+    app: AppHandle,
+    input: SkillCandidateCreateInput,
+) -> Result<serde_json::Value, AppError> {
+    validate_skill_candidate_input(&input)?;
+    let run = persistence_store(&app).open_run(&input.run_id)?;
+    let manifest_raw = fs::read_to_string(&run.artifact_manifest_path).map_err(|error| {
+        AppError::Persistence(format!("could not read candidate run manifest: {error}"))
+    })?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).map_err(|error| {
+        AppError::Persistence(format!("could not parse candidate run manifest: {error}"))
+    })?;
+    let memory = read_owned_run_artifact(&run, &manifest, "memoryStore")?;
+    let verification = read_owned_run_artifact(&run, &manifest, "verificationResult")?;
+    if verification.get("status").and_then(serde_json::Value::as_str) != Some("pass")
+        || verification
+            .get("verdict")
+            .and_then(|value| value.get("status"))
+            .and_then(serde_json::Value::as_str)
+            != Some("pass")
+    {
+        return Err(AppError::Validation(
+            "candidate creation requires persisted verifier-pass evidence".into(),
+        ));
+    }
+    let accepted_rules = memory
+        .get("candidateRules")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|rule| {
+            rule.get("id").and_then(serde_json::Value::as_str)
+                == Some(input.candidate_rule_id.as_str())
+                && rule.get("status").and_then(serde_json::Value::as_str) == Some("accepted")
+        })
+        .collect::<Vec<_>>();
+    if accepted_rules.len() != 1 {
+        return Err(AppError::Validation(
+            "candidate rule is missing, not accepted, or ambiguous".into(),
+        ));
+    }
+    let namespace = accepted_rules[0]
+        .get("namespace")
+        .cloned()
+        .ok_or_else(|| AppError::Validation("candidate rule namespace is missing".into()))?;
+    if namespace
+        .get("repositoryPath")
+        .and_then(serde_json::Value::as_str)
+        != Some(run.repository_path.as_str())
+        || verification.get("runId").and_then(serde_json::Value::as_str)
+            != Some(run.run_id.as_str())
+    {
+        return Err(AppError::Validation(
+            "candidate evidence crosses the persisted run namespace".into(),
+        ));
+    }
+    let episodes = memory
+        .get("episodes")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|episode| episode.get("namespace") == Some(&namespace))
+        .collect::<Vec<_>>();
+    let mutation = run_skill_manager_sidecar(
+        &app,
+        "learned.create",
+        serde_json::json!({
+            "builderInput": {
+                "namespace": namespace,
+                "acceptedRules": accepted_rules,
+                "episodes": episodes,
+                "verificationResult": verification,
+            },
+            "expectedRevision": input.expected_revision,
+            "actor": input.actor,
+            "reason": input.reason,
+        }),
+    )?;
+    let skill = mutation
+        .get("value")
+        .cloned()
+        .ok_or_else(|| AppError::SkillManager("candidate mutation result was incomplete".into()))?;
+    let run_id = input.run_id;
     app.emit(
         "run_event",
         RunEvent {
             id: format!("{run_id}-event-skill-candidate-created"),
-            run_id: run_id.into(),
+            run_id: run_id.clone(),
             sequence: 20_000,
             event_type: "skill_candidate_created".into(),
             timestamp: now_iso_like(),
             actor: serde_json::json!({ "kind": "runtime", "id": "skill-registry" }),
             payload: serde_json::json!({
-                "summary": "Candidate skill created: Keep package fixes scoped",
-                "skillId": "skill-keep-package-fixes-scoped",
+                "summary": "Candidate skill created from accepted rule and verifier evidence",
+                "skillId": skill.get("id").cloned(),
                 "status": "candidate",
             }),
             redaction: serde_json::json!({ "applied": true, "redactedPaths": ["summary"] }),
-            artifacts: vec![serde_json::json!({
-                "id": "mock-skill-definition",
-                "kind": "skill_definition",
-                "uri": format!("orynt-artifact://{run_id}/skills/skill-package-scope.json"),
-                "label": "Candidate skill definition",
-                "sha256": "mock-skill-definition-sha256",
-            })],
+            artifacts: vec![],
             safety: None,
         },
     )
@@ -3880,7 +4724,6 @@ async fn skill_create_candidate(app: AppHandle) -> Result<serde_json::Value, App
 
 async fn apply_skill_decision(
     app: AppHandle,
-    state: State<'_, AppState>,
     mut input: SkillStatusUpdateInput,
     decision: SkillDecision,
 ) -> Result<serde_json::Value, AppError> {
@@ -3888,16 +4731,28 @@ async fn apply_skill_decision(
     validate_skill_status_update(&input)?;
 
     let status = input.decision.status();
-    {
-        let mut statuses = state
-            .skill_statuses
-            .lock()
-            .map_err(|_| AppError::StateLock)?;
-        statuses.insert(input.skill_id.clone(), status.clone());
-    }
-
     let run_id = input.run_id.clone().unwrap_or_else(|| "run-1".into());
     let event_type = skill_decision_event_type(&input.decision);
+    let mutation = run_skill_manager_sidecar(
+        &app,
+        "learned.status",
+        serde_json::json!({
+            "decision": {
+                "skillId": input.skill_id.clone(),
+                "decision": input.decision.clone(),
+                "actor": input.actor.clone(),
+                "reason": input.reason.clone(),
+                "runId": run_id.clone(),
+                "supersededBy": input.superseded_by.clone(),
+                "decidedAt": now_iso_like(),
+            },
+            "expectedRevision": input.expected_revision,
+        }),
+    )?;
+    let skill = mutation
+        .get("value")
+        .cloned()
+        .ok_or_else(|| AppError::SkillManager("skill decision result was incomplete".into()))?;
     app.emit(
         "run_event",
         RunEvent {
@@ -3921,95 +4776,68 @@ async fn apply_skill_decision(
     )
     .map_err(|error| AppError::Event(error.to_string()))?;
 
-    let statuses = state
-        .skill_statuses
-        .lock()
-        .map_err(|_| AppError::StateLock)?;
-    let mut skill = mock_skills(&statuses)
-        .into_iter()
-        .find(|skill| {
-            skill.get("id").and_then(serde_json::Value::as_str) == Some(input.skill_id.as_str())
-        })
-        .ok_or_else(|| AppError::Validation("skill not found".into()))?;
-    if status == SkillLifecycleStatus::Superseded {
-        skill["supersededBy"] = serde_json::Value::String(
-            input
-                .superseded_by
-                .clone()
-                .unwrap_or_else(|| "skill-replacement-demo".into()),
-        );
-    }
-    skill["promotionDecisions"] = serde_json::json!([
-        {
-            "skillId": input.skill_id,
-            "decision": input.decision,
-            "actor": input.actor,
-            "reason": input.reason,
-            "runId": run_id,
-            "supersededBy": input.superseded_by,
-            "decidedAt": now_iso_like(),
-        }
-    ]);
-
     Ok(skill)
 }
 
 #[tauri::command]
 async fn skill_promote_manual(
     app: AppHandle,
-    state: State<'_, AppState>,
     input: SkillStatusUpdateInput,
 ) -> Result<serde_json::Value, AppError> {
-    apply_skill_decision(app, state, input, SkillDecision::Promote).await
+    apply_skill_decision(app, input, SkillDecision::Promote).await
 }
 
 #[tauri::command]
 async fn skill_reject(
     app: AppHandle,
-    state: State<'_, AppState>,
     input: SkillStatusUpdateInput,
 ) -> Result<serde_json::Value, AppError> {
-    apply_skill_decision(app, state, input, SkillDecision::Reject).await
+    apply_skill_decision(app, input, SkillDecision::Reject).await
 }
 
 #[tauri::command]
 async fn skill_supersede(
     app: AppHandle,
-    state: State<'_, AppState>,
     input: SkillStatusUpdateInput,
 ) -> Result<serde_json::Value, AppError> {
-    apply_skill_decision(app, state, input, SkillDecision::Supersede).await
+    apply_skill_decision(app, input, SkillDecision::Supersede).await
 }
 
 #[tauri::command]
 async fn skill_archive(
     app: AppHandle,
-    state: State<'_, AppState>,
     input: SkillStatusUpdateInput,
 ) -> Result<serde_json::Value, AppError> {
-    apply_skill_decision(app, state, input, SkillDecision::Archive).await
+    apply_skill_decision(app, input, SkillDecision::Archive).await
 }
 
 #[tauri::command]
 async fn skill_create_replay_plan(
     app: AppHandle,
-    state: State<'_, AppState>,
     input: SkillReplayPlanInput,
 ) -> Result<serde_json::Value, AppError> {
     validate_skill_replay_plan_input(&input)?;
 
-    let run_id = input.run_id.clone().unwrap_or_else(|| "run-1".into());
-    let statuses = state
-        .skill_statuses
-        .lock()
-        .map_err(|_| AppError::StateLock)?;
-    let skill = mock_skills(&statuses)
-        .into_iter()
-        .find(|skill| {
-            skill.get("id").and_then(serde_json::Value::as_str) == Some(input.skill_id.as_str())
-        })
-        .ok_or_else(|| AppError::Validation("skill not found".into()))?;
-    let plan = mock_skill_replay_plan(&skill, &run_id);
+    let run_id = input.run_id.clone();
+    let run = persistence_store(&app).open_run(&run_id)?;
+    let mutation = run_skill_manager_sidecar(
+        &app,
+        "learned.replay",
+        serde_json::json!({
+            "skillId": input.skill_id.clone(),
+            "runId": run_id.clone(),
+            "taskId": run.task_id.clone(),
+            "repositoryPath": run.repository_path.clone(),
+            "baseRef": "HEAD",
+            "expectedRevision": input.expected_revision,
+            "actor": input.actor.clone(),
+            "reason": input.reason.clone(),
+        }),
+    )?;
+    let plan = mutation
+        .get("value")
+        .cloned()
+        .ok_or_else(|| AppError::SkillManager("skill replay result was incomplete".into()))?;
     let blocked = plan.get("readiness").and_then(serde_json::Value::as_str) == Some("blocked");
 
     for (index, event_type) in skill_replay_lifecycle_event_types(blocked)
@@ -4409,11 +5237,24 @@ pub fn run() {
             artifact_list,
             artifact_read,
             run_cancel,
+            run_status,
+            run_recover,
+            run_mark_failed,
             approval_respond,
             memory_list_episodes,
             memory_list_candidate_rules,
             memory_update_candidate_rule_status,
+            memory_list_semantic,
+            memory_update_semantic_status,
+            memory_edit_semantic,
+            memory_delete_semantic,
+            memory_restore_semantic,
+            memory_purge_semantic,
+            memory_retrieve,
+            memory_summary,
+            memory_snapshot,
             skill_list,
+            skill_snapshot,
             skill_create_candidate,
             skill_promote_manual,
             skill_reject,
@@ -4723,6 +5564,10 @@ mod tests {
             status: CandidateRuleReviewStatus::Accepted,
             run_id: Some("run-1".into()),
             superseded_by: None,
+            actor: "operator".into(),
+            reason: "Reviewed evidence".into(),
+            expected_revision: 0,
+            decided_at: None,
         };
 
         assert!(validate_candidate_rule_status_update(&accepted).is_ok());
@@ -4732,6 +5577,10 @@ mod tests {
             status: CandidateRuleReviewStatus::Rejected,
             run_id: Some("run-1".into()),
             superseded_by: None,
+            actor: "operator".into(),
+            reason: "Reviewed evidence".into(),
+            expected_revision: 0,
+            decided_at: None,
         };
         let error = validate_candidate_rule_status_update(&missing_id).expect_err("id is required");
         assert_eq!(error.to_string(), "candidate rule id is required");
@@ -4762,6 +5611,7 @@ mod tests {
             reason: "Reviewed evidence".into(),
             run_id: Some("run-1".into()),
             superseded_by: None,
+            expected_revision: 0,
         };
 
         assert!(validate_skill_status_update(&promote).is_ok());
@@ -4773,6 +5623,7 @@ mod tests {
             reason: "Too broad".into(),
             run_id: Some("run-1".into()),
             superseded_by: None,
+            expected_revision: 0,
         };
         let error = validate_skill_status_update(&missing_id).expect_err("skill id is required");
         assert_eq!(error.to_string(), "skill id is required");
@@ -4802,14 +5653,20 @@ mod tests {
     fn skill_replay_plan_requires_explicit_skill_id() {
         let input = SkillReplayPlanInput {
             skill_id: "skill-package-scope".into(),
-            run_id: Some("run-1".into()),
+            run_id: "run-1".into(),
+            expected_revision: 0,
+            actor: "operator".into(),
+            reason: "Preview replay".into(),
         };
 
         assert!(validate_skill_replay_plan_input(&input).is_ok());
 
         let missing_id = SkillReplayPlanInput {
             skill_id: "".into(),
-            run_id: Some("run-1".into()),
+            run_id: "run-1".into(),
+            expected_revision: 0,
+            actor: "operator".into(),
+            reason: "Preview replay".into(),
         };
         let error =
             validate_skill_replay_plan_input(&missing_id).expect_err("skill id is required");
@@ -4902,6 +5759,10 @@ mod tests {
             goal: "Persist this run".into(),
             repository_path: "/repo/orynt".into(),
             status: "pass".into(),
+            checkpoint_revision: Some(12),
+            runtime_status: Some("completed".into()),
+            approval: None,
+            task_plan: None,
             artifact_root: root
                 .join("artifacts")
                 .join(run_id)

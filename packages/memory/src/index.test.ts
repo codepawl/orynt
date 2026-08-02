@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -32,6 +33,79 @@ function memoryProvenance(runId: string): MemoryProvenance {
     artifactRefs: [],
     sources: ["user_feedback"],
   };
+}
+
+function runMemoryWriter(memoryRoot: string, index: number): Promise<void> {
+  const program = `
+    import path from "node:path";
+    import { compareAndSwapVersionedJson } from "../local-state/dist/index.js";
+    const filePath = path.join(process.argv[1], "memory-store.json");
+    const validate = (value) =>
+      value?.schemaVersion === 2 &&
+      Number.isSafeInteger(value.revision) &&
+      Array.isArray(value.episodes) &&
+      Array.isArray(value.candidateRules) &&
+      Array.isArray(value.semanticMemory) &&
+      Array.isArray(value.tombstones);
+    await compareAndSwapVersionedJson({
+      filePath,
+      schemaVersion: 2,
+      validate,
+      initialize: () => ({
+        schemaVersion: 2,
+        revision: 0,
+        updatedAt: new Date().toISOString(),
+        episodes: [],
+        candidateRules: [],
+        semanticMemory: [],
+        tombstones: []
+      }),
+      mutate: (state) => state.episodes.push({
+        id: "episode-process-" + process.argv[2],
+        namespace: {
+          capabilityId: "coding-apprentice",
+          workspaceId: "workspace-memory",
+          repositoryPath: "/repo/orynt"
+        },
+        kind: "run_episode",
+        summary: "Process episode " + process.argv[2],
+        content: { index: Number(process.argv[2]) },
+        provenance: {
+          runId: "run-process-" + process.argv[2],
+          taskId: "task-memory",
+          eventIds: [],
+          artifactRefs: [],
+          sources: []
+        },
+        retention: { ttlDays: 30 },
+        redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
+        confidence: 1,
+        createdAt: new Date().toISOString()
+      }),
+      updatedAt: (state) => {
+        state.updatedAt = new Date().toISOString();
+      }
+    });
+  `;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", program, memoryRoot, String(index)], {
+      cwd: path.resolve(import.meta.dirname, ".."),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`memory writer exited ${code}: ${stderr}`));
+      }
+    });
+  });
 }
 
 function createRunWithEvents(store = new InMemoryRunStore()) {
@@ -379,9 +453,10 @@ describe("LocalJsonMemoryStore", () => {
     const secondStore = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
 
     expect(await firstStore.getStoreSnapshot()).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision: 0,
       tombstones: [],
+      auditLog: [],
     });
 
     await Promise.all(
@@ -403,6 +478,8 @@ describe("LocalJsonMemoryStore", () => {
     const afterConcurrentWrites = await firstStore.getStoreSnapshot();
     expect(afterConcurrentWrites.revision).toBe(12);
     expect(afterConcurrentWrites.episodes).toHaveLength(12);
+    expect(afterConcurrentWrites.auditLog).toHaveLength(12);
+    expect(afterConcurrentWrites.auditLog.every((entry) => !("summary" in entry) && !("content" in entry))).toBe(true);
     expect(new Set(afterConcurrentWrites.episodes.map((item) => item.id)).size).toBe(12);
     expect((await readdir(tempRoot)).some((entry) => entry.includes(".tmp-"))).toBe(false);
 
@@ -436,6 +513,34 @@ describe("LocalJsonMemoryStore", () => {
         { expectedRevision: 12 },
       ),
     ).rejects.toThrow("memory store revision conflict: expected 12, current 13");
+  });
+
+  it("fails closed instead of coercing an invalid nested legacy entity", async () => {
+    await writeFile(
+      path.join(tempRoot, "memory-store.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        revision: 4,
+        updatedAt: "2026-07-30T00:00:00.000Z",
+        episodes: [{ id: "partial" }],
+        candidateRules: [],
+        semanticMemory: [],
+        tombstones: [],
+      }),
+    );
+    await expect(
+      new LocalJsonMemoryStore({ memoryRoot: tempRoot }).getStoreSnapshot(),
+    ).rejects.toMatchObject({ code: "invalid_schema" });
+  });
+
+  it("prevents lost updates across independent writer processes", async () => {
+    await Promise.all(Array.from({ length: 8 }, (_, index) => runMemoryWriter(tempRoot, index)));
+
+    const snapshot = await new LocalJsonMemoryStore({ memoryRoot: tempRoot }).getStoreSnapshot();
+    expect(snapshot.revision).toBe(8);
+    expect(snapshot.episodes).toHaveLength(8);
+    expect(new Set(snapshot.episodes.map((item) => item.id)).size).toBe(8);
+    expect((await readdir(tempRoot)).some((entry) => entry.endsWith(".lock"))).toBe(false);
   });
 
   it("filters expired episodes from direct queries, retrieval, and summaries", async () => {

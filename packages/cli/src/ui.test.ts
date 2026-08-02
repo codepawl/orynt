@@ -64,11 +64,19 @@ describe("Orynt terminal UI", () => {
   it("keeps slash parsing, help, aliases, and palette filtering in one registry", () => {
     const help = renderCommandHelp();
     for (const definition of SLASH_COMMANDS) {
-      expect(help).toContain(definition.usage);
-      expect(help).toContain(definition.description);
+      if (definition.hidden) {
+        expect(help).not.toContain(definition.usage);
+      } else {
+        expect(help).toContain(definition.usage);
+        expect(help).toContain(definition.description);
+      }
     }
+    expect(help).toContain("Customize");
+    expect(help).toContain("Workspace");
+    expect(help).toContain("Inspect");
+    expect(help).toContain("Session");
     expect(filterSlashCommands("/do").map(({ command }) => command)).toEqual(["/doctor"]);
-    expect(filterSlashCommands("/mode").map(({ command }) => command)).toEqual(["/model"]);
+    expect(filterSlashCommands("/mode")).toEqual([]);
     expect(filterSlashCommands("/q").map(({ command }) => command)).toEqual(["/exit"]);
     expect(filterSlashCommands("/repo ")).toEqual([]);
     expect(filterSlashCommands("goal /repo")).toEqual([]);
@@ -155,6 +163,23 @@ describe("Orynt terminal UI", () => {
       { type: "codex_execution_approval_required", payload: { summary: "audit approval" } },
       { type: "codex_execution_started", payload: { summary: "running" } },
       {
+        type: "codex_reasoning_summary",
+        payload: {
+          itemId: "reason-1",
+          status: "completed",
+          text: "Inspecting the repository",
+        },
+      },
+      {
+        type: "codex_tool_activity",
+        payload: {
+          itemId: "tool-1",
+          status: "completed",
+          toolKind: "command",
+          detail: "pnpm test",
+        },
+      },
+      {
         type: "codex_agent_message",
         payload: { message: "Interim update", streamEventType: "item.updated" },
       },
@@ -187,6 +212,8 @@ describe("Orynt terminal UI", () => {
     expect(progress).toEqual([
       "  ◇ Prepare   Creating isolated worktree and contract",
       "  ◇ Run       Codex working inside repository sandbox",
+      "  ◇ Think     Inspecting the repository",
+      "  ◇ Tool      pnpm test",
       "  ◇ Verify    Running policy and verifier checks",
     ]);
     expect(progress.join("\n")).not.toContain("Approval");
@@ -254,6 +281,29 @@ describe("Orynt terminal UI", () => {
     expect(rendered).toContain("\\u061c\\u200e\\u200f\\u202espoof");
     expect(rendered).toContain("Agent report · unverified");
     expect(rendered).toContain("Use /verify and /evidence");
+  });
+
+  it("does not repeat an agent report that was already streamed", () => {
+    const presenter = new RunPresenter({ color: false });
+    presenter.present({
+      type: "codex_execution_finished",
+      payload: { lastMessagePreview: "Already streamed." },
+    });
+    presenter.markAgentResponseStreamed();
+
+    const completion = renderRunCompletion(
+      {
+        runId: "run-streamed",
+        status: "pass",
+        verification: "passed",
+        interactive: true,
+      },
+      presenter.snapshot(),
+      { color: false },
+    );
+
+    expect(completion).not.toContain("Agent report");
+    expect(completion).not.toContain("Already streamed.");
   });
 
   it("never renders a success state when review or a failure event is present", () => {

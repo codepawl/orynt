@@ -21,9 +21,15 @@ import {
   parseCliArgs,
   type CliArguments,
 } from "./runtime.js";
-import type { CliAgentTurnRequest, CliAgentTurnResult } from "./agent.js";
+import {
+  evaluateAgentAction,
+  type CliAgentTurnRequest,
+  type CliAgentTurnResult,
+  type ProposedRepositoryAction,
+} from "./agent.js";
 import type { ComposerChoice } from "./composer.js";
 import type { InlineActivityHandle } from "./composer.js";
+import type { InlineMessageStreamHandle } from "./composer.js";
 import {
   runInteractiveSession,
   type CliRunRequest,
@@ -33,22 +39,31 @@ import {
   type ProviderStatus,
 } from "./session.js";
 import type {
+  CliAppearancePreferences,
   CliPreferences,
   CliSessionSnapshot,
   CliWorkingConfig,
 } from "./state.js";
-import { normalizeCliWorkingConfig } from "./state.js";
+import {
+  DEFAULT_CLI_APPEARANCE,
+  normalizeCliWorkingConfig,
+} from "./state.js";
+import type {
+  TerminalAppearanceResolution,
+} from "./terminal-theme.js";
 import {
   RunPresenter,
   renderRunCompletion,
   terminalSafeText,
   type CliModelOption,
 } from "./ui.js";
+import { buildBoundRepositoryTaskPlan } from "./task-plan.js";
 
 export type CliApplicationDependencies = {
   cwd: string;
   isTTY: boolean;
   color?: boolean;
+  richText?: boolean;
   width?: number;
   height?: number;
   ask: (prompt: string) => Promise<string>;
@@ -60,6 +75,7 @@ export type CliApplicationDependencies = {
   ) => Promise<string>;
   remember?: (value: string) => void;
   beginActivity?: (label: string) => InlineActivityHandle;
+  beginMessageStream?: (label?: string) => InlineMessageStreamHandle;
   write: (value: string) => void;
   clear: () => void;
   probeProvider: () => Promise<ProviderStatus>;
@@ -73,6 +89,14 @@ export type CliApplicationDependencies = {
   loadSession?: (sessionId: string) => Promise<CliSessionSnapshot | undefined>;
   loadPreferences?: () => Promise<CliPreferences>;
   persistWorkingConfig?: (patch: CliWorkingConfig) => Promise<void>;
+  persistDebugMode?: (debugMode: boolean) => Promise<void>;
+  appearanceResolution?: TerminalAppearanceResolution;
+  persistAppearance?: (
+    patch: Partial<CliAppearancePreferences>,
+  ) => Promise<void>;
+  applyAppearance?: (
+    appearance: CliAppearancePreferences,
+  ) => TerminalAppearanceResolution;
   hasAcknowledgedStartupBoundary?: () => Promise<boolean>;
   acknowledgeStartupBoundary?: () => Promise<void>;
   prepareRunSignal?: () => AbortSignal;
@@ -93,9 +117,8 @@ function jsonLine(value: Record<string, unknown>): string {
 
 async function loadWorkingConfig(
   dependencies: CliApplicationDependencies,
+  preferences?: CliPreferences,
 ): Promise<CliWorkingConfig> {
-  if (!dependencies.loadPreferences) return {};
-  const preferences = await dependencies.loadPreferences();
   if (preferences?.workingConfig !== undefined) {
     return preferences.workingConfig;
   }
@@ -216,8 +239,18 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
   }
 
   let savedWorkingConfig: CliWorkingConfig;
+  let savedPreferences: CliPreferences = {
+    schemaVersion: 5,
+    debugMode: false,
+    appearance: { ...DEFAULT_CLI_APPEARANCE },
+  };
   try {
-    savedWorkingConfig = await loadWorkingConfig(dependencies);
+    savedPreferences =
+      (await dependencies.loadPreferences?.()) ?? savedPreferences;
+    savedWorkingConfig = await loadWorkingConfig(
+      dependencies,
+      savedPreferences,
+    );
   } catch (error) {
     const message =
       `Could not load or migrate Orynt working config: ${
@@ -255,6 +288,75 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
         dependencies,
       );
       const implementer = resolvedProfile.roles.implementer;
+      if (!dependencies.turn) {
+        dependencies.write(
+          args.jsonl
+            ? jsonLine({
+                kind: "error",
+                classification: "planning",
+                code: "TASK_PLANNER_UNAVAILABLE",
+                message: "Headless execution requires the repository task planner.",
+              })
+            : "Task planning blocked: repository task planner is unavailable.",
+        );
+        return 2;
+      }
+      const coordinator = resolvedProfile.roles.coordinator;
+      const plannedTurn = await dependencies.turn({
+        prompt: args.initialPrompt ?? "",
+        repositoryPath: workingConfig.repositoryPath,
+        modelId: coordinator.modelId,
+        thinkingEffort: coordinator.thinkingEffort,
+        acceptanceCriteria: [],
+        recentTurns: [],
+      });
+      if (plannedTurn.disposition !== "action" || !plannedTurn.action) {
+        dependencies.write(
+          args.jsonl
+            ? jsonLine({
+                kind: "error",
+                classification: "planning",
+                code: "TASK_PLAN_NOT_ACTIONABLE",
+                message:
+                  "The repository task planner did not return an executable action.",
+              })
+            : "Task planning blocked: no executable repository action was produced.",
+        );
+        return 2;
+      }
+      const taskPlan = buildBoundRepositoryTaskPlan({
+        action: plannedTurn.action,
+        prompt: args.initialPrompt ?? "",
+        acceptanceCriteria: [],
+        maxModelTokens: implementer.maxTokens,
+        maxWallTimeMs: implementer.maxWallTimeMs,
+        ...(implementer.maxUsd === undefined
+          ? {}
+          : { maxUsd: implementer.maxUsd }),
+      });
+      const planOperations = [
+        ...new Set(taskPlan.tasks.flatMap((task) => task.operations)),
+      ];
+      const authorizationAction: ProposedRepositoryAction = {
+        ...plannedTurn.action,
+        operations: planOperations,
+        estimatedPaths: [...taskPlan.pathEnvelope],
+        estimatedChangedFiles: taskPlan.pathEnvelope.length,
+      };
+      const planAuthorization = evaluateAgentAction(authorizationAction);
+      if (planAuthorization.decision === "takeover_required") {
+        dependencies.write(
+          args.jsonl
+            ? jsonLine({
+                kind: "error",
+                classification: "planning",
+                code: "TASK_PLAN_OUTSIDE_REPOSITORY_AUTHORITY",
+                message: planAuthorization.reasons.join(" "),
+              })
+            : `Task planning blocked: ${terminalSafeText(planAuthorization.reasons.join(" "))}`,
+        );
+        return 2;
+      }
       const implementerTaskId = `implement-${randomUUID()}`;
       const headlessPlan: OrchestrationPlan = {
         schemaVersion: 1,
@@ -374,10 +476,11 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
             }
           : undefined;
       const result = await dependencies.run({
-        instruction: args.initialPrompt ?? "",
+        instruction: plannedTurn.action.instruction,
         repositoryPath: workingConfig.repositoryPath,
         modelId: implementer.modelId,
         thinkingEffort: implementer.thinkingEffort,
+        taskPlan,
         orchestration: {
           profile: resolvedProfile,
           plan: headlessPlan,
@@ -390,9 +493,12 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
           risk: "high",
           reasons: ["Headless execution uses the explicit one-run operator grant."],
           source: "headless",
-          expectedPaths: [],
+          expectedPaths: [...taskPlan.pathEnvelope],
           allowDestructiveChanges: true,
           allowChangedFileLimitExceeded: true,
+          planId: taskPlan.id,
+          planRevision: taskPlan.revision,
+          planDigest: taskPlan.digest,
         },
         onEvent: (event) => {
           if (args.jsonl) {
@@ -471,11 +577,13 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
       ...workingConfig,
         providerReady: provider.ready,
         providerDetail: provider.detail,
+        debugMode: args.debug === true || savedPreferences.debugMode,
       }
     : {
         ...workingConfig,
         providerReady: provider.ready,
         providerDetail: provider.detail,
+        debugMode: args.debug === true || savedPreferences.debugMode,
       };
   if (resumed && workingConfig.repositoryPath !== resumed.repositoryPath) {
     delete initialState.goal;
@@ -491,11 +599,16 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
       ask: dependencies.ask,
       compose: dependencies.compose,
       select: dependencies.select,
-    remember: dependencies.remember,
-    beginActivity: dependencies.beginActivity,
+      remember: dependencies.remember,
+      beginActivity: dependencies.beginActivity,
+      beginMessageStream: dependencies.beginMessageStream,
       write: dependencies.write,
       clear: dependencies.clear,
       color: args.color && dependencies.isTTY && dependencies.color !== false,
+      richText:
+        dependencies.appearanceResolution?.richText ??
+        dependencies.richText ??
+        false,
       isTTY: dependencies.isTTY,
       width: dependencies.width,
       height: dependencies.height,
@@ -510,6 +623,17 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
     persistSession: dependencies.persistSession,
     loadSession: dependencies.loadSession,
     persistWorkingConfig: dependencies.persistWorkingConfig,
+    persistDebugMode: dependencies.persistDebugMode,
+    appearancePreferences: savedPreferences.appearance,
+    appearanceResolution:
+      dependencies.appearanceResolution ?? {
+        color: args.color && dependencies.color !== false,
+        motion: true,
+        richText: dependencies.isTTY,
+      },
+    persistAppearance: dependencies.persistAppearance,
+    applyAppearance: dependencies.applyAppearance,
+    debugOverride: args.debug === true,
     startupBoundaryAcknowledged,
     acknowledgeStartupBoundary: dependencies.acknowledgeStartupBoundary,
     prepareRunSignal: dependencies.prepareRunSignal,

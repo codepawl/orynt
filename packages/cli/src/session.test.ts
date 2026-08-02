@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { INTERRUPTED_INPUT } from "./composer";
+import { COMPOSER_PROMPT, INTERRUPTED_INPUT } from "./composer";
 import {
+  ActiveTurnTimer,
   approvalText,
+  formatTurnDuration,
   runInteractiveSession,
+  turnDurationLine,
   type CliRunRequest,
   type CliRunResult,
 } from "./session";
@@ -34,6 +37,9 @@ function agentAnswer(reply = "Here is the repository answer."): CliAgentTurnResu
 function agentAction(
   overrides: Partial<ProposedRepositoryAction> = {},
 ): CliAgentTurnResult {
+  const operations = overrides.operations ?? ["write"];
+  const estimatedPaths =
+    overrides.estimatedPaths ?? ["packages/cli/src/session.ts"];
   return {
     disposition: "action",
     reply: "I can make that repository change.",
@@ -41,16 +47,509 @@ function agentAction(
     action: {
       instruction: "Update the requested CLI behavior",
       rationale: "The user asked for a small repository-local change.",
-      operations: ["write"],
-      estimatedPaths: ["packages/cli/src/session.ts"],
-      estimatedChangedFiles: 1,
+      operations,
+      estimatedPaths,
+      estimatedChangedFiles:
+        overrides.estimatedChangedFiles ?? estimatedPaths.length,
       helperTasks: [],
+      taskPlan: {
+        summary: "Update the requested CLI behavior.",
+        requirements: [
+          {
+            id: "update-cli",
+            text: "Update the requested CLI behavior.",
+            source: "user_prompt",
+            kind: "outcome",
+            required: true,
+          },
+        ],
+        tasks: [
+          {
+            id: "update-cli-behavior",
+            title: "Update CLI behavior",
+            instruction: "Update the requested CLI behavior.",
+            kind: "change",
+            dependencies: [],
+            requirementIds: ["update-cli"],
+            authority: "single_writer",
+            operations: operations.filter(
+              (operation): operation is "write" | "delete" | "rename" | "dependency" | "migration" =>
+                ["write", "delete", "rename", "dependency", "migration"].includes(operation),
+            ),
+            expectedPaths: estimatedPaths,
+            doneWhen: ["The requested CLI behavior is updated."],
+            evidence: [
+              {
+                id: "cli-diff",
+                requirementIds: ["update-cli"],
+                kind: "diff",
+                description: "Inspect the CLI behavior diff.",
+                path: estimatedPaths[0],
+              },
+            ],
+          },
+        ],
+        allowedOperations: [
+          "read",
+          ...operations.filter(
+            (operation): operation is "write" | "delete" | "rename" | "dependency" | "migration" =>
+              ["write", "delete", "rename", "dependency", "migration"].includes(operation),
+          ),
+        ],
+      },
       ...overrides,
     },
   };
 }
 
 describe("interactive Orynt session", () => {
+  it("formats branded turn duration lines and excludes paused time", () => {
+    expect(formatTurnDuration(999)).toBe("<1s");
+    expect(formatTurnDuration(38_900)).toBe("38s");
+    expect(formatTurnDuration(14 * 60_000 + 38_000)).toBe("14m 38s");
+    expect(formatTurnDuration(3_661_000)).toBe("1h 1m 1s");
+    expect(stripAnsi(turnDurationLine("success", 878_000, {
+      color: true,
+      width: 60,
+    }))).toMatch(/^─ ✦ Crafted in 14m 38s ─+$/u);
+    expect(turnDurationLine("failed", 2_000, {
+      color: false,
+      width: 40,
+    })).toMatch(/^─ ✕ Stopped after 2s ─+$/u);
+    expect(turnDurationLine("cancelled", 2_000, {
+      color: false,
+      width: 40,
+    })).toMatch(/^─ ◇ Cancelled after 2s ─+$/u);
+    expect(turnDurationLine("cancelled", 3_661_000, {
+      color: false,
+      width: 18,
+    }).length).toBeLessThanOrEqual(17);
+
+    let now = 0;
+    const timer = new ActiveTurnTimer(() => now);
+    now = 5_000;
+    timer.pause();
+    now = 65_000;
+    timer.resume();
+    now = 70_000;
+    expect(timer.finish()).toBe(10_000);
+    now = 80_000;
+    expect(timer.finish()).toBe(10_000);
+  });
+
+  it("streams coordinator replies without printing the final answer twice", async () => {
+    const output: string[] = [];
+    const streamUpdates: string[] = [];
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+      },
+      terminal: {
+        ask: scriptedAsk(["hello", "/exit"]),
+        clear: vi.fn(),
+        write: (value) => output.push(value),
+        beginMessageStream: () => ({
+          update: (text) => streamUpdates.push(text),
+          finish: (text) => {
+            if (text) streamUpdates.push(`final:${text}`);
+          },
+          abort: vi.fn(),
+        }),
+        color: false,
+      },
+      turn: vi.fn(async (request) => {
+        request.onActivity?.({
+          kind: "message",
+          itemId: "message-1",
+          text: "Hello",
+          status: "updated",
+        });
+        request.onActivity?.({
+          kind: "message",
+          itemId: "message-1",
+          text: "Hello from Orynt.",
+          status: "completed",
+        });
+        return agentAnswer("Hello from Orynt.");
+      }),
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    expect(streamUpdates).toEqual([
+      "Hello",
+      "Hello from Orynt.",
+      "final:Hello from Orynt.",
+    ]);
+    expect(output.join("\n")).not.toContain("Agent\nHello from Orynt.");
+  });
+
+  it("formats fallback agent replies inline with one blank row and a distinct prefix", async () => {
+    const output: string[] = [];
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+      },
+      terminal: {
+        ask: scriptedAsk(["hello", "/exit"]),
+        clear: vi.fn(),
+        write: (value) => output.push(value),
+        color: true,
+      },
+      turn: vi.fn(async (request) => {
+        request.onActivity?.({
+          kind: "message",
+          itemId: "message-1",
+          text: "Hello from Orynt.",
+          status: "completed",
+        });
+        return agentAnswer("Hello from Orynt.");
+      }),
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    expect(output).toContain(
+      "\n\u001b[38;2;198;196;191mAgent ✦\u001b[0m Hello from Orynt.",
+    );
+    expect(output.join("\n").match(/Hello from Orynt\./gu)).toHaveLength(1);
+  });
+
+  it("prints one Crafted separator after the final streamed response", async () => {
+    let now = 0;
+    const events: string[] = [];
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+      },
+      terminal: {
+        ask: scriptedAsk(["hello", "/exit"]),
+        clear: vi.fn(),
+        write: (value) => events.push(value),
+        beginMessageStream: () => ({
+          update: vi.fn(),
+          finish: () => events.push("STREAM_FINISHED"),
+          abort: vi.fn(),
+        }),
+        color: false,
+        width: 60,
+      },
+      turn: vi.fn(async (request) => {
+        now = 90_500;
+        request.onActivity?.({
+          kind: "message",
+          itemId: "message-1",
+          text: "Done.",
+          status: "completed",
+        });
+        return agentAnswer("Done.");
+      }),
+      now: () => now,
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    const streamFinished = events.indexOf("STREAM_FINISHED");
+    const duration = events.findIndex((value) =>
+      value.includes("✦ Crafted in 1m 30s"),
+    );
+    expect(streamFinished).toBeGreaterThanOrEqual(0);
+    expect(duration).toBeGreaterThan(streamFinished);
+    expect(
+      events.filter((value) => value.includes("Crafted in")),
+    ).toHaveLength(1);
+  });
+
+  it("hides successful readiness rows by default and keeps them in debug mode", async () => {
+    const runSession = async (debugMode: boolean) => {
+      const output: string[] = [];
+      await runInteractiveSession({
+        state: {
+          repositoryPath: "/work/orynt",
+          modelId: "gpt-5.5",
+          thinkingEffort: "high",
+          providerReady: true,
+          providerDetail: "Authenticated",
+          debugMode,
+        },
+        terminal: {
+          ask: scriptedAsk(["hello", "/exit"]),
+          clear: vi.fn(),
+          write: (value) => output.push(value),
+          beginActivity: () => ({
+            update: vi.fn(),
+            settle: (label) => {
+              if (label) output.push(`◇ ${label}`);
+            },
+            fail: vi.fn(),
+            stop: vi.fn(),
+          }),
+          color: false,
+        },
+        turn: vi.fn(async () => agentAnswer()),
+        run: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      });
+      return output.join("\n");
+    };
+
+    const normal = await runSession(false);
+    expect(normal).not.toContain("Provider ready");
+    expect(normal).not.toContain("Orchestration profile ready");
+    const debug = await runSession(true);
+    expect(debug).toContain("Provider ready");
+    expect(debug).toContain("Orchestration profile ready");
+  });
+
+  it("persists debug through /settings while honoring a launch override", async () => {
+    const output: string[] = [];
+    const persistDebugMode = vi.fn(async () => undefined);
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+        debugMode: true,
+      },
+      debugOverride: true,
+      persistDebugMode,
+      terminal: {
+        ask: scriptedAsk([
+          "/settings",
+          "/settings debug off",
+          "/settings",
+          "/exit",
+        ]),
+        clear: vi.fn(),
+        write: (value) => output.push(value),
+        color: false,
+      },
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    expect(persistDebugMode).toHaveBeenCalledWith(false);
+    const transcript = output.join("\n");
+    expect(transcript).toContain(
+      "Diagnostics  Debug on · --debug override",
+    );
+    expect(transcript).toContain("Debug saved off. The --debug override remains active for this launch.");
+  });
+
+  it("persists and immediately applies appearance settings while reporting overrides", async () => {
+    const output: string[] = [];
+    const persistAppearance = vi.fn(async () => undefined);
+    const applyAppearance = vi
+      .fn()
+      .mockReturnValueOnce({ color: false, motion: true })
+      .mockReturnValueOnce({ color: false, motion: false })
+      .mockReturnValueOnce({
+        color: false,
+        motion: false,
+        richText: false,
+      })
+      .mockReturnValueOnce({
+        color: false,
+        motion: false,
+        richText: false,
+        colorOverride: "--no-color",
+      });
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+      },
+      appearancePreferences: { color: true, motion: true, richText: true },
+      appearanceResolution: { color: true, motion: true, richText: true },
+      persistAppearance,
+      applyAppearance,
+      terminal: {
+        ask: scriptedAsk([
+          "/settings appearance color off",
+          "/settings appearance motion off",
+          "/settings appearance rich-text off",
+          "/settings appearance color on",
+          "/settings show",
+          "/exit",
+        ]),
+        clear: vi.fn(),
+        write: (value) => output.push(value),
+        color: true,
+      },
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    expect(persistAppearance.mock.calls).toEqual([
+      [{ color: false }],
+      [{ motion: false }],
+      [{ richText: false }],
+      [{ color: true }],
+    ]);
+    expect(applyAppearance.mock.calls).toEqual([
+      [{ color: false, motion: true, richText: true }],
+      [{ color: false, motion: false, richText: true }],
+      [{ color: false, motion: false, richText: false }],
+      [{ color: true, motion: false, richText: false }],
+    ]);
+    const transcript = output.join("\n");
+    expect(transcript).toContain("Color disabled.");
+    expect(transcript).toContain("Motion disabled.");
+    expect(transcript).toContain("Rich text disabled.");
+    expect(transcript).toContain(
+      "Color saved on. --no-color keeps it off for this launch.",
+    );
+    expect(transcript).toContain(
+      "Appearance   Color on · effective off (--no-color) · Motion off · Rich text off",
+    );
+  });
+
+  it("returns Back to the immediate settings parent across nested scenes", async () => {
+    const prompts: string[] = [];
+    const selections = [
+      "appearance",
+      "color",
+      "__orynt_back__",
+      "__orynt_back__",
+      "diagnostics",
+      "debug",
+      "__orynt_back__",
+      "__orynt_back__",
+      "agent",
+      "advanced",
+      "implementer",
+      "__orynt_back__",
+      "__orynt_back__",
+      "__orynt_back__",
+      "__orynt_back__",
+    ];
+    const select = vi.fn(async (prompt: string) => {
+      prompts.push(prompt);
+      return selections.shift() ?? INTERRUPTED_INPUT;
+    });
+    const listModels = vi.fn(async () => [
+      {
+        id: "gpt-5.6-terra",
+        label: "GPT-5.6-Terra",
+        description: "Balanced coding model.",
+        supportedThinkingEfforts: ["medium" as const],
+        defaultThinkingEffort: "medium" as const,
+      },
+    ]);
+    const turn = vi.fn();
+
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+      },
+      terminal: {
+        ask: scriptedAsk(["/settings", "/exit"]),
+        select,
+        clear: vi.fn(),
+        write: vi.fn(),
+        color: false,
+        isTTY: true,
+      },
+      listModels,
+      turn,
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    expect(prompts).toEqual([
+      "Settings › ",
+      "Appearance › ",
+      "Color › ",
+      "Appearance › ",
+      "Settings › ",
+      "Diagnostics › ",
+      "Debug › ",
+      "Diagnostics › ",
+      "Settings › ",
+      "Agent › ",
+      "Role › ",
+      "Model › ",
+      "Role › ",
+      "Agent › ",
+      "Settings › ",
+    ]);
+    expect(listModels).toHaveBeenCalledOnce();
+    expect(turn).not.toHaveBeenCalled();
+  });
+
+  it("returns to the Appearance parent after saving an interactive setting", async () => {
+    const prompts: string[] = [];
+    const selections = [
+      "appearance",
+      "rich-text",
+      "off",
+      "__orynt_back__",
+      "__orynt_back__",
+    ];
+    const select = vi.fn(async (prompt: string) => {
+      prompts.push(prompt);
+      return selections.shift() ?? INTERRUPTED_INPUT;
+    });
+    const persistAppearance = vi.fn(async () => undefined);
+
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+      },
+      appearancePreferences: {
+        color: true,
+        motion: true,
+        richText: true,
+      },
+      terminal: {
+        ask: scriptedAsk(["/settings", "/exit"]),
+        select,
+        clear: vi.fn(),
+        write: vi.fn(),
+        color: false,
+        isTTY: true,
+      },
+      persistAppearance,
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    expect(prompts).toEqual([
+      "Settings › ",
+      "Appearance › ",
+      "Rich text › ",
+      "Appearance › ",
+      "Settings › ",
+    ]);
+    expect(persistAppearance).toHaveBeenCalledOnce();
+    expect(persistAppearance).toHaveBeenCalledWith({ richText: false });
+  });
+
   it("opens the inline orchestration editor and updates one role without starting a run", async () => {
     const output: string[] = [];
     const persisted: CliSessionSnapshot[] = [];
@@ -63,6 +562,7 @@ describe("interactive Orynt session", () => {
     };
     const select = vi
       .fn()
+      .mockResolvedValueOnce("agent")
       .mockResolvedValueOnce("advanced")
       .mockResolvedValueOnce("implementer")
       .mockResolvedValueOnce("gpt-5.6-terra")
@@ -90,7 +590,7 @@ describe("interactive Orynt session", () => {
     await runInteractiveSession({
       state,
       terminal: {
-        ask: scriptedAsk(["/model", "/exit"]),
+        ask: scriptedAsk(["/settings", "/exit"]),
         select,
         clear: vi.fn(),
         write: (value) => output.push(value),
@@ -500,7 +1000,7 @@ describe("interactive Orynt session", () => {
     expect(output.join("\n")).not.toContain("Goal        inspect this repository");
     expect(ask.mock.calls.map(([prompt]) => prompt)).toEqual([
       "Acknowledge this supervised repository boundary? [y/N] ",
-      "\n❯ ",
+      `\n${COMPOSER_PROMPT}`,
     ]);
     expect(turn).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "inspect this repository", activeGoal: undefined }),
@@ -918,10 +1418,73 @@ describe("interactive Orynt session", () => {
 
     expect(run).not.toHaveBeenCalled();
     expect(output.join("\n")).toContain("Action cancelled before execution");
+    expect(output.join("\n")).toContain("◇ Cancelled after");
     expect(persisted.at(-1)?.conversationSummary).toHaveLength(4_000);
     expect(persisted.at(-1)?.conversationSummary).toMatch(
       /Action outcome: operator denied the proposed repository action\.$/,
     );
+  });
+
+  it("measures one whole action prompt while excluding approval wait", async () => {
+    let now = 0;
+    let promptRead = false;
+    const output: string[] = [];
+    const ask = vi.fn(async (prompt: string) => {
+      if (!promptRead) {
+        promptRead = true;
+        return "delete the obsolete file";
+      }
+      if (prompt === "Approve this sensitive isolated action? [y/N] ") {
+        now = 70_000;
+        return "yes";
+      }
+      return "/exit";
+    });
+    const run = vi.fn(async (): Promise<CliRunResult> => {
+      now = 90_000;
+      return {
+        runId: "run-duration-1",
+        status: "pass",
+        artifactRoot: "/artifacts/run-duration-1",
+        artifactManifestPath: "/artifacts/run-duration-1/manifest.json",
+        eventCount: 0,
+        events: [],
+      };
+    });
+
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+      },
+      terminal: {
+        ask,
+        clear: vi.fn(),
+        write: (value) => output.push(value),
+        color: false,
+        width: 60,
+      },
+      turn: vi.fn(async () => {
+        now = 10_000;
+        return agentAction({
+          operations: ["delete"],
+          instruction: "Delete the obsolete repository file",
+        });
+      }),
+      now: () => now,
+      run,
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    expect(run).toHaveBeenCalledOnce();
+    expect(
+      output.filter((value) => value.includes("Crafted in")),
+    ).toEqual([
+      expect.stringContaining("✦ Crafted in 30s"),
+    ]);
   });
 
   it("asks exactly once for each sensitive action and never presents audit approvals as prompts", async () => {

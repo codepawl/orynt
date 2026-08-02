@@ -6,11 +6,15 @@ import "./extensionless-loader.js";
 
 const [
   { runCliApplication },
-  { runCliAgentTurn, runCliReadOnlyRole },
+  { runCliAgentTurn, runCliReadOnlyRole, shutdownCliAgentRuntime },
   { diagnoseCli, listCodexModels, oryntStateRoot, probeCodexCli, runCliRepositoryTask },
-  { FileCliPreferencesStore, FileCliSessionStore },
+  {
+    DEFAULT_CLI_APPEARANCE,
+    FileCliPreferencesStore,
+    FileCliSessionStore,
+  },
   { TtyComposer },
-  { resolveTerminalColor, terminalColorRequested, terminalMotionRequested },
+  { resolveTerminalAppearance },
   { terminalSafeText },
   { runSkillCli },
   { LocalSkillCliManager },
@@ -27,12 +31,26 @@ const [
 ]);
 
 const terminal = Boolean(input.isTTY && output.isTTY);
-const colorEnabled = resolveTerminalColor({
+const argv = process.argv.slice(2);
+const stateRoot = oryntStateRoot();
+const sessionStore = new FileCliSessionStore(stateRoot);
+const preferencesStore = new FileCliPreferencesStore(stateRoot);
+const skillManager = new LocalSkillCliManager(stateRoot);
+let initialAppearance = { ...DEFAULT_CLI_APPEARANCE };
+try {
+  initialAppearance = (await preferencesStore.load()).appearance;
+} catch {
+  // runCliApplication reports preference load and migration failures.
+}
+let appearanceResolution = resolveTerminalAppearance({
   isTTY: terminal,
-  requested: terminalColorRequested(process.argv.slice(2)),
+  saved: initialAppearance,
+  argv,
   env: process.env,
 });
-const motionEnabled = terminal && terminalMotionRequested(process.argv.slice(2));
+let colorEnabled = appearanceResolution.color;
+let motionEnabled = appearanceResolution.motion;
+let richTextEnabled = appearanceResolution.richText;
 const interface_ = terminal
   ? undefined
   : readline.createInterface({
@@ -41,10 +59,6 @@ const interface_ = terminal
       terminal: false,
     });
 const lineIterator = interface_?.[Symbol.asyncIterator]();
-const stateRoot = oryntStateRoot();
-const sessionStore = new FileCliSessionStore(stateRoot);
-const preferencesStore = new FileCliPreferencesStore(stateRoot);
-const skillManager = new LocalSkillCliManager(stateRoot);
 let activeOperationController: AbortController | undefined;
 let ttyComposer: InstanceType<typeof TtyComposer> | undefined;
 
@@ -87,9 +101,30 @@ ttyComposer = terminal
       output,
       color: colorEnabled,
       motion: motionEnabled,
+      richText: richTextEnabled,
       onInterrupt: handleInterrupt,
     })
   : undefined;
+
+const applyAppearance = (
+  appearance: typeof DEFAULT_CLI_APPEARANCE,
+) => {
+  appearanceResolution = resolveTerminalAppearance({
+    isTTY: terminal,
+    saved: appearance,
+    argv,
+    env: process.env,
+  });
+  colorEnabled = appearanceResolution.color;
+  motionEnabled = appearanceResolution.motion;
+  richTextEnabled = appearanceResolution.richText;
+  ttyComposer?.setPresentation({
+    color: colorEnabled,
+    motion: motionEnabled,
+    richText: richTextEnabled,
+  });
+  return appearanceResolution;
+};
 
 const signalExitCodes: Partial<Record<NodeJS.Signals, number>> = {
   SIGHUP: 129,
@@ -133,7 +168,6 @@ const runWithInterrupt = async (request: Parameters<typeof runCliRepositoryTask>
 };
 
 try {
-  const argv = process.argv.slice(2);
   if (argv[0] === "skills") {
     process.exitCode = await runSkillCli(argv.slice(1), {
       cwd: process.cwd(),
@@ -153,6 +187,7 @@ try {
     cwd: process.cwd(),
     isTTY: terminal,
     color: colorEnabled,
+    richText: richTextEnabled,
     width: output.columns,
     height: output.rows,
     ask: async (prompt) => {
@@ -167,6 +202,7 @@ try {
     select: ttyComposer?.select,
     remember: ttyComposer?.remember,
     beginActivity: ttyComposer?.beginActivity,
+    beginMessageStream: ttyComposer?.beginMessageStream,
     write,
     clear: () => {
       if (terminal) {
@@ -202,6 +238,10 @@ try {
     loadSession: (sessionId) => sessionId === "latest" ? sessionStore.loadLatest() : sessionStore.load(sessionId),
     loadPreferences: () => preferencesStore.load(),
     persistWorkingConfig: (patch) => preferencesStore.saveWorkingConfig(patch),
+    persistDebugMode: (debugMode) => preferencesStore.saveDebugMode(debugMode),
+    appearanceResolution,
+    persistAppearance: (patch) => preferencesStore.saveAppearance(patch),
+    applyAppearance,
     hasAcknowledgedStartupBoundary: () => preferencesStore.hasAcknowledgedStartupBoundary(),
     acknowledgeStartupBoundary: () => preferencesStore.acknowledgeStartupBoundary(),
     prepareRunSignal,
@@ -211,6 +251,7 @@ try {
   write(`Fatal: ${terminalSafeText(error instanceof Error ? error.message : String(error))}`);
   process.exitCode = 1;
 } finally {
+  await shutdownCliAgentRuntime();
   for (const [signal, handler] of signalHandlers) process.off(signal, handler);
   ttyComposer?.close();
   interface_?.close();

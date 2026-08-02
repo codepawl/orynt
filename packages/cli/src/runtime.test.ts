@@ -39,6 +39,7 @@ describe("Orynt CLI arguments", () => {
           "--role-effort",
           "implementer=medium",
           "--plain",
+          "--debug",
           "fix",
           "the",
           "tests",
@@ -53,6 +54,7 @@ describe("Orynt CLI arguments", () => {
       roleModels: { implementer: "gpt-5.6-luna" },
       roleEfforts: { implementer: "medium" },
       color: false,
+      debug: true,
       explicitConfig: {
         repository: true,
         model: false,

@@ -10,6 +10,7 @@ export * from "./skillManagerContracts";
 export * from "./agentLedger";
 export * from "./productPlans";
 export * from "./orchestrationContracts";
+export * from "./taskPlanContracts";
 
 import { createMockRunSequence } from "./runSpine";
 import { getOryntPlan, summarizePlanQuota } from "./productPlans";

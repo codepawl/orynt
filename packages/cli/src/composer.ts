@@ -2,15 +2,23 @@ import { emitKeypressEvents, type Key } from "node:readline";
 
 import {
   filterSlashCommands,
+  terminalSafeMultilineText,
   terminalSafeText,
   type SlashCommandDefinition,
 } from "./ui.js";
 import {
   createTerminalTheme,
+  type TerminalAppearance,
   type TerminalTheme,
 } from "./terminal-theme.js";
+import {
+  IncrementalRichTextRenderer,
+  renderRichText,
+} from "./rich-text.js";
 
 export const INTERRUPTED_INPUT = "\u0003";
+export const COMPOSER_PROMPT = "You › ";
+export const AGENT_MESSAGE_MARKER = "✦";
 const EXIT_CONFIRMATION_SECONDS = 3;
 const ACTIVITY_DELAY_MS = 120;
 const ACTIVITY_FRAME_MS = 100;
@@ -71,6 +79,12 @@ export type InlineActivityHandle = {
   stop: () => void;
 };
 
+export type InlineMessageStreamHandle = {
+  update: (text: string) => void;
+  finish: (finalText?: string) => void;
+  abort: () => void;
+};
+
 type ActiveActivity = {
   id: number;
   label: string;
@@ -79,11 +93,26 @@ type ActiveActivity = {
   timer?: NodeJS.Timeout;
 };
 
+type ActiveMessageStream = {
+  id: number;
+  prefix: string;
+  displayedText: string;
+  latestText: string;
+  started: boolean;
+  divergent: boolean;
+  renderer: IncrementalRichTextRenderer;
+};
+
+export function agentMessagePrefix(label = "Agent"): string {
+  return `${terminalSafeText(label)} ${AGENT_MESSAGE_MARKER}`;
+}
+
 export type TtyComposerOptions = {
   input: ComposerInput;
   output: ComposerOutput;
   color: boolean;
   motion?: boolean;
+  richText?: boolean;
   onInterrupt: () => void;
 };
 
@@ -276,10 +305,10 @@ function paintSelection(theme: TerminalTheme, line: ComposerLine): string {
 }
 
 function paintPromptMarker(theme: TerminalTheme, line: string): string {
-  const promptMarker = line.indexOf("❯");
-  const markerIndex = promptMarker >= 0 ? promptMarker : line.indexOf("›");
-  if (markerIndex < 0) return line;
-  return `${line.slice(0, markerIndex)}${theme.paint("focus", line[markerIndex] ?? "")}${line.slice(markerIndex + 1)}`;
+  const promptPrefix = COMPOSER_PROMPT.trimEnd();
+  const promptIndex = line.indexOf(promptPrefix);
+  if (promptIndex < 0) return line;
+  return `${line.slice(0, promptIndex)}${theme.paint("focus", promptPrefix)}${line.slice(promptIndex + promptPrefix.length)}`;
 }
 
 function paintToken(
@@ -319,14 +348,17 @@ function shouldCompactPrompt(prompt: string, columns: number): boolean {
 export class TtyComposer {
   private readonly input: ComposerInput;
   private readonly output: ComposerOutput;
-  private readonly theme: TerminalTheme;
-  private readonly motion: boolean;
+  private theme: TerminalTheme;
+  private motion: boolean;
+  private richText: boolean;
   private readonly onInterrupt: () => void;
   private readonly wasRaw: boolean;
   private active?: ActiveRead;
   private exitConfirmation?: ExitConfirmation;
   private activity?: ActiveActivity;
   private activitySequence = 0;
+  private messageStream?: ActiveMessageStream;
+  private messageStreamSequence = 0;
   private history: string[] = [];
   private closed = false;
 
@@ -335,6 +367,7 @@ export class TtyComposer {
     this.output = options.output;
     this.theme = createTerminalTheme(options.color);
     this.motion = options.motion ?? true;
+    this.richText = options.richText ?? true;
     this.onInterrupt = options.onInterrupt;
     this.wasRaw = Boolean(this.input.isRaw);
     emitKeypressEvents(this.input);
@@ -359,7 +392,38 @@ export class TtyComposer {
     this.history = [value, ...this.history.filter((entry) => entry !== value)].slice(0, 100);
   };
 
+  setPresentation = (appearance: TerminalAppearance): void => {
+    this.theme = createTerminalTheme(appearance.color);
+    this.richText = appearance.richText;
+    this.messageStream?.renderer.setOptions({
+      enabled: this.richText,
+      color: appearance.color,
+    });
+    if (this.motion !== appearance.motion) {
+      this.motion = appearance.motion;
+      const activity = this.activity;
+      if (activity?.timer) {
+        clearTimeout(activity.timer);
+        activity.timer = undefined;
+      }
+      if (!this.motion && activity?.visible) {
+        this.output.write("\r\u001b[2K");
+        activity.visible = false;
+      } else if (this.motion && activity && !activity.visible) {
+        activity.timer = setTimeout(
+          () => this.tickActivity(activity),
+          ACTIVITY_DELAY_MS,
+        );
+        activity.timer.unref?.();
+      }
+    }
+    if (this.active) {
+      this.paintFrame(this.active, this.createFrame(this.active));
+    }
+  };
+
   write = (value: string): void => {
+    this.finishMessageStream();
     const normalized = value.endsWith("\n") ? value : `${value}\n`;
     const activity = this.activity;
     if (!activity?.visible) {
@@ -374,6 +438,7 @@ export class TtyComposer {
   };
 
   beginActivity = (label: string): InlineActivityHandle => {
+    this.finishMessageStream();
     this.stopActivity();
     const activity: ActiveActivity = {
       id: ++this.activitySequence,
@@ -413,6 +478,77 @@ export class TtyComposer {
       stop: () => finish(undefined),
     };
   };
+
+  beginMessageStream = (label = "Agent"): InlineMessageStreamHandle => {
+    this.stopActivity();
+    this.finishMessageStream();
+    const stream: ActiveMessageStream = {
+      id: ++this.messageStreamSequence,
+      prefix: agentMessagePrefix(label),
+      displayedText: "",
+      latestText: "",
+      started: false,
+      divergent: false,
+      renderer: new IncrementalRichTextRenderer({
+        enabled: this.richText,
+        color: this.theme.enabled,
+      }),
+    };
+    this.messageStream = stream;
+    const update = (value: string) => {
+      if (this.messageStream?.id !== stream.id) return;
+      const next = terminalSafeMultilineText(value);
+      stream.latestText = next;
+      if (!stream.started && next) {
+        this.output.write(
+          `\n${this.theme.paint("agent", stream.prefix)} `,
+        );
+        stream.started = true;
+      }
+      if (!stream.divergent) {
+        const rendered = stream.renderer.update(next);
+        if (rendered.divergent) {
+          stream.divergent = true;
+          return;
+        }
+        if (rendered.output) this.output.write(rendered.output);
+        stream.displayedText = next;
+      }
+    };
+    return {
+      update,
+      finish: (finalText) => {
+        if (finalText !== undefined) update(finalText);
+        this.finishMessageStream(stream.id);
+      },
+      abort: () => this.finishMessageStream(stream.id),
+    };
+  };
+
+  private finishMessageStream(id?: number): void {
+    const stream = this.messageStream;
+    if (!stream || (id !== undefined && stream.id !== id)) return;
+    this.messageStream = undefined;
+    if (!stream.divergent && stream.latestText === stream.displayedText) {
+      const tail = stream.renderer.finish();
+      if (tail) this.output.write(tail);
+    } else if (stream.latestText) {
+      if (stream.started && !stream.displayedText.endsWith("\n")) {
+        this.output.write("\n");
+      }
+      this.output.write(
+        `\n${this.theme.paint("agent", stream.prefix)} updated · ${renderRichText(stream.latestText, {
+          enabled: this.richText,
+          color: this.theme.enabled,
+        })}`,
+      );
+      stream.started = true;
+      stream.displayedText = stream.latestText;
+    }
+    if (stream.started && !stream.displayedText.endsWith("\n")) {
+      this.output.write("\n");
+    }
+  }
 
   private activityFrame(activity: ActiveActivity): string {
     const contentWidth = Math.max(0, terminalColumns(this.output) - 1);
@@ -547,7 +683,17 @@ export class TtyComposer {
     const input = inputWidth > 0
       ? viewport(displayBuffer, displayCursor, inputWidth)
       : { text: "", cursorColumn: 0 };
-    const lines = [paintPromptMarker(this.theme, `${prompt}${input.text}`)];
+    const renderedInput =
+      active.mode === "compose" && !active.buffer.startsWith("/")
+        ? renderRichText(input.text, {
+            enabled: this.richText,
+            color: this.theme.enabled,
+            preserveMarkers: true,
+          })
+        : input.text;
+    const lines = [
+      paintPromptMarker(this.theme, `${prompt}${renderedInput}`),
+    ];
     const suggestions = active.mode === "select"
       ? this.filteredChoices(active)
       : this.suggestions(active);
@@ -665,7 +811,18 @@ export class TtyComposer {
     if (!active) return;
     this.disarmExitConfirmation();
     this.clearRender();
-    if (options.echo !== false) this.output.write(`${active.prompt}${visibleInput(active.buffer)}\n`);
+    if (options.echo !== false) {
+      const input = visibleInput(active.buffer);
+      const rendered =
+        active.mode === "compose" && !active.buffer.startsWith("/")
+          ? renderRichText(input, {
+              enabled: this.richText,
+              color: this.theme.enabled,
+              preserveMarkers: true,
+            })
+          : input;
+      this.output.write(`${active.prompt}${rendered}\n`);
+    }
     this.active = undefined;
     active.resolve(value);
   }
@@ -1020,6 +1177,7 @@ export class TtyComposer {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.finishMessageStream();
     this.stopActivity();
     this.disarmExitConfirmation();
     const active = this.active;

@@ -82,8 +82,22 @@ export type CliWorkingConfig = {
   thinkingEffort?: ThinkingEffort;
 };
 
+export type CliAppearancePreferences = {
+  color: boolean;
+  motion: boolean;
+  richText: boolean;
+};
+
+export const DEFAULT_CLI_APPEARANCE: CliAppearancePreferences = {
+  color: true,
+  motion: true,
+  richText: true,
+};
+
 export type CliPreferences = {
-  schemaVersion: 2;
+  schemaVersion: 5;
+  debugMode: boolean;
+  appearance: CliAppearancePreferences;
   startupBoundaryAcknowledgedAt?: string;
   workingConfig?: CliWorkingConfig;
 };
@@ -95,7 +109,30 @@ type LegacyCliSessionSnapshot = Omit<
   schemaVersion: 1;
 };
 
-type LegacyCliPreferences = Omit<CliPreferences, "schemaVersion"> & {
+type LegacyV4CliPreferences = Omit<
+  CliPreferences,
+  "schemaVersion"
+> & {
+  schemaVersion: 4;
+  appearance: Omit<CliAppearancePreferences, "richText">;
+};
+
+type LegacyV3CliPreferences = Omit<
+  LegacyV4CliPreferences,
+  "schemaVersion" | "appearance"
+> & {
+  schemaVersion: 3;
+};
+
+type LegacyV2CliPreferences = Omit<
+  LegacyV3CliPreferences,
+  "schemaVersion" | "debugMode"
+> & {
+  schemaVersion: 2;
+  debugMode?: boolean;
+};
+
+type LegacyCliPreferences = Omit<LegacyV2CliPreferences, "schemaVersion"> & {
   schemaVersion: 1;
 };
 
@@ -338,10 +375,60 @@ function isLegacyCliPreferences(
   );
 }
 
-function isCliPreferences(value: unknown): value is CliPreferences {
+function isLegacyV2CliPreferences(
+  value: unknown,
+): value is LegacyV2CliPreferences {
   const candidate = record(value);
   return (
     candidate.schemaVersion === 2 &&
+    (candidate.debugMode === undefined ||
+      typeof candidate.debugMode === "boolean") &&
+    isLegacyCliPreferences({ ...candidate, schemaVersion: 1 })
+  );
+}
+
+function isLegacyV3CliPreferences(
+  value: unknown,
+): value is LegacyV3CliPreferences {
+  const candidate = record(value);
+  return (
+    candidate.schemaVersion === 3 &&
+    typeof candidate.debugMode === "boolean" &&
+    isLegacyCliPreferences({ ...candidate, schemaVersion: 1 })
+  );
+}
+
+function isAppearancePreferences(
+  value: unknown,
+): value is CliAppearancePreferences {
+  const candidate = record(value);
+  return (
+    typeof candidate.color === "boolean" &&
+    typeof candidate.motion === "boolean" &&
+    typeof candidate.richText === "boolean"
+  );
+}
+
+function isLegacyV4CliPreferences(
+  value: unknown,
+): value is LegacyV4CliPreferences {
+  const candidate = record(value);
+  const appearance = record(candidate.appearance);
+  return (
+    candidate.schemaVersion === 4 &&
+    typeof candidate.debugMode === "boolean" &&
+    typeof appearance.color === "boolean" &&
+    typeof appearance.motion === "boolean" &&
+    isLegacyCliPreferences({ ...candidate, schemaVersion: 1 })
+  );
+}
+
+function isCliPreferences(value: unknown): value is CliPreferences {
+  const candidate = record(value);
+  return (
+    candidate.schemaVersion === 5 &&
+    typeof candidate.debugMode === "boolean" &&
+    isAppearancePreferences(candidate.appearance) &&
     isLegacyCliPreferences({ ...candidate, schemaVersion: 1 })
   );
 }
@@ -362,9 +449,14 @@ function migrateSessionSnapshot(
 }
 
 function migratePreferences(
-  value: LegacyCliPreferences | CliPreferences,
+  value:
+    | LegacyCliPreferences
+    | LegacyV2CliPreferences
+    | LegacyV3CliPreferences
+    | LegacyV4CliPreferences
+    | CliPreferences,
 ): CliPreferences {
-  if (value.schemaVersion === 2) return value;
+  if (value.schemaVersion === 5) return value;
   const workingConfig = value.workingConfig;
   const orchestrationProfile =
     workingConfig?.orchestrationProfile ??
@@ -376,7 +468,12 @@ function migratePreferences(
       : undefined);
   return {
     ...value,
-    schemaVersion: 2,
+    schemaVersion: 5,
+    debugMode: value.debugMode ?? false,
+    appearance:
+      value.schemaVersion === 4
+        ? { ...value.appearance, richText: true }
+        : { ...DEFAULT_CLI_APPEARANCE },
     ...(workingConfig
       ? {
           workingConfig: normalizeCliWorkingConfig({
@@ -562,15 +659,25 @@ export class FileCliPreferencesStore {
       const parsed = JSON.parse(
         await readPrivateTextFile(this.preferencesPath),
       ) as unknown;
-      if (!isCliPreferences(parsed) && !isLegacyCliPreferences(parsed)) {
+      if (
+        !isCliPreferences(parsed) &&
+        !isLegacyV4CliPreferences(parsed) &&
+        !isLegacyV3CliPreferences(parsed) &&
+        !isLegacyV2CliPreferences(parsed) &&
+        !isLegacyCliPreferences(parsed)
+      ) {
         throw new Error("Invalid Orynt CLI preferences");
       }
       const migrated = migratePreferences(parsed);
-      if (parsed.schemaVersion === 1) await this.write(migrated);
+      if (parsed.schemaVersion !== 5) await this.write(migrated);
       return migrated;
     } catch (error) {
       if ((error as { code?: string }).code === "ENOENT") {
-        return { schemaVersion: 2 };
+        return {
+          schemaVersion: 5,
+          debugMode: false,
+          appearance: { ...DEFAULT_CLI_APPEARANCE },
+        };
       }
       throw error;
     }
@@ -602,6 +709,31 @@ export class FileCliPreferencesStore {
         ...preferences.workingConfig,
         ...normalized,
       },
+    });
+  }
+
+  async saveDebugMode(debugMode: boolean): Promise<void> {
+    const preferences = await this.load();
+    await this.write({
+      ...preferences,
+      debugMode,
+    });
+  }
+
+  async saveAppearance(
+    patch: Partial<CliAppearancePreferences>,
+  ): Promise<void> {
+    const preferences = await this.load();
+    const appearance = {
+      ...preferences.appearance,
+      ...patch,
+    };
+    if (!isAppearancePreferences(appearance)) {
+      throw new Error("Invalid Orynt CLI appearance preferences");
+    }
+    await this.write({
+      ...preferences,
+      appearance,
     });
   }
 }

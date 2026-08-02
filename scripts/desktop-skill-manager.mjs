@@ -5,9 +5,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  DurableLearnedSkillRegistry,
   LocalSkillPackageManager,
+  LocalSkillReplayPlanner,
+  SkillCandidateBuilder,
   searchSkillCatalog,
 } from "../packages/skill-registry/dist/index.js";
+import {
+  createConservativeCodingApprenticePolicy,
+} from "../packages/shared/dist/index.js";
 
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
@@ -103,6 +109,19 @@ async function readJsonStdin() {
 
 function object(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function requiredString(input, key) {
+  const value = input[key];
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${key} is required`);
+  }
+  return value.trim();
+}
+
+function optionalString(input, key) {
+  const value = input[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function trust(value) {
@@ -418,6 +437,53 @@ async function dispatch(request) {
       ? path.resolve(input.repositoryPath)
       : process.cwd();
   const managerRoot = path.resolve(request.managerRoot);
+  const learnedRegistry = new DurableLearnedSkillRegistry({ rootDir: managerRoot });
+  if (request.operation === "learned.list") {
+    return learnedRegistry.readSnapshot();
+  }
+  if (request.operation === "learned.summary") {
+    return learnedRegistry.summarizeSkills(object(input.namespace));
+  }
+  if (request.operation === "learned.create") {
+    const builder = new SkillCandidateBuilder();
+    const candidate = builder.createCandidateSkill(object(input.builderInput));
+    return learnedRegistry.createCandidateV1({
+      candidate,
+      expectedRevision: input.expectedRevision,
+      actor: requiredString(input, "actor"),
+      reason: requiredString(input, "reason"),
+    });
+  }
+  if (request.operation === "learned.status") {
+    return learnedRegistry.decideSkillV1({
+      decision: object(input.decision),
+      expectedRevision: input.expectedRevision,
+    });
+  }
+  if (request.operation === "learned.replay") {
+    const skill = await learnedRegistry.getSkill(requiredString(input, "skillId"));
+    if (!skill) throw new Error(`learned skill not found: ${input.skillId}`);
+    const planner = new LocalSkillReplayPlanner();
+    const repositoryPath = path.resolve(requiredString(input, "repositoryPath"));
+    const plan = planner.createReplayPlan({
+      skill,
+      runId: requiredString(input, "runId"),
+      taskId: requiredString(input, "taskId"),
+      mode: skill.status === "candidate" ? "candidate_preview" : "active_dry_run",
+      repositoryPath,
+      baseRef: optionalString(input, "baseRef") ?? "HEAD",
+      policy: createConservativeCodingApprenticePolicy(
+        repositoryPath,
+        path.join(managerRoot, "replay-sandboxes"),
+      ),
+    });
+    return learnedRegistry.persistReplayPlan(plan, {
+      expectedRevision: input.expectedRevision,
+      actor: requiredString(input, "actor"),
+      reason: requiredString(input, "reason"),
+      runId: optionalString(input, "runId"),
+    });
+  }
   const manager = new LocalSkillPackageManager({
     repositoryPath,
     userSkillRoot: request.userSkillRoot,

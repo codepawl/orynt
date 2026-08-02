@@ -13,9 +13,10 @@
   },
   "scripts": {
     "build": "pnpm --filter @codepawl/shared build && tsc -p tsconfig.json",
-    "test": "pnpm --filter @codepawl/shared build && vitest run"
+    "test": "pnpm --filter @codepawl/local-state build && pnpm --filter @codepawl/shared build && tsc -p tsconfig.json && vitest run"
   },
   "dependencies": {
+    "@codepawl/local-state": "workspace:*",
     "@codepawl/shared": "workspace:*"
   },
   "devDependencies": {

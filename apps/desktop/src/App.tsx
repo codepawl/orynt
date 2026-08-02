@@ -13,6 +13,7 @@ import {
   Copy,
   CreditCard,
   Cpu,
+  Database,
   Download,
   EllipsisVertical,
   FolderPlus,
@@ -59,6 +60,7 @@ import type { CSSProperties, FocusEvent, FormEvent, KeyboardEvent, PointerEvent 
 import lightbulbLogoOnDark from "../../../assets/pictures/lightbulb-mark-on-dark.svg";
 
 import { SkillsManager } from "./features/skills/SkillsManager";
+import { MemoryManager } from "./features/memory/MemoryManager";
 import { orynt } from "./oryntClient";
 import type {
   ArtifactEvidenceContent,
@@ -67,6 +69,7 @@ import type {
   CodexLoginMethod,
   CodexConnectionPreflightResult,
   CodexConnectionReference,
+  DesktopRunSnapshot,
   ModelAuthMethod,
   ModelCatalogOption,
   ModelConnectionPreflightResult,
@@ -1251,6 +1254,7 @@ function SettingsLabelWithInfo({
 const settingsSections = [
   { id: "general", label: "General", group: "Settings", keywords: ["profile", "appearance", "operator", "message", "labels", "display", "voice", "font", "motion"], Icon: SettingsIcon },
   { id: "model", label: "Model", group: "Settings", keywords: ["provider", "model", "codex", "openai", "thinking", "effort"], Icon: Cpu },
+  { id: "memory", label: "Memory", group: "Settings", keywords: ["memory", "semantic", "rules", "episodes", "trash", "retention"], Icon: Database },
   { id: "status", label: "Status", group: "Settings", keywords: ["status", "beta", "surface", "repository", "browser", "desktop", "files", "terminal", "cloud", "billing"], Icon: ShieldCheck },
   { id: "account", label: "Account", group: "Settings", keywords: ["identity", "session", "workspace", "devices"], Icon: CircleUserRound },
   { id: "billing", label: "Billing", group: "Settings", keywords: ["plan", "invoice", "subscription", "local"], Icon: CreditCard },
@@ -2122,6 +2126,7 @@ function App({
     [runState, seedDemoThread, seedUxrayAgentResponse],
   );
   const [approvalStatus, setApprovalStatus] = useState("Waiting for operator approval");
+  const [desktopRunSnapshot, setDesktopRunSnapshot] = useState<DesktopRunSnapshot | null>(null);
   const [currentRunId, setCurrentRunId] = useState<string | null>(initialSelectedRunId === undefined ? runState.traceSummary.runId : initialSelectedRunId);
   const [memoryReview, setMemoryReview] = useState<MemoryReviewSnapshot>(runState.memoryReview);
   const [skillRegistry, setSkillRegistry] = useState<SkillRegistrySnapshot>(runState.skillRegistry);
@@ -3074,12 +3079,34 @@ function App({
           selectedSkillIds: [...selectedAgentSkillIds],
         };
         const run = await orynt.createRun(runInput);
+        const createdRunId = run.runId ?? run.id;
         setSelectedAgentSkillIds([]);
-        setCurrentRunId(run.id);
+        setCurrentRunId(createdRunId);
+        setDesktopRunSnapshot(run);
+        setApprovalStatus(run.summary ?? "Waiting for operator approval.");
+        if (run.status === "waiting_for_approval") {
+          setThreadMessagesByWorkspace((current) => {
+            const currentMessages = current[threadId] ?? [];
+            return {
+              ...current,
+              [threadId]: [
+                ...currentMessages,
+                {
+                  id: `${threadId}-approval-${createdRunId}-${currentMessages.length + 1}`,
+                  runId: createdRunId,
+                  role: "approval",
+                  content: run.summary ?? "Waiting for operator approval.",
+                },
+              ],
+            };
+          });
+          await refreshPersistedRuns();
+          return;
+        }
         let runOutcomeDetail = "Open persisted evidence from the run list to inspect events, artifacts, verification, memory, and replay outputs.";
         let finalModelResponse: string | null = null;
         try {
-          const persistedRun = await orynt.openPersistedRun(run.id);
+          const persistedRun = await orynt.openPersistedRun(createdRunId);
           const eventTypes = persistedRun.events.map((event) => event.type);
           finalModelResponse =
             persistedRun.events
@@ -3100,8 +3127,8 @@ function App({
           const outcomeMessages: ThreadMessage[] = finalModelResponse
             ? [
                 {
-                  id: `${threadId}-agent-run-complete-${run.id}-${currentMessages.length + 1}`,
-                  runId: run.id,
+                  id: `${threadId}-agent-run-complete-${createdRunId}-${currentMessages.length + 1}`,
+                  runId: createdRunId,
                   role: "agent",
                   label: "Agent response",
                   content: finalModelResponse,
@@ -3109,19 +3136,19 @@ function App({
               ]
             : [
                 {
-                  id: `${threadId}-run-complete-${run.id}-${currentMessages.length + 1}`,
-                  runId: run.id,
+                  id: `${threadId}-run-complete-${createdRunId}-${currentMessages.length + 1}`,
+                  runId: createdRunId,
                   role: "system",
                   detailKind: "done",
                   content: `Repository harness run completed for ${goal}.`,
-                  detailItems: [`Run ID: ${run.id}`, runOutcomeDetail],
+                  detailItems: [`Run ID: ${createdRunId}`, runOutcomeDetail],
                 },
                 {
-                  id: `${threadId}-agent-run-no-final-response-${run.id}-${currentMessages.length + 2}`,
-                  runId: run.id,
+                  id: `${threadId}-agent-run-no-final-response-${createdRunId}-${currentMessages.length + 2}`,
+                  runId: createdRunId,
                   role: "agent",
                   label: "Agent response",
-                  content: noFinalModelResponseContent(run.id),
+                  content: noFinalModelResponseContent(createdRunId),
                 },
               ];
           return {
@@ -3199,12 +3226,93 @@ function App({
     if (!currentRunId) {
       return;
     }
+    if (
+      desktopRunSnapshot?.status === "waiting_for_approval" &&
+      !desktopRunSnapshot.taskPlan
+    ) {
+      setApprovalStatus(
+        "This legacy run has no trusted task plan. Create a new run before approving execution.",
+      );
+      return;
+    }
+    const approval =
+      desktopRunSnapshot?.status === "waiting_for_approval"
+        ? desktopRunSnapshot.approval
+        : seedDemoThread
+          ? { id: "approval-submit-1" }
+          : null;
+    const expectedRevision =
+      desktopRunSnapshot?.status === "waiting_for_approval"
+        ? desktopRunSnapshot.checkpointRevision
+        : seedDemoThread
+          ? 0
+          : undefined;
+    if (!approval || expectedRevision === undefined) return;
     await withPendingAction(`approval:${decision}`, async () => {
-      await orynt.approve({
+      const snapshot = await orynt.approve({
         runId: currentRunId,
-        approvalId: "approval-submit-1",
+        approvalId: approval.id,
         decision,
+        expectedRevision,
       });
+      if (snapshot) {
+        setDesktopRunSnapshot(snapshot);
+        setApprovalStatus(snapshot.summary ?? snapshot.status ?? "Run updated.");
+        await refreshPersistedRuns();
+        const persisted = await orynt.openPersistedRun(snapshot.runId ?? snapshot.id);
+        setOpenedPersistedRun(persisted);
+      } else {
+        setApprovalStatus(`Approval ${decision} for ${approval.id}`);
+      }
+    });
+  };
+
+  const handleCancelRuntime = async () => {
+    if (!desktopRunSnapshot?.runId || desktopRunSnapshot.checkpointRevision === undefined) return;
+    const runId = desktopRunSnapshot.runId;
+    const expectedRevision = desktopRunSnapshot.checkpointRevision;
+    await withPendingAction("runtime:cancel", async () => {
+      const snapshot = await orynt.cancelRun({
+        runId,
+        expectedRevision,
+        reason: "Cancelled by the desktop operator.",
+      });
+      if (snapshot) {
+        setDesktopRunSnapshot(snapshot);
+        setApprovalStatus(snapshot.summary ?? snapshot.status ?? "Run updated.");
+        await refreshPersistedRuns();
+      }
+    });
+  };
+
+  const handleRecoverRuntime = async () => {
+    if (!desktopRunSnapshot?.runId || desktopRunSnapshot.checkpointRevision === undefined) return;
+    const runId = desktopRunSnapshot.runId;
+    const expectedRevision = desktopRunSnapshot.checkpointRevision;
+    await withPendingAction("runtime:recover", async () => {
+      const snapshot = await orynt.recoverRun({
+        runId,
+        expectedRevision,
+      });
+      setDesktopRunSnapshot(snapshot);
+      setApprovalStatus(snapshot.summary ?? snapshot.status ?? "Run updated.");
+      await refreshPersistedRuns();
+    });
+  };
+
+  const handleMarkRuntimeFailed = async () => {
+    if (!desktopRunSnapshot?.runId || desktopRunSnapshot.checkpointRevision === undefined) return;
+    const runId = desktopRunSnapshot.runId;
+    const expectedRevision = desktopRunSnapshot.checkpointRevision;
+    await withPendingAction("runtime:mark-failed", async () => {
+      const snapshot = await orynt.markRunFailed({
+        runId,
+        expectedRevision,
+        reason: "Operator reviewed the uncertain execution and marked it failed.",
+      });
+      setDesktopRunSnapshot(snapshot);
+      setApprovalStatus(snapshot.summary ?? snapshot.status ?? "Run updated.");
+      await refreshPersistedRuns();
     });
   };
 
@@ -3212,10 +3320,18 @@ function App({
     const updatedRule = await orynt.updateCandidateRuleStatus({
       id: rule.id,
       status,
+      actor: "operator",
+      reason: "Reviewed in Memory Manager.",
+      expectedRevision: memoryReview.summary.revision ?? 0,
       runId: currentRunId ?? runState.traceSummary.runId,
       supersededBy: status === "superseded" ? "candidate-rule-replacement-demo" : undefined,
+      decidedAt: new Date().toISOString(),
     });
-    setMemoryReview((current) => updateMemoryReviewRule(current, updatedRule));
+    const summary = await orynt.summarizeMemory(memoryReview.namespace);
+    setMemoryReview((current) => ({
+      ...updateMemoryReviewRule(current, updatedRule),
+      summary,
+    }));
   };
 
   const createSkillDecision = (skill: SkillDefinition, decision: "promote" | "reject" | "supersede" | "archive") => ({
@@ -3252,6 +3368,22 @@ function App({
     setCurrentRunId(run.runId);
     setSelectedArtifactEvidence(null);
     setArtifactEvidenceMessage("");
+    if (
+      run.runtimeStatus &&
+      !["completed", "blocked", "failed", "cancelled"].includes(
+        run.runtimeStatus,
+      )
+    ) {
+      try {
+        const snapshot = await orynt.statusRun(runId);
+        setDesktopRunSnapshot(snapshot);
+        setApprovalStatus(snapshot.summary ?? snapshot.status ?? "Run updated.");
+      } catch {
+        setDesktopRunSnapshot(null);
+      }
+    } else {
+      setDesktopRunSnapshot(null);
+    }
     try {
       const evidence = await orynt.listArtifactEvidence(runId);
       setArtifactEvidence(evidence);
@@ -4443,20 +4575,65 @@ function App({
         title="Protected action approval"
         actions={
           <>
-            <button className="approval-action-secondary" type="button" onClick={() => void handleApproval("denied")} disabled={isApprovalPending} aria-busy={isApprovalDeniedPending}>
-              <LoadingButtonContent isLoading={isApprovalDeniedPending} loadingLabel="Denying">
-                Deny step
-              </LoadingButtonContent>
-            </button>
-            <button className="approval-action-primary" type="button" onClick={() => void handleApproval("approved")} disabled={isApprovalPending} aria-busy={isApprovalApprovedPending}>
-              <LoadingButtonContent isLoading={isApprovalApprovedPending} loadingLabel="Approving">
-                Approve step
-              </LoadingButtonContent>
-            </button>
+            {!desktopRunSnapshot || (desktopRunSnapshot.status === "waiting_for_approval" && desktopRunSnapshot.taskPlan) ? (
+              <>
+                <button className="approval-action-secondary" type="button" onClick={() => void handleApproval("denied")} disabled={isApprovalPending} aria-busy={isApprovalDeniedPending}>
+                  <LoadingButtonContent isLoading={isApprovalDeniedPending} loadingLabel="Denying">
+                    Deny step
+                  </LoadingButtonContent>
+                </button>
+                <button className="approval-action-primary" type="button" onClick={() => void handleApproval("approved")} disabled={isApprovalPending} aria-busy={isApprovalApprovedPending}>
+                  <LoadingButtonContent isLoading={isApprovalApprovedPending} loadingLabel="Approving">
+                    Approve step
+                  </LoadingButtonContent>
+                </button>
+              </>
+            ) : null}
+            {desktopRunSnapshot?.status === "running" ? (
+              <>
+                {desktopRunSnapshot.executionAttemptStatus === "prepared" ? (
+                  <button className="approval-action-primary" type="button" onClick={() => void handleRecoverRuntime()} disabled={isPendingAction("runtime:recover")}>
+                    Recover
+                  </button>
+                ) : null}
+                <button className="approval-action-secondary" type="button" onClick={() => void handleCancelRuntime()} disabled={isPendingAction("runtime:cancel")}>
+                  Cancel run
+                </button>
+              </>
+            ) : null}
+            {desktopRunSnapshot?.status === "execution_in_doubt" ? (
+              <button className="approval-action-secondary" type="button" onClick={() => void handleMarkRuntimeFailed()} disabled={isPendingAction("runtime:mark-failed")}>
+                Mark failed
+              </button>
+            ) : null}
           </>
         }
       >
         <p>{approvalStatus}</p>
+        {desktopRunSnapshot?.status === "waiting_for_approval" && !desktopRunSnapshot.taskPlan ? (
+          <p className="approval-plan-digest">
+            This legacy run cannot be approved because it has no trusted task plan. Create a new run.
+          </p>
+        ) : null}
+        {desktopRunSnapshot?.taskPlan ? (
+          <div className="approval-plan" aria-label="Approved repository task plan">
+            <p>
+              {desktopRunSnapshot.taskPlan.summary} ·{" "}
+              {desktopRunSnapshot.taskPlan.tasks.length} task
+              {desktopRunSnapshot.taskPlan.tasks.length === 1 ? "" : "s"}
+            </p>
+            <ol>
+              {desktopRunSnapshot.taskPlan.tasks.map((task) => (
+                <li key={task.id}>
+                  {task.title} · {task.authority.replace("_", " ")}
+                </li>
+              ))}
+            </ol>
+            <p className="approval-plan-digest">
+              Digest {desktopRunSnapshot.taskPlan.digest.slice(0, 16)}…
+            </p>
+          </div>
+        ) : null}
       </ChatBubble>
     </MessageBlock>
   );
@@ -5235,6 +5412,8 @@ function App({
               {renderModelProviderSetupPanel("settings-model")}
             </section>
           );
+        case "memory":
+          return <MemoryManager repositoryPath={repositoryPath.trim() || undefined} />;
         case "status":
           return (
             <section className="settings-section settings-status-section" aria-labelledby="settings-status-title">

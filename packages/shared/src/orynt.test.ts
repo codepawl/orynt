@@ -120,6 +120,9 @@ describe("Orynt shared product contracts", () => {
         "codex_execution_approval_required",
         "codex_execution_approved",
         "codex_execution_started",
+        "codex_reasoning_summary",
+        "codex_tool_activity",
+        "codex_agent_message",
         "codex_execution_output_recorded",
         "codex_execution_finished",
         "codex_execution_failed",
@@ -136,6 +139,7 @@ describe("Orynt shared product contracts", () => {
     expect(runEventTaskPhase("goal_received")).toBe("observe");
     expect(runEventTaskPhase("context_packet_created")).toBe("plan");
     expect(runEventTaskPhase("codex_execution_started")).toBe("act");
+    expect(runEventTaskPhase("codex_tool_activity")).toBe("act");
     expect(runEventTaskPhase("verification_started")).toBe("verify");
     expect(runEventTaskPhase("memory_extraction_finished")).toBe("summarize");
     expect(runEventTaskPhase("approval_required")).toBe("approval");

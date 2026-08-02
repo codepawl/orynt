@@ -167,6 +167,67 @@ describe("LocalRepositoryVerifier", () => {
     });
   });
 
+  it("uses trusted report evidence and fails closed when that evidence is invalid", async () => {
+    const { repoPath, worktreePath, commit } =
+      await createTempGitRepository("repo-trusted-report");
+    const sandbox = createSandbox(repoPath, worktreePath, commit);
+    const command = "node scripts/pass.mjs";
+    const policy = policyWithAllowlist(repoPath, worktreePath, [command]);
+    const artifactRoot = path.join(tempRoot, "artifacts-trusted-report");
+    const reportPath = path.join(artifactRoot, "run-test", "trusted-report.json");
+    const reportArtifact = {
+      id: "trusted-report",
+      kind: "validation_report" as const,
+      uri: `file://${reportPath}`,
+      label: "Trusted verifier report",
+      sha256: "abc123",
+    };
+    let evidenceValid = true;
+    const verifier = new LocalRepositoryVerifier({
+      managedArtifactRoot: artifactRoot,
+      trustedCommandOverrides: {
+        [command]: {
+          command: process.execPath,
+          args: ["-e", "process.exit(0)"],
+          afterExecution: async () => ({
+            stdout: "trusted report passed",
+            source: "trusted_report",
+            artifactRefs: [reportArtifact],
+            trustedEvidenceValid: evidenceValid,
+            ...(evidenceValid
+              ? {}
+              : { failure: "Trusted verifier report nonce mismatch." }),
+          }),
+        },
+      },
+    });
+    const createPlan = () =>
+      verifier.createPlan({
+        runId: "run-test",
+        taskId: "task-verify",
+        sandbox,
+        policy,
+        budget: createDefaultRunBudget(),
+        commands: [command],
+        artifactRoot: path.join(artifactRoot, "run-test"),
+        config: { defaultCommands: [] },
+      });
+
+    let result = await verifier.runVerification(createPlan(), policy);
+    expect(result.status).toBe("pass");
+    expect(result.evidence.find((item) => item.kind === "command")).toMatchObject({
+      stdout: "trusted report passed",
+      source: "trusted_report",
+      artifactRefs: [reportArtifact],
+      trustedEvidenceValid: true,
+    });
+
+    evidenceValid = false;
+    result = await verifier.runVerification(createPlan(), policy);
+    expect(result.status).toBe("fail");
+    expect(result.verdict.failureClass).toBe("trusted_evidence_invalid");
+  });
+
   it("classifies command timeout when practical", async () => {
     const { repoPath, worktreePath, commit } = await createTempGitRepository();
     const sandbox = createSandbox(repoPath, worktreePath, commit);

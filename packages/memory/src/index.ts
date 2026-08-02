@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
+import {
+  atomicWriteFileDurable,
+  compareAndSwapVersionedJson,
+  loadVersionedJson,
+  LocalStateError,
+} from "@codepawl/local-state";
 import { MEMORY_STORE_SCHEMA_VERSION } from "@codepawl/shared";
 import type {
   Actor,
@@ -29,6 +35,8 @@ import type {
   MemoryRetrievalQuery,
   MemoryRetentionPolicy,
   MemoryStoreEnvelopeV2,
+  MemoryAuditEntry,
+  MemoryAuditOperation,
   MemoryTombstone,
   MemoryReviewDecision,
   SemanticMemoryEditInput,
@@ -96,8 +104,6 @@ const DEFAULT_ACTOR: Actor = { kind: "runtime", id: "memory-extractor", displayN
 const TRASH_RETENTION_DAYS = 30;
 const DEFAULT_RETRIEVAL_LIMIT = 20;
 const MAX_RETRIEVAL_LIMIT = 100;
-const mutationQueues = new Map<string, Promise<void>>();
-let atomicWriteSequence = 0;
 const SENSITIVE_KEY_PATTERN = /\b(password|secret|api[-_\s]?key|token|otp|authorization|cookie|credential|private[-_\s]?key|raw[-_\s]?value)\b/i;
 const KEY_VALUE_SECRET_PATTERN = /\b(password|secret|api[-_\s]?key|token|otp|authorization|cookie|credential|private[-_\s]?key|raw[-_\s]?value)\b\s*[:=]\s*[^\s,;]+/gi;
 const SECRET_VALUE_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9_]{8,}|Bearer\s+[A-Za-z0-9._-]{8,})\b/g;
@@ -306,34 +312,187 @@ function emptyDatabase(updatedAt = now()): MemoryDatabase {
     candidateRules: [],
     semanticMemory: [],
     tombstones: [],
+    auditLog: [],
   };
 }
 
-function migrateDatabase(value: unknown): MemoryDatabase {
+function record(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function exact(value: Record<string, unknown>, required: string[], optional: string[] = []): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key));
+}
+
+function strings(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function validDate(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function validNamespace(value: unknown): value is MemoryNamespace {
+  return record(value) &&
+    exact(value, ["capabilityId", "workspaceId"], ["repositoryPath", "projectId"]) &&
+    typeof value.capabilityId === "string" && typeof value.workspaceId === "string" &&
+    (value.repositoryPath === undefined || typeof value.repositoryPath === "string") &&
+    (value.projectId === undefined || typeof value.projectId === "string");
+}
+
+function validArtifact(value: unknown): boolean {
+  return record(value) && exact(value, ["id", "kind", "uri", "label"], ["sha256", "path", "byteLength"]) &&
+    ["id", "kind", "uri", "label"].every((key) => typeof value[key] === "string") &&
+    (value.sha256 === undefined || typeof value.sha256 === "string") &&
+    (value.path === undefined || typeof value.path === "string") &&
+    (value.byteLength === undefined ||
+      (Number.isSafeInteger(value.byteLength) && Number(value.byteLength) >= 0));
+}
+
+function validProvenance(value: unknown): boolean {
+  return record(value) &&
+    exact(value, ["runId", "taskId", "eventIds", "artifactRefs", "sources"], ["sourceTimestamps", "verificationResultId", "importBundleId"]) &&
+    typeof value.runId === "string" && typeof value.taskId === "string" &&
+    strings(value.eventIds) && Array.isArray(value.artifactRefs) && value.artifactRefs.every(validArtifact) &&
+    strings(value.sources) && (value.sourceTimestamps === undefined || strings(value.sourceTimestamps)) &&
+    (value.verificationResultId === undefined || typeof value.verificationResultId === "string") &&
+    (value.importBundleId === undefined || typeof value.importBundleId === "string");
+}
+
+function validRedaction(value: unknown): boolean {
+  return record(value) && exact(value, ["applied", "redactedPaths", "redactionCount"]) &&
+    typeof value.applied === "boolean" && strings(value.redactedPaths) &&
+    Number.isSafeInteger(value.redactionCount) && Number(value.redactionCount) >= 0;
+}
+
+function validReview(value: unknown): boolean {
+  return record(value) && exact(value, ["status", "actor", "reason", "decidedAt"], ["runId"]) &&
+    typeof value.status === "string" && typeof value.actor === "string" &&
+    typeof value.reason === "string" && validDate(value.decidedAt) &&
+    (value.runId === undefined || typeof value.runId === "string");
+}
+
+function validEpisode(value: unknown): boolean {
+  return record(value) &&
+    exact(value, ["id", "namespace", "kind", "summary", "content", "provenance", "retention", "redaction", "confidence", "createdAt"], ["expiresAt"]) &&
+    typeof value.id === "string" && validNamespace(value.namespace) && typeof value.kind === "string" &&
+    typeof value.summary === "string" && record(value.content) && validProvenance(value.provenance) &&
+    record(value.retention) && exact(value.retention, [], ["ttlDays", "retainUntil", "archiveAfterDays"]) &&
+    (value.retention.ttlDays === undefined || Number.isFinite(value.retention.ttlDays)) &&
+    (value.retention.retainUntil === undefined || validDate(value.retention.retainUntil)) &&
+    (value.retention.archiveAfterDays === undefined || Number.isFinite(value.retention.archiveAfterDays)) &&
+    validRedaction(value.redaction) && typeof value.confidence === "number" &&
+    Number.isFinite(value.confidence) && validDate(value.createdAt) &&
+    (value.expiresAt === undefined || validDate(value.expiresAt));
+}
+
+function validRule(value: unknown): boolean {
+  return record(value) &&
+    exact(value, ["id", "namespace", "status", "title", "rule", "scope", "evidence", "provenance", "redaction", "createdAt", "updatedAt"], ["reviewDecisions", "supersededBy"]) &&
+    typeof value.id === "string" && validNamespace(value.namespace) &&
+    ["candidate", "accepted", "rejected", "superseded"].includes(String(value.status)) &&
+    typeof value.title === "string" && typeof value.rule === "string" &&
+    record(value.scope) && exact(value.scope, ["allowedPaths", "protectedPaths"], ["repositoryPath", "commands"]) &&
+    strings(value.scope.allowedPaths) && strings(value.scope.protectedPaths) &&
+    (value.scope.repositoryPath === undefined || typeof value.scope.repositoryPath === "string") &&
+    (value.scope.commands === undefined || strings(value.scope.commands)) &&
+    Array.isArray(value.evidence) && value.evidence.every((item) =>
+      record(item) && exact(item, ["kind", "summary", "eventIds", "artifactRefs", "confidence"]) &&
+      typeof item.kind === "string" && typeof item.summary === "string" && strings(item.eventIds) &&
+      Array.isArray(item.artifactRefs) && item.artifactRefs.every(validArtifact) &&
+      typeof item.confidence === "number" && Number.isFinite(item.confidence)) &&
+    validProvenance(value.provenance) && validRedaction(value.redaction) &&
+    (value.reviewDecisions === undefined || (Array.isArray(value.reviewDecisions) && value.reviewDecisions.every(validReview))) &&
+    validDate(value.createdAt) && validDate(value.updatedAt) &&
+    (value.supersededBy === undefined || typeof value.supersededBy === "string");
+}
+
+function validSemantic(value: unknown): boolean {
+  return record(value) &&
+    exact(value, ["id", "namespace", "status", "summary", "content", "sensitivity", "confidence", "provenance", "redaction", "reviewDecisions", "createdAt", "updatedAt"],
+      ["activation", "deletedAt", "purgeAfter", "purgedAt", "statusBeforeTrash"]) &&
+    typeof value.id === "string" && validNamespace(value.namespace) &&
+    ["candidate", "approved", "rejected", "deleted"].includes(String(value.status)) &&
+    typeof value.summary === "string" && record(value.content) &&
+    ["public", "internal", "sensitive"].includes(String(value.sensitivity)) &&
+    typeof value.confidence === "number" && Number.isFinite(value.confidence) &&
+    validProvenance(value.provenance) && validRedaction(value.redaction) &&
+    Array.isArray(value.reviewDecisions) && value.reviewDecisions.every(validReview) &&
+    (value.activation === undefined || (record(value.activation) &&
+      exact(value.activation, ["basis", "requested", "conflictsWith"], ["activatedAt"]) &&
+      typeof value.activation.basis === "string" && typeof value.activation.requested === "boolean" &&
+      strings(value.activation.conflictsWith) &&
+      (value.activation.activatedAt === undefined || validDate(value.activation.activatedAt)))) &&
+    validDate(value.createdAt) && validDate(value.updatedAt) &&
+    ["deletedAt", "purgeAfter", "purgedAt"].every((key) => value[key] === undefined || validDate(value[key])) &&
+    (value.statusBeforeTrash === undefined || ["candidate", "approved", "rejected"].includes(String(value.statusBeforeTrash)));
+}
+
+function validTombstone(value: unknown): boolean {
+  return record(value) && exact(value, ["id", "kind", "namespace", "deletedAt", "purgedAt", "provenanceRunId", "reason"]) &&
+    typeof value.id === "string" && value.kind === "semantic_memory" && validNamespace(value.namespace) &&
+    validDate(value.deletedAt) && validDate(value.purgedAt) &&
+    typeof value.provenanceRunId === "string" && typeof value.reason === "string";
+}
+
+function validAudit(value: unknown): value is MemoryAuditEntry {
+  return record(value) &&
+    exact(value, ["id", "operation", "entityId", "entityKind", "namespace", "actor", "reason", "committedRevision", "occurredAt"], ["runId"]) &&
+    typeof value.id === "string" && typeof value.operation === "string" &&
+    typeof value.entityId === "string" && ["episode", "candidate_rule", "semantic_memory"].includes(String(value.entityKind)) &&
+    validNamespace(value.namespace) && typeof value.actor === "string" && typeof value.reason === "string" &&
+    (value.runId === undefined || typeof value.runId === "string") &&
+    Number.isSafeInteger(value.committedRevision) && Number(value.committedRevision) > 0 &&
+    validDate(value.occurredAt);
+}
+
+function isMemoryDatabase(value: unknown): value is MemoryDatabase {
   if (!value || typeof value !== "object") {
-    return emptyDatabase();
+    return false;
   }
-  const parsed = value as Partial<MemoryDatabase & LegacyMemoryDatabase>;
-  const base = {
-    episodes: Array.isArray(parsed.episodes) ? parsed.episodes : [],
-    candidateRules: Array.isArray(parsed.candidateRules) ? parsed.candidateRules : [],
-    semanticMemory: Array.isArray(parsed.semanticMemory) ? parsed.semanticMemory : [],
-  };
+  const parsed = value as Partial<MemoryDatabase>;
+  return (
+    parsed.schemaVersion === MEMORY_STORE_SCHEMA_VERSION &&
+    Number.isSafeInteger(parsed.revision) &&
+    Number(parsed.revision) >= 0 &&
+    typeof parsed.updatedAt === "string" &&
+    Number.isFinite(Date.parse(parsed.updatedAt)) &&
+    Array.isArray(parsed.episodes) && parsed.episodes.every(validEpisode) &&
+    Array.isArray(parsed.candidateRules) && parsed.candidateRules.every(validRule) &&
+    Array.isArray(parsed.semanticMemory) && parsed.semanticMemory.every(validSemantic) &&
+    Array.isArray(parsed.tombstones) && parsed.tombstones.every(validTombstone) &&
+    Array.isArray(parsed.auditLog) && parsed.auditLog.every(validAudit)
+  );
+}
+
+function migrateDatabase(value: unknown): MemoryDatabase {
+  if (!record(value)) throw new LocalStateError("invalid_schema", "memory migration source is not an object");
+  const parsed = value as Record<string, unknown>;
   if (parsed.schemaVersion === MEMORY_STORE_SCHEMA_VERSION) {
-    return {
-      schemaVersion: MEMORY_STORE_SCHEMA_VERSION,
-      revision: Number.isSafeInteger(parsed.revision) && Number(parsed.revision) >= 0 ? Number(parsed.revision) : 0,
-      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : now(),
-      ...base,
-      tombstones: Array.isArray(parsed.tombstones) ? parsed.tombstones : [],
-    };
+    throw new LocalStateError(
+      "invalid_schema",
+      "invalid current memory state",
+    );
+  }
+  if (![undefined, 1, 2].includes(parsed.schemaVersion as undefined | number)) {
+    throw new LocalStateError("invalid_schema", `unsupported memory schema version: ${String(parsed.schemaVersion)}`);
+  }
+  if (!Array.isArray(parsed.episodes) || !parsed.episodes.every(validEpisode) ||
+      !Array.isArray(parsed.candidateRules) || !parsed.candidateRules.every(validRule) ||
+      (parsed.semanticMemory !== undefined && (!Array.isArray(parsed.semanticMemory) || !parsed.semanticMemory.every(validSemantic))) ||
+      (parsed.tombstones !== undefined && (!Array.isArray(parsed.tombstones) || !parsed.tombstones.every(validTombstone)))) {
+    throw new LocalStateError("invalid_schema", "legacy memory contains an invalid nested entity");
   }
   return {
     schemaVersion: MEMORY_STORE_SCHEMA_VERSION,
-    revision: 0,
-    updatedAt: now(),
-    ...base,
-    tombstones: [],
+    revision: Number.isSafeInteger(parsed.revision) && Number(parsed.revision) >= 0 ? Number(parsed.revision) : 0,
+    updatedAt: validDate(parsed.updatedAt) ? parsed.updatedAt : now(),
+    episodes: clone(parsed.episodes),
+    candidateRules: clone(parsed.candidateRules),
+    semanticMemory: clone(parsed.semanticMemory ?? []),
+    tombstones: clone(parsed.tombstones ?? []),
+    auditLog: [],
   };
 }
 
@@ -366,6 +525,33 @@ function isAutoActivationEligible(
     input.sensitivity !== "sensitive" &&
     !redaction.applied
   );
+}
+
+function appendAudit(
+  database: MemoryDatabase,
+  operation: MemoryAuditOperation,
+  entity: { id: string; namespace: MemoryNamespace },
+  entityKind: MemoryAuditEntry["entityKind"],
+  options: MemoryMutationOptions,
+  defaults: { actor: string; reason: string; runId?: string },
+  occurredAt = now(),
+): void {
+  const actor = options.actor ?? defaults.actor;
+  const reason = options.reason ?? defaults.reason;
+  const runId = options.runId ?? defaults.runId;
+  const committedRevision = database.revision + 1;
+  database.auditLog.push({
+    id: id("memory-audit", `${committedRevision}:${operation}:${entity.id}`),
+    operation,
+    entityId: entity.id,
+    entityKind,
+    namespace: clone(entity.namespace),
+    actor,
+    reason,
+    ...(runId ? { runId } : {}),
+    committedRevision,
+    occurredAt,
+  });
 }
 
 export class LocalJsonMemoryStore implements MemoryStore {
@@ -411,6 +597,11 @@ export class LocalJsonMemoryStore implements MemoryStore {
           expiresAt: redactedInput.expiresAt ?? expiresAt(createdAt, redactedInput.retention),
         };
         database.episodes.push(episode);
+        appendAudit(database, "episode.created", episode, "episode", options, {
+          actor: "memory-store",
+          reason: "Episode extracted from verified run evidence.",
+          runId: episode.provenance.runId,
+        }, createdAt);
         return episode;
       },
     );
@@ -476,6 +667,11 @@ export class LocalJsonMemoryStore implements MemoryStore {
           supersededBy: redactedInput.supersededBy,
         };
         database.candidateRules.push(rule);
+        appendAudit(database, "candidate_rule.created", rule, "candidate_rule", options, {
+          actor: "memory-store",
+          reason: "Candidate rule extracted for manual review.",
+          runId: rule.provenance.runId,
+        }, createdAt);
         return rule;
       },
     );
@@ -541,6 +737,11 @@ export class LocalJsonMemoryStore implements MemoryStore {
             status === "superseded" ? options.supersededBy : current.supersededBy,
         };
         database.candidateRules[index] = updated;
+        appendAudit(database, "candidate_rule.reviewed", updated, "candidate_rule", options, {
+          actor: options.actor ?? "memory-reviewer",
+          reason: options.reason ?? `Candidate rule status changed to ${status}.`,
+          runId: options.runId,
+        }, decidedAt);
         return updated;
       },
     );
@@ -604,6 +805,11 @@ export class LocalJsonMemoryStore implements MemoryStore {
           updatedAt: redactedInput.updatedAt ?? createdAt,
         };
         database.semanticMemory.push(item);
+        appendAudit(database, "semantic_memory.created", item, "semantic_memory", options, {
+          actor: autoActivated ? "memory-policy" : "memory-store",
+          reason: autoActivated ? "Eligible semantic memory auto-activated." : "Semantic memory created for review.",
+          runId: item.provenance.runId,
+        }, createdAt);
         return item;
       },
     );
@@ -696,6 +902,11 @@ export class LocalJsonMemoryStore implements MemoryStore {
           ],
         };
         database.semanticMemory[index] = updated;
+        appendAudit(database, "semantic_memory.trashed", updated, "semantic_memory", options, {
+          actor: input.actor,
+          reason: input.reason,
+          runId: input.runId,
+        }, deletedAt);
         return updated;
       },
     );
@@ -738,8 +949,23 @@ export class LocalJsonMemoryStore implements MemoryStore {
           purgeAfter: undefined,
           statusBeforeTrash: undefined,
           updatedAt: restoredAt,
+          reviewDecisions: [
+            ...current.reviewDecisions,
+            {
+              status: restoredStatus,
+              actor: input.actor,
+              reason: input.reason,
+              runId: input.runId,
+              decidedAt: restoredAt,
+            },
+          ],
         };
         database.semanticMemory[index] = updated;
+        appendAudit(database, "semantic_memory.restored", updated, "semantic_memory", options, {
+          actor: input.actor,
+          reason: input.reason,
+          runId: input.runId,
+        }, restoredAt);
         return updated;
       },
     );
@@ -788,6 +1014,11 @@ export class LocalJsonMemoryStore implements MemoryStore {
         };
         database.semanticMemory.splice(index, 1);
         database.tombstones.push(tombstone);
+        appendAudit(database, "semantic_memory.purged", current, "semantic_memory", options, {
+          actor: input.actor,
+          reason: input.reason,
+          runId: input.runId,
+        }, purgedAt);
         return tombstone;
       },
     );
@@ -906,9 +1137,25 @@ export class LocalJsonMemoryStore implements MemoryStore {
   }
 
   async summarizeMemory(namespace?: Partial<MemoryNamespace>): Promise<MemorySummary> {
-    const [episodes, candidateRules] = await Promise.all([this.queryEpisodes({ namespace }), this.listCandidateRules({ namespace })]);
-    const namespaceKeys = new Set([...episodes.map((episode) => namespaceKey(episode.namespace)), ...candidateRules.map((rule) => namespaceKey(rule.namespace))]);
+    const [episodes, candidateRules, semanticMemory, database] =
+      await Promise.all([
+        this.queryEpisodes({ namespace }),
+        this.listCandidateRules({ namespace }),
+        this.listSemanticMemory({ namespace, includeDeleted: true }),
+        this.readDatabase(),
+      ]);
+    const namespaceKeys = new Set([
+      ...episodes.map((episode) => namespaceKey(episode.namespace)),
+      ...candidateRules.map((rule) => namespaceKey(rule.namespace)),
+      ...semanticMemory.map((item) => namespaceKey(item.namespace)),
+    ]);
+    const purgeDeadlines = semanticMemory
+      .flatMap((item) =>
+        item.status === "deleted" && item.purgeAfter ? [item.purgeAfter] : [],
+      )
+      .sort();
     return {
+      revision: database.revision,
       episodeCount: episodes.length,
       candidateRuleCount: candidateRules.length,
       candidateRuleStatusCounts: {
@@ -918,6 +1165,16 @@ export class LocalJsonMemoryStore implements MemoryStore {
         superseded: candidateRules.filter((rule) => rule.status === "superseded").length,
       },
       namespaceCount: namespaceKeys.size,
+      semanticMemoryCount: semanticMemory.length,
+      semanticMemoryStatusCounts: {
+        candidate: semanticMemory.filter((item) => item.status === "candidate").length,
+        approved: semanticMemory.filter((item) => item.status === "approved").length,
+        rejected: semanticMemory.filter((item) => item.status === "rejected").length,
+        deleted: semanticMemory.filter((item) => item.status === "deleted").length,
+      },
+      trashCount: semanticMemory.filter((item) => item.status === "deleted").length,
+      tombstoneCount: database.tombstones.length,
+      ...(purgeDeadlines[0] ? { nextPurgeAt: purgeDeadlines[0] } : {}),
     };
   }
 
@@ -954,19 +1211,13 @@ export class LocalJsonMemoryStore implements MemoryStore {
 
   private async readDatabase(storePath = this.storePath): Promise<MemoryDatabase> {
     const safeStorePath = this.validateStorePath(storePath);
-    try {
-      return migrateDatabase(JSON.parse(await readFile(safeStorePath, "utf8")));
-    } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-        return emptyDatabase();
-      }
-      throw error;
-    }
-  }
-
-  private async writeDatabase(database: MemoryDatabase, storePath = this.storePath): Promise<void> {
-    const safeStorePath = this.validateStorePath(storePath);
-    await this.writeAtomic(safeStorePath, `${JSON.stringify(database, null, 2)}\n`);
+    return loadVersionedJson({
+      filePath: safeStorePath,
+      schemaVersion: MEMORY_STORE_SCHEMA_VERSION,
+      validate: isMemoryDatabase,
+      initialize: emptyDatabase,
+      migrate: migrateDatabase,
+    });
   }
 
   private async updateSemanticMemory(
@@ -1018,6 +1269,15 @@ export class LocalJsonMemoryStore implements MemoryStore {
           updatedAt,
         };
         database.semanticMemory[index] = updated;
+        appendAudit(
+          database,
+          reviewStatus ? "semantic_memory.reviewed" : "semantic_memory.edited",
+          updated,
+          "semantic_memory",
+          options,
+          { actor: input.actor, reason: input.reason, runId: "runId" in input ? input.runId : undefined },
+          updatedAt,
+        );
         return updated;
       },
     );
@@ -1029,55 +1289,35 @@ export class LocalJsonMemoryStore implements MemoryStore {
     mutate: (database: MemoryDatabase) => T,
   ): Promise<T> {
     const safeStorePath = this.validateStorePath(storePath);
-    return this.withMutationLock(safeStorePath, async () => {
-      const database = await this.readDatabase(safeStorePath);
-      if (
-        options.expectedRevision !== undefined &&
-        options.expectedRevision !== database.revision
-      ) {
+    try {
+      const { result } = await compareAndSwapVersionedJson({
+        filePath: safeStorePath,
+        schemaVersion: MEMORY_STORE_SCHEMA_VERSION,
+        validate: isMemoryDatabase,
+        initialize: emptyDatabase,
+        migrate: migrateDatabase,
+        expectedRevision: options.expectedRevision,
+        mutate,
+        updatedAt: (database) => {
+          database.updatedAt = now();
+        },
+      });
+      return result;
+    } catch (error) {
+      if (error instanceof LocalStateError && error.code === "revision_conflict") {
+        const current = await this.readDatabase(safeStorePath);
         throw new MemoryStoreFailure(
           "revision_conflict",
-          `memory store revision conflict: expected ${options.expectedRevision}, current ${database.revision}`,
+          `memory store revision conflict: expected ${options.expectedRevision}, current ${current.revision}`,
         );
       }
-      const result = mutate(database);
-      database.revision += 1;
-      database.updatedAt = now();
-      await this.writeDatabase(database, safeStorePath);
-      return clone(result);
-    });
-  }
-
-  private async withMutationLock<T>(storePath: string, work: () => Promise<T>): Promise<T> {
-    const previous = mutationQueues.get(storePath) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const queued = previous.then(() => current);
-    mutationQueues.set(storePath, queued);
-    await previous;
-    try {
-      return await work();
-    } finally {
-      release();
-      if (mutationQueues.get(storePath) === queued) {
-        mutationQueues.delete(storePath);
-      }
+      throw error;
     }
   }
 
   private async writeAtomic(targetPath: string, content: string): Promise<void> {
     const safeTarget = this.validateStorePath(targetPath);
-    await mkdir(path.dirname(safeTarget), { recursive: true });
-    atomicWriteSequence += 1;
-    const temporaryPath = `${safeTarget}.tmp-${process.pid}-${atomicWriteSequence}`;
-    try {
-      await writeFile(temporaryPath, content, "utf8");
-      await rename(temporaryPath, safeTarget);
-    } finally {
-      await rm(temporaryPath, { force: true }).catch(() => undefined);
-    }
+    await atomicWriteFileDurable(safeTarget, content);
   }
 }
 

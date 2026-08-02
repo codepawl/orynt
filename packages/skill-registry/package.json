@@ -16,6 +16,7 @@
     "test": "pnpm --filter @codepawl/shared build && vitest run"
   },
   "dependencies": {
+    "@codepawl/local-state": "workspace:*",
     "@codepawl/shared": "workspace:*"
   },
   "devDependencies": {

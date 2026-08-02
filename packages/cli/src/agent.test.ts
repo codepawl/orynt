@@ -12,17 +12,28 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   buildCliRepositorySnapshot,
   evaluateAgentAction,
+  extractPartialJsonStringField,
   parseCliAgentTurnResult,
   runCliAgentTurn,
   type ProposedRepositoryAction,
 } from "./agent";
 
 const execFileAsync = promisify(execFile);
+const previousCodexRuntime = process.env.ORYNT_CODEX_RUNTIME;
+
+beforeAll(() => {
+  process.env.ORYNT_CODEX_RUNTIME = "exec";
+});
+
+afterAll(() => {
+  if (previousCodexRuntime === undefined) delete process.env.ORYNT_CODEX_RUNTIME;
+  else process.env.ORYNT_CODEX_RUNTIME = previousCodexRuntime;
+});
 
 function action(
   overrides: Partial<ProposedRepositoryAction> = {},
@@ -34,11 +45,63 @@ function action(
     estimatedPaths: ["packages/cli/src/ui.ts"],
     estimatedChangedFiles: 1,
     helperTasks: [],
+    taskPlan: {
+      summary: "Update the bounded CLI copy.",
+      requirements: [
+        {
+          id: "update-copy",
+          text: "Update the CLI copy.",
+          source: "user_prompt",
+          kind: "outcome",
+          required: true,
+        },
+      ],
+      tasks: [
+        {
+          id: "update-cli-copy",
+          title: "Update CLI copy",
+          instruction: "Update the CLI copy.",
+          kind: "change",
+          dependencies: [],
+          requirementIds: ["update-copy"],
+          authority: "single_writer",
+          operations: ["write"],
+          expectedPaths: ["packages/cli/src/ui.ts"],
+          doneWhen: ["The requested CLI copy is updated."],
+          evidence: [
+            {
+              id: "copy-diff",
+              requirementIds: ["update-copy"],
+              kind: "diff",
+              description: "Inspect the CLI copy diff.",
+              path: "packages/cli/src/ui.ts",
+            },
+          ],
+        },
+      ],
+      allowedOperations: ["read", "write"],
+    },
     ...overrides,
   };
 }
 
 describe("CLI conversational agent contract", () => {
+  it("extracts a streaming reply from incomplete structured JSON", () => {
+    expect(
+      extractPartialJsonStringField(
+        '{"disposition":"answer","reply":"Hello\\nworld',
+        "reply",
+      ),
+    ).toBe("Hello\nworld");
+    expect(
+      extractPartialJsonStringField(
+        '{"reply":"Quote: \\"yes\\" and unicode \\u2713","action":null}',
+        "reply",
+      ),
+    ).toBe('Quote: "yes" and unicode ✓');
+    expect(extractPartialJsonStringField('{"disposition":"answer"', "reply")).toBeUndefined();
+  });
+
   it("parses bounded answers and action proposals", () => {
     expect(
       parseCliAgentTurnResult(
@@ -212,6 +275,76 @@ describe("CLI conversational agent contract", () => {
         signal: controller.signal,
       }),
     ).rejects.toThrow("agent turn cancelled");
+  });
+
+  it("streams the structured reply before accepting the authoritative last message", async () => {
+    const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "orynt-agent-stream-"));
+    const repositoryPath = path.join(fixtureRoot, "repo");
+    const binPath = path.join(fixtureRoot, "bin");
+    const fakeCodexPath = path.join(binPath, "codex");
+    const previousPath = process.env.PATH;
+    try {
+      await mkdir(repositoryPath, { recursive: true });
+      await mkdir(binPath, { recursive: true });
+      await execFileAsync("git", ["init"], { cwd: repositoryPath });
+      await execFileAsync("git", ["config", "user.email", "orynt@example.test"], { cwd: repositoryPath });
+      await execFileAsync("git", ["config", "user.name", "Orynt Test"], { cwd: repositoryPath });
+      await writeFile(path.join(repositoryPath, "README.md"), "fixture\n");
+      await execFileAsync("git", ["add", "README.md"], { cwd: repositoryPath });
+      await execFileAsync("git", ["commit", "-m", "initial"], { cwd: repositoryPath });
+      await writeFile(
+        fakeCodexPath,
+        `#!/usr/bin/env node
+const fs = require("node:fs");
+const outputIndex = process.argv.indexOf("--output-last-message");
+const finalMessage = JSON.stringify({
+  disposition: "answer",
+  reply: "Hello from the streamed agent.",
+  conversationSummary: "Greeted the user.",
+  action: null,
+});
+fs.writeSync(1, JSON.stringify({
+  type: "item.updated",
+  item: { id: "message-1", type: "agent_message", text: "{\\"disposition\\":\\"answer\\",\\"reply\\":\\"Hello from" },
+}) + "\\n");
+fs.writeSync(1, JSON.stringify({
+  type: "item.completed",
+  item: { id: "message-1", type: "agent_message", text: finalMessage },
+}) + "\\n");
+fs.writeFileSync(process.argv[outputIndex + 1], finalMessage);
+`,
+      );
+      await chmod(fakeCodexPath, 0o755);
+      process.env.PATH = `${binPath}${path.delimiter}${previousPath ?? ""}`;
+      const activities: string[] = [];
+      let resolved = false;
+
+      const turn = runCliAgentTurn({
+        prompt: "say hello",
+        repositoryPath,
+        modelId: "gpt-5.5",
+        thinkingEffort: "low",
+        acceptanceCriteria: [],
+        recentTurns: [],
+        onActivity: (event) => {
+          if (event.kind === "message") {
+            expect(resolved).toBe(false);
+            activities.push(event.text);
+          }
+        },
+      });
+      const result = await turn;
+      resolved = true;
+
+      expect(activities).toEqual([
+        "Hello from",
+        "Hello from the streamed agent.",
+      ]);
+      expect(result.reply).toBe("Hello from the streamed agent.");
+    } finally {
+      process.env.PATH = previousPath;
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
   });
 
   it("rejects mid-flight advisory aborts and timeouts even when Codex exits zero", async () => {

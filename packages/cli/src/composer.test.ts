@@ -2,7 +2,12 @@ import { PassThrough } from "node:stream";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { INTERRUPTED_INPUT, TtyComposer, displayWidth } from "./composer";
+import {
+  COMPOSER_PROMPT,
+  INTERRUPTED_INPUT,
+  TtyComposer,
+  displayWidth,
+} from "./composer";
 
 function stripColor(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/gu, "");
@@ -157,16 +162,79 @@ describe("TTY command composer", () => {
     }
   });
 
+  it("appends cumulative agent text once and finalizes before permanent output", () => {
+    const harness = createHarness(100, 24, false, false);
+    const stream = harness.composer.beginMessageStream("Agent");
+
+    stream.update("Hello");
+    stream.update("Hello from Orynt.");
+    harness.composer.write("  ◇ Tool shell");
+    stream.finish("ignored stale update");
+
+    expect(harness.rendered()).toBe(
+      "\nAgent ✦ Hello from Orynt.\n  ◇ Tool shell\n",
+    );
+    harness.composer.close();
+  });
+
+  it("colors only the agent prefix while streaming a response", () => {
+    const harness = createHarness(100, 24, true, false);
+    const stream = harness.composer.beginMessageStream("Agent");
+
+    stream.update("Hello from Orynt.");
+    stream.finish();
+
+    expect(harness.rendered()).toBe(
+      "\n\u001b[38;2;198;196;191mAgent ✦\u001b[0m Hello from Orynt.\n",
+    );
+    expect(harness.rendered()).not.toContain(
+      "\u001b[38;2;198;196;191mHello from Orynt.",
+    );
+    harness.composer.close();
+  });
+
+  it("renders split Markdown in a streaming agent response without exposing markers", () => {
+    const harness = createHarness(100, 24, false, false);
+    const stream = harness.composer.beginMessageStream("Agent");
+
+    stream.update("Use **bo");
+    stream.update("Use **bold** in packages/cli/src/main.ts");
+    stream.finish();
+
+    expect(stripColor(harness.rendered())).toBe(
+      "\nAgent ✦ Use bold in packages/cli/src/main.ts\n",
+    );
+    expect(harness.rendered()).toContain("\u001b[1mbold\u001b[0m");
+    expect(harness.rendered()).toContain(
+      "\u001b[4mpackages/cli/src/main.ts\u001b[0m",
+    );
+    harness.composer.close();
+  });
+
+  it("keeps dim Markdown markers visible in the compose draft and echo", async () => {
+    const harness = createHarness(100, 24, false, false);
+    const result = harness.composer.compose(COMPOSER_PROMPT);
+
+    harness.input.write("Use **bold**");
+    expect(harness.rendered()).toContain("\u001b[2m**\u001b[0m");
+    expect(harness.rendered()).toContain("\u001b[1mbold\u001b[0m");
+
+    harness.input.write("\r");
+    await expect(result).resolves.toBe("Use **bold**");
+    expect(stripColor(harness.rendered())).toContain("You › Use **bold**");
+    harness.composer.close();
+  });
+
   it("opens and filters the slash palette, then completes with Tab without executing", async () => {
     const harness = createHarness();
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
 
     harness.input.write("/do");
     expect(harness.rendered()).toContain("/doctor");
     expect(harness.rendered()).toContain("Diagnose terminal");
 
     harness.input.write("\t");
-    expect(harness.rendered()).toContain("❯ /doctor");
+    expect(harness.rendered()).toContain("You › /doctor");
     harness.input.write("\r");
 
     await expect(result).resolves.toBe("/doctor");
@@ -175,10 +243,10 @@ describe("TTY command composer", () => {
 
   it("uses Enter once for safe completion and a second time for submission", async () => {
     const harness = createHarness();
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
 
     harness.input.write("/do\r");
-    expect(harness.rendered()).toContain("❯ /doctor");
+    expect(harness.rendered()).toContain("You › /doctor");
     harness.input.write("\r");
 
     await expect(result).resolves.toBe("/doctor");
@@ -187,11 +255,11 @@ describe("TTY command composer", () => {
 
   it("submits an exact no-argument or optional command with one Enter", async () => {
     const harness = createHarness();
-    const model = harness.composer.compose("❯ ");
+    const model = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/model\r");
     await expect(model).resolves.toBe("/model");
 
-    const exit = harness.composer.compose("❯ ");
+    const exit = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/exit\r");
     await expect(exit).resolves.toBe("/exit");
     harness.composer.close();
@@ -199,9 +267,9 @@ describe("TTY command composer", () => {
 
   it("keeps an exact required-argument command open for its value", async () => {
     const harness = createHarness();
-    const repository = harness.composer.compose("❯ ");
+    const repository = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/repo\r");
-    expect(harness.rendered()).toContain("❯ /repo ");
+    expect(harness.rendered()).toContain("You › /repo ");
     harness.input.write("./project\r");
 
     await expect(repository).resolves.toBe("/repo ./project");
@@ -210,7 +278,7 @@ describe("TTY command composer", () => {
 
   it("navigates slash suggestions with arrow keys", async () => {
     const harness = createHarness();
-    const selected = harness.composer.compose("❯ ");
+    const selected = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/");
     harness.input.write("\u001b[B");
     harness.input.write("\t");
@@ -221,7 +289,7 @@ describe("TTY command composer", () => {
 
   it("repaints only changed slash rows in one write when selection moves", async () => {
     const harness = createHarness();
-    const selected = harness.composer.compose("❯ ");
+    const selected = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/");
     const before = harness.chunks().length;
 
@@ -241,7 +309,7 @@ describe("TTY command composer", () => {
 
   it("moves the input cursor without erasing or repainting content", async () => {
     const harness = createHarness();
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("smooth");
     const before = harness.chunks().length;
 
@@ -251,7 +319,7 @@ describe("TTY command composer", () => {
     expect(updates).toHaveLength(1);
     expect(updates[0]).not.toContain("\u001b[2K");
     expect(updates[0]).not.toContain("smooth");
-    expect(harness.screen()).toContain("❯ smooth");
+    expect(harness.screen()).toContain("You › smooth");
     harness.input.write("\r");
     await expect(result).resolves.toBe("smooth");
     harness.composer.close();
@@ -259,7 +327,7 @@ describe("TTY command composer", () => {
 
   it("moves across a joined emoji as one grapheme", async () => {
     const harness = createHarness();
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("A👩🏽‍💻B");
     harness.input.write("\u001b[D\u001b[Dx\r");
 
@@ -272,7 +340,7 @@ describe("TTY command composer", () => {
 
   it("does not write anything when a render leaves content and cursor unchanged", async () => {
     const harness = createHarness();
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
     const before = harness.chunks().length;
 
     harness.input.write("\u0001");
@@ -285,14 +353,14 @@ describe("TTY command composer", () => {
 
   it("completes a slash command with one differential frame", async () => {
     const harness = createHarness();
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/do");
     const before = harness.chunks().length;
 
     harness.input.write("\t");
 
     expect(harness.chunks().slice(before)).toHaveLength(1);
-    expect(harness.screen()).toContain("❯ /doctor");
+    expect(harness.screen()).toContain("You › /doctor");
     expect(harness.screen()).not.toContain("Diagnose terminal");
     harness.input.write("\r");
     await expect(result).resolves.toBe("/doctor");
@@ -302,10 +370,10 @@ describe("TTY command composer", () => {
 
   it("inserts argument spacing when completing a command", async () => {
     const harness = createHarness();
-    const argumentCommand = harness.composer.compose("❯ ");
+    const argumentCommand = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/re");
     harness.input.write("\t");
-    expect(harness.rendered()).toContain("❯ /repo ");
+    expect(harness.rendered()).toContain("You › /repo ");
     harness.input.write("./project");
     harness.input.write("\r");
     await expect(argumentCommand).resolves.toBe("/repo ./project");
@@ -314,7 +382,7 @@ describe("TTY command composer", () => {
 
   it("dismisses suggestions with Escape without clearing the draft", async () => {
     const harness = createHarness();
-    const dismissed = harness.composer.compose("❯ ");
+    const dismissed = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/do");
     harness.input.emit("keypress", "", { name: "escape", sequence: "\u001b" });
     harness.input.write("\r");
@@ -324,7 +392,7 @@ describe("TTY command composer", () => {
 
   it("keeps deduplicated command history outside approval answers", async () => {
     const harness = createHarness();
-    const first = harness.composer.compose("❯ ");
+    const first = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("inspect repository\r");
     await expect(first).resolves.toBe("inspect repository");
     harness.composer.remember("inspect repository");
@@ -333,16 +401,16 @@ describe("TTY command composer", () => {
     harness.input.write("yes\r");
     await expect(approval).resolves.toBe("yes");
 
-    const recalled = harness.composer.compose("❯ ");
+    const recalled = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("\u001b[A\r");
     await expect(recalled).resolves.toBe("inspect repository");
     harness.composer.close();
   });
 
   it("recalls and edits a logical multiline history value without corrupting the renderer", async () => {
-    const harness = createHarness(48, 10);
+    const harness = createHarness(54, 10);
     harness.composer.remember("fix the contract\nwithout changing the API");
-    const recalled = harness.composer.compose("❯ ");
+    const recalled = harness.composer.compose(COMPOSER_PROMPT);
 
     harness.input.write("\u001b[A");
     expect(harness.rendered()).toContain("fix the contract\\nwithout changing the API");
@@ -360,7 +428,7 @@ describe("TTY command composer", () => {
     vi.useFakeTimers();
     try {
       const harness = createHarness();
-      const result = harness.composer.compose("❯ ");
+      const result = harness.composer.compose(COMPOSER_PROMPT);
       harness.input.write("discard me\u0003");
       expect(harness.rendered()).toContain("Press Ctrl+C again to exit Orynt · 3s");
       expect(harness.rendered()).not.toContain("^C");
@@ -380,7 +448,7 @@ describe("TTY command composer", () => {
 
       offset = harness.rendered().length;
       await vi.advanceTimersByTimeAsync(1_000);
-      expect(harness.screen()).toContain("❯");
+      expect(harness.screen()).toContain("You ›");
       expect(harness.screen()).not.toContain("Press Ctrl+C again");
 
       harness.input.write("keep me\r");
@@ -396,7 +464,7 @@ describe("TTY command composer", () => {
     vi.useFakeTimers();
     try {
       const harness = createHarness();
-      const result = harness.composer.compose("❯ ");
+      const result = harness.composer.compose(COMPOSER_PROMPT);
       harness.input.write("discard me\u0003");
       await vi.advanceTimersByTimeAsync(1_250);
       harness.input.write("\u0003");
@@ -416,7 +484,7 @@ describe("TTY command composer", () => {
     vi.useFakeTimers();
     try {
       const harness = createHarness();
-      const result = harness.composer.compose("❯ ");
+      const result = harness.composer.compose(COMPOSER_PROMPT);
       harness.input.write("\u0003k");
       await vi.advanceTimersByTimeAsync(3_000);
       harness.input.write("eep working\r");
@@ -433,7 +501,7 @@ describe("TTY command composer", () => {
     vi.useFakeTimers();
     try {
       const harness = createHarness();
-      const result = harness.composer.compose("❯ ");
+      const result = harness.composer.compose(COMPOSER_PROMPT);
       harness.input.write("\u0003");
       await vi.advanceTimersByTimeAsync(3_000);
       const offset = harness.rendered().length;
@@ -454,7 +522,7 @@ describe("TTY command composer", () => {
     vi.useFakeTimers();
     try {
       const harness = createHarness();
-      const result = harness.composer.compose("❯ ");
+      const result = harness.composer.compose(COMPOSER_PROMPT);
       harness.input.write("\u0003");
       harness.composer.close();
       const renderedAtClose = harness.rendered();
@@ -477,7 +545,7 @@ describe("TTY command composer", () => {
 
   it("handles EOF, narrow redraws, Unicode width, and restores raw mode", async () => {
     const harness = createHarness(40, 8);
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/");
     harness.output.emit("resize");
     expect(harness.rendered()).toContain("/help");
@@ -496,10 +564,10 @@ describe("TTY command composer", () => {
 
   it("keeps a one-row terminal to one inline row without rendering suggestions", async () => {
     const harness = createHarness(12, 1);
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/");
 
-    expect(harness.screen()).toContain("❯ /");
+    expect(harness.screen()).toContain("You › /");
     expect(harness.screen()).not.toContain("/help");
     expect(
       harness.screen().split("\n").every((line) => displayWidth(line) <= 11),
@@ -512,7 +580,7 @@ describe("TTY command composer", () => {
 
   it("re-anchors a resized inline frame atomically before further navigation", async () => {
     const harness = createHarness(100, 12);
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/");
     const beforeResize = harness.chunks().length;
 
@@ -525,7 +593,7 @@ describe("TTY command composer", () => {
     expect(resizeWrites[0]).toContain("\u001b[0J");
     expect(resizeWrites[0]).not.toContain("\u001bc");
     expect(resizeWrites[0]).not.toContain("\u001b[?1049");
-    expect(harness.screen()).toContain("❯ /");
+    expect(harness.screen()).toContain("You › /");
 
     const beforeMove = harness.chunks().length;
     harness.input.write("\u001b[B");
@@ -539,7 +607,7 @@ describe("TTY command composer", () => {
 
   it("keeps colorized selection changes in one differential write", async () => {
     const harness = createHarness(100, 12, true);
-    const result = harness.composer.compose("❯ ");
+    const result = harness.composer.compose(COMPOSER_PROMPT);
     harness.input.write("/");
     const before = harness.chunks().length;
 
@@ -565,8 +633,8 @@ describe("TTY command composer", () => {
   it("keeps colored and plain composer transcripts text-equivalent", async () => {
     const plain = createHarness(100, 12, false);
     const colored = createHarness(100, 12, true);
-    const plainResult = plain.composer.compose("❯ ");
-    const coloredResult = colored.composer.compose("❯ ");
+    const plainResult = plain.composer.compose(COMPOSER_PROMPT);
+    const coloredResult = colored.composer.compose(COMPOSER_PROMPT);
 
     for (const harness of [plain, colored]) {
       harness.input.write("/");
@@ -581,15 +649,15 @@ describe("TTY command composer", () => {
     colored.composer.close();
   });
 
-  it("colors only the prompt marker and exit key in the active frame", async () => {
+  it("colors only the prompt prefix and exit key in the active frame", async () => {
     vi.useFakeTimers();
     try {
       const harness = createHarness(100, 12, true);
-      const result = harness.composer.compose("❯ ");
+      const result = harness.composer.compose(COMPOSER_PROMPT);
       harness.input.write("draft");
 
       expect(harness.rendered()).toContain(
-        "\u001b[38;2;143;182;232m❯\u001b[0m draft",
+        "\u001b[38;2;143;182;232mYou ›\u001b[0m draft",
       );
       expect(harness.rendered()).not.toContain(
         "\u001b[38;2;143;182;232mdraft",
@@ -605,6 +673,26 @@ describe("TTY command composer", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reconfigures prompt color immediately without changing the draft", async () => {
+    const harness = createHarness(100, 12, false, false);
+    const result = harness.composer.compose(COMPOSER_PROMPT);
+    harness.input.write("draft");
+
+    harness.composer.setPresentation({
+      color: true,
+      motion: false,
+      richText: true,
+    });
+
+    expect(harness.screen()).toContain("You › draft");
+    expect(harness.rendered()).toContain(
+      "\u001b[38;2;143;182;232mYou ›\u001b[0m draft",
+    );
+    harness.input.write("\r");
+    await expect(result).resolves.toBe("draft");
+    harness.composer.close();
   });
 
   it("preserves Ctrl+C as a distinct approval interruption", async () => {

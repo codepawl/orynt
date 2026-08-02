@@ -34,6 +34,7 @@ export type InteractiveCommand =
   | { kind: "doctor" }
   | { kind: "repo"; value: string }
   | { kind: "model"; value: string }
+  | { kind: "settings"; value: string }
   | { kind: "skills"; value: string }
   | { kind: "effort"; value: string }
   | { kind: "goal"; value: string }
@@ -48,6 +49,8 @@ export type SlashCommandDefinition = {
   usage: string;
   description: string;
   argument: "none" | "optional" | "required";
+  group: "Customize" | "Workspace" | "Inspect" | "Session" | "Legacy";
+  hidden?: boolean;
   parse: (argument: string, original: string) => InteractiveCommand;
 };
 
@@ -126,6 +129,7 @@ function simpleCommand(
   command: SlashCommandDefinition["command"],
   description: string,
   kind: "clear" | "cost" | "doctor" | "evidence" | "help" | "plan" | "state" | "status" | "verify",
+  group: SlashCommandDefinition["group"],
   aliases: SlashCommandDefinition["aliases"] = [],
 ): SlashCommandDefinition {
   return {
@@ -134,6 +138,7 @@ function simpleCommand(
     usage: command,
     description,
     argument: "none",
+    group,
     parse: () => ({ kind }),
   };
 }
@@ -143,6 +148,8 @@ function valueCommand(
   usage: string,
   description: string,
   kind: "criteria" | "effort" | "goal" | "model" | "repo",
+  group: SlashCommandDefinition["group"],
+  hidden = false,
 ): SlashCommandDefinition {
   return {
     command,
@@ -150,27 +157,42 @@ function valueCommand(
     usage,
     description,
     argument: "required",
+    group,
+    ...(hidden ? { hidden: true } : {}),
     parse: (argument, original) => commandWithValue(kind, argument, original),
   };
 }
 
 export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
-  simpleCommand("/help", "Show command help", "help"),
-  simpleCommand("/status", "Check provider and run configuration", "status"),
-  valueCommand("/repo", "/repo <path>", "Change the repository workspace", "repo"),
+  simpleCommand("/help", "Show command help", "help", "Session"),
+  simpleCommand("/status", "Check provider and run configuration", "status", "Inspect"),
+  valueCommand("/repo", "/repo <path>", "Change the repository workspace", "repo", "Workspace"),
   {
     command: "/model",
     aliases: [],
     usage: "/model [show|profile|role|effort]",
     description: "Configure the orchestration profile and role models",
     argument: "optional",
+    group: "Legacy",
+    hidden: true,
     parse: (argument) => ({ kind: "model", value: argument }),
+  },
+  {
+    command: "/settings",
+    aliases: [],
+    usage: "/settings [show|agent|appearance|debug]",
+    description: "Customize agent, appearance, and diagnostics",
+    argument: "optional",
+    group: "Customize",
+    parse: (argument) => ({ kind: "settings", value: argument }),
   },
   valueCommand(
     "/effort",
     "/effort <level>",
-    "Legacy command; use /model effort <role> <level>",
+    "Legacy command; use /settings agent effort <role> <level>",
     "effort",
+    "Legacy",
+    true,
   ),
   {
     command: "/goal",
@@ -178,6 +200,7 @@ export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
     usage: "/goal [text|--clear]",
     description: "Show, set, or clear the active objective",
     argument: "optional",
+    group: "Workspace",
     parse: (argument) => ({ kind: "goal", value: argument }),
   },
   {
@@ -186,30 +209,33 @@ export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
     usage: "/skills [list|use <id>|remove <id>|clear]",
     description: "List or attach explicit Agent Skills to this session",
     argument: "optional",
+    group: "Workspace",
     parse: (argument) => ({ kind: "skills", value: argument || "list" }),
   },
-  valueCommand("/criteria", "/criteria <a; b>", "Set acceptance criteria", "criteria"),
-  simpleCommand("/plan", "Show the bounded operator plan", "plan"),
-  simpleCommand("/state", "Show compact typed working state", "state"),
-  simpleCommand("/evidence", "Show artifacts from the last run", "evidence"),
-  simpleCommand("/verify", "Show the last verifier verdict", "verify"),
-  simpleCommand("/cost", "Show the last run cost", "cost"),
-  simpleCommand("/doctor", "Diagnose terminal, provider, and repository", "doctor"),
+  valueCommand("/criteria", "/criteria <a; b>", "Set acceptance criteria", "criteria", "Workspace"),
+  simpleCommand("/plan", "Show the bounded operator plan", "plan", "Inspect"),
+  simpleCommand("/state", "Show compact typed working state", "state", "Inspect"),
+  simpleCommand("/evidence", "Show artifacts from the last run", "evidence", "Inspect"),
+  simpleCommand("/verify", "Show the last verifier verdict", "verify", "Inspect"),
+  simpleCommand("/cost", "Show the last run cost", "cost", "Inspect"),
+  simpleCommand("/doctor", "Diagnose terminal, provider, and repository", "doctor", "Inspect"),
   {
     command: "/resume",
     aliases: [],
     usage: "/resume [id]",
     description: "Restore latest or a named session",
     argument: "optional",
+    group: "Workspace",
     parse: (argument) => ({ kind: "resume", value: argument || "latest" }),
   },
-  simpleCommand("/clear", "Clear and redraw Orynt", "clear"),
+  simpleCommand("/clear", "Clear and redraw Orynt", "clear", "Session"),
   {
     command: "/exit",
     aliases: ["/quit"],
     usage: "/exit",
     description: "End this session",
     argument: "none",
+    group: "Session",
     parse: () => ({ kind: "exit" }),
   },
 ] as const;
@@ -221,18 +247,35 @@ export function filterSlashCommands(input: string): SlashCommandDefinition[] {
   }
   return SLASH_COMMANDS.filter(
     (definition) =>
-      definition.command.startsWith(value) ||
-      definition.aliases.some((alias) => alias.startsWith(value)),
+      !definition.hidden &&
+      (definition.command.startsWith(value) ||
+        definition.aliases.some((alias) => alias.startsWith(value))),
   );
 }
 
 export function renderCommandHelp(): string {
-  const width = Math.max(...SLASH_COMMANDS.map((definition) => definition.usage.length));
+  const visible = SLASH_COMMANDS.filter((definition) => !definition.hidden);
+  const width = Math.max(...visible.map((definition) => definition.usage.length));
+  const groups: SlashCommandDefinition["group"][] = [
+    "Customize",
+    "Workspace",
+    "Inspect",
+    "Session",
+  ];
   return [
     "Commands",
-    ...SLASH_COMMANDS.map(
-      (definition) => `  ${definition.usage.padEnd(width)}  ${definition.description}`,
-    ),
+    ...groups.flatMap((group, index) => [
+      ...(index > 0 ? [""] : []),
+      group,
+      ...visible
+        .filter((definition) => definition.group === group)
+        .map(
+          (definition) =>
+            `  ${definition.usage.padEnd(width)}  ${definition.description}`,
+        ),
+    ]),
+    "",
+    "Compatibility: /model and /effort remain accepted but are configured through /settings agent.",
     "",
     "Any other text becomes a conversational prompt for the repository agent.",
   ].join("\n");
@@ -332,6 +375,7 @@ const ORYNT_MANAGED_CHANGE_PATHS = new Set([
 
 export type RunPresentationSnapshot = {
   finalAgentResponse?: string;
+  agentResponseStreamed?: boolean;
   changedFiles?: string[];
   verifierSummary?: string;
   manualReviewSummary?: string;
@@ -370,6 +414,8 @@ export class RunPresenter {
   private manualReviewSummary?: string;
   private fatalFailureSummary?: string;
   private verifierFailureSummary?: string;
+  private agentResponseStreamed = false;
+  private readonly completedActivityItems = new Set<string>();
   private readonly theme: TerminalTheme;
 
   constructor(options: { color: boolean }) {
@@ -420,11 +466,46 @@ export class RunPresenter {
       }
     }
 
+    const output: string[] = [];
+    if (
+      (event.type === "codex_reasoning_summary" ||
+        event.type === "codex_tool_activity") &&
+      payload.status === "completed"
+    ) {
+      const itemId = typeof payload.itemId === "string" ? payload.itemId : `${event.type}:${summary ?? ""}`;
+      if (!this.completedActivityItems.has(itemId)) {
+        this.completedActivityItems.add(itemId);
+        if (event.type === "codex_reasoning_summary") {
+          const detail = payloadText(payload, ["text", "summary"]);
+          if (detail) {
+            output.push(this.theme.paint("muted", row("◇", "Think", detail.replace(/\s+/gu, " ").slice(0, 180))));
+          }
+        } else {
+          const toolKind = payloadText(payload, ["toolKind"]) ?? "other";
+          const labels: Record<string, string> = {
+            command: "Tool",
+            mcp: "Tool",
+            web_search: "Search",
+            file_change: "Files",
+            other: "Tool",
+          };
+          const detail = payloadText(payload, ["detail", "summary"]);
+          if (detail) {
+            output.push(
+              this.theme.paint(
+                "muted",
+                row("◇", labels[toolKind] ?? "Tool", detail.replace(/\s+/gu, " ").slice(0, 180)),
+              ),
+            );
+          }
+        }
+      }
+    }
+
     const milestone = MILESTONES.findIndex(({ eventTypes }) => eventTypes.has(event.type));
     if (milestone < 0 || milestone <= this.lastMilestone) {
-      return [];
+      return output;
     }
-    const output: string[] = [];
     for (let index = this.lastMilestone + 1; index <= milestone; index += 1) {
       const current = MILESTONES[index];
       if (current) {
@@ -435,11 +516,64 @@ export class RunPresenter {
     return output;
   }
 
+  agentMessageUpdate(
+    event: PresentableRunEvent,
+  ): { itemId: string; text: string; status: string } | undefined {
+    if (event.type !== "codex_agent_message") return undefined;
+    const payload = eventPayload(event);
+    const text = payloadText(payload, ["message"]);
+    if (!text) return undefined;
+    return {
+      itemId: payloadText(payload, ["itemId"]) ?? "agent-message",
+      text,
+      status: payloadText(payload, ["status"]) ?? "updated",
+    };
+  }
+
+  activityUpdate(
+    event: PresentableRunEvent,
+  ): { detail: string; status: string } | undefined {
+    if (
+      event.type !== "codex_reasoning_summary" &&
+      event.type !== "codex_tool_activity"
+    ) {
+      return undefined;
+    }
+    const payload = eventPayload(event);
+    const status = payloadText(payload, ["status"]) ?? "updated";
+    if (event.type === "codex_reasoning_summary") {
+      const detail = payloadText(payload, ["text", "summary"]);
+      return detail
+        ? { detail: `Think ${detail.replace(/\s+/gu, " ").slice(0, 180)}`, status }
+        : undefined;
+    }
+    const kind = payloadText(payload, ["toolKind"]) ?? "other";
+    const label =
+      kind === "command"
+        ? "Tool shell"
+        : kind === "mcp"
+          ? "Tool MCP"
+          : kind === "web_search"
+            ? "Search"
+            : kind === "file_change"
+              ? "Files"
+              : "Tool";
+    const detail = payloadText(payload, ["detail", "summary"]);
+    return detail
+      ? { detail: `${label} ${detail.replace(/\s+/gu, " ").slice(0, 180)}`, status }
+      : undefined;
+  }
+
+  markAgentResponseStreamed(): void {
+    this.agentResponseStreamed = true;
+  }
+
   snapshot(): RunPresentationSnapshot {
     return {
       ...(this.finalAgentResponse ?? this.fallbackAgentResponse
         ? { finalAgentResponse: this.finalAgentResponse ?? this.fallbackAgentResponse }
         : {}),
+      ...(this.agentResponseStreamed ? { agentResponseStreamed: true } : {}),
       ...(this.changedFiles ? { changedFiles: [...this.changedFiles] } : {}),
       ...(this.verifierSummary ? { verifierSummary: this.verifierSummary } : {}),
       ...(this.manualReviewSummary ? { manualReviewSummary: this.manualReviewSummary } : {}),
@@ -511,7 +645,7 @@ export function renderRunCompletion(
     row(theme.paint(role, icon), cancelled ? "Stopped" : "Done", detail),
   ];
 
-  if (presentation.finalAgentResponse) {
+  if (presentation.finalAgentResponse && !presentation.agentResponseStreamed) {
     output.push(
       "",
       passed ? "Agent report" : "Agent report · unverified",

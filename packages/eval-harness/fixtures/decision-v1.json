@@ -1,0 +1,15 @@
+{
+  "id": "decision-v1",
+  "scenarioCount": 32,
+  "distribution": {
+    "respond": 8,
+    "clarify": 8,
+    "act": 8,
+    "refuse": 8
+  },
+  "repetitions": 3,
+  "timeoutMs": 120000,
+  "seed": 17,
+  "methods": ["orynt", "hermes"],
+  "note": "Canonical metadata for the suite defined in src/decisionBench.ts. Oracles are deliberately excluded from model-visible inputs."
+}

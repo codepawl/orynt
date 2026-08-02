@@ -33,7 +33,9 @@ describe("CLI session state", () => {
     await store.acknowledgeStartupBoundary("2026-07-28T12:00:00.000Z");
     await expect(store.hasAcknowledgedStartupBoundary()).resolves.toBe(true);
     await expect(store.load()).resolves.toEqual({
-      schemaVersion: 2,
+      schemaVersion: 5,
+      debugMode: false,
+      appearance: { color: true, motion: true, richText: true },
       startupBoundaryAcknowledgedAt: "2026-07-28T12:00:00.000Z",
     });
     const preferencesPath = path.join(root, "preferences.json");
@@ -52,7 +54,9 @@ describe("CLI session state", () => {
     });
     await store.saveWorkingConfig({ thinkingEffort: "xhigh" });
     await expect(store.load()).resolves.toEqual({
-      schemaVersion: 2,
+      schemaVersion: 5,
+      debugMode: false,
+      appearance: { color: true, motion: true, richText: true },
       startupBoundaryAcknowledgedAt: "2026-07-28T12:00:00.000Z",
       workingConfig: {
         repositoryPath: "/work/project",
@@ -138,7 +142,7 @@ describe("CLI session state", () => {
     ).rejects.toThrow("Invalid Orynt thinking effort preference");
   });
 
-  it("atomically migrates v1 single-model preferences into a v2 custom profile", async () => {
+  it("atomically migrates v1 single-model preferences into a v5 custom profile", async () => {
     const root = await tempRoot();
     const preferencesPath = path.join(root, "preferences.json");
     await writeFile(
@@ -157,7 +161,9 @@ describe("CLI session state", () => {
     const preferences = await new FileCliPreferencesStore(root).load();
 
     expect(preferences).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 5,
+      debugMode: false,
+      appearance: { color: true, motion: true, richText: true },
       workingConfig: {
         modelId: "gpt-legacy",
         thinkingEffort: "medium",
@@ -178,7 +184,97 @@ describe("CLI session state", () => {
     });
     expect(
       JSON.parse(await readFile(preferencesPath, "utf8")),
-    ).toMatchObject({ schemaVersion: 2 });
+    ).toMatchObject({
+      schemaVersion: 5,
+      debugMode: false,
+      appearance: { color: true, motion: true, richText: true },
+    });
+  });
+
+  it("migrates v2 preferences and persists debug independently of working config", async () => {
+    const root = await tempRoot();
+    const preferencesPath = path.join(root, "preferences.json");
+    await writeFile(
+      preferencesPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        startupBoundaryAcknowledgedAt: "2026-07-29T00:00:00.000Z",
+        workingConfig: { repositoryPath: "/work/project" },
+      }),
+      { encoding: "utf8", mode: 0o600 },
+    );
+    const store = new FileCliPreferencesStore(root);
+
+    await expect(store.load()).resolves.toMatchObject({
+      schemaVersion: 5,
+      debugMode: false,
+      appearance: { color: true, motion: true, richText: true },
+      workingConfig: { repositoryPath: "/work/project" },
+    });
+    await store.saveDebugMode(true);
+    await expect(store.load()).resolves.toMatchObject({
+      schemaVersion: 5,
+      debugMode: true,
+      startupBoundaryAcknowledgedAt: "2026-07-29T00:00:00.000Z",
+      workingConfig: { repositoryPath: "/work/project" },
+    });
+    expect((await stat(preferencesPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it("migrates v3 preferences and persists appearance independently", async () => {
+    const root = await tempRoot();
+    const preferencesPath = path.join(root, "preferences.json");
+    await writeFile(
+      preferencesPath,
+      JSON.stringify({
+        schemaVersion: 3,
+        debugMode: true,
+        workingConfig: { repositoryPath: "/work/project" },
+      }),
+      { encoding: "utf8", mode: 0o600 },
+    );
+    const store = new FileCliPreferencesStore(root);
+
+    await expect(store.load()).resolves.toMatchObject({
+      schemaVersion: 5,
+      debugMode: true,
+      appearance: { color: true, motion: true, richText: true },
+      workingConfig: { repositoryPath: "/work/project" },
+    });
+    await store.saveAppearance({ color: false });
+    await expect(store.load()).resolves.toMatchObject({
+      schemaVersion: 5,
+      debugMode: true,
+      appearance: { color: false, motion: true, richText: true },
+      workingConfig: { repositoryPath: "/work/project" },
+    });
+    expect((await stat(preferencesPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it("migrates v4 appearance with rich text enabled by default", async () => {
+    const root = await tempRoot();
+    const preferencesPath = path.join(root, "preferences.json");
+    await writeFile(
+      preferencesPath,
+      JSON.stringify({
+        schemaVersion: 4,
+        debugMode: false,
+        appearance: { color: false, motion: true },
+      }),
+      { encoding: "utf8", mode: 0o600 },
+    );
+
+    const store = new FileCliPreferencesStore(root);
+    await expect(store.load()).resolves.toEqual({
+      schemaVersion: 5,
+      debugMode: false,
+      appearance: { color: false, motion: true, richText: true },
+    });
+    expect(JSON.parse(await readFile(preferencesPath, "utf8"))).toEqual({
+      schemaVersion: 5,
+      debugMode: false,
+      appearance: { color: false, motion: true, richText: true },
+    });
   });
 
   it("preserves partial v1 model preferences and rewrites v1 sessions once", async () => {

@@ -3,6 +3,50 @@ import { describe, expect, it, vi } from "vitest";
 import { runCliApplication } from "./app";
 import { INTERRUPTED_INPUT } from "./composer";
 
+const headlessTaskPlanner = vi.fn(async (request: { prompt: string }) => ({
+  disposition: "action" as const,
+  reply: "Ready to execute.",
+  conversationSummary: "Prepared a bounded repository task plan.",
+  action: {
+    instruction: request.prompt,
+    rationale: "Explicitly approved headless repository task.",
+    operations: ["write" as const],
+    estimatedPaths: ["README.md"],
+    estimatedChangedFiles: 1,
+    helperTasks: [],
+    taskPlan: {
+      summary: request.prompt,
+      requirements: [{
+        id: "headless-prompt",
+        text: request.prompt,
+        source: "user_prompt" as const,
+        kind: "outcome" as const,
+        required: true,
+      }],
+      tasks: [{
+        id: "headless-change",
+        title: "Execute the approved repository change",
+        instruction: request.prompt,
+        kind: "change" as const,
+        dependencies: [],
+        requirementIds: ["headless-prompt"],
+        authority: "single_writer" as const,
+        operations: ["write" as const],
+        expectedPaths: ["README.md"],
+        doneWhen: ["The approved repository task is complete."],
+        evidence: [{
+          id: "headless-diff",
+          requirementIds: ["headless-prompt"],
+          kind: "diff" as const,
+          description: "Inspect the bounded repository diff.",
+          path: "README.md",
+        }],
+      }],
+      allowedOperations: ["read" as const, "write" as const],
+    },
+  },
+}));
+
 describe("Orynt CLI application", () => {
   it("prints help without probing provider state or opening an interactive session", async () => {
     const output: string[] = [];
@@ -86,6 +130,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run,
     });
 
@@ -113,6 +158,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run: async (request) => {
         request.onEvent({ type: "run_started", payload: { summary: "started" } });
         request.onEvent({ type: "codex_execution_started", payload: { summary: "running" } });
@@ -176,6 +222,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run: async () => {
         throw new Error("Codex exited with status 1");
       },
@@ -200,6 +247,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run: async () => {
         throw new Error(`failure-${malicious}`);
       },
@@ -222,6 +270,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run: async () => {
         throw new Error(`failure-${malicious}`);
       },
@@ -245,6 +294,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       loadPreferences: async () => ({
         schemaVersion: 1 as const,
         workingConfig: {

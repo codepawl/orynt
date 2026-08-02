@@ -55,6 +55,7 @@ export const RUN_EVENT_TYPES = [
   "codex_execution_approved",
   "codex_execution_started",
   "codex_reasoning_summary",
+  "codex_tool_activity",
   "codex_agent_message",
   "codex_execution_output_recorded",
   "codex_execution_finished",
@@ -147,6 +148,7 @@ const RUN_EVENT_TASK_PHASES: Record<RunEventType, TaskRunPhase> = {
   codex_execution_approved: "approval",
   codex_execution_started: "act",
   codex_reasoning_summary: "act",
+  codex_tool_activity: "act",
   codex_agent_message: "act",
   codex_execution_output_recorded: "act",
   codex_execution_finished: "act",
@@ -241,7 +243,10 @@ export type ArtifactRef = {
     | "candidate_rule"
     | "memory_summary"
     | "skill_definition"
-    | "skill_replay_plan";
+    | "skill_replay_plan"
+    | "repository_task_plan"
+    | "repository_task_execution"
+    | "repository_task_coverage";
   uri: string;
   label: string;
   sha256?: string;
@@ -375,6 +380,7 @@ export type ApprovalDecisionInput = {
   runId: string;
   approvalId: string;
   decision: "approved" | "denied";
+  expectedRevision: number;
 };
 
 export type RunEventDraft<TPayload = unknown> = {

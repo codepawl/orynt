@@ -15,6 +15,7 @@ import {
   type OrchestrationChildTask,
   type OrchestrationPlan,
   type ModelInvocationRecord,
+  type RepositoryTaskPlanV1,
   type ResolvedOrchestrationProfile,
   type RunEventType,
 } from "@codepawl/shared";
@@ -25,20 +26,27 @@ import {
   type AgentActionAuthorization,
   type CliAgentTurnRequest,
   type CliAgentTurnResult,
+  type CliAgentActivityEvent,
   type CliConversationTurn,
   type CliReadOnlyRoleRequest,
   type CliReadOnlyRoleResult,
   type ProposedRepositoryAction,
 } from "./agent.js";
 import type {
+  CliAppearancePreferences,
   CliRunSnapshot,
   CliSessionSnapshot,
   CliWorkingConfig,
 } from "./state.js";
 import { normalizeCliWorkingConfig } from "./state.js";
 import {
+  agentMessagePrefix,
+  COMPOSER_PROMPT,
+  displayWidth,
   INTERRUPTED_INPUT,
+  truncate,
   type InlineActivityHandle,
+  type InlineMessageStreamHandle,
   type ComposerChoice,
 } from "./composer.js";
 import {
@@ -50,15 +58,22 @@ import {
   renderWelcome,
   terminalSafeMultilineText,
   terminalSafeText,
+  type InteractiveCommand,
   type CliModelOption,
   type ThinkingEffort,
   type WelcomeState,
 } from "./ui.js";
 import {
   createTerminalTheme,
+  type TerminalAppearanceResolution,
   type TerminalRole,
   type TerminalTheme,
 } from "./terminal-theme.js";
+import { renderRichText } from "./rich-text.js";
+import {
+  buildBoundRepositoryTaskPlan,
+  verifyApprovedRepositoryTaskPlan,
+} from "./task-plan.js";
 
 export type CliRunEvent = {
   type: RunEventType;
@@ -70,6 +85,7 @@ export type CliRunRequest = {
   repositoryPath: string;
   modelId: string;
   thinkingEffort: ThinkingEffort;
+  taskPlan: RepositoryTaskPlanV1;
   orchestration?: {
     profile: ResolvedOrchestrationProfile;
     plan?: OrchestrationPlan;
@@ -98,6 +114,9 @@ export type CliRunRequest = {
     expectedPaths: string[];
     allowDestructiveChanges: boolean;
     allowChangedFileLimitExceeded: boolean;
+    planId: string;
+    planRevision: number;
+    planDigest: string;
   };
   onEvent: (event: CliRunEvent) => void;
   signal?: AbortSignal;
@@ -112,6 +131,7 @@ export type ProviderStatus = {
 
 export type InteractiveSessionState = WelcomeState & {
   providerDetail: string;
+  debugMode?: boolean;
   sessionId?: string;
   mode?: CliSessionSnapshot["mode"];
   goal?: string;
@@ -133,9 +153,11 @@ export type InteractiveTerminal = {
   ) => Promise<string>;
   remember?: (value: string) => void;
   beginActivity?: (label: string) => InlineActivityHandle;
+  beginMessageStream?: (label?: string) => InlineMessageStreamHandle;
   write: (value: string) => void;
   clear: () => void;
   color: boolean;
+  richText?: boolean;
   isTTY?: boolean;
   width?: number;
   height?: number;
@@ -167,10 +189,21 @@ export type InteractiveSessionOptions = {
   persistSession?: (session: CliSessionSnapshot) => Promise<void>;
   loadSession?: (sessionId: string) => Promise<CliSessionSnapshot | undefined>;
   persistWorkingConfig?: (patch: CliWorkingConfig) => Promise<void>;
+  persistDebugMode?: (debugMode: boolean) => Promise<void>;
+  appearancePreferences?: CliAppearancePreferences;
+  appearanceResolution?: TerminalAppearanceResolution;
+  persistAppearance?: (
+    patch: Partial<CliAppearancePreferences>,
+  ) => Promise<void>;
+  applyAppearance?: (
+    appearance: CliAppearancePreferences,
+  ) => TerminalAppearanceResolution;
+  debugOverride?: boolean;
   startupBoundaryAcknowledged?: boolean;
   acknowledgeStartupBoundary?: () => Promise<void>;
   prepareRunSignal?: () => AbortSignal;
   releaseRunSignal?: (signal: AbortSignal) => void;
+  now?: () => number;
 };
 
 const VALID_EFFORTS = new Set<ThinkingEffort>(["minimal", "none", "low", "medium", "high", "xhigh"]);
@@ -198,6 +231,175 @@ function beginTerminalActivity(
   if (terminal.beginActivity) return terminal.beginActivity(label);
   if (options.fallbackRow) terminal.write(`  ◇ ${terminalSafeText(label)}`);
   return NOOP_ACTIVITY;
+}
+
+function beginTerminalMessageStream(
+  terminal: InteractiveTerminal,
+  label = "Agent",
+): InlineMessageStreamHandle {
+  if (terminal.beginMessageStream) return terminal.beginMessageStream(label);
+  let latest = "";
+  let finished = false;
+  return {
+    update: (text) => {
+      if (!finished) latest = text;
+    },
+    finish: (finalText) => {
+      if (finished) return;
+      finished = true;
+      const output = finalText ?? latest;
+      if (output) {
+        terminal.write(terminalAgentMessage(terminal, label, output));
+      }
+    },
+    abort: () => {
+      finished = true;
+    },
+  };
+}
+
+function terminalAgentMessage(
+  terminal: Pick<InteractiveTerminal, "color" | "richText">,
+  label: string,
+  output: string,
+): string {
+  const theme = createTerminalTheme(terminal.color);
+  return `\n${theme.paint("agent", agentMessagePrefix(label))} ${renderRichText(
+    terminalSafeMultilineText(output),
+    { enabled: terminal.richText ?? false, color: terminal.color },
+  )}`;
+}
+
+function settingState(value: boolean): "on" | "off" {
+  return value ? "on" : "off";
+}
+
+function effectiveAppearanceText(
+  name: "Color" | "Motion" | "Rich text",
+  saved: boolean,
+  effective: boolean,
+  override?: string,
+): string {
+  const savedText = settingState(saved);
+  if (!override || saved === effective) return `${name} ${savedText}`;
+  return `${name} ${savedText} · effective ${settingState(effective)} (${override})`;
+}
+
+function settingsText(
+  state: InteractiveSessionState,
+  appearance: CliAppearancePreferences,
+  resolution: TerminalAppearanceResolution,
+  debugOverride: boolean,
+): string {
+  const profile =
+    state.orchestrationProfile ??
+    createLegacySingleModelProfile(state.modelId, state.thinkingEffort);
+  return [
+    "Settings",
+    `  Agent        ${profile.preset} · ${profile.roles.coordinator.modelId}`,
+    `  Appearance   ${effectiveAppearanceText("Color", appearance.color, resolution.color, resolution.colorOverride)} · ${effectiveAppearanceText("Motion", appearance.motion, resolution.motion, resolution.motionOverride)} · ${effectiveAppearanceText("Rich text", appearance.richText, resolution.richText, resolution.richTextOverride)}`,
+    `  Diagnostics  Debug ${settingState(Boolean(state.debugMode))}${debugOverride ? " · --debug override" : ""}`,
+  ].join("\n");
+}
+
+export type TurnDurationStatus = "success" | "failed" | "cancelled";
+
+export function formatTurnDuration(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1_000));
+  if (totalSeconds === 0) return "<1s";
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes === 0) return `${seconds}s`;
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  if (hours === 0) return `${minutes}m ${seconds}s`;
+  return `${hours}h ${minutes}m ${seconds}s`;
+}
+
+export function turnDurationLine(
+  status: TurnDurationStatus,
+  elapsedMs: number,
+  options: { color: boolean; width?: number },
+): string {
+  const duration = formatTurnDuration(elapsedMs);
+  const fullLabel =
+    status === "success"
+      ? `✦ Crafted in ${duration}`
+      : status === "failed"
+        ? `✕ Stopped after ${duration}`
+        : `◇ Cancelled after ${duration}`;
+  const targetWidth = Math.max(1, (options.width ?? 84) - 1);
+  const compactLabel =
+    status === "success"
+      ? `✦ ${duration}`
+      : status === "failed"
+        ? `✕ ${duration}`
+        : `◇ ${duration}`;
+  const label =
+    displayWidth(`─ ${fullLabel}`) <= targetWidth
+      ? fullLabel
+      : compactLabel;
+  const prefix = `─ ${label}`;
+  const prefixWidth = displayWidth(prefix);
+  const line =
+    prefixWidth >= targetWidth
+      ? truncate(prefix, targetWidth)
+      : `${prefix} ${"─".repeat(
+          Math.max(0, targetWidth - prefixWidth - 1),
+        )}`;
+  return createTerminalTheme(options.color).paint("muted", line);
+}
+
+export class ActiveTurnTimer {
+  private activeStartedAt: number;
+  private activeElapsedMs = 0;
+  private paused = false;
+  private finished = false;
+
+  constructor(
+    private readonly now: () => number = () => performance.now(),
+  ) {
+    this.activeStartedAt = this.now();
+  }
+
+  pause(): void {
+    if (this.paused || this.finished) return;
+    this.activeElapsedMs += Math.max(0, this.now() - this.activeStartedAt);
+    this.paused = true;
+  }
+
+  resume(): void {
+    if (!this.paused || this.finished) return;
+    this.activeStartedAt = this.now();
+    this.paused = false;
+  }
+
+  finish(): number {
+    if (this.finished) return this.activeElapsedMs;
+    if (!this.paused) {
+      this.activeElapsedMs += Math.max(0, this.now() - this.activeStartedAt);
+    }
+    this.finished = true;
+    return this.activeElapsedMs;
+  }
+}
+
+function compactAgentActivity(event: CliAgentActivityEvent): string {
+  const compact = (value: string) =>
+    terminalSafeMultilineText(value)
+      .replace(/\s+/gu, " ")
+      .trim()
+      .slice(0, 180);
+  if (event.kind === "message") return `Agent ${compact(event.text)}`;
+  if (event.kind === "reasoning") return `Think ${compact(event.text)}`;
+  const labels: Record<Extract<CliAgentActivityEvent, { kind: "tool" }>["toolKind"], string> = {
+    command: "Tool shell",
+    mcp: "Tool MCP",
+    web_search: "Search",
+    file_change: "Files",
+    other: "Tool",
+  };
+  return `${labels[event.toolKind]} ${compact(event.label)}`;
 }
 
 function completedInvocation(input: {
@@ -436,7 +638,7 @@ type ComposerReadResult =
   | { kind: "interrupt" };
 
 async function readComposer(terminal: InteractiveTerminal): Promise<ComposerReadResult> {
-  let line = await (terminal.compose ?? terminal.ask)("\n❯ ");
+  let line = await (terminal.compose ?? terminal.ask)(`\n${COMPOSER_PROMPT}`);
   if (line === INTERRUPTED_INPUT) return { kind: "interrupt" };
   const lines: string[] = [];
   while (line.trimEnd().endsWith("\\")) {
@@ -554,6 +756,7 @@ export async function runInteractiveSession(
     acceptanceCriteria: [...(options.state.acceptanceCriteria ?? [])],
     selectedSkillIds: [...(options.state.selectedSkillIds ?? [])],
     turnCount: options.state.turnCount ?? 0,
+    debugMode: options.state.debugMode ?? false,
     createdAt: options.state.createdAt ?? new Date().toISOString(),
   };
   const persist = async () => options.persistSession?.(sessionSnapshot(state));
@@ -572,6 +775,408 @@ export async function runInteractiveSession(
   };
   const recentTurns: CliConversationTurn[] = [];
   let pendingInitialPrompt = options.initialPrompt?.trim();
+  let appearancePreferences: CliAppearancePreferences = {
+    color: options.appearancePreferences?.color ?? terminal.color,
+    motion: options.appearancePreferences?.motion ?? true,
+    richText:
+      options.appearancePreferences?.richText ??
+      terminal.richText ??
+      false,
+  };
+  let appearanceResolution: TerminalAppearanceResolution =
+    options.appearanceResolution ?? {
+      color: terminal.color,
+      motion: appearancePreferences.motion,
+      richText: appearancePreferences.richText,
+    };
+  let pendingCommand: InteractiveCommand | undefined;
+  let modelCommandFromSettings = false;
+  const backValue = "__orynt_back__";
+
+  const saveDebugSetting = async (enabled: boolean): Promise<boolean> => {
+    try {
+      if (!options.persistDebugMode) {
+        throw new Error("persistent debug settings are unavailable");
+      }
+      await options.persistDebugMode(enabled);
+    } catch (error) {
+      terminal.write(
+        `Debug setting was not saved: ${terminalSafeText(
+          error instanceof Error ? error.message : String(error),
+        )}`,
+      );
+      return false;
+    }
+    if (!options.debugOverride) state.debugMode = enabled;
+    terminal.write(
+      options.debugOverride && !enabled
+        ? "Debug saved off. The --debug override remains active for this launch."
+        : `Debug ${enabled ? "enabled" : "disabled"}.`,
+    );
+    return true;
+  };
+
+  const saveAppearanceSetting = async (
+    setting: "color" | "motion" | "rich-text",
+    enabled: boolean,
+  ): Promise<boolean> => {
+    const preferenceKey = setting === "rich-text" ? "richText" : setting;
+    try {
+      if (!options.persistAppearance) {
+        throw new Error("persistent appearance settings are unavailable");
+      }
+      await options.persistAppearance({ [preferenceKey]: enabled });
+    } catch (error) {
+      terminal.write(
+        `Appearance setting was not saved: ${terminalSafeText(
+          error instanceof Error ? error.message : String(error),
+        )}`,
+      );
+      return false;
+    }
+    appearancePreferences = {
+      ...appearancePreferences,
+      [preferenceKey]: enabled,
+    };
+    appearanceResolution =
+      options.applyAppearance?.(appearancePreferences) ?? {
+        ...appearanceResolution,
+        color:
+          appearancePreferences.color &&
+          appearanceResolution.colorOverride === undefined,
+        motion:
+          appearancePreferences.motion &&
+          appearanceResolution.motionOverride === undefined,
+        richText:
+          appearancePreferences.richText &&
+          appearanceResolution.richTextOverride === undefined,
+      };
+    terminal.color = appearanceResolution.color;
+    terminal.richText = appearanceResolution.richText;
+    const override =
+      setting === "color"
+        ? appearanceResolution.colorOverride
+        : setting === "motion"
+          ? appearanceResolution.motionOverride
+          : appearanceResolution.richTextOverride;
+    const effective =
+      setting === "color"
+        ? appearanceResolution.color
+        : setting === "motion"
+          ? appearanceResolution.motion
+          : appearanceResolution.richText;
+    const label =
+      setting === "color"
+        ? "Color"
+        : setting === "motion"
+          ? "Motion"
+          : "Rich text";
+    terminal.write(
+      override && enabled !== effective
+        ? `${label} saved ${settingState(enabled)}. ${override} keeps it ${settingState(effective)} for this launch.`
+        : `${label} ${enabled ? "enabled" : "disabled"}.`,
+    );
+    return true;
+  };
+
+  const saveProfileSetting = async (
+    profile: OrchestrationProfile,
+  ): Promise<void> => {
+    setProfile(state, profile);
+    await persist();
+    const warning = await saveWorkingConfig({
+      orchestrationProfile: profile,
+    });
+    terminal.write(
+      `${orchestrationProfileText(profile)}${warning ? `\n${warning}` : ""}`,
+    );
+  };
+
+  const runAgentSettings = async (): Promise<"back" | "exit"> => {
+    if (!terminal.select) return "exit";
+    for (;;) {
+      const currentProfile =
+        state.orchestrationProfile ??
+        createLegacySingleModelProfile(state.modelId, state.thinkingEffort);
+      const selected = await terminal.select(
+        "Agent › ",
+        [
+          {
+            value: "auto",
+            label: "Auto",
+            description: "Choose a deterministic preset from task risk.",
+          },
+          {
+            value: "quality",
+            label: "Quality",
+            description: "Strongest coordinator and review profile.",
+          },
+          {
+            value: "balanced",
+            label: "Balanced",
+            description: "Default cost, latency, and verification balance.",
+          },
+          {
+            value: "economy",
+            label: "Economy",
+            description: "Lower-cost models with failure-only strong review.",
+          },
+          {
+            value: "advanced",
+            label: "Advanced role override",
+            description: "Choose a role, model, and effort.",
+          },
+          { value: backValue, label: "Back" },
+        ],
+        currentProfile.preset,
+      );
+      if (selected === INTERRUPTED_INPUT || !selected) return "exit";
+      if (selected === backValue) return "back";
+      if (
+        EDITABLE_PRESETS.includes(
+          selected as (typeof EDITABLE_PRESETS)[number],
+        )
+      ) {
+        await saveProfileSetting(
+          presetProfile(selected as (typeof EDITABLE_PRESETS)[number]),
+        );
+        continue;
+      }
+      if (selected !== "advanced" || !options.listModels) {
+        terminal.write("Advanced model discovery is unavailable.");
+        continue;
+      }
+
+      roleSelection: for (;;) {
+        const selectedRole = await terminal.select(
+          "Role › ",
+          [
+            ...ORCHESTRATION_ROLES.map((role) => ({
+              value: role,
+              label: role,
+              description:
+                role === "implementer"
+                  ? "The only role allowed to write."
+                  : "Read-only orchestration role.",
+            })),
+            { value: backValue, label: "Back" },
+          ],
+        );
+        if (selectedRole === INTERRUPTED_INPUT || !selectedRole) return "exit";
+        if (selectedRole === backValue) break roleSelection;
+        const role = roleName(selectedRole);
+        if (!role) continue;
+
+        let models: CliModelOption[];
+        const activity = beginTerminalActivity(
+          terminal,
+          "Discovering models",
+        );
+        try {
+          models = await options.listModels();
+          activity.settle("Model discovery complete");
+        } catch (error) {
+          activity.fail("Model discovery failed");
+          terminal.write(
+            terminalSafeText(
+              error instanceof Error ? error.message : String(error),
+            ),
+          );
+          break roleSelection;
+        }
+
+        modelSelection: for (;;) {
+          const profile =
+            state.orchestrationProfile ??
+            createLegacySingleModelProfile(
+              state.modelId,
+              state.thinkingEffort,
+            );
+          const selectedModelId = await terminal.select(
+            "Model › ",
+            [
+              ...models.map((model) => ({
+                value: model.id,
+                label: model.label,
+                description: modelChoiceDescription(model),
+              })),
+              { value: backValue, label: "Back" },
+            ],
+            profile.roles[role].modelId,
+          );
+          if (selectedModelId === INTERRUPTED_INPUT || !selectedModelId) {
+            return "exit";
+          }
+          if (selectedModelId === backValue) continue roleSelection;
+          const model = models.find(
+            (candidate) => candidate.id === selectedModelId,
+          );
+          if (!model) continue;
+          const efforts =
+            model.supportedThinkingEfforts.length > 0
+              ? model.supportedThinkingEfforts
+              : [...VALID_EFFORTS];
+          const selectedEffort = await terminal.select(
+            "Effort › ",
+            [
+              ...efforts.map((effort) => ({
+                value: effort,
+                label: effort,
+              })),
+              { value: backValue, label: "Back" },
+            ],
+            profile.roles[role].thinkingEffort,
+          );
+          if (selectedEffort === INTERRUPTED_INPUT || !selectedEffort) {
+            return "exit";
+          }
+          if (selectedEffort === backValue) continue modelSelection;
+          if (!VALID_EFFORTS.has(selectedEffort as ThinkingEffort)) continue;
+          const nextProfile = structuredClone(profile);
+          nextProfile.preset = "custom";
+          nextProfile.roles[role] = {
+            ...nextProfile.roles[role],
+            modelId: model.id,
+            thinkingEffort: selectedEffort as ThinkingEffort,
+          };
+          await saveProfileSetting(nextProfile);
+          break roleSelection;
+        }
+      }
+    }
+  };
+
+  const runInteractiveSettings = async (): Promise<void> => {
+    if (!terminal.select) return;
+    for (;;) {
+      const category = await terminal.select(
+        "Settings › ",
+        [
+          {
+            value: "agent",
+            label: "Agent",
+            description: "Orchestration profile, role models, and effort.",
+          },
+          {
+            value: "appearance",
+            label: "Appearance",
+            description: "Rich text, semantic color, and inline motion.",
+          },
+          {
+            value: "diagnostics",
+            label: "Diagnostics",
+            description: "Debug visibility and setup details.",
+          },
+          {
+            value: backValue,
+            label: "Back",
+            description: "Return to the conversation.",
+          },
+        ],
+      );
+      if (
+        category === INTERRUPTED_INPUT ||
+        !category ||
+        category === backValue
+      ) {
+        return;
+      }
+      if (category === "agent") {
+        const result = await runAgentSettings();
+        if (result === "exit") return;
+        continue;
+      }
+      if (category === "appearance") {
+        appearanceMenu: for (;;) {
+          const setting = await terminal.select(
+            "Appearance › ",
+            [
+              {
+                value: "color",
+                label: `Color · ${settingState(appearancePreferences.color)}`,
+                description: "Semantic ANSI color for roles and status.",
+              },
+              {
+                value: "motion",
+                label: `Motion · ${settingState(appearancePreferences.motion)}`,
+                description: "Inline activity animation.",
+              },
+              {
+                value: "rich-text",
+                label: `Rich text · ${settingState(appearancePreferences.richText)}`,
+                description:
+                  "Markdown emphasis, code syntax, and repository paths.",
+              },
+              { value: backValue, label: "Back" },
+            ],
+          );
+          if (setting === INTERRUPTED_INPUT || !setting) return;
+          if (setting === backValue) break appearanceMenu;
+          if (
+            setting !== "color" &&
+            setting !== "motion" &&
+            setting !== "rich-text"
+          ) {
+            continue;
+          }
+          const current =
+            setting === "color"
+              ? appearancePreferences.color
+              : setting === "motion"
+                ? appearancePreferences.motion
+                : appearancePreferences.richText;
+          const label =
+            setting === "color"
+              ? "Color"
+              : setting === "motion"
+                ? "Motion"
+                : "Rich text";
+          const enabled = await terminal.select(
+            `${label} › `,
+            [
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
+              { value: backValue, label: "Back" },
+            ],
+            settingState(current),
+          );
+          if (enabled === INTERRUPTED_INPUT || !enabled) return;
+          if (enabled === backValue) continue appearanceMenu;
+          await saveAppearanceSetting(setting, enabled === "on");
+        }
+        continue;
+      }
+      if (category === "diagnostics") {
+        diagnosticsMenu: for (;;) {
+          const setting = await terminal.select(
+            "Diagnostics › ",
+            [
+              {
+                value: "debug",
+                label: `Debug · ${settingState(Boolean(state.debugMode))}`,
+                description: "Provider and orchestration setup details.",
+              },
+              { value: backValue, label: "Back" },
+            ],
+          );
+          if (setting === INTERRUPTED_INPUT || !setting) return;
+          if (setting === backValue) break diagnosticsMenu;
+          const enabled = await terminal.select(
+            "Debug › ",
+            [
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
+              { value: backValue, label: "Back" },
+            ],
+            settingState(Boolean(state.debugMode)),
+          );
+          if (enabled === INTERRUPTED_INPUT || !enabled) return;
+          if (enabled === backValue) continue diagnosticsMenu;
+          await saveDebugSetting(enabled === "on");
+        }
+      }
+    }
+  };
 
   terminal.write(renderWelcome(state, { color: terminal.color, width: terminal.width }));
   if (terminal.isTTY && options.startupBoundaryAcknowledged === false) {
@@ -590,16 +1195,20 @@ export async function runInteractiveSession(
   }
 
   for (;;) {
-    const composerResult = pendingInitialPrompt
+    const composerResult = pendingCommand
+      ? undefined
+      : pendingInitialPrompt
       ? { kind: "input" as const, value: pendingInitialPrompt }
       : await readComposer(terminal);
     pendingInitialPrompt = undefined;
-    if (composerResult.kind === "interrupt") {
+    if (composerResult?.kind === "interrupt") {
       terminal.write("Draft cancelled.");
       continue;
     }
-    const input = composerResult.value;
-    const command = parseInteractiveInput(input);
+    const command =
+      pendingCommand ??
+      parseInteractiveInput(composerResult?.value ?? "");
+    pendingCommand = undefined;
     if (command.kind === "empty") {
       continue;
     }
@@ -628,6 +1237,80 @@ export async function runInteractiveSession(
         throw error;
       }
       terminal.write(statusText(state));
+      continue;
+    }
+    if (command.kind === "settings") {
+      let value = command.value.trim();
+      if (!value && terminal.isTTY && terminal.select) {
+        await runInteractiveSettings();
+        continue;
+      }
+
+      const tokens = value.split(/\s+/).filter(Boolean);
+      const section = tokens[0]?.toLowerCase();
+      if (!section || section === "show") {
+        terminal.write(
+          settingsText(
+            state,
+            appearancePreferences,
+            appearanceResolution,
+            Boolean(options.debugOverride),
+          ),
+        );
+        continue;
+      }
+      if (section === "agent") {
+        if (tokens.length === 1 && terminal.isTTY && terminal.select) {
+          await runAgentSettings();
+          continue;
+        }
+        pendingCommand = {
+          kind: "model",
+          value: tokens.slice(1).join(" "),
+        };
+        modelCommandFromSettings = true;
+        continue;
+      }
+      if (section === "debug") {
+        const enabled =
+          tokens[1]?.toLowerCase() === "on"
+            ? true
+            : tokens[1]?.toLowerCase() === "off"
+              ? false
+              : undefined;
+        if (enabled === undefined || tokens.length !== 2) {
+          terminal.write("Usage: /settings debug <on|off>");
+          continue;
+        }
+        await saveDebugSetting(enabled);
+        continue;
+      }
+      if (section === "appearance") {
+        const setting = tokens[1]?.toLowerCase();
+        const enabled =
+          tokens[2]?.toLowerCase() === "on"
+            ? true
+            : tokens[2]?.toLowerCase() === "off"
+              ? false
+              : undefined;
+        if (
+          (setting !== "color" &&
+            setting !== "motion" &&
+            setting !== "rich-text") ||
+          enabled === undefined ||
+          tokens.length !== 3
+        ) {
+          terminal.write(
+            "Usage: /settings appearance <color|motion|rich-text> <on|off>",
+          );
+          continue;
+        }
+        await saveAppearanceSetting(setting, enabled);
+        continue;
+      }
+      terminal.write(
+        "Usage: /settings [show|agent|appearance|debug]",
+      );
       continue;
     }
     if (command.kind === "goal") {
@@ -824,6 +1507,16 @@ export async function runInteractiveSession(
       continue;
     }
     if (command.kind === "model") {
+      const invokedFromSettings = modelCommandFromSettings;
+      modelCommandFromSettings = false;
+      const agentCommand = invokedFromSettings
+        ? "/settings agent"
+        : "/model";
+      if (!invokedFromSettings) {
+        terminal.write(
+          "Tip: agent configuration now lives in /settings agent.",
+        );
+      }
       const currentProfile =
         state.orchestrationProfile ??
         createLegacySingleModelProfile(
@@ -845,7 +1538,7 @@ export async function runInteractiveSession(
         const preset = tokens[1] as typeof EDITABLE_PRESETS[number] | undefined;
         if (!preset || !EDITABLE_PRESETS.includes(preset)) {
           terminal.write(
-            "Usage: /model profile <auto|quality|balanced|economy>",
+            `Usage: ${agentCommand} profile <auto|quality|balanced|economy>`,
           );
           continue;
         }
@@ -866,7 +1559,7 @@ export async function runInteractiveSession(
           (effort !== undefined && !VALID_EFFORTS.has(effort))
         ) {
           terminal.write(
-            "Usage: /model role <coordinator|implementer|helper|reviewer> <model-id> [effort]",
+            `Usage: ${agentCommand} role <coordinator|implementer|helper|reviewer> <model-id> [effort]`,
           );
           continue;
         }
@@ -900,7 +1593,7 @@ export async function runInteractiveSession(
         const effort = tokens[2] as ThinkingEffort | undefined;
         if (!role || !effort || !VALID_EFFORTS.has(effort)) {
           terminal.write(
-            "Usage: /model effort <coordinator|implementer|helper|reviewer> <minimal|none|low|medium|high|xhigh>",
+            `Usage: ${agentCommand} effort <coordinator|implementer|helper|reviewer> <minimal|none|low|medium|high|xhigh>`,
           );
           continue;
         }
@@ -915,13 +1608,13 @@ export async function runInteractiveSession(
       }
       if (subcommand) {
         terminal.write(
-          "Direct `/model <id>` selection was replaced. Use `/model profile <name>` or `/model role <role> <model-id> [effort]`.",
+          `Use \`${agentCommand} profile <name>\`, \`${agentCommand} role <role> <model-id> [effort]\`, or \`${agentCommand} effort <role> <level>\`.`,
         );
         continue;
       }
       if (!terminal.isTTY || !terminal.select) {
         terminal.write(
-          `${orchestrationProfileText(currentProfile)}\nUse /model profile <name>, /model role <role> <model-id> [effort], or /model effort <role> <level>.`,
+          `${orchestrationProfileText(currentProfile)}\nUse ${agentCommand} profile <name>, ${agentCommand} role <role> <model-id> [effort], or ${agentCommand} effort <role> <level>.`,
         );
         continue;
       }
@@ -1047,7 +1740,7 @@ export async function runInteractiveSession(
     }
     if (command.kind === "effort") {
       terminal.write(
-        "The global /effort command was replaced. Use /model effort <role> <level>.",
+        "The global /effort command was replaced. Use /settings agent effort <role> <level>.",
       );
       continue;
     }
@@ -1056,6 +1749,18 @@ export async function runInteractiveSession(
       continue;
     }
 
+    const turnTimer = new ActiveTurnTimer(options.now);
+    let turnDurationWritten = false;
+    const finishTurn = (status: TurnDurationStatus): void => {
+      if (turnDurationWritten) return;
+      turnDurationWritten = true;
+      terminal.write(
+        turnDurationLine(status, turnTimer.finish(), {
+          color: terminal.color,
+          width: terminal.width,
+        }),
+      );
+    };
     const providerActivity = beginTerminalActivity(
       terminal,
       "Checking Codex provider",
@@ -1070,21 +1775,28 @@ export async function runInteractiveSession(
           error instanceof Error ? error.message : String(error),
         )}`,
       );
+      finishTurn("failed");
       continue;
     }
-    providerActivity.settle(
-      provider.ready ? "Provider ready" : "Provider unavailable",
-    );
+    if (provider.ready && !state.debugMode) {
+      providerActivity.stop();
+    } else {
+      providerActivity.settle(
+        provider.ready ? "Provider ready" : "Provider unavailable",
+      );
+    }
     state.providerReady = provider.ready;
     state.providerDetail = provider.detail;
     if (!provider.ready) {
       terminal.write(
         `Codex CLI is not ready: ${terminalSafeText(provider.detail)}\nRun codex login, then use /status.`,
       );
+      finishTurn("failed");
       continue;
     }
     if (!options.turn) {
       terminal.write("Conversational agent is unavailable in this host.");
+      finishTurn("failed");
       continue;
     }
 
@@ -1095,7 +1807,11 @@ export async function runInteractiveSession(
     );
     try {
       turnProfile = await resolveSessionProfile(state, options, command.value);
-      profileActivity.settle("Orchestration profile ready");
+      if (state.debugMode) {
+        profileActivity.settle("Orchestration profile ready");
+      } else {
+        profileActivity.stop();
+      }
     } catch (error) {
       profileActivity.fail("Orchestration blocked");
       terminal.write(
@@ -1103,6 +1819,7 @@ export async function runInteractiveSession(
           error instanceof Error ? error.message : String(error),
         )}`,
       );
+      finishTurn("failed");
       continue;
     }
     const coordinator = turnProfile.roles.coordinator;
@@ -1114,6 +1831,7 @@ export async function runInteractiveSession(
     const coordinatorStartedAt = new Date().toISOString();
     const turnSignal = options.prepareRunSignal?.();
     let turnResult: CliAgentTurnResult;
+    let coordinatorStream: InlineMessageStreamHandle | undefined;
     try {
       turnResult = await options.turn({
         prompt: command.value,
@@ -1124,9 +1842,24 @@ export async function runInteractiveSession(
         acceptanceCriteria: state.acceptanceCriteria ?? [],
         conversationSummary: state.conversationSummary,
         recentTurns: [...recentTurns],
+        onActivity: (event) => {
+          if (event.kind === "message") {
+            coordinatorActivity.stop();
+            coordinatorStream ??= beginTerminalMessageStream(terminal, "Agent");
+            coordinatorStream.update(event.text);
+            return;
+          }
+          const detail = compactAgentActivity(event);
+          if (event.status === "completed") {
+            terminal.write(`  ◇ ${detail}`);
+          } else {
+            coordinatorActivity.update(detail);
+          }
+        },
         signal: turnSignal,
       });
     } catch (error) {
+      coordinatorStream?.abort();
       coordinatorActivity.fail(
         turnSignal?.aborted ? "Coordinate cancelled" : "Coordinate failed",
       );
@@ -1135,13 +1868,11 @@ export async function runInteractiveSession(
           ? "Agent turn cancelled."
           : `Agent turn failed: ${terminalSafeText(error instanceof Error ? error.message : String(error))}`,
       );
+      finishTurn(turnSignal?.aborted ? "cancelled" : "failed");
       continue;
     } finally {
       if (turnSignal) options.releaseRunSignal?.(turnSignal);
     }
-    coordinatorActivity.settle(
-      `Coordinate ${coordinator.modelId} · ${coordinator.thinkingEffort}`,
-    );
     const coordinatorInvocation = completedInvocation({
       taskId: `coordinate-turn-${(state.turnCount ?? 0) + 1}`,
       role: "coordinator",
@@ -1155,6 +1886,13 @@ export async function runInteractiveSession(
     const redactedReply = redactSensitivePayload(turnResult.reply).payload;
     const safeReply =
       typeof redactedReply === "string" ? redactedReply : "Agent response unavailable.";
+    if (coordinatorStream) {
+      coordinatorStream.finish(safeReply);
+    } else {
+      coordinatorActivity.settle(
+        `Coordinate ${coordinator.modelId} · ${coordinator.thinkingEffort}`,
+      );
+    }
     state.conversationSummary =
       typeof redactedSummary === "string"
         ? redactedSummary.slice(0, 4_000)
@@ -1168,9 +1906,12 @@ export async function runInteractiveSession(
       recentTurns.splice(0, recentTurns.length - 12);
     }
     await persist();
-    terminal.write(`Agent\n${terminalSafeMultilineText(safeReply)}`);
+    if (!coordinatorStream) {
+      terminal.write(terminalAgentMessage(terminal, "Agent", safeReply));
+    }
 
     if (turnResult.disposition === "answer" || turnResult.disposition === "clarify") {
+      finishTurn("success");
       continue;
     }
     if (turnResult.disposition === "takeover_required") {
@@ -1180,6 +1921,7 @@ export async function runInteractiveSession(
         "Takeover required · this repository-only build cannot execute host, root, network, secret, or outside-repository capabilities.",
         "Takeover required",
       ));
+      finishTurn("success");
       continue;
     }
     if (!turnResult.action) {
@@ -1189,10 +1931,59 @@ export async function runInteractiveSession(
         "Action blocked · the agent did not return a valid bounded action plan.",
         "Action blocked",
       ));
+      finishTurn("failed");
       continue;
     }
 
-    const authorization = evaluateAgentAction(turnResult.action);
+    const implementerBudget = turnProfile.roles.implementer;
+    let taskPlan: RepositoryTaskPlanV1;
+    try {
+      taskPlan = buildBoundRepositoryTaskPlan({
+        action: turnResult.action,
+        prompt: command.value,
+        activeGoal: state.goal,
+        acceptanceCriteria: state.acceptanceCriteria ?? [],
+        maxModelTokens: implementerBudget.maxTokens,
+        maxWallTimeMs: implementerBudget.maxWallTimeMs,
+        ...(implementerBudget.maxUsd === undefined
+          ? {}
+          : { maxUsd: implementerBudget.maxUsd }),
+      });
+    } catch (error) {
+      terminal.write(
+        paintPrefix(
+          theme,
+          "danger",
+          `Task planning blocked · ${terminalSafeText(
+            error instanceof Error ? error.message : String(error),
+          )}`,
+          "Task planning blocked",
+        ),
+      );
+      finishTurn("failed");
+      continue;
+    }
+    const planOperations = [
+      ...new Set(taskPlan.tasks.flatMap((task) => task.operations)),
+    ];
+    const authorizationAction: ProposedRepositoryAction = {
+      ...turnResult.action,
+      operations: planOperations,
+      estimatedPaths: [...taskPlan.pathEnvelope],
+      estimatedChangedFiles: taskPlan.pathEnvelope.length,
+    };
+    const authorization = evaluateAgentAction(authorizationAction);
+    const approvedPlanDigest = taskPlan.digest;
+    terminal.write(
+      [
+        `Task plan ${taskPlan.id} · revision ${taskPlan.revision} · ${taskPlan.tasks.length} task${taskPlan.tasks.length === 1 ? "" : "s"}`,
+        ...taskPlan.tasks.map(
+          (task, index) =>
+            `  ${index + 1}. ${terminalSafeText(task.title)} · ${task.authority}${task.dependencies.length > 0 ? ` · after ${task.dependencies.join(", ")}` : ""}`,
+        ),
+        `  Digest ${taskPlan.digest}`,
+      ].join("\n"),
+    );
     if (authorization.decision === "takeover_required") {
       terminal.write(paintPrefix(
         theme,
@@ -1200,6 +1991,7 @@ export async function runInteractiveSession(
         `Takeover required · ${terminalSafeText(authorization.reasons.join(" "))}\nThis repository-only build did not execute the action.`,
         "Takeover required",
       ));
+      finishTurn("success");
       continue;
     }
     let authorizationSource: "automatic_policy" | "operator" = "automatic_policy";
@@ -1207,12 +1999,14 @@ export async function runInteractiveSession(
       terminal.write(
         approvalText(
           state,
-          turnResult.action,
+          authorizationAction,
           authorization,
           { color: terminal.color },
         ),
       );
+      turnTimer.pause();
       const approval = await terminal.ask("Approve this sensitive isolated action? [y/N] ");
+      turnTimer.resume();
       if (approval === INTERRUPTED_INPUT) {
         terminal.write("Action approval interrupted. No repository action was started.");
         appendConversationOutcome(
@@ -1220,6 +2014,7 @@ export async function runInteractiveSession(
           "operator interrupted approval; no repository action was started.",
         );
         await persist();
+        finishTurn("cancelled");
         continue;
       }
       if (!isApproval(approval)) {
@@ -1229,6 +2024,7 @@ export async function runInteractiveSession(
           "operator denied the proposed repository action.",
         );
         await persist();
+        finishTurn("cancelled");
         continue;
       }
       authorizationSource = "operator";
@@ -1238,18 +2034,31 @@ export async function runInteractiveSession(
       );
     }
 
+    if ((state.selectedSkillIds?.length ?? 0) > 0) {
+      let labels = [...(state.selectedSkillIds ?? [])];
+      try {
+        const inventory = await options.listSkills?.(state.repositoryPath);
+        if (inventory) {
+          const names = new Map(inventory.map((skill) => [skill.id, skill.name]));
+          labels = labels.map((skillId) => names.get(skillId) ?? skillId);
+        }
+      } catch {
+        // The authoritative runtime attachment path will report inventory failures.
+      }
+      terminal.write(
+        `  ◇ Skills ${labels.map((label) => terminalSafeText(label)).join(", ")}`,
+      );
+    }
+
     const presenter = new RunPresenter({ color: terminal.color });
+    let runMessageStream: InlineMessageStreamHandle | undefined;
+    let runMessageItemId: string | undefined;
     const runSignal = options.prepareRunSignal?.();
     state.mode = "bounded_execute";
     let executionProfile: ResolvedOrchestrationProfile | undefined;
     let operationActivity: InlineActivityHandle | undefined;
     try {
-      executionProfile = await resolveSessionProfile(
-        state,
-        options,
-        command.value,
-        turnResult.action,
-      );
+      executionProfile = turnProfile;
       const implementer = executionProfile.roles.implementer;
       const plannedHelperTasks =
         options.readOnlyRole &&
@@ -1335,6 +2144,15 @@ export async function runInteractiveSession(
                 modelId: helper.modelId,
                 thinkingEffort: helper.thinkingEffort,
                 context: `Expected paths: ${task.expectedPaths.join(", ") || "not declared"}`,
+                onActivity: (event) => {
+                  if (event.kind === "message") return;
+                  const detail = compactAgentActivity(event);
+                  if (event.status === "completed") {
+                    terminal.write(`  ◇ ${detail}`);
+                  } else {
+                    operationActivity?.update(detail);
+                  }
+                },
                 signal: runSignal,
                 timeoutMs: helper.maxWallTimeMs,
               });
@@ -1423,11 +2241,13 @@ export async function runInteractiveSession(
         );
         continue;
       }
+      verifyApprovedRepositoryTaskPlan(taskPlan, approvedPlanDigest);
       const result = await options.run({
         instruction: implementationInstruction,
         repositoryPath: state.repositoryPath,
         modelId: implementer.modelId,
         thinkingEffort: implementer.thinkingEffort,
+        taskPlan,
         orchestration: {
           profile: executionProfile,
           plan: orchestrationPlan,
@@ -1466,6 +2286,15 @@ export async function runInteractiveSession(
                     modelId: reviewer.modelId,
                     thinkingEffort: reviewer.thinkingEffort,
                     context: `Verifier: ${context.status}. Run: ${context.runId}. Summary: ${context.summary}`,
+                    onActivity: (event) => {
+                      if (event.kind === "message") return;
+                      const detail = compactAgentActivity(event);
+                      if (event.status === "completed") {
+                        terminal.write(`  ◇ ${detail}`);
+                      } else {
+                        operationActivity?.update(detail);
+                      }
+                    },
                     signal: context.signal,
                     timeoutMs: reviewer.maxWallTimeMs,
                   });
@@ -1564,7 +2393,10 @@ export async function runInteractiveSession(
         authorization: {
           ...authorization,
           source: authorizationSource,
-          expectedPaths: [...turnResult.action.estimatedPaths],
+          expectedPaths: [...taskPlan.pathEnvelope],
+          planId: taskPlan.id,
+          planRevision: taskPlan.revision,
+          planDigest: taskPlan.digest,
           allowDestructiveChanges:
             authorizationSource === "operator" &&
             turnResult.action.operations.some(
@@ -1576,6 +2408,33 @@ export async function runInteractiveSession(
         },
         signal: runSignal,
         onEvent: (event) => {
+          const lines = presenter.present(event);
+          const messageUpdate = presenter.agentMessageUpdate(event);
+          const activityUpdate = presenter.activityUpdate(event);
+          if (messageUpdate) {
+            operationActivity?.stop();
+            operationActivity = undefined;
+            if (runMessageItemId !== messageUpdate.itemId) {
+              runMessageStream?.finish();
+              runMessageStream = beginTerminalMessageStream(terminal, "Agent");
+              runMessageItemId = messageUpdate.itemId;
+            }
+            runMessageStream?.update(messageUpdate.text);
+            presenter.markAgentResponseStreamed();
+            return;
+          }
+          if (activityUpdate && activityUpdate.status !== "completed") {
+            operationActivity ??= beginTerminalActivity(
+              terminal,
+              activityUpdate.detail,
+            );
+            operationActivity.update(activityUpdate.detail);
+          }
+          if (runMessageStream) {
+            runMessageStream.finish(presenter.snapshot().finalAgentResponse);
+            runMessageStream = undefined;
+            runMessageItemId = undefined;
+          }
           if (event.type === "run_started") {
             operationActivity?.update("Prepare isolated repository run");
           } else if (event.type === "codex_execution_started") {
@@ -1585,11 +2444,13 @@ export async function runInteractiveSession(
           } else if (event.type === "verification_started") {
             operationActivity?.update("Verify repository evidence");
           }
-          for (const line of presenter.present(event)) {
+          for (const line of lines) {
             terminal.write(line);
           }
         },
       });
+      runMessageStream?.finish(presenter.snapshot().finalAgentResponse);
+      runMessageStream = undefined;
       operationActivity?.settle(
         result.status === "pass"
           ? "Repository run complete"
@@ -1626,7 +2487,10 @@ export async function runInteractiveSession(
         `${result.status}; verifier ${state.lastRun.verification}; run ${result.runId}.`,
       );
       await persist();
+      finishTurn(result.status === "pass" ? "success" : "failed");
     } catch (error) {
+      runMessageStream?.abort();
+      runMessageStream = undefined;
       operationActivity?.stop();
       operationActivity = undefined;
       const cancelled =
@@ -1654,6 +2518,13 @@ export async function runInteractiveSession(
             modelId: reviewer.modelId,
             thinkingEffort: reviewer.thinkingEffort,
             context: `Execution failed: ${error instanceof Error ? error.message : String(error)}. Produce a bounded recovery recommendation only; do not edit.`,
+            onActivity: (event) => {
+              if (event.kind === "message") return;
+              const detail = compactAgentActivity(event);
+              if (event.status === "completed") {
+                terminal.write(`  ◇ ${detail}`);
+              }
+            },
             signal: runSignal,
             timeoutMs: reviewer.maxWallTimeMs,
           });
@@ -1692,6 +2563,7 @@ export async function runInteractiveSession(
           { color: terminal.color },
         )}`,
       );
+      finishTurn(cancelled ? "cancelled" : "failed");
     } finally {
       operationActivity?.stop();
       if (runSignal) options.releaseRunSignal?.(runSignal);

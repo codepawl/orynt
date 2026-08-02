@@ -3,9 +3,11 @@ import { createConservativeCodingApprenticePolicy } from "@codepawl/shared";
 
 import {
   CognitiveRuntimeV1,
+  parseCognitiveRunCheckpointV1,
   DeterministicCognitiveKernel,
   StaticMemoryProvider,
   type CognitiveRuntimeBudgetV1,
+  type CognitiveRunCheckpointV1,
   type CognitiveRuntimeOptionsV1,
   type KernelActionPlan,
 } from "./index";
@@ -411,6 +413,8 @@ describe("CognitiveRuntimeV1", () => {
       "usage.recorded",
       "policy.decided",
       "usage.recorded",
+      "execution.prepared",
+      "action.dispatched",
       "action.executed",
       "usage.recorded",
       "verification.completed",
@@ -584,5 +588,240 @@ describe("CognitiveRuntimeV1", () => {
     expect(checkpoint.usage.modelTokens).toBe(61);
     expect(checkpoint.events.at(-1)?.eventType).toBe("budget.exceeded");
     expect(gatewayCalls).toBe(0);
+  });
+
+  it("uses cryptographically random approval nonces by default", async () => {
+    const approvalOptions = runtimeOptions({
+      planner: {
+        plan: async () => ({
+          action: plan({
+            policyAction: {
+              id: "policy-action-install",
+              kind: "command",
+              summary: "Install dependencies",
+              command: "pnpm install",
+            },
+          }),
+        }),
+      },
+    });
+
+    const first = await new CognitiveRuntimeV1(approvalOptions).start(runtimeInput());
+    const second = await new CognitiveRuntimeV1(approvalOptions).start(runtimeInput());
+
+    expect(first.approval?.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(second.approval?.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(first.approval?.nonce).not.toBe(second.approval?.nonce);
+  });
+
+  it("uses checkpoint CAS to reject approval replay across runtime instances", async () => {
+    let persisted: CognitiveRunCheckpointV1 | null = null;
+    let gatewayCalls = 0;
+    const checkpointSink = {
+      create: (checkpoint: CognitiveRunCheckpointV1) => {
+        if (persisted) {
+          throw new Error("checkpoint already exists");
+        }
+        persisted = structuredClone(checkpoint);
+      },
+      compareAndSwap: (
+        checkpoint: CognitiveRunCheckpointV1,
+        expectedRevision: number,
+      ) => {
+        if (!persisted || persisted.revision !== expectedRevision) {
+          throw new Error("stale checkpoint revision");
+        }
+        persisted = structuredClone(checkpoint);
+      },
+    };
+    const options = runtimeOptions({
+      checkpointSink,
+      approvalNonceFactory: () => "persisted-nonce",
+      planner: {
+        plan: async () => ({
+          action: plan({
+            policyAction: {
+              id: "policy-action-install",
+              kind: "command",
+              summary: "Install dependencies",
+              command: "pnpm install",
+            },
+          }),
+        }),
+      },
+      gateway: {
+        execute: async ({ action }) => {
+          gatewayCalls += 1;
+          return {
+            result: {
+              actionId: action.id,
+              observation: "working tree clean",
+              evidence: [],
+            },
+          };
+        },
+      },
+    });
+    const firstRuntime = new CognitiveRuntimeV1(options);
+    const waiting = await firstRuntime.start(runtimeInput());
+    const resumeInput = {
+      runId: waiting.runId,
+      taskId: waiting.taskId,
+      approvalId: waiting.approval!.id,
+      approvalNonce: waiting.approval!.nonce,
+      expectedRevision: waiting.revision,
+      decision: "approved" as const,
+    };
+
+    await new CognitiveRuntimeV1(options).resume(waiting, resumeInput);
+    await expect(firstRuntime.resume(waiting, resumeInput)).rejects.toThrow(
+      "stale checkpoint revision",
+    );
+    expect(gatewayCalls).toBe(1);
+  });
+
+  it("cancels a waiting approval without allowing later execution", async () => {
+    let gatewayCalls = 0;
+    const runtime = new CognitiveRuntimeV1(runtimeOptions({
+      planner: {
+        plan: async () => ({
+          action: plan({
+            policyAction: {
+              id: "policy-action-install",
+              kind: "command",
+              summary: "Install dependencies",
+              command: "pnpm install",
+            },
+          }),
+        }),
+      },
+      gateway: {
+        execute: async ({ action }) => {
+          gatewayCalls += 1;
+          return {
+            result: {
+              actionId: action.id,
+              observation: "working tree clean",
+              evidence: [],
+            },
+          };
+        },
+      },
+    }));
+    const waiting = await runtime.start(runtimeInput());
+    const cancelled = await runtime.cancel(waiting, {
+      runId: waiting.runId,
+      taskId: waiting.taskId,
+      expectedRevision: waiting.revision,
+      reason: "Operator changed intent",
+    });
+
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.approval?.status).toBe("cancelled");
+    expect(cancelled.events.at(-1)?.eventType).toBe("run.cancelled");
+    await expect(runtime.resume(cancelled, {
+      runId: cancelled.runId,
+      taskId: cancelled.taskId,
+      approvalId: waiting.approval!.id,
+      approvalNonce: waiting.approval!.nonce,
+      expectedRevision: cancelled.revision,
+      decision: "approved",
+    })).rejects.toThrow("not waiting");
+    expect(gatewayCalls).toBe(0);
+  });
+
+  it("fails closed as execution in doubt when gateway dispatch has no result", async () => {
+    const runtime = new CognitiveRuntimeV1(runtimeOptions({
+      gateway: {
+        execute: async () => {
+          throw new Error("connection dropped after dispatch");
+        },
+      },
+    }));
+
+    const checkpoint = await runtime.start(runtimeInput());
+
+    expect(checkpoint.status).toBe("execution_in_doubt");
+    expect(checkpoint.executionAttempt).toMatchObject({
+      status: "in_doubt",
+      idempotencyKey: expect.stringContaining(checkpoint.runId),
+    });
+    expect(checkpoint.events.slice(-3).map((event) => event.eventType)).toEqual([
+      "execution.prepared",
+      "action.dispatched",
+      "run.execution_in_doubt",
+    ]);
+    expect(checkpoint.gatewayResults).toHaveLength(0);
+  });
+
+  it("recovers only a durably prepared attempt and never re-dispatches an uncertain one", async () => {
+    let gatewayCalls = 0;
+    const runtime = new CognitiveRuntimeV1(runtimeOptions({
+      gateway: {
+        execute: async ({ action }) => {
+          gatewayCalls += 1;
+          return {
+            result: {
+              actionId: action.id,
+              observation: "working tree clean",
+              evidence: [],
+            },
+          };
+        },
+      },
+    }));
+    const completed = await runtime.start(runtimeInput());
+    const prepared = structuredClone(completed);
+    prepared.status = "running";
+    prepared.phase = "execute";
+    prepared.pendingAction = structuredClone(prepared.actionPlans[0]!);
+    prepared.gatewayResults = [];
+    prepared.verifications = [];
+    prepared.executionAttempt = {
+      ...prepared.executionAttempt!,
+      status: "prepared",
+      dispatchedRevision: undefined,
+      completedRevision: undefined,
+    };
+    gatewayCalls = 0;
+
+    const recovered = await runtime.recover(prepared, {
+      runId: prepared.runId,
+      taskId: prepared.taskId,
+      expectedRevision: prepared.revision,
+    });
+    expect(recovered.status).toBe("completed");
+    expect(gatewayCalls).toBe(1);
+
+    const dispatched = structuredClone(prepared);
+    dispatched.executionAttempt!.status = "dispatched";
+    const uncertain = await runtime.recover(dispatched, {
+      runId: dispatched.runId,
+      taskId: dispatched.taskId,
+      expectedRevision: dispatched.revision,
+    });
+    expect(uncertain.status).toBe("execution_in_doubt");
+    expect(gatewayCalls).toBe(1);
+  });
+});
+
+describe("cognitive checkpoint v1 codec", () => {
+  it("rejects unknown nested fields and inconsistent terminal state", async () => {
+    const checkpoint = await new CognitiveRuntimeV1(runtimeOptions()).start(runtimeInput());
+    const withUnknownField = structuredClone(checkpoint) as CognitiveRunCheckpointV1 & {
+      budget: CognitiveRunCheckpointV1["budget"] & { unexpected: boolean };
+    };
+    withUnknownField.budget.unexpected = true;
+    expect(() => parseCognitiveRunCheckpointV1(withUnknownField)).toThrow(
+      "checkpoint.budget has unexpected or missing fields",
+    );
+
+    const inconsistent = structuredClone(checkpoint);
+    inconsistent.status = "completed";
+    inconsistent.pendingAction = null;
+    inconsistent.verifications = [];
+    expect(() => parseCognitiveRunCheckpointV1(inconsistent)).toThrow(
+      "completed checkpoint requires final verifier pass",
+    );
   });
 });

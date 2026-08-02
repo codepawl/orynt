@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createTerminalTheme,
+  resolveTerminalAppearance,
   resolveTerminalColor,
   terminalColorRequested,
   terminalMotionRequested,
@@ -13,6 +14,9 @@ describe("terminal theme", () => {
 
     expect(theme.paint("focus", "›")).toBe(
       "\u001b[38;2;143;182;232m›\u001b[0m",
+    );
+    expect(theme.paint("agent", "Agent ✦")).toBe(
+      "\u001b[38;2;198;196;191mAgent ✦\u001b[0m",
     );
     expect(theme.paint("success", "✓")).toBe(
       "\u001b[38;2;120;201;155m✓\u001b[0m",
@@ -60,6 +64,45 @@ describe("terminal theme", () => {
     expect(
       resolveTerminalColor({ isTTY: true, env: { NO_COLOR: "1" } }),
     ).toBe(false);
+  });
+
+  it("resolves saved appearance below terminal and launch overrides", () => {
+    expect(
+      resolveTerminalAppearance({
+        isTTY: true,
+        saved: { color: false, motion: true, richText: true },
+        argv: [],
+        env: {},
+      }),
+    ).toEqual({ color: false, motion: true, richText: true });
+    expect(
+      resolveTerminalAppearance({
+        isTTY: true,
+        saved: { color: true, motion: true, richText: true },
+        argv: ["--plain"],
+        env: {},
+      }),
+    ).toEqual({
+      color: false,
+      motion: false,
+      richText: false,
+      colorOverride: "--plain",
+      motionOverride: "--plain",
+      richTextOverride: "--plain",
+    });
+    expect(
+      resolveTerminalAppearance({
+        isTTY: true,
+        saved: { color: true, motion: true, richText: true },
+        argv: [],
+        env: { NO_COLOR: "" },
+      }),
+    ).toEqual({
+      color: false,
+      motion: true,
+      richText: true,
+      colorOverride: "NO_COLOR",
+    });
   });
 
   it("stops interpreting color flags after the option terminator", () => {

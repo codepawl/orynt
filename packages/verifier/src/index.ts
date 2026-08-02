@@ -39,10 +39,20 @@ type LocalRepositoryVerifierOptions = {
         command: string;
         args: readonly string[];
         stdin?: string;
-        afterExecution?: () => Promise<string | undefined>;
+        afterExecution?: () => Promise<
+          string | TrustedCommandPostExecution | undefined
+        >;
       }
     >
   >;
+};
+
+type TrustedCommandPostExecution = {
+  failure?: string;
+  stdout?: string;
+  source?: "process_stdio" | "trusted_report";
+  artifactRefs?: VerificationEvidence["artifactRefs"];
+  trustedEvidenceValid?: boolean;
 };
 
 type ExecOutcome = {
@@ -300,7 +310,9 @@ export class LocalRepositoryVerifier implements Verifier {
       command: string;
       args: readonly string[];
       stdin?: string;
-      afterExecution?: () => Promise<string | undefined>;
+      afterExecution?: () => Promise<
+        string | TrustedCommandPostExecution | undefined
+      >;
     }
   >;
   private readonly policyEngine = new ConservativePolicyEngine();
@@ -477,12 +489,24 @@ export class LocalRepositoryVerifier implements Verifier {
         options.signal,
       );
       if (options.signal?.aborted) throw new VerificationCancelledError();
-      const trustedCommandFailure = await trustedCommand?.afterExecution?.();
-      if (trustedCommandFailure) {
+      const trustedCommandPostExecution =
+        await trustedCommand?.afterExecution?.();
+      const trustedCommandResult =
+        typeof trustedCommandPostExecution === "string"
+          ? { failure: trustedCommandPostExecution }
+          : trustedCommandPostExecution;
+      if (
+        trustedCommandResult?.failure ||
+        trustedCommandResult?.trustedEvidenceValid === false
+      ) {
         outcome = {
           ...outcome,
           exitCode: 1,
-          stderr: [outcome.stderr.trimEnd(), trustedCommandFailure]
+          stderr: [
+            outcome.stderr.trimEnd(),
+            trustedCommandResult.failure ??
+              "Trusted verification evidence was invalid.",
+          ]
             .filter(Boolean)
             .join("\n"),
         };
@@ -496,8 +520,16 @@ export class LocalRepositoryVerifier implements Verifier {
         exitCode: outcome.exitCode,
         durationMs: outcome.durationMs,
         timedOut: outcome.timedOut,
-        stdout: truncate(outcome.stdout, plan.config.maxOutputBytes),
+        stdout: truncate(
+          trustedCommandResult?.stdout ?? outcome.stdout,
+          plan.config.maxOutputBytes,
+        ),
         stderr: truncate(outcome.stderr, plan.config.maxOutputBytes),
+        source:
+          trustedCommandResult?.source ??
+          (trustedCommand ? "process_stdio" : undefined),
+        artifactRefs: trustedCommandResult?.artifactRefs,
+        trustedEvidenceValid: trustedCommandResult?.trustedEvidenceValid,
       };
       evidence.push(commandEvidence);
       this.runStore?.appendEvent(plan.runId, {
@@ -697,6 +729,8 @@ export class LocalRepositoryVerifier implements Verifier {
         ? "All policy-allowed verification commands passed and diff scope is allowed."
         : timedOut
           ? "A verification command timed out."
+          : failureClass === "trusted_evidence_invalid"
+            ? "Trusted verification evidence was missing or invalid."
           : failedCommand
             ? `Verification command failed: ${failedCommand.command}`
             : failureClass === "protected_path_touched"
@@ -764,6 +798,9 @@ export class LocalRepositoryVerifier implements Verifier {
     }
     if (commandEvidence.some((item) => item.timedOut)) {
       return "command_timeout";
+    }
+    if (commandEvidence.some((item) => item.trustedEvidenceValid === false)) {
+      return "trusted_evidence_invalid";
     }
     if (commandEvidence.some((item) => item.exitCode !== 0)) {
       return "command_failed";

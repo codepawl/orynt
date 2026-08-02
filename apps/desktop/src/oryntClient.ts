@@ -6,10 +6,20 @@ import type {
   CandidateRuleStatusUpdateInput,
   CreateRunInput,
   EpisodicMemoryItem,
+  MemoryMutationOptions,
   MemoryReviewSnapshot,
+  MemoryRetrievalHit,
+  MemoryRetrievalQuery,
+  MemorySummary,
+  MemoryStoreEnvelopeV2,
+  MemoryTombstone,
   RunEvent,
-  RunId,
+  SemanticMemoryEditInput,
+  SemanticMemoryItem,
+  SemanticMemoryQuery,
+  SemanticMemoryStatusUpdateInput,
   SkillDefinition,
+  LearnedSkillSnapshotV1,
   SkillPromotionDecision,
   SkillRegistrySnapshot,
   SkillReplayMode,
@@ -336,6 +346,8 @@ export type PersistedRunSummary = {
   goal: string;
   repositoryPath: string;
   status: string;
+  checkpointRevision?: number | null;
+  runtimeStatus?: DesktopRuntimeStatus | null;
   artifactManifestPath: string;
   eventCount: number;
   artifactCount: number;
@@ -351,6 +363,10 @@ export type PersistedRunRecord = {
   goal: string;
   repositoryPath: string;
   status: string;
+  checkpointRevision?: number | null;
+  runtimeStatus?: DesktopRuntimeStatus | null;
+  approval?: DesktopRuntimeApproval | null;
+  taskPlan?: DesktopRepositoryTaskPlan | null;
   artifactRoot: string;
   artifactManifestPath: string;
   events: RunEvent[];
@@ -363,6 +379,62 @@ export type PersistedRunRecord = {
   codexConnection: CodexConnectionReference | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type DesktopRuntimeStatus =
+  | "waiting_for_approval"
+  | "running"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "cancelled"
+  | "execution_in_doubt";
+
+export type DesktopRuntimeApproval = {
+  id: string;
+  actionId: string;
+  requestedRevision: number;
+  planId?: string;
+  planRevision?: number;
+  planDigest?: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+};
+
+export type DesktopRepositoryTaskPlan = {
+  id: string;
+  revision: number;
+  summary: string;
+  digest: string;
+  tasks: Array<{
+    id: string;
+    title: string;
+    authority: "read_only" | "single_writer";
+    dependencies: string[];
+  }>;
+};
+
+export type DesktopRunSnapshot = {
+  id: string;
+  schemaVersion?: 2;
+  runId?: string;
+  status?: DesktopRuntimeStatus;
+  checkpointRevision?: number;
+  approval?: DesktopRuntimeApproval | null;
+  taskPlan?: DesktopRepositoryTaskPlan | null;
+  executionAttemptStatus?: "prepared" | "dispatched" | "completed" | "in_doubt" | null;
+  terminal?: boolean;
+  summary?: string;
+  artifactRoot?: string | null;
+  artifactManifestPath?: string | null;
+  eventCount?: number;
+  events?: RunEvent[];
+  verificationStatus?: "pass" | "partial" | "fail" | "inconclusive";
+};
+
+export type RunLifecycleInput = {
+  runId: string;
+  expectedRevision: number;
+  reason?: string;
 };
 
 export type ArtifactEvidenceStatus = "verified" | "unavailable" | "corrupted";
@@ -985,10 +1057,11 @@ export const orynt = {
     });
   },
 
-  async createRun(input: CreateRunInput): Promise<RunId> {
+  async createRun(input: CreateRunInput): Promise<DesktopRunSnapshot> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<RunId>("run_create", { input });
+      const snapshot = await tauri.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_create", { input });
+      return { ...snapshot, id: snapshot.runId };
     }
 
     const mockRun = createMockRunSequence();
@@ -999,7 +1072,26 @@ export const orynt = {
       }
     });
 
-    return { id: runId };
+    return {
+      schemaVersion: 2,
+      id: runId,
+      runId,
+      status: "waiting_for_approval",
+      checkpointRevision: 0,
+      approval: {
+        id: `approval-${runId}`,
+        actionId: `action-${runId}`,
+        requestedRevision: 0,
+        status: "pending",
+      },
+      executionAttemptStatus: null,
+      terminal: false,
+      summary: "Waiting for operator approval.",
+      artifactRoot: null,
+      artifactManifestPath: null,
+      eventCount: mockRun.events.length,
+      events: mockRun.events,
+    };
   },
 
   async listPersistedRuns(): Promise<PersistedRunSummary[]> {
@@ -1247,18 +1339,20 @@ export const orynt = {
     nativeProviderUnavailable();
   },
 
-  async cancelRun(runId: string): Promise<void> {
+  async cancelRun(input: RunLifecycleInput): Promise<DesktopRunSnapshot | undefined> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      await tauri.core.invoke<void>("run_cancel", { runId });
+      const snapshot = await tauri.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_cancel", { input });
+      return { ...snapshot, id: snapshot.runId };
     }
+    return undefined;
   },
 
-  async approve(input: ApprovalDecisionInput): Promise<void> {
+  async approve(input: ApprovalDecisionInput): Promise<DesktopRunSnapshot | undefined | void> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      await tauri.core.invoke<void>("approval_respond", { input });
-      return;
+      const snapshot = await tauri.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("approval_respond", { input });
+      return { ...snapshot, id: snapshot.runId };
     }
 
     queueMicrotask(() => {
@@ -1286,6 +1380,34 @@ export const orynt = {
         },
       });
     });
+    return undefined;
+  },
+
+  async statusRun(runId: string): Promise<DesktopRunSnapshot> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      const snapshot = await tauri.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_status", { runId });
+      return { ...snapshot, id: snapshot.runId };
+    }
+    throw new Error(`runtime status not found: ${runId}`);
+  },
+
+  async recoverRun(input: RunLifecycleInput): Promise<DesktopRunSnapshot> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      const snapshot = await tauri.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_recover", { input });
+      return { ...snapshot, id: snapshot.runId };
+    }
+    throw new Error(`runtime recovery unavailable: ${input.runId}`);
+  },
+
+  async markRunFailed(input: RunLifecycleInput): Promise<DesktopRunSnapshot> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      const snapshot = await tauri.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_mark_failed", { input });
+      return { ...snapshot, id: snapshot.runId };
+    }
+    throw new Error(`runtime mark-failed unavailable: ${input.runId}`);
   },
 
   async listMemoryEpisodes(): Promise<EpisodicMemoryItem[]> {
@@ -1333,6 +1455,123 @@ export const orynt = {
     };
     queueMicrotask(() => emitCandidateRuleReviewEvent(updated, input.runId));
     return structuredClone(updated);
+  },
+
+  async listSemanticMemory(
+    query: SemanticMemoryQuery = {},
+  ): Promise<SemanticMemoryItem[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SemanticMemoryItem[]>("memory_list_semantic", {
+        input: { query },
+      });
+    }
+    return [];
+  },
+
+  async updateSemanticMemoryStatus(
+    decision: SemanticMemoryStatusUpdateInput,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SemanticMemoryItem>(
+        "memory_update_semantic_status",
+        { input: { decision, options } },
+      );
+    }
+    throw new Error(`semantic memory not found: ${decision.id}`);
+  },
+
+  async editSemanticMemory(
+    edit: SemanticMemoryEditInput,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SemanticMemoryItem>("memory_edit_semantic", {
+        input: { edit, options },
+      });
+    }
+    throw new Error(`semantic memory not found: ${edit.id}`);
+  },
+
+  async deleteSemanticMemory(
+    decision: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SemanticMemoryItem>("memory_delete_semantic", {
+        input: { decision, options },
+      });
+    }
+    throw new Error(`semantic memory not found: ${decision.id}`);
+  },
+
+  async restoreSemanticMemory(
+    decision: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<SemanticMemoryItem>("memory_restore_semantic", {
+        input: { decision, options },
+      });
+    }
+    throw new Error(`semantic memory not found: ${decision.id}`);
+  },
+
+  async purgeSemanticMemory(
+    decision: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<MemoryTombstone> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<MemoryTombstone>("memory_purge_semantic", {
+        input: { decision, options },
+      });
+    }
+    throw new Error(`semantic memory not found: ${decision.id}`);
+  },
+
+  async retrieveMemory(query: MemoryRetrievalQuery): Promise<MemoryRetrievalHit[]> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<MemoryRetrievalHit[]>("memory_retrieve", {
+        input: { query },
+      });
+    }
+    return [];
+  },
+
+  async summarizeMemory(
+    namespace: MemoryRetrievalQuery["namespace"] = {},
+  ): Promise<MemorySummary> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<MemorySummary>("memory_summary", {
+        input: { namespace },
+      });
+    }
+    return structuredClone(mockMemoryReview.summary);
+  },
+
+  async getMemorySnapshot(): Promise<MemoryStoreEnvelopeV2> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      return tauri.core.invoke<MemoryStoreEnvelopeV2>("memory_snapshot");
+    }
+    return {
+      schemaVersion: 3,
+      revision: 0,
+      updatedAt: new Date().toISOString(),
+      episodes: structuredClone(mockMemoryReview.episodes),
+      candidateRules: structuredClone(mockMemoryReview.candidateRules),
+      semanticMemory: [],
+      tombstones: [],
+      auditLog: [],
+    };
   },
 
   async scanAgentSkills(repositoryPath?: string): Promise<SkillInventorySnapshot> {
@@ -1543,12 +1782,35 @@ export const orynt = {
     return structuredClone(mockSkillRegistry.skills);
   },
 
-  async createCandidateSkill(): Promise<SkillDefinition> {
+  async getLearnedSkillSnapshot(): Promise<LearnedSkillSnapshotV1> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_create_candidate");
+      return tauri.core.invoke<LearnedSkillSnapshotV1>("skill_snapshot");
     }
+    return {
+      schemaVersion: 2,
+      revision: 0,
+      updatedAt: new Date().toISOString(),
+      skills: structuredClone(mockSkillRegistry.skills),
+      replayPlans: [],
+      auditLog: [],
+    };
+  },
 
+  async createCandidateSkill(candidateRuleId: string, runId: string): Promise<SkillDefinition> {
+    const tauri = await loadTauriApi();
+    if (tauri) {
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return tauri.core.invoke<SkillDefinition>("skill_create_candidate", {
+        input: {
+          candidateRuleId,
+          runId,
+          expectedRevision: snapshot.revision,
+          actor: "operator",
+          reason: "Created from an accepted rule in Memory Manager.",
+        },
+      });
+    }
     const skill = mockSkillRegistry.skills[0];
     queueMicrotask(() => {
       emitMockRunEvent({
@@ -1569,7 +1831,10 @@ export const orynt = {
   async promoteSkillManually(input: SkillPromotionDecision): Promise<SkillDefinition> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_promote_manual", { input });
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return tauri.core.invoke<SkillDefinition>("skill_promote_manual", {
+        input: { ...input, expectedRevision: snapshot.revision },
+      });
     }
 
     return applyMockSkillDecision({ ...input, decision: "promote" });
@@ -1578,7 +1843,10 @@ export const orynt = {
   async rejectSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_reject", { input });
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return tauri.core.invoke<SkillDefinition>("skill_reject", {
+        input: { ...input, expectedRevision: snapshot.revision },
+      });
     }
 
     return applyMockSkillDecision({ ...input, decision: "reject" });
@@ -1587,7 +1855,10 @@ export const orynt = {
   async supersedeSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_supersede", { input });
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return tauri.core.invoke<SkillDefinition>("skill_supersede", {
+        input: { ...input, expectedRevision: snapshot.revision },
+      });
     }
 
     return applyMockSkillDecision({ ...input, decision: "supersede" });
@@ -1596,7 +1867,10 @@ export const orynt = {
   async archiveSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_archive", { input });
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return tauri.core.invoke<SkillDefinition>("skill_archive", {
+        input: { ...input, expectedRevision: snapshot.revision },
+      });
     }
 
     return applyMockSkillDecision({ ...input, decision: "archive" });
@@ -1605,7 +1879,17 @@ export const orynt = {
   async createSkillReplayPlan(skillId: string, runId?: string): Promise<SkillReplayPlan> {
     const tauri = await loadTauriApi();
     if (tauri) {
-      return tauri.core.invoke<SkillReplayPlan>("skill_create_replay_plan", { input: { skillId, runId } });
+      if (!runId) throw new Error("runId is required for learned skill replay");
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return tauri.core.invoke<SkillReplayPlan>("skill_create_replay_plan", {
+        input: {
+          skillId,
+          runId,
+          expectedRevision: snapshot.revision,
+          actor: "operator",
+          reason: "Requested a non-executable learned skill replay preview.",
+        },
+      });
     }
 
     const skill = mockSkillRegistry.skills.find((item) => item.id === skillId);

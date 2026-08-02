@@ -12,10 +12,11 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/shared build && tsc -p tsconfig.json",
+    "build": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/model-runtime build && tsc -p tsconfig.json",
     "test": "vitest run"
   },
   "dependencies": {
+    "@codepawl/model-runtime": "workspace:*",
     "@codepawl/shared": "workspace:*"
   },
   "devDependencies": {
