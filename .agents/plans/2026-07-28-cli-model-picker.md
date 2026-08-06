@@ -32,8 +32,8 @@ Make bare `/model` open a keyboard model picker while preserving `/model <id>`,
 
 ## Validation
 
-- `pnpm --filter @codepawl/cli test`
-- `pnpm --filter @codepawl/cli build`
+- `bun run --filter @codepawl/cli test`
+- `bun run --filter @codepawl/cli build`
 - Real TTY picker smoke using `make cli`
 - `git diff --check`
 

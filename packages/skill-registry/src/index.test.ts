@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import type {
   CandidateRule,
@@ -48,8 +48,8 @@ function acceptedRule(overrides: Partial<CandidateRule> = {}): CandidateRule {
     scope: {
       repositoryPath: "/repo/orynt",
       allowedPaths: ["packages/**"],
-      protectedPaths: [".env", "pnpm-lock.yaml"],
-      commands: ["pnpm test:contracts"],
+      protectedPaths: [".env", "bun.lock"],
+      commands: ["bun test:contracts"],
     },
     evidence: [
       {
@@ -95,8 +95,8 @@ function verification(overrides: Partial<VerificationResult> = {}): Verification
       {
         id: "command-pass",
         kind: "command",
-        label: "pnpm test:contracts",
-        command: "pnpm test:contracts",
+        label: "bun test:contracts",
+        command: "bun test:contracts",
         exitCode: 0,
         stdout: "ok token=sk-commandsecret123",
         stderr: "",
@@ -182,9 +182,9 @@ function codexContract(): CodexContract {
         createdAt: "2026-06-26T00:00:00.000Z",
       },
       allowedPaths: ["packages/**"],
-      protectedPaths: [".env", "pnpm-lock.yaml"],
+      protectedPaths: [".env", "bun.lock"],
       blockedCommands: ["rm -rf ."],
-      validationCommands: ["pnpm test:contracts"],
+      validationCommands: ["bun test:contracts"],
       budget: {
         maxSteps: 40,
         maxWallTimeMs: 1_800_000,
@@ -256,8 +256,8 @@ describe("SkillCandidateBuilder", () => {
 
     expect(candidate.skill.status).toBe("candidate");
     expect(candidate.skill.title).toBe("Keep package fixes scoped");
-    expect(candidate.skill.validation.commands).toEqual(["pnpm test:contracts"]);
-    expect(candidate.skill.safety.protectedPaths).toEqual([".env", "pnpm-lock.yaml"]);
+    expect(candidate.skill.validation.commands).toEqual(["bun test:contracts"]);
+    expect(candidate.skill.safety.protectedPaths).toEqual([".env", "bun.lock"]);
     expect(candidate.skill.safety.blockedActions).toContain("automatic_execution");
     expect(candidate.skill.provenance).toMatchObject({
       sourceRunIds: ["run-1"],
@@ -474,7 +474,7 @@ describe("LocalSkillReplayPlanner", () => {
     expect(plan.executable).toBe(false);
     expect(plan.readiness).toBe("ready");
     expect(plan.preconditions.every((item) => item.status === "passed")).toBe(true);
-    expect(plan.validationExpectations.map((item) => item.command)).toEqual(["pnpm test:contracts"]);
+    expect(plan.validationExpectations.map((item) => item.command)).toEqual(["bun test:contracts"]);
     expect(plan.blockedActions).toEqual(["automatic_execution", "codex_auto_run", "browser_automation", "secret_storage"]);
     expect(plan.requiredApprovals).toContain("manual approval required before any future skill execution");
     expect(plan.expectedArtifacts.map((artifact) => artifact.kind)).toContain("skill_replay_plan");

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import path from "node:path";
 
@@ -72,7 +72,7 @@ function sameNamespace(value, namespace) {
   );
 }
 
-async function execute(request) {
+export async function executeDesktopMemoryOperation(request) {
   const store = new LocalJsonMemoryStore({
     memoryRoot: path.resolve(request.memoryRoot),
   });
@@ -147,13 +147,21 @@ async function execute(request) {
   }
 }
 
-try {
+async function main() {
   const request = await readRequest();
-  const result = await execute(request);
+  const result = await executeDesktopMemoryOperation(request);
   process.stdout.write(`${JSON.stringify({ schemaVersion: 1, result })}\n`);
-} catch (error) {
-  process.stderr.write(
-    `${error instanceof Error ? error.message : "memory manager failed"}\n`,
-  );
-  process.exitCode = 1;
+}
+
+const isDirectExecution =
+  typeof process.argv[1] === "string" &&
+  path.basename(process.argv[1]) === "desktop-memory-manager.mjs";
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    process.stderr.write(
+      `${error instanceof Error ? error.message : "memory manager failed"}\n`,
+    );
+    process.exitCode = 1;
+  });
 }

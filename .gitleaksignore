@@ -1,0 +1,8 @@
+# Historical redaction fixtures reviewed 2026-08-03. Each finding is confined
+# to a test/report and uses a synthetic value (including the same ascending-
+# digit Stripe-shaped fixture in two redaction tests).
+b84c39a1e69186c91bfcb05535076df8e9ac6ff5:packages/memory/src/index.test.ts:generic-api-key:517
+74ba7f86fc4c639fd6f7b7d716e65fc4d3c7baca:packages/memory/src/index.test.ts:generic-api-key:190
+29b19e350785ebd71a63451da5b090db7f2c2653:reports/ui_jepa_v0_smoke/preference_critic_report.md:generic-api-key:13
+018dbf6907466472b32497ee557e0e4f17ce9ca4:apps/web/__tests__/cloud-evidence-demo.test.tsx:stripe-access-token:104
+966e0aa81acc8494fc22ed96a4bc589abce365e4:apps/web/__tests__/cloud-evidence-artifacts.test.ts:stripe-access-token:54

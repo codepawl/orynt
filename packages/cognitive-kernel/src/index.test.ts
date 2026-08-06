@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { createConservativeCodingApprenticePolicy } from "@codepawl/shared";
 
 import {
@@ -127,7 +127,7 @@ describe("DeterministicCognitiveKernel", () => {
     const kernel = new DeterministicCognitiveKernel({
       policy,
       memoryProvider: new StaticMemoryProvider([]),
-      planner: { plan: async () => plan({ policyAction: { id: "policy-action-install", kind: "command", summary: "Install packages", command: "pnpm install" } }) },
+      planner: { plan: async () => plan({ policyAction: { id: "policy-action-install", kind: "command", summary: "Install packages", command: "bun install" } }) },
       gateway: {
         execute: async () => {
           throw new Error("gateway should not execute before approval");
@@ -444,7 +444,7 @@ describe("CognitiveRuntimeV1", () => {
               id: "policy-action-install",
               kind: "command",
               summary: "Install dependencies",
-              command: "pnpm install",
+              command: "bun install",
             },
             expectedObservation: "working tree clean",
           }),
@@ -508,7 +508,7 @@ describe("CognitiveRuntimeV1", () => {
                 id: "policy-action-install",
                 kind: "command",
                 summary: "Install dependencies",
-                command: "pnpm install",
+                command: "bun install",
               },
             }),
           }),
@@ -599,7 +599,7 @@ describe("CognitiveRuntimeV1", () => {
               id: "policy-action-install",
               kind: "command",
               summary: "Install dependencies",
-              command: "pnpm install",
+              command: "bun install",
             },
           }),
         }),
@@ -644,7 +644,7 @@ describe("CognitiveRuntimeV1", () => {
               id: "policy-action-install",
               kind: "command",
               summary: "Install dependencies",
-              command: "pnpm install",
+              command: "bun install",
             },
           }),
         }),
@@ -690,7 +690,7 @@ describe("CognitiveRuntimeV1", () => {
               id: "policy-action-install",
               kind: "command",
               summary: "Install dependencies",
-              command: "pnpm install",
+              command: "bun install",
             },
           }),
         }),

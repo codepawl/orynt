@@ -43,9 +43,9 @@ import {
 } from "@codepawl/local-state";
 import path from "node:path";
 
-export * from "./catalogProviders";
-export * from "./packageManager";
-export * from "./packageScanner";
+export * from "./catalogProviders.js";
+export * from "./packageManager.js";
+export * from "./packageScanner.js";
 
 export class SkillRegistryFailure extends Error {
   readonly code: "skill_not_found" | "invalid_status_transition" | "invalid_candidate";

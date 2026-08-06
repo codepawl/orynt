@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { execFile } from "node:child_process";
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -59,7 +59,7 @@ async function createFakeCodex(root) {
   await writeFile(
     codexPath,
     [
-      "#!/usr/bin/env node",
+      "#!/usr/bin/env bun",
       'const { readFileSync, writeFileSync, mkdirSync } = require("node:fs");',
       'const path = require("node:path");',
       'const contract = readFileSync(0, "utf8");',
@@ -110,12 +110,12 @@ function createReviewedCandidateRule(result, repositoryPath) {
     },
     status: "accepted",
     title: "Keep walkthrough fixes scoped",
-    rule: "Keep local walkthrough fixture changes inside packages/** and validate them with node scripts/pass.mjs.",
+    rule: "Keep local walkthrough fixture changes inside packages/** and validate them with bun run scripts/pass.mjs.",
     scope: {
       repositoryPath,
       allowedPaths: ["packages/**"],
-      protectedPaths: [".env", "pnpm-lock.yaml"],
-      commands: ["node scripts/pass.mjs"],
+      protectedPaths: [".env", "bun.lock"],
+      commands: ["bun run scripts/pass.mjs"],
     },
     evidence: [
       {
@@ -151,8 +151,8 @@ async function runWalkthrough() {
     sandboxRoot,
     artifactRoot,
     memoryRoot,
-    validationCommands: ["node scripts/pass.mjs"],
-    allowedVerificationCommands: ["node scripts/pass.mjs"],
+    validationCommands: ["bun run scripts/pass.mjs"],
+    allowedVerificationCommands: ["bun run scripts/pass.mjs"],
     enableControlledCodexExecution: true,
     enableMemoryExtraction: true,
     codexPathEnv,

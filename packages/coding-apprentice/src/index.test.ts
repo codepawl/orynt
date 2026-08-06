@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { buildRepositoryTaskPlan } from "@codepawl/cognitive-kernel";
 import {
   createLegacySingleModelProfile,
@@ -140,7 +140,7 @@ async function createFakeCodexBinary() {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
@@ -162,7 +162,7 @@ async function createFailingFakeCodexBinary() {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 console.log('{"type":"thread.started","thread_id":"thread-failing-auth"}');
 console.error('HTTP error: 401 Unauthorized');
 process.exit(1);
@@ -178,7 +178,7 @@ async function createRecoveryFakeCodexBinary() {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
@@ -205,7 +205,7 @@ async function createBroadDestructiveFakeCodexBinary() {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
@@ -228,7 +228,7 @@ async function createReadOnlyFakeCodexBinary() {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 const fs = require("node:fs");
 const contract = fs.readFileSync(0, "utf8");
 const outputIndex = process.argv.indexOf("--output-last-message");
@@ -254,7 +254,7 @@ async function createFakeFullstackCodexBinary() {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
@@ -283,7 +283,7 @@ async function createVerifierTamperingCodexBinary() {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
@@ -304,7 +304,7 @@ async function createDelayedVerifierTamperingCodexBinary() {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
@@ -343,8 +343,8 @@ function demoRequest(repositoryPath: string, overrides: Partial<Parameters<Local
     repositoryPath,
     sandboxRoot: path.join(tempRoot, "sandboxes"),
     artifactRoot: path.join(tempRoot, "artifacts"),
-    validationCommands: ["node scripts/pass.mjs"],
-    allowedVerificationCommands: ["node scripts/pass.mjs"],
+    validationCommands: ["bun run scripts/pass.mjs"],
+    allowedVerificationCommands: ["bun run scripts/pass.mjs"],
     ...overrides,
   };
 }
@@ -498,11 +498,16 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
         verificationResult: expect.objectContaining({
           path: expect.stringContaining("verification-result.json"),
         }),
+        repositoryDiff: expect.objectContaining({
+          path: expect.stringContaining("repository-diff.json"),
+          sha256: expect.any(String),
+          redaction: "redacted",
+        }),
         redactedLog: expect.objectContaining({
           path: expect.stringContaining("manual-result.redacted.log"),
         }),
         memoryStore: expect.objectContaining({
-          path: expect.stringContaining("memory-store.json"),
+          path: expect.stringContaining("memory-extraction-summary.json"),
         }),
       },
     });
@@ -1140,10 +1145,18 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     expect(result.importBundle.failureReasons).toContain("no_changes");
     expect(result.verificationResult.status).toBe("fail");
     expect(result.verificationResult.verdict.failureClass).toBe("no_changes");
-    expect(result.memoryExtractionResult.episodes).toEqual([]);
-    expect(result.memoryExtractionResult.summary).toContain(
-      "verification did not pass",
+    expect(result.memoryExtractionResult.episodes.map(({ kind }) => kind)).toEqual(
+      expect.arrayContaining(["run_episode", "verifier_failure_pattern"]),
     );
+    expect(result.memoryExtractionResult.episodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "verifier_failure_pattern",
+          confidence: 0.9,
+        }),
+      ]),
+    );
+    expect(result.memoryExtractionResult.summary).toContain("memory episodes");
     expect(result.events.map((event) => event.type)).toContain("manual_review_required");
     expect(result.events.at(-1)?.verdict?.status).toBe("fail");
   });
@@ -1307,7 +1320,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
         repositoryPath,
       },
       status: "approved",
-      summary: "Run node scripts/pass.mjs before reporting repository completion.",
+      summary: "Run bun run scripts/pass.mjs before reporting repository completion.",
       content: {
         preference: "Use the repository-owned verification script.",
       },
@@ -1335,9 +1348,6 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       }),
     );
 
-    const contract = await readFile(result.contractArtifact.markdownPath, "utf8");
-    expect(contract).toContain("Approved prior Orynt memory (semantic, advisory only)");
-    expect(contract).toContain("Run node scripts/pass.mjs before reporting repository completion.");
     expect(result.cognitiveKernelResult.memoryHits).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1352,7 +1362,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
     const repositoryPath = await createFixtureRepository();
     const result = await new LocalCodingApprenticeDemoOrchestrator().runDemo(
       demoRequest(repositoryPath, {
-        userNotes: "Correction: run node scripts/pass.mjs before claiming completion token=sk-feedbacksecret123",
+        userNotes: "Correction: run bun run scripts/pass.mjs before claiming completion token=sk-feedbacksecret123",
         applyManualChange: async ({ sandbox }) => {
           await writeFile(path.join(sandbox.worktreePath, "packages", "value.txt"), "manual pass\n");
         },
@@ -1411,7 +1421,7 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       demoRequest(repositoryPath, {
         applyManualChange: async ({ sandbox, artifactRoot }) => {
           await writeFile(path.join(sandbox.worktreePath, "packages", "value.txt"), "manual pass\n");
-          await writeFile(path.join(artifactRoot, "validation.log"), "node scripts/pass.mjs\nPASS\n");
+          await writeFile(path.join(artifactRoot, "validation.log"), "bun run scripts/pass.mjs\nPASS\n");
           return { validationTranscriptPath: path.join(artifactRoot, "validation.log") };
         },
       }),

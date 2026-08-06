@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "bun:test";
 import { LocalStateError } from "@codepawl/local-state";
 import type { MemoryNamespace, SkillDefinition, SkillExtractionCandidate } from "@codepawl/shared";
 import {
@@ -40,13 +40,13 @@ function skill(overrides: Partial<SkillDefinition> = {}): SkillDefinition {
     validation: {
       requiresVerifierPass: true,
       requiresDiffWithinScope: true,
-      commands: ["pnpm test"],
+      commands: ["bun test"],
       expectedEvidenceKinds: ["command"],
     },
     safety: {
       allowedPaths: ["packages/example/**"],
       protectedPaths: [".env"],
-      allowedCommands: ["pnpm test"],
+      allowedCommands: ["bun test"],
       blockedActions: ["automatic_execution"],
       requiresManualApproval: true,
       rollbackNotes: "Archive the learned skill.",

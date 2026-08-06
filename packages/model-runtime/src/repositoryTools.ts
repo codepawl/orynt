@@ -5,6 +5,18 @@ import { promisify } from "node:util";
 
 import type { AgentFunctionTool, AgentToolCall, AgentToolResult } from "./index.js";
 
+declare const Bun: {
+  spawn(
+    argv: string[],
+    options: { cwd: string; stdin: Blob; stdout: "pipe"; stderr: "pipe" },
+  ): {
+    stdout: ReadableStream<Uint8Array>;
+    stderr: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+    kill(signal: string): void;
+  };
+};
+
 const execFileAsync = promisify(execFile);
 const MAX_TOOL_OUTPUT = 32_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -321,39 +333,36 @@ export class RepositoryAgentToolExecutor {
     };
   }
 
-  private spawnWithInput(
+  private async spawnWithInput(
     command: string,
     args: string[],
     input: string,
     cwd: string,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(command, args, {
-        cwd,
-        stdio: ["pipe", "pipe", "pipe"],
-        detached: process.platform !== "win32",
-      });
-      let stdout = "";
-      let stderr = "";
-      const max = this.options.maxOutputBytes ?? MAX_TOOL_OUTPUT;
-      child.stdout.on("data", (chunk) => { stdout = bounded(`${stdout}${String(chunk)}`, max); });
-      child.stderr.on("data", (chunk) => { stderr = bounded(`${stderr}${String(chunk)}`, max); });
-      child.once("error", reject);
-      child.once("close", (code) => resolve({ stdout, stderr, exitCode: code ?? 1 }));
-      const timeout = setTimeout(() => {
-        if (process.platform !== "win32") {
-          try { process.kill(-child.pid!, "SIGKILL"); } catch { child.kill("SIGKILL"); }
-        } else {
-          child.kill("SIGKILL");
-        }
-      }, this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-      child.once("close", () => clearTimeout(timeout));
-      if (this.options.signal) {
-        const abort = () => child.kill("SIGKILL");
-        this.options.signal.addEventListener("abort", abort, { once: true });
-        child.once("close", () => this.options.signal?.removeEventListener("abort", abort));
-      }
-      child.stdin.end(input);
+    const child = Bun.spawn([command, ...args], {
+      cwd,
+      stdin: new Blob([input]),
+      stdout: "pipe",
+      stderr: "pipe",
     });
+    const abort = () => child.kill("SIGKILL");
+    this.options.signal?.addEventListener("abort", abort, { once: true });
+    const timeout = setTimeout(abort, this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    try {
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      const max = this.options.maxOutputBytes ?? MAX_TOOL_OUTPUT;
+      return {
+        stdout: bounded(stdout, max),
+        stderr: bounded(stderr, max),
+        exitCode,
+      };
+    } finally {
+      clearTimeout(timeout);
+      this.options.signal?.removeEventListener("abort", abort);
+    }
   }
 }

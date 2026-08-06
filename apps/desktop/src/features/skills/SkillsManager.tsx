@@ -6,7 +6,6 @@ import {
   ChevronRight,
   CloudDownload,
   History,
-  LoaderCircle,
   Pin,
   RefreshCw,
   Search,
@@ -15,6 +14,7 @@ import {
 import type { KeyboardEvent } from "react";
 import type { SkillDefinition } from "@codepawl/shared";
 
+import { ProbabilityLoader } from "../../ProbabilityLoader";
 import { orynt } from "../../oryntClient";
 import type {
   InstalledAgentSkill,
@@ -342,7 +342,7 @@ export function SkillsManager({ learnedSkills, onEligibleSkillsChange, onLearned
           setPendingAction("refresh");
           void orynt.refreshSkillHub().then(setSources).catch((error) => setMessage(error instanceof Error ? error.message : "Source refresh failed.")).finally(() => setPendingAction(""));
         }}>
-          {pendingAction === "refresh" ? <LoaderCircle className="skills-manager-spin" aria-hidden="true" /> : <RefreshCw aria-hidden="true" />} Refresh
+          {pendingAction === "refresh" ? <ProbabilityLoader /> : <RefreshCw aria-hidden="true" />} Refresh
         </button>
       </div>
       <div className="skills-manager-source-list">
@@ -380,7 +380,7 @@ export function SkillsManager({ learnedSkills, onEligibleSkillsChange, onLearned
         ))}
       </nav>
       <section className="skills-manager-panel" id={`skills-manager-panel-${activeTab}`} role="tabpanel" aria-labelledby={`skills-manager-tab-${activeTab}`}>
-        {loadState === "loading" ? <div className="skills-manager-loading" role="status"><LoaderCircle className="skills-manager-spin" aria-hidden="true" /><span>Scanning configured skill roots and loading enabled sources…</span></div> : null}
+        {loadState === "loading" ? <div className="skills-manager-loading" role="status"><ProbabilityLoader /><span>Scanning configured skill roots and loading enabled sources…</span></div> : null}
         {loadState === "error" ? <div className="skills-manager-error" role="alert"><AlertTriangle aria-hidden="true" /><div><strong>Skills Manager unavailable</strong><p>{message}</p><button type="button" onClick={() => void loadManager()}>Retry</button></div></div> : null}
         {loadState === "ready" ? (
           <>
@@ -403,7 +403,7 @@ export function SkillsManager({ learnedSkills, onEligibleSkillsChange, onLearned
             <div className="skills-manager-plan-actions">
               <button type="button" onClick={() => setPendingPlan(null)} disabled={Boolean(pendingAction)}>Cancel</button>
               <button type="button" onClick={() => void approveAndExecute()} disabled={Boolean(pendingAction)} aria-busy={Boolean(pendingAction)}>
-                {pendingAction ? <><LoaderCircle className="skills-manager-spin" aria-hidden="true" /> Applying…</> : "Approve and apply"}
+                {pendingAction ? <><ProbabilityLoader /> Applying…</> : "Approve and apply"}
               </button>
             </div>
           </section>

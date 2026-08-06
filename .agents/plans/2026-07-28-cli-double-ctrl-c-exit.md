@@ -41,8 +41,8 @@ restore the main prompt.
 ## Validation
 
 - Focused composer tests and TypeScript check.
-- Full `pnpm test:cli`.
-- Production `pnpm build:cli`.
+- Full `bun run test:cli`.
+- Production `bun run build:cli`.
 - Real TTY smoke via `make cli`.
 - Final regression review.
 

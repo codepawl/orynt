@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,71 +11,84 @@ type SkillSidecarResponse = {
 };
 
 function repositoryRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+  const configured = process.env.ORYNT_RUNTIME_ROOT?.trim();
+  const executableRoot = path.dirname(process.execPath);
+  const moduleUrl = (
+    globalThis as typeof globalThis & { __oryntModuleUrl?: string }
+  ).__oryntModuleUrl;
+  const moduleRoot = typeof moduleUrl === "string"
+    ? path.dirname(fileURLToPath(moduleUrl))
+    : undefined;
+  const candidates = [
+    configured,
+    executableRoot,
+    moduleRoot,
+    process.cwd(),
+    moduleRoot ? path.resolve(moduleRoot, "../../..") : undefined,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  const root = candidates.find((candidate) =>
+    existsSync(path.join(candidate, "scripts", "desktop-skill-manager.mjs"))
+  );
+  if (!root) {
+    throw new Error(
+      "Orynt skill runtime resources are missing. Reinstall the complete CLI release.",
+    );
+  }
+  return root;
 }
 
 export class LocalSkillCliManager implements SkillCliManager {
   constructor(private readonly stateRoot: string) {}
 
-  private invoke(operation: string, input: Record<string, unknown>): Promise<unknown> {
+  private async invoke(
+    operation: string,
+    input: Record<string, unknown>,
+  ): Promise<unknown> {
     const root = repositoryRoot();
-    return new Promise((resolve, reject) => {
-      const child = spawn(
+    const child = Bun.spawn(
+      [
         process.execPath,
-        [
-          "--import",
-          path.join(root, "scripts", "register-extensionless-esm-loader.mjs"),
-          path.join(root, "scripts", "desktop-skill-manager.mjs"),
-        ],
-        {
-          cwd: root,
-          env: process.env,
-          stdio: ["pipe", "pipe", "pipe"],
-        },
+        path.join(root, "scripts", "desktop-skill-manager.mjs"),
+      ],
+      {
+        env: process.env,
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    child.stdin.write(
+      JSON.stringify({
+        schemaVersion: 1,
+        operation,
+        input,
+        managerRoot: path.join(this.stateRoot, "skills"),
+        userSkillRoot: path.join(os.homedir(), ".agents", "skills"),
+      }),
+    );
+    child.stdin.end();
+    const [code, stdoutText, stderrText] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    if (code !== 0) {
+      throw new Error(
+        stderrText.trim() ||
+          stdoutText.trim() ||
+          `skill manager exited with status ${code}`,
       );
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
-      child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
-      child.on("error", reject);
-      child.on("close", (code) => {
-        if (code !== 0) {
-          const stderrText = Buffer.concat(stderr).toString("utf8").trim();
-          const stdoutText = Buffer.concat(stdout).toString("utf8").trim();
-          reject(
-            new Error(
-              stderrText ||
-                stdoutText ||
-                `skill manager exited with status ${code}`,
-            ),
-          );
-          return;
-        }
-        try {
-          const response = JSON.parse(
-            Buffer.concat(stdout).toString("utf8"),
-          ) as SkillSidecarResponse;
-          resolve(response.result);
-        } catch (error) {
-          reject(
-            new Error(
-              `could not parse skill manager response: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            ),
-          );
-        }
-      });
-      child.stdin.end(
-        JSON.stringify({
-          schemaVersion: 1,
-          operation,
-          input,
-          managerRoot: path.join(this.stateRoot, "skills"),
-          userSkillRoot: path.join(os.homedir(), ".agents", "skills"),
-        }),
+    }
+    try {
+      const response = JSON.parse(stdoutText) as SkillSidecarResponse;
+      return response.result;
+    } catch (error) {
+      throw new Error(
+        `could not parse skill manager response: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
-    });
+    }
   }
 
   scan(input: Record<string, unknown>) {

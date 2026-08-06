@@ -10,8 +10,9 @@
     },
     "strict": true,
     "target": "ES2022",
-    "types": ["vite/client", "vitest/globals"],
+    "types": ["vite/client"],
     "verbatimModuleSyntax": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"]
 }

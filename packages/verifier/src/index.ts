@@ -26,7 +26,7 @@ import {
   type DiffScopeResult,
 } from "@codepawl/shared";
 
-import { parsePorcelainStatusPaths } from "./gitStatus";
+import { parsePorcelainStatusPaths } from "./gitStatus.js";
 
 type LocalRepositoryVerifierOptions = {
   managedArtifactRoot?: string;
@@ -82,7 +82,7 @@ export class VerificationCancelledError extends Error {
   }
 }
 
-const DEFAULT_COMMANDS = ["pnpm test", "pnpm test:contracts", "pnpm test:desktop", "pnpm build:desktop"];
+const DEFAULT_COMMANDS = ["bun test", "bun test:contracts", "bun test:desktop", "bun build:desktop"];
 const SHELL_CONTROL_PATTERN = /[|;&<>`$(){}[\]*?~]/;
 const SENSITIVE_KEY_PATTERN = /\b(password|secret|api[-_\s]?key|token|otp|authorization|cookie|credential)\b/i;
 const KEY_VALUE_SECRET_PATTERN = /\b(password|secret|api[-_\s]?key|token|otp|authorization|cookie|credential)\b\s*[:=]\s*[^\s,;]+/gi;

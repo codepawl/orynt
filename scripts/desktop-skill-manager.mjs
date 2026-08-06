@@ -1,8 +1,7 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   DurableLearnedSkillRegistry,
@@ -20,7 +19,7 @@ const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_RELEASE_FILES = 200;
 const MAX_RELEASE_BYTES = 8 * 1024 * 1024;
-const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT_DIRECTORY = path.resolve(process.cwd(), "scripts");
 const BUILTIN_SKILL_ROOT = path.resolve(
   SCRIPT_DIRECTORY,
   "..",
@@ -430,7 +429,7 @@ async function downloadBundle(item, destination) {
   }
 }
 
-async function dispatch(request) {
+export async function executeDesktopSkillOperation(request) {
   const input = object(request.input);
   const repositoryPath =
     typeof input.repositoryPath === "string" && input.repositoryPath
@@ -490,7 +489,10 @@ async function dispatch(request) {
     stateRoot: managerRoot,
     runtimeRoots: [
       {
-        path: BUILTIN_SKILL_ROOT,
+        path:
+          typeof request.runtimeSkillRoot === "string" && request.runtimeSkillRoot
+            ? path.resolve(request.runtimeSkillRoot)
+            : BUILTIN_SKILL_ROOT,
         scope: "runtime",
         source: {
           id: BUILTIN_SOURCE.id,
@@ -631,13 +633,19 @@ async function dispatch(request) {
 
 async function main() {
   const request = await readJsonStdin();
-  const result = await dispatch(request);
+  const result = await executeDesktopSkillOperation(request);
   const response = JSON.stringify({ result, events: [] });
   if (Buffer.byteLength(response) > MAX_RESPONSE_BYTES) throw new Error("response exceeds size limit");
   process.stdout.write(`${response}\n`);
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.stack || error.message : String(error)}\n`);
-  process.exit(1);
-});
+const isDirectExecution =
+  typeof process.argv[1] === "string" &&
+  path.basename(process.argv[1]) === "desktop-skill-manager.mjs";
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.stack || error.message : String(error)}\n`);
+    process.exit(1);
+  });
+}

@@ -1,4 +1,4 @@
-import type { Actor, ArtifactRef, RunEventDraft, RunStore, SafetySnapshot } from "./runSpine";
+import type { Actor, ArtifactRef, RunEventDraft, RunStore, SafetySnapshot } from "./runSpine.js";
 
 export type PermissionMode = "manual" | "safe" | "balanced" | "experimental";
 
@@ -202,15 +202,15 @@ export interface SandboxManager {
 const DANGEROUS_COMMAND_PATTERN = /\b(git\s+(?:push|merge)|git\s+branch\s+-D|rm\s+-rf|sudo|curl|wget)\b/i;
 
 const DEFAULT_COMMAND_POLICY: CommandPolicy = {
-  allowlist: ["git status", "git diff", "pnpm test", "pnpm test:contracts", "pnpm test:desktop", "pnpm build:desktop"],
+  allowlist: ["git status", "git diff", "bun test", "bun test:contracts", "bun test:desktop", "bun build:desktop"],
   blockedCommands: ["git push", "git merge", "git branch -D", "rm -rf", "sudo", "credential", "secret"],
-  approvalRequiredCommands: ["pnpm install", "npm install", "yarn install", "bun install"],
+  approvalRequiredCommands: ["bun install", "npm install", "yarn install", "bun install"],
   blockShellOutsideAllowlist: true,
 };
 
 const DEFAULT_FILE_WRITE_POLICY: FileWritePolicy = {
   allowedGlobs: ["apps/**", "packages/**", ".codex/**", "README.md", "PRODUCT.md"],
-  protectedGlobs: [".git/**", ".env", ".env.*", "**/*secret*", "**/*credential*", "pnpm-lock.yaml", "apps/desktop/src-tauri/Cargo.lock"],
+  protectedGlobs: [".git/**", ".env", ".env.*", "**/*secret*", "**/*credential*", "bun.lock"],
   maxChangedFiles: 12,
   maxFileBytes: 200_000,
   broadWriteRequiresApproval: true,

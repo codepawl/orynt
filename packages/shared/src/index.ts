@@ -1,25 +1,33 @@
-export * from "./runSpine";
-export * from "./corePolicy";
-export * from "./codexContracts";
-export * from "./codexResultImportContracts";
-export * from "./verifierContracts";
-export * from "./contextWorkspace";
-export * from "./memoryContracts";
-export * from "./skillContracts";
-export * from "./skillManagerContracts";
-export * from "./agentLedger";
-export * from "./productPlans";
-export * from "./orchestrationContracts";
-export * from "./taskPlanContracts";
+export * from "./runSpine.js";
+export * from "./corePolicy.js";
+export * from "./codexContracts.js";
+export * from "./codexResultImportContracts.js";
+export * from "./repositoryDiffContracts.js";
+export * from "./canonicalEvidenceContracts.js";
+export * from "./verifierContracts.js";
+export * from "./contextWorkspace.js";
+export * from "./memoryContracts.js";
+export * from "./skillContracts.js";
+export * from "./skillManagerContracts.js";
+export * from "./agentLedger.js";
+export * from "./orchestrationContracts.js";
+export * from "./modelTierContracts.js";
+export * from "./taskPlanContracts.js";
+export * from "./promptUnderstandingContracts.js";
+export * from "./languagePolicy.js";
+export * from "./capabilityContracts.js";
+export * from "./agentRuntimeContracts.js";
+export * from "./multimodalContracts.js";
+export * from "./intelligenceContracts.js";
+export * from "./contextVmContracts.js";
+export * from "./contextControlContracts.js";
 
-import { createMockRunSequence } from "./runSpine";
-import { getOryntPlan, summarizePlanQuota } from "./productPlans";
-import type { PermissionMode } from "./corePolicy";
-import type { MonthlyUsageSummary } from "./agentLedger";
-import type { ArtifactRef, RunEvent, RunSummary } from "./runSpine";
-import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryProvenance, MemoryReviewSnapshot } from "./memoryContracts";
-import type { SkillDefinition, SkillRegistrySnapshot } from "./skillContracts";
-import type { OryntPlanConfig, PlanQuotaSummary } from "./productPlans";
+import { createMockRunSequence } from "./runSpine.js";
+import type { PermissionMode } from "./corePolicy.js";
+import type { MonthlyUsageSummary } from "./agentLedger.js";
+import type { ArtifactRef, RunEvent, RunSummary } from "./runSpine.js";
+import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryProvenance, MemoryReviewSnapshot } from "./memoryContracts.js";
+import type { SkillDefinition, SkillRegistrySnapshot } from "./skillContracts.js";
 
 export type SurfaceKind = "repository" | "browser" | "desktop" | "files" | "terminal";
 
@@ -30,8 +38,6 @@ export type RiskLevel = "low" | "medium" | "high" | "blocked";
 export type Workspace = {
   id: string;
   name: string;
-  plan: "trial" | "starter" | "pro" | "team";
-  trialRunsRemaining?: number;
 };
 
 export type AgentTask = {
@@ -98,8 +104,6 @@ export type MockRunState = {
   permissionPolicy: PermissionPolicy;
   usageBudget: UsageBudget;
   usageSummary: MonthlyUsageSummary;
-  productPlan: OryntPlanConfig;
-  quotaSummary: PlanQuotaSummary;
   traceSummary: TraceSummary;
   runSummary: RunSummary;
   events: RunEvent[];
@@ -131,7 +135,7 @@ function createMockSkillRegistry(runId: string, taskId: string, memoryReview: Me
     namespace: memoryReview.namespace,
     capabilityId: "coding-apprentice.repository-scope",
     title: "Keep package fixes scoped",
-    summary: "Apply package-only source fixes, keep protected files untouched, and validate with pnpm test:contracts. Redacted note: [REDACTED].",
+    summary: "Apply package-only source fixes, keep protected files untouched, and validate with bun test:contracts. Redacted note: [REDACTED].",
     status: "candidate",
     confidence: 0.86,
     preconditions: [
@@ -166,13 +170,13 @@ function createMockSkillRegistry(runId: string, taskId: string, memoryReview: Me
     validation: {
       requiresVerifierPass: true,
       requiresDiffWithinScope: true,
-      commands: ["pnpm test:contracts"],
+      commands: ["bun test:contracts"],
       expectedEvidenceKinds: ["command", "diff_scope"],
     },
     safety: {
       allowedPaths: ["packages/**"],
-      protectedPaths: [".env", "pnpm-lock.yaml"],
-      allowedCommands: ["pnpm test:contracts"],
+      protectedPaths: [".env", "bun.lock"],
+      allowedCommands: ["bun test:contracts"],
       blockedActions: ["automatic_execution", "codex_auto_run", "browser_automation", "secret_storage"],
       requiresManualApproval: true,
       rollbackNotes: "Archive or supersede this skill if later verifier evidence invalidates the package-scope rule.",
@@ -264,7 +268,7 @@ function createMockMemoryReview(runId: string, taskId: string): MemoryReviewSnap
       status: "candidate",
       title: "Keep package fixes scoped",
       rule: "Keep source-only fixes under packages/** unless the contract says otherwise.",
-      scope: { repositoryPath: "/repos/orynt", allowedPaths: ["packages/**"], protectedPaths: [".env", "pnpm-lock.yaml"] },
+      scope: { repositoryPath: "/repos/orynt", allowedPaths: ["packages/**"], protectedPaths: [".env", "bun.lock"] },
       evidence: [
         {
           kind: "allowed_scope_pattern",
@@ -325,14 +329,6 @@ export function createMockRunState(): MockRunState {
   const mockRun = createMockRunSequence();
   const memoryReview = createMockMemoryReview(mockRun.run.id, mockRun.run.taskId);
   const skillRegistry = createMockSkillRegistry(mockRun.run.id, mockRun.run.taskId, memoryReview);
-  const productPlan = getOryntPlan("managed-ai");
-  const quotaSummary = summarizePlanQuota({
-    planId: productPlan.id,
-    billingCadence: "monthly",
-    creditsConsumed: 0,
-    runsThisMonth: 1,
-    gatewayActionsThisMonth: 1,
-  });
   const activeTask: AgentTask = {
     id: mockRun.run.taskId,
     title: mockRun.run.goal,
@@ -348,8 +344,6 @@ export function createMockRunState(): MockRunState {
     workspace: {
       id: "workspace-local-alpha",
       name: "Local Alpha Workspace",
-      plan: "trial",
-      trialRunsRemaining: 12,
     },
     activeTask,
     tasks: [
@@ -422,8 +416,6 @@ export function createMockRunState(): MockRunState {
       artifactCount: mockRun.summary.artifactCount,
       creditsConsumed: 0.01,
     },
-    productPlan,
-    quotaSummary,
     traceSummary: {
       runId: mockRun.run.id,
       eventCount: mockRun.summary.eventCount,

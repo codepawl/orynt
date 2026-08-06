@@ -216,7 +216,7 @@ async function runMutation(
       throw new Error("headless skill mutation requires --approve-once");
     }
     const approved = await dependencies.confirm(
-      `Approve ${args.command} plan ${planId}?`,
+      `Run ${args.command} skill plan ${planId}?`,
     );
     if (!approved) {
       dependencies.write("Skill mutation canceled.");

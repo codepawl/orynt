@@ -1,32 +1,33 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createMockRunState, MVP_BLOCKED_SURFACES } from "@codepawl/shared";
-import { getLandingUrl } from "./landingUrl";
+import {
+  createMockRunState,
+  createSingleModelTierConfiguration,
+  MVP_BLOCKED_SURFACES,
+  parsePromptUnderstandingV1,
+  redactSensitivePayload,
+  type ModelTier,
+  type OrchestrationRole,
+  validatePromptUnderstandingBasis,
+  validatePromptUnderstandingContext,
+} from "@codepawl/shared";
 import {
   Archive,
   Blocks,
-  BookOpen,
   Camera,
   Check,
   ChevronsUpDown,
   ChevronRight,
-  CircleUserRound,
   Copy,
-  CreditCard,
   Cpu,
   Database,
-  Download,
   EllipsisVertical,
   FolderPlus,
   FolderOpen,
   GitBranch,
   Gauge,
   Globe2,
-  Gift,
   Info,
-  Languages,
   LayoutDashboard,
-  LoaderCircle,
-  LogOut,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -61,6 +62,7 @@ import lightbulbLogoOnDark from "../../../assets/pictures/lightbulb-mark-on-dark
 
 import { SkillsManager } from "./features/skills/SkillsManager";
 import { MemoryManager } from "./features/memory/MemoryManager";
+import { ProbabilityLoader } from "./ProbabilityLoader";
 import { orynt } from "./oryntClient";
 import type {
   ArtifactEvidenceContent,
@@ -77,6 +79,11 @@ import type {
   ModelProviderId,
   PersistedRunRecord,
   PersistedRunSummary,
+  PromptUnderstanding,
+  PromptUnderstandingAssumption,
+  PromptUnderstandingBasis,
+  PromptUnderstandingContext,
+  PromptUnderstandingQuestion,
   SettingsSnapshot,
   ThinkingEffort,
   InstalledAgentSkill,
@@ -108,8 +115,39 @@ type ThreadMessage = {
 type ThreadStateSnapshot = {
   workspaces: Workspace[];
   threadMessagesByWorkspace: Record<string, ThreadMessage[]>;
+  threadDraftsByWorkspace: Record<string, ThreadDraft>;
   nextWorkspaceThreadIndex: number;
   activeWorkspaceId: string;
+};
+
+type PromptDraftStage =
+  | "understanding"
+  | "clarification"
+  | "assumption_confirmation"
+  | "refining"
+  | "blocked"
+  | "failed";
+
+type ThreadPromptDraft = {
+  version: 1;
+  id: string;
+  round: number;
+  stage: PromptDraftStage;
+  basis: PromptUnderstandingBasis;
+  context: PromptUnderstandingContext;
+  result?: PromptUnderstanding;
+  pendingQuestionId?: string;
+  selectedOptionId?: string;
+  requiresReconfirmation: boolean;
+  message?: string;
+  updatedAt: string;
+};
+
+type ThreadDraft = {
+  version: 1;
+  composerValue: string;
+  conversationSummary?: string;
+  promptUnderstanding?: ThreadPromptDraft;
 };
 
 type AgentResponseRating = "good" | "bad";
@@ -181,14 +219,13 @@ const surfaceDescriptions: Record<SurfaceKind, string> = {
 };
 
 const messageBlockMetaDescription = "Show or hide compact block labels above agent and approval messages.";
-const betaUnavailableSurfaces = ["Browser", "Desktop", "Files", "Terminal", "Cloud", "Billing"] as const;
+const betaUnavailableSurfaces = ["Browser", "Desktop", "Files", "Terminal", "Cloud"] as const;
 const betaUnavailableSurfaceDescriptions: Record<(typeof betaUnavailableSurfaces)[number], string> = {
   Browser: "Browser automation is not available from this private beta workspace.",
   Desktop: "Computer-wide desktop control remains unavailable.",
   Files: "Only the selected local directory is in scope.",
   Terminal: "Arbitrary shell and terminal control remain unavailable.",
   Cloud: "Hosted cloud runs are not enabled for this local-first beta.",
-  Billing: "Billing actions stay disabled while this release uses local beta access.",
 };
 const renderedRunEventTypes: Partial<Record<RunEvent["type"], true>> = {
   run_started: true,
@@ -552,10 +589,6 @@ function preflightTone(ready: boolean, status: string): SetupNoticeTone {
   return status === "failed" || status === "missing" ? "error" : "warning";
 }
 
-function LoadingSpinner() {
-  return <LoaderCircle className="ui-icon loading-spinner" aria-hidden="true" strokeWidth={2} />;
-}
-
 function LoadingButtonContent({
   children,
   isLoading,
@@ -570,7 +603,7 @@ function LoadingButtonContent({
   }
   return (
     <span className="loading-button-content">
-      <LoadingSpinner />
+      <ProbabilityLoader />
       <span>{loadingLabel}</span>
     </span>
   );
@@ -666,15 +699,20 @@ function readPrivateBetaOnboardingDismissed() {
   }
 }
 
-function readMessageBlockMetaVisible() {
+function readStoredMessageBlockMetaVisible(): boolean | undefined {
   try {
-    return (
-      window.localStorage.getItem(messageBlockMetaStorageKey) === "true" ||
-      window.localStorage.getItem(legacyMessageBlockMetaStorageKey) === "true"
-    );
+    const current = window.localStorage.getItem(messageBlockMetaStorageKey);
+    if (current === "true" || current === "false") return current === "true";
+    const legacy = window.localStorage.getItem(legacyMessageBlockMetaStorageKey);
+    if (legacy === "true" || legacy === "false") return legacy === "true";
+    return undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+function readMessageBlockMetaVisible() {
+  return readStoredMessageBlockMetaVisible() ?? false;
 }
 
 function readMobileWorkspaceViewport() {
@@ -1193,6 +1231,10 @@ export function OryntDropdown({
             const optionId = `${id}-option-${index}`;
             return (
               <button
+                aria-label={[
+                  option.label,
+                  option.description,
+                ].filter(Boolean).join(" · ")}
                 aria-selected={isSelected}
                 className={`orynt-dropdown-option${isHighlighted ? " orynt-dropdown-option-highlighted" : ""}${isSelected ? " orynt-dropdown-option-selected" : ""}`}
                 id={optionId}
@@ -1255,33 +1297,8 @@ const settingsSections = [
   { id: "general", label: "General", group: "Settings", keywords: ["profile", "appearance", "operator", "message", "labels", "display", "voice", "font", "motion"], Icon: SettingsIcon },
   { id: "model", label: "Model", group: "Settings", keywords: ["provider", "model", "codex", "openai", "thinking", "effort"], Icon: Cpu },
   { id: "memory", label: "Memory", group: "Settings", keywords: ["memory", "semantic", "rules", "episodes", "trash", "retention"], Icon: Database },
-  { id: "status", label: "Status", group: "Settings", keywords: ["status", "beta", "surface", "repository", "browser", "desktop", "files", "terminal", "cloud", "billing"], Icon: ShieldCheck },
-  { id: "account", label: "Account", group: "Settings", keywords: ["identity", "session", "workspace", "devices"], Icon: CircleUserRound },
-  { id: "billing", label: "Billing", group: "Settings", keywords: ["plan", "invoice", "subscription", "local"], Icon: CreditCard },
+  { id: "status", label: "Status", group: "Settings", keywords: ["status", "beta", "surface", "repository", "browser", "desktop", "files", "terminal", "cloud"], Icon: ShieldCheck },
 ] as const;
-
-type AccountMenuItem = {
-  action: "future" | "logout" | "settings" | "skills";
-  hasSubmenu?: boolean;
-  Icon: LucideIcon;
-  id: string;
-  label: string;
-};
-
-const accountMenuGroups = [
-  [{ id: "settings", label: "Settings", Icon: SettingsIcon, action: "settings" }],
-  [
-    { id: "language", label: "Language", Icon: Languages, action: "future", hasSubmenu: true },
-    { id: "help", label: "Get help", Icon: BookOpen, action: "future" },
-  ],
-  [
-    { id: "upgrade", label: "Upgrade plan", Icon: CreditCard, action: "future" },
-    { id: "apps", label: "Get apps and extensions", Icon: Download, action: "skills" },
-    { id: "gift", label: "Gift Orynt", Icon: Gift, action: "future" },
-    { id: "learn", label: "Learn more", Icon: Info, action: "future", hasSubmenu: true },
-  ],
-  [{ id: "logout", label: "Log out", Icon: LogOut, action: "logout" }],
-] satisfies AccountMenuItem[][];
 
 type PermissionModeOption = (typeof permissionModeOptions)[number]["value"];
 type ThinkingEffortOption = (typeof thinkingEffortOptions)[number]["value"];
@@ -1809,6 +1826,9 @@ function createUxrayAgentResponsePreviewThreadState(): ThreadStateSnapshot {
         },
       ],
     },
+    threadDraftsByWorkspace: {
+      [workspace.id]: { version: 1, composerValue: "" },
+    },
     nextWorkspaceThreadIndex: 2,
     activeWorkspaceId: workspace.id,
   };
@@ -1818,6 +1838,7 @@ function createInitialThreadState(): ThreadStateSnapshot {
   return {
     workspaces: [...initialWorkspaces],
     threadMessagesByWorkspace: createInitialThreadMessages(),
+    threadDraftsByWorkspace: { draft: { version: 1, composerValue: "" } },
     nextWorkspaceThreadIndex: 2,
     activeWorkspaceId: "draft",
   };
@@ -1827,6 +1848,7 @@ function createDemoThreadState(runState: MockRunState): ThreadStateSnapshot {
   return {
     workspaces: [...initialWorkspaces],
     threadMessagesByWorkspace: createDemoThreadMessages(runState),
+    threadDraftsByWorkspace: { draft: { version: 1, composerValue: "" } },
     nextWorkspaceThreadIndex: 2,
     activeWorkspaceId: "draft",
   };
@@ -1862,6 +1884,127 @@ function sanitizePersistedThreadMessage(value: unknown): ThreadMessage | null {
   };
 }
 
+function sanitizePromptUnderstandingBasis(value: unknown): PromptUnderstandingBasis | null {
+  try {
+    validatePromptUnderstandingBasis(value);
+    return structuredClone(value);
+  } catch {
+    return null;
+  }
+}
+
+function sanitizePromptUnderstandingContext(value: unknown): PromptUnderstandingContext | null {
+  try {
+    validatePromptUnderstandingContext(value);
+    return structuredClone(value);
+  } catch {
+    return null;
+  }
+}
+
+function promptUnderstandingContextForThread(
+  messages: readonly ThreadMessage[],
+  conversationSummary?: string,
+): PromptUnderstandingContext {
+  const redactedSummary = conversationSummary
+    ? redactSensitivePayload(conversationSummary).payload
+    : undefined;
+  return {
+    ...(typeof redactedSummary === "string" && redactedSummary.trim()
+      ? { conversationSummary: redactedSummary.trim().slice(0, 4_000) }
+      : {}),
+    recentTurns: messages
+      .filter(
+        (message): message is ThreadMessage & { role: "user" | "agent"; content: string } =>
+          (message.role === "user" || message.role === "agent") &&
+          typeof message.content === "string" &&
+          Boolean(message.content.trim()),
+      )
+      .slice(-6)
+      .flatMap((message) => {
+        const redacted = redactSensitivePayload(message.content).payload;
+        if (typeof redacted !== "string" || !redacted.trim()) return [];
+        return [{
+          role: message.role,
+          content: redacted.trim().slice(0, 2_000),
+        }];
+      }),
+  };
+}
+
+function sanitizeThreadPromptDraft(value: unknown): ThreadPromptDraft | null {
+  if (!isRecord(value) || value.version !== 1 || typeof value.id !== "string" || typeof value.stage !== "string") {
+    return null;
+  }
+  const stage: PromptDraftStage | null =
+    value.stage === "understanding" ||
+    value.stage === "clarification" ||
+    value.stage === "assumption_confirmation" ||
+    value.stage === "refining" ||
+    value.stage === "blocked" ||
+    value.stage === "failed"
+      ? value.stage
+      : null;
+  const basis = sanitizePromptUnderstandingBasis(value.basis);
+  const context = sanitizePromptUnderstandingContext(
+    value.context ?? { recentTurns: [] },
+  );
+  if (!stage || !basis || !context || !Number.isFinite(value.round) || typeof value.updatedAt !== "string") {
+    return null;
+  }
+  let result: PromptUnderstanding | undefined;
+  if (value.result !== undefined) {
+    try {
+      result = parsePromptUnderstandingV1(value.result);
+    } catch {
+      return null;
+    }
+  }
+  if ((stage === "clarification" || stage === "assumption_confirmation") && !result) {
+    return null;
+  }
+  return {
+    version: 1,
+    id: value.id.slice(0, 100),
+    round: Math.max(1, Math.min(3, Math.floor(value.round as number))),
+    stage,
+    basis,
+    context,
+    ...(result ? { result } : {}),
+    ...(typeof value.pendingQuestionId === "string"
+      ? { pendingQuestionId: value.pendingQuestionId.slice(0, 100) }
+      : {}),
+    ...(typeof value.selectedOptionId === "string"
+      ? { selectedOptionId: value.selectedOptionId.slice(0, 100) }
+      : {}),
+    requiresReconfirmation: true,
+    ...(typeof value.message === "string" && value.message.trim() ? { message: value.message.slice(0, 2_000) } : {}),
+    updatedAt: value.updatedAt,
+  };
+}
+
+function sanitizeThreadDraft(value: unknown): ThreadDraft | null {
+  if (!isRecord(value) || value.version !== 1 || typeof value.composerValue !== "string") {
+    return null;
+  }
+  const promptUnderstanding = value.promptUnderstanding === undefined ? undefined : sanitizeThreadPromptDraft(value.promptUnderstanding);
+  if (value.promptUnderstanding !== undefined && !promptUnderstanding) {
+    return null;
+  }
+  return {
+    version: 1,
+    composerValue: value.composerValue.slice(0, 12_000),
+    ...(typeof value.conversationSummary === "string" && value.conversationSummary.trim()
+      ? { conversationSummary: value.conversationSummary.trim().slice(0, 4_000) }
+      : {}),
+    ...(promptUnderstanding ? { promptUnderstanding } : {}),
+  };
+}
+
+function threadDraftHasPersistableContent(draft: ThreadDraft | undefined): boolean {
+  return Boolean(draft?.composerValue.trim() || draft?.promptUnderstanding);
+}
+
 function sanitizePersistedWorkspace(value: unknown): Workspace | null {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.label !== "string") {
     return null;
@@ -1895,9 +2038,22 @@ function readPersistedThreadState(): ThreadStateSnapshot | null {
         messagesByWorkspace[workspaceId] = safeMessages;
       }
     }
+    const draftsByWorkspace: Record<string, ThreadDraft> = {};
+    if (isRecord(parsed.threadDraftsByWorkspace)) {
+      for (const [workspaceId, draft] of Object.entries(parsed.threadDraftsByWorkspace)) {
+        const safeDraft = sanitizeThreadDraft(draft);
+        if (safeDraft && threadDraftHasPersistableContent(safeDraft)) {
+          draftsByWorkspace[workspaceId] = safeDraft;
+        }
+      }
+    }
     const workspaces = parsed.workspaces
       .map(sanitizePersistedWorkspace)
-      .filter((workspace): workspace is Workspace => workspace !== null && (messagesByWorkspace[workspace.id]?.length ?? 0) > 0);
+      .filter(
+        (workspace): workspace is Workspace =>
+          workspace !== null &&
+          ((messagesByWorkspace[workspace.id]?.length ?? 0) > 0 || threadDraftHasPersistableContent(draftsByWorkspace[workspace.id])),
+      );
     if (workspaces.length === 0) {
       return null;
     }
@@ -1908,6 +2064,7 @@ function readPersistedThreadState(): ThreadStateSnapshot | null {
     return {
       workspaces,
       threadMessagesByWorkspace: messagesByWorkspace,
+      threadDraftsByWorkspace: draftsByWorkspace,
       nextWorkspaceThreadIndex: typeof parsed.nextWorkspaceThreadIndex === "number" && Number.isFinite(parsed.nextWorkspaceThreadIndex)
         ? Math.max(2, Math.floor(parsed.nextWorkspaceThreadIndex))
         : 2,
@@ -1920,7 +2077,11 @@ function readPersistedThreadState(): ThreadStateSnapshot | null {
 
 function writePersistedThreadState(state: ThreadStateSnapshot): void {
   try {
-    const savedWorkspaces = state.workspaces.filter((workspace) => (state.threadMessagesByWorkspace[workspace.id]?.length ?? 0) > 0);
+    const savedWorkspaces = state.workspaces.filter(
+      (workspace) =>
+        (state.threadMessagesByWorkspace[workspace.id]?.length ?? 0) > 0 ||
+        threadDraftHasPersistableContent(state.threadDraftsByWorkspace[workspace.id]),
+    );
     if (savedWorkspaces.length === 0) {
       window.localStorage.removeItem(threadStateStorageKey);
       return;
@@ -1928,6 +2089,13 @@ function writePersistedThreadState(state: ThreadStateSnapshot): void {
     const savedMessages = savedWorkspaces.reduce<Record<string, ThreadMessage[]>>((messages, workspace) => {
       messages[workspace.id] = state.threadMessagesByWorkspace[workspace.id] ?? [];
       return messages;
+    }, {});
+    const savedDrafts = savedWorkspaces.reduce<Record<string, ThreadDraft>>((drafts, workspace) => {
+      const draft = state.threadDraftsByWorkspace[workspace.id];
+      if (draft && threadDraftHasPersistableContent(draft)) {
+        drafts[workspace.id] = draft;
+      }
+      return drafts;
     }, {});
     const activeWorkspaceId = savedWorkspaces.some((workspace) => workspace.id === state.activeWorkspaceId)
       ? state.activeWorkspaceId
@@ -1937,6 +2105,7 @@ function writePersistedThreadState(state: ThreadStateSnapshot): void {
       JSON.stringify({
         workspaces: savedWorkspaces,
         threadMessagesByWorkspace: savedMessages,
+        threadDraftsByWorkspace: savedDrafts,
         nextWorkspaceThreadIndex: state.nextWorkspaceThreadIndex,
         activeWorkspaceId,
       }),
@@ -2162,7 +2331,6 @@ function App({
   const [agentResponseSelection, setAgentResponseSelection] = useState<AgentResponseTextSelection | null>(null);
   const [readingAgentResponseId, setReadingAgentResponseId] = useState<string | null>(null);
   const [nextAgentRetryIndex, setNextAgentRetryIndex] = useState(2);
-  const [composerValue, setComposerValue] = useState("");
   const [repositoryPath, setRepositoryPath] = useState("");
   const [composerScaleMode, setComposerScaleMode] = useState<"normal" | "full">("normal");
   const [composerSubmittedAtMs, setComposerSubmittedAtMs] = useState<number | null>(null);
@@ -2171,9 +2339,32 @@ function App({
   const [threadMessagesByWorkspace, setThreadMessagesByWorkspace] = useState<Record<string, ThreadMessage[]>>(
     initialThreadState.threadMessagesByWorkspace,
   );
+  const [threadDraftsByWorkspace, setThreadDraftsByWorkspace] = useState<Record<string, ThreadDraft>>(
+    initialThreadState.threadDraftsByWorkspace,
+  );
   const [workspaces, setWorkspaces] = useState<Workspace[]>(initialThreadState.workspaces);
   const [nextWorkspaceThreadIndex, setNextWorkspaceThreadIndex] = useState(initialThreadState.nextWorkspaceThreadIndex);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(initialThreadState.activeWorkspaceId);
+  const activeThreadDraft = threadDraftsByWorkspace[activeWorkspaceId] ?? { version: 1 as const, composerValue: "" };
+  const composerValue = activeThreadDraft.composerValue;
+  const setComposerValue = (nextValue: string) => {
+    setThreadDraftsByWorkspace((current) => ({
+      ...current,
+      [activeWorkspaceId]: {
+        ...(current[activeWorkspaceId] ?? { version: 1, composerValue: "" }),
+        version: 1,
+        composerValue: nextValue,
+        ...(current[activeWorkspaceId]?.promptUnderstanding
+          ? {
+              promptUnderstanding: {
+                ...current[activeWorkspaceId].promptUnderstanding,
+                selectedOptionId: undefined,
+              },
+            }
+          : {}),
+      },
+    }));
+  };
   const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState("");
   const [isWorkspaceSearchOpen, setIsWorkspaceSearchOpen] = useState(false);
   const [openWorkspaceMenuId, setOpenWorkspaceMenuId] = useState<string | null>(null);
@@ -2187,7 +2378,6 @@ function App({
   const [isWorkspacePanelCollapsed, setIsWorkspacePanelCollapsed] = useState(false);
   const [isMobileWorkspaceViewport, setIsMobileWorkspaceViewport] = useState(readMobileWorkspaceViewport);
   const [isMobileWorkspaceDrawerOpen, setIsMobileWorkspaceDrawerOpen] = useState(false);
-  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [showSettingsSidebar, setShowSettingsSidebar] = useState(false);
   const [showSkillsManager, setShowSkillsManager] = useState(false);
   const [eligibleAgentSkills, setEligibleAgentSkills] = useState<InstalledAgentSkill[]>([]);
@@ -2218,6 +2408,7 @@ function App({
     return permissionModeOptions.some((option) => option.value === currentMode) ? (currentMode as PermissionModeOption) : "safe";
   });
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffortOption>("medium");
+  const [minimumModelTier, setMinimumModelTier] = useState<"auto" | ModelTier>("auto");
   const [isComposerMetaMenuOpen, setIsComposerMetaMenuOpen] = useState(false);
   const [composerMetaMenuPlacement, setComposerMetaMenuPlacement] = useState<ComposerMetaMenuPlacement>("dropdown");
   const [isComposerAttachmentMenuOpen, setIsComposerAttachmentMenuOpen] = useState(false);
@@ -2233,8 +2424,6 @@ function App({
     files: !MVP_BLOCKED_SURFACES.includes("files"),
     terminal: !MVP_BLOCKED_SURFACES.includes("terminal"),
   }));
-  const accountMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const accountMenuRef = useRef<HTMLDivElement>(null);
   const workspaceSearchInputRef = useRef<HTMLInputElement>(null);
   const composerMetaButtonRef = useRef<HTMLButtonElement>(null);
   const composerMetaMenuRef = useRef<HTMLDivElement>(null);
@@ -2278,7 +2467,6 @@ function App({
     return [section.label, section.group, ...section.keywords].some((value) => value.toLowerCase().includes(normalizedSettingsSearchQuery));
   });
   const activeSettingsSectionLabel = settingsSections.find((section) => section.id === activeSettingsSection)?.label ?? "General";
-  const landingUrl = getLandingUrl();
   const codexConnection = settingsSnapshot?.codexConnection ?? null;
   const modelConnection = modelConnectionFromSettings(settingsSnapshot);
   const isModelConnectionReady = modelConnectionIsReady(settingsSnapshot);
@@ -2491,7 +2679,9 @@ function App({
     setAppearancePreference(uiPreferences.appearance);
     setChatFontPreference(uiPreferences.chatFont);
     setMotionPreference(uiPreferences.motion);
-    setShowMessageBlockMeta(uiPreferences.showMessageBlockMeta);
+    setShowMessageBlockMeta(
+      readStoredMessageBlockMetaVisible() ?? uiPreferences.showMessageBlockMeta,
+    );
     setVoiceLanguage(voicePreferences.language);
     setVoiceStyle(voicePreferences.style);
     setVoiceSpeed(voicePreferences.speed);
@@ -2526,10 +2716,11 @@ function App({
     writePersistedThreadState({
       workspaces,
       threadMessagesByWorkspace,
+      threadDraftsByWorkspace,
       nextWorkspaceThreadIndex,
       activeWorkspaceId,
     });
-  }, [activeWorkspaceId, nextWorkspaceThreadIndex, seedDemoThread, threadMessagesByWorkspace, workspaces]);
+  }, [activeWorkspaceId, nextWorkspaceThreadIndex, seedDemoThread, threadDraftsByWorkspace, threadMessagesByWorkspace, workspaces]);
 
   useEffect(() => {
     const textarea = composerTextareaRef.current;
@@ -2795,41 +2986,6 @@ function App({
   }, [activeWorkspaceId]);
 
   useEffect(() => {
-    if (!isAccountMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-      if (accountMenuButtonRef.current?.contains(target) || accountMenuRef.current?.contains(target)) {
-        return;
-      }
-
-      setIsAccountMenuOpen(false);
-    };
-
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-
-      setIsAccountMenuOpen(false);
-      accountMenuButtonRef.current?.focus();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isAccountMenuOpen]);
-
-  useEffect(() => {
     if (!isComposerMetaMenuOpen && !isComposerAttachmentMenuOpen && !isComposerSkillsMenuOpen && !composerQuickDialog) {
       return;
     }
@@ -2948,11 +3104,31 @@ function App({
     };
   }, [shouldHydrateClientState]);
 
-  const submitComposerGoal = async (rawValue = composerValue) => {
-    const goal = rawValue.trim();
-    if (!goal) {
+  const submitComposerGoal = async (
+    rawValue = composerValue,
+    control: { confirmAssumptions?: boolean; reconfirmDraft?: boolean } = {},
+  ) => {
+    const submittedText = rawValue.trim();
+    if (!submittedText) {
       return;
     }
+    const activePromptDraft = activeThreadDraft.promptUnderstanding;
+    if (activePromptDraft?.requiresReconfirmation && !control.reconfirmDraft) {
+      setComposerReadinessMessage(
+        "Confirm or discard the restored clarification before continuing.",
+      );
+      return;
+    }
+    if (
+      activePromptDraft?.stage === "assumption_confirmation" &&
+      !control.confirmAssumptions
+    ) {
+      setComposerReadinessMessage(
+        "Confirm the listed assumptions or reject them before continuing.",
+      );
+      return;
+    }
+    const canonicalGoal = activePromptDraft?.basis.rawPrompt.trim() || submittedText;
 
     if (!hasDismissedPrivateBetaOnboarding) {
       setComposerReadinessMessage("Finish private beta onboarding before starting a task.");
@@ -2966,12 +3142,14 @@ function App({
       return;
     }
 
-    const localResponse = localShortPromptResponse(goal);
+    const localResponse = activePromptDraft
+      ? null
+      : localShortPromptResponse(submittedText);
     if (localResponse) {
       const threadId = activeWorkspace.id;
       const userMessageId = `${threadId}-user-${(threadMessagesByWorkspace[threadId]?.length ?? 0) + 1}`;
       if (activeWorkspace.label === "New task" && (threadMessagesByWorkspace[threadId]?.length ?? 0) === 0) {
-        const title = threadTitleFromPrompt(goal);
+        const title = threadTitleFromPrompt(canonicalGoal);
         setWorkspaces((current) => current.map((space) => (space.id === threadId ? { ...space, label: title, description: "" } : space)));
       }
       setThreadMessagesByWorkspace((current) => {
@@ -2980,7 +3158,7 @@ function App({
         const userMessage: ThreadMessage = {
           id: `${threadId}-user-${nextMessageIndex}`,
           role: "user",
-          content: goal,
+          content: submittedText,
         };
         const responseMessage: ThreadMessage = {
           id: `${threadId}-agent-local-${nextMessageIndex + 1}`,
@@ -3017,7 +3195,7 @@ function App({
       const threadId = activeWorkspace.id;
       const userMessageId = `${threadId}-user-${(threadMessagesByWorkspace[threadId]?.length ?? 0) + 1}`;
       if (activeWorkspace.label === "New task" && (threadMessagesByWorkspace[threadId]?.length ?? 0) === 0) {
-        const title = threadTitleFromPrompt(goal);
+        const title = threadTitleFromPrompt(canonicalGoal);
         setWorkspaces((current) => current.map((space) => (space.id === threadId ? { ...space, label: title, description: "" } : space)));
       }
       setThreadMessagesByWorkspace((current) => {
@@ -3025,7 +3203,7 @@ function App({
         const nextMessage: ThreadMessage = {
           id: userMessageId,
           role: "user",
-          content: goal,
+          content: control.confirmAssumptions ? "Confirm assumptions" : submittedText,
         };
         return {
           ...current,
@@ -3060,11 +3238,211 @@ function App({
           setShowSetupDialog(true);
           throw new Error(`Provider check failed before starting the repository run. ${preflightFailureMessage}`);
         }
+        const pendingPromptDraft = threadDraftsByWorkspace[threadId]?.promptUnderstanding;
+        const promptContext =
+          pendingPromptDraft?.context ??
+          promptUnderstandingContextForThread(
+            threadMessagesByWorkspace[threadId] ?? [],
+            threadDraftsByWorkspace[threadId]?.conversationSummary,
+          );
+        let promptBasis: PromptUnderstandingBasis = pendingPromptDraft?.basis ?? {
+          rawPrompt: canonicalGoal,
+          acceptanceCriteria: [],
+          clarificationAnswers: [],
+          confirmedAssumptions: [],
+        };
+        if (pendingPromptDraft?.stage === "clarification" && pendingPromptDraft.result) {
+          const answeredQuestion = pendingPromptDraft.result.questions.find(
+            (question) => question.id === pendingPromptDraft.pendingQuestionId,
+          );
+          if (!answeredQuestion) {
+            throw new Error(
+              "Clarification state lost its pending question. Restate the task.",
+            );
+          }
+          const selectedOption = answeredQuestion.options.find(
+            (option) =>
+              option.id === pendingPromptDraft.selectedOptionId &&
+              option.label === submittedText,
+          );
+          promptBasis = {
+            ...promptBasis,
+            clarificationAnswers: [
+              ...promptBasis.clarificationAnswers,
+              {
+                questionId: answeredQuestion.id,
+                answer: submittedText,
+                ...(selectedOption
+                  ? { selectedOptionId: selectedOption.id }
+                  : {}),
+              },
+            ],
+          };
+        }
+        if (
+          pendingPromptDraft?.stage === "assumption_confirmation" &&
+          pendingPromptDraft.result &&
+          control.confirmAssumptions
+        ) {
+          const confirmedById = new Map(
+            promptBasis.confirmedAssumptions.map((assumption) => [
+              assumption.assumptionId,
+              assumption.text,
+            ]),
+          );
+          const newlyConfirmed = pendingPromptDraft.result.assumptions
+            .filter((assumption) => assumption.affectsScope)
+            .map((assumption) => ({
+              assumptionId: assumption.id,
+              text: assumption.text,
+            }));
+          for (const assumption of newlyConfirmed) {
+            const previousText = confirmedById.get(assumption.assumptionId);
+            if (previousText !== undefined && previousText !== assumption.text) {
+              throw new Error(
+                "A confirmed assumption changed before planning. Restate the task.",
+              );
+            }
+          }
+          promptBasis = {
+            ...promptBasis,
+            confirmedAssumptions: [
+              ...promptBasis.confirmedAssumptions,
+              ...newlyConfirmed.filter(
+                (assumption) => !confirmedById.has(assumption.assumptionId),
+              ),
+            ],
+          };
+        }
+        const understanding = await orynt.understandPrompt({
+          basis: promptBasis,
+          context: promptContext,
+          repositoryPath: effectiveRepositoryPath,
+          workspaceId: runState.workspace.id,
+          taskId: runState.activeTask.id,
+          budget: runState.runSummary.run.budget,
+          ...(modelConnection
+            ? {
+                modelTierConfiguration:
+                  settingsSnapshot?.modelTierConfiguration ??
+                  createSingleModelTierConfiguration(
+                    modelConnection.modelId,
+                    thinkingEffort,
+                    modelConnection.providerId,
+                  ),
+              }
+            : {}),
+          ...(minimumModelTier === "auto"
+            ? {}
+            : { minimumModelTier }),
+        });
+        if (understanding.outcome !== "repository_action") {
+          setThreadMessagesByWorkspace((current) => ({
+            ...current,
+            [threadId]: [
+              ...(current[threadId] ?? []),
+              {
+                id: `${threadId}-prompt-answer-${Date.now()}`,
+                role: "agent",
+                label: "Agent response",
+                content: understanding.reply,
+              },
+            ],
+          }));
+          setThreadDraftsByWorkspace((current) => ({
+            ...current,
+            [threadId]: {
+              version: 1,
+              composerValue: "",
+              conversationSummary:
+                understanding.conversationSummary ??
+                current[threadId]?.conversationSummary,
+            },
+          }));
+          setMinimumModelTier("auto");
+          return;
+        }
+        if (understanding.readiness !== "ready") {
+          const nextRound = (pendingPromptDraft?.round ?? 0) + 1;
+          if (nextRound > 3) {
+            setThreadDraftsByWorkspace((current) => ({
+              ...current,
+              [threadId]: {
+                version: 1,
+                composerValue: "",
+                promptUnderstanding: {
+                  version: 1,
+                  id: understanding.promptId,
+                  round: 3,
+                  stage: "blocked",
+                  basis: promptBasis,
+                  context: promptContext,
+                  result: understanding,
+                  requiresReconfirmation: false,
+                  message: "Clarification stopped after three rounds. Start over with a more specific request.",
+                  updatedAt: new Date().toISOString(),
+                },
+              },
+            }));
+            return;
+          }
+          setThreadDraftsByWorkspace((current) => ({
+            ...current,
+            [threadId]: {
+              version: 1,
+              composerValue: "",
+              promptUnderstanding: {
+                version: 1,
+                id: understanding.promptId,
+                round: nextRound,
+                stage:
+                  understanding.readiness === "clarification_required"
+                    ? "clarification"
+                    : "assumption_confirmation",
+                basis: promptBasis,
+                context: promptContext,
+                result: understanding,
+                pendingQuestionId:
+                  understanding.readiness === "clarification_required"
+                    ? understanding.questions[0]?.id
+                    : undefined,
+                requiresReconfirmation: false,
+                updatedAt: new Date().toISOString(),
+              },
+              conversationSummary:
+                understanding.conversationSummary ??
+                current[threadId]?.conversationSummary,
+            },
+          }));
+          setThreadMessagesByWorkspace((current) => ({
+            ...current,
+            [threadId]: [
+              ...(current[threadId] ?? []),
+              {
+                id: `${threadId}-prompt-understanding-${Date.now()}`,
+                role: "agent",
+                label: "Task understanding",
+                content: understanding.reply,
+              },
+            ],
+          }));
+          return;
+        }
+        setThreadDraftsByWorkspace((current) => ({
+          ...current,
+          [threadId]: {
+            version: 1,
+            composerValue: "",
+            conversationSummary:
+              understanding.conversationSummary ??
+              current[threadId]?.conversationSummary,
+          },
+        }));
         if (selectedAgentSkillIds.length > 0) {
           await orynt.createSkillContextSnapshot(selectedAgentSkillIds, effectiveRepositoryPath);
         }
         const runInput: Parameters<typeof orynt.createRun>[0] & { selectedSkillIds?: string[] } = {
-          goal,
+          goal: canonicalGoal,
           capabilityId: "coding-apprentice",
           taskId: runState.activeTask.id,
           workspaceId: runState.workspace.id,
@@ -3077,8 +3455,27 @@ function App({
             stopOnBudgetExceeded: true,
           },
           selectedSkillIds: [...selectedAgentSkillIds],
+          promptBasis,
+          advisoryRefinedBrief: understanding.refinedBrief
+            ? JSON.stringify(understanding.refinedBrief)
+            : undefined,
+          ...(modelConnection
+            ? {
+                modelTierConfiguration:
+                  settingsSnapshot?.modelTierConfiguration ??
+                  createSingleModelTierConfiguration(
+                    modelConnection.modelId,
+                    thinkingEffort,
+                    modelConnection.providerId,
+                  ),
+              }
+            : {}),
+          ...(minimumModelTier === "auto"
+            ? {}
+            : { minimumModelTier }),
         };
         const run = await orynt.createRun(runInput);
+        setMinimumModelTier("auto");
         const createdRunId = run.runId ?? run.id;
         setSelectedAgentSkillIds([]);
         setCurrentRunId(createdRunId);
@@ -3140,7 +3537,7 @@ function App({
                   runId: createdRunId,
                   role: "system",
                   detailKind: "done",
-                  content: `Repository harness run completed for ${goal}.`,
+                  content: `Repository harness run completed for ${canonicalGoal}.`,
                   detailItems: [`Run ID: ${createdRunId}`, runOutcomeDetail],
                 },
                 {
@@ -3159,6 +3556,7 @@ function App({
         await refreshPersistedRuns();
       } catch (error) {
         const runnerMessage = repositoryRunnerErrorMessage(error);
+        setComposerValue(submittedText);
         if (isRepositoryPathSelectionError(runnerMessage)) {
           setComposerReadinessMessage("Select a local directory before starting a run.");
           setSetupRepositoryMessage("Select a local directory before starting a run.");
@@ -3179,7 +3577,7 @@ function App({
             id: `${threadId}-agent-run-failed-${currentMessages.length + 2}`,
             role: "agent",
             label: "Agent response",
-            content: `Repository harness run failed before Orynt received usable output. ${runnerMessage}`,
+            content: `No execution plan was created. Your task draft was preserved so you can retry. ${runnerMessage}`,
           };
           return {
             ...current,
@@ -3468,13 +3866,11 @@ function App({
     setActiveSettingsSection(sectionId);
     setShowSettingsSidebar(true);
     setShowSetupDialog(false);
-    setIsAccountMenuOpen(false);
   };
 
   const handleOpenSetupDialog = () => {
     setShowSetupDialog(true);
     setShowSettingsSidebar(false);
-    setIsAccountMenuOpen(false);
   };
 
   const handleCompleteWelcomeSetup = async () => {
@@ -3873,6 +4269,67 @@ function App({
         setModelConnectionMessage(messageFromUnknownError(error, "Provider setup save failed."));
         setModelConnectionMessageTone("error");
       }
+    });
+  };
+
+  const handleAssignSelectedModelToTier = async (tier: ModelTier) => {
+    await withPendingAction(`model-tier:assign:${tier}`, async () => {
+      try {
+        const connection = await saveSelectedModelConnectionWithPreflight();
+        if (!connection || connection.status !== "ready") return;
+        const settings = await orynt.getSettings();
+        const current =
+          settings.modelTierConfiguration ??
+          createSingleModelTierConfiguration(
+            connection.modelId,
+            thinkingEffort,
+            connection.providerId,
+          );
+        const next = {
+          ...current,
+          tiers: {
+            ...current.tiers,
+            [tier]: {
+              ...current.tiers[tier],
+              providerId: connection.providerId,
+              modelId: connection.modelId,
+              thinkingEffort,
+            },
+          },
+          needsTierReview: false,
+        };
+        const updated = await orynt.updateSettings({
+          modelTierConfiguration: next,
+        });
+        applySettingsSnapshot(updated);
+        setModelConnectionMessage(
+          `${connection.modelLabel} assigned to ${tier} tier.`,
+        );
+        setModelConnectionMessageTone("success");
+      } catch (error) {
+        setModelConnectionMessage(
+          messageFromUnknownError(error, "Model tier assignment failed."),
+        );
+        setModelConnectionMessageTone("error");
+      }
+    });
+  };
+
+  const handleRoleTierChange = async (
+    role: OrchestrationRole,
+    tier: ModelTier,
+  ) => {
+    const current = settingsSnapshot?.modelTierConfiguration;
+    if (!current) return;
+    await withPendingAction(`model-tier:role:${role}`, async () => {
+      const updated = await orynt.updateSettings({
+        modelTierConfiguration: {
+          ...current,
+          roles: { ...current.roles, [role]: tier },
+          needsTierReview: false,
+        },
+      });
+      applySettingsSnapshot(updated);
     });
   };
 
@@ -4336,17 +4793,6 @@ function App({
     setShowWorkspaceArchive(false);
   };
 
-  const handleToggleAccountMenu = () => {
-    setIsAccountMenuOpen((current) => !current);
-    setOpenWorkspaceMenuId(null);
-  };
-
-  const handleOpenSettingsFromAccountMenu = () => {
-    setIsAccountMenuOpen(false);
-    setShowSetupDialog(false);
-    setShowSettingsSidebar(true);
-  };
-
   const handleToggleSettingsDialog = () => {
     setShowSetupDialog(false);
     setShowSettingsSidebar((current) => !current);
@@ -4433,7 +4879,6 @@ function App({
   const handleOpenSkillsManager = () => {
     setIsComposerAttachmentMenuOpen(false);
     setIsComposerSkillsMenuOpen(false);
-    setIsAccountMenuOpen(false);
     setShowSkillsManager(true);
   };
 
@@ -4801,7 +5246,7 @@ function App({
     return (
       <div className="agent-thinking-status" role="status" aria-label="Agent is generating response" aria-live="polite" key="agent-generating-response">
         <div className="agent-thinking-status-title">
-          <LoadingSpinner />
+          <ProbabilityLoader />
           <span>Generating response</span>
           <span className="agent-generating-timer" aria-label={`Elapsed ${formatElapsedClock(generatingElapsedSeconds)}`}>
             {formatElapsedClock(generatingElapsedSeconds)}
@@ -4936,7 +5381,7 @@ function App({
           <p className={setupLogTextClassName(modelConnectionMessage ? modelConnectionMessageTone : modelCatalogStatus === "ready" ? "success" : "info")}>
             {isCodexAutoCheckPending ? (
               <span className="loading-button-content">
-                <LoadingSpinner />
+                <ProbabilityLoader />
                 <span>{modelConnectionMessage || "Checking local Codex CLI identity with `codex login status`."}</span>
               </span>
             ) : (
@@ -5042,7 +5487,7 @@ function App({
               <span>Fetching</span>
             </div>
             <strong className="loading-status-label">
-              <LoadingSpinner />
+              <ProbabilityLoader />
               Loading
             </strong>
           </div>
@@ -5125,6 +5570,65 @@ function App({
           ) : null}
           {modelCatalogMessage ? <p className={setupLogTextClassName(modelCatalogMessageTone)}>{modelCatalogMessage}</p> : null}
         </section>
+      ) : null}
+      {settingsSnapshot?.modelTierConfiguration ? (
+        <article className="settings-review-card model-tier-settings" aria-label="Model tiers">
+          <div className="settings-review-card-header">
+            <div>
+              <h3>Model tiers</h3>
+              <span>Deterministic routing · no fallback</span>
+            </div>
+            <strong>
+              {settingsSnapshot.modelTierConfiguration.needsTierReview
+                ? "Review required"
+                : "Configured"}
+            </strong>
+          </div>
+          <div className="model-tier-grid">
+            {(["light", "medium", "heavy"] as ModelTier[]).map((tier) => {
+              const binding =
+                settingsSnapshot.modelTierConfiguration!.tiers[tier];
+              return (
+                <section key={tier} className="model-tier-card">
+                  <strong>{tier[0].toUpperCase() + tier.slice(1)}</strong>
+                  <span>{binding.providerId}</span>
+                  <span>{binding.modelId} · {binding.thinkingEffort}</span>
+                  {selectedModel && selectedProvider ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleAssignSelectedModelToTier(tier)}
+                      disabled={isPendingAction(`model-tier:assign:${tier}`)}
+                    >
+                      Assign selected model
+                    </button>
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
+          <div className="model-tier-role-grid">
+            {(["coordinator", "implementer", "helper", "reviewer"] as OrchestrationRole[]).map((role) => (
+              <label className="settings-field settings-field-stacked" key={role}>
+                <span>{role[0].toUpperCase() + role.slice(1)} tier</span>
+                <OryntDropdown
+                  ariaLabel={`${role} tier`}
+                  density="comfortable"
+                  id={`${headingId}-${role}-tier`}
+                  onChange={(nextValue) =>
+                    void handleRoleTierChange(role, nextValue as ModelTier)
+                  }
+                  options={[
+                    { value: "light", label: "Light" },
+                    { value: "medium", label: "Medium" },
+                    { value: "heavy", label: "Heavy" },
+                  ]}
+                  placeholder="Choose tier"
+                  value={settingsSnapshot.modelTierConfiguration!.roles[role]}
+                />
+              </label>
+            ))}
+          </div>
+        </article>
       ) : null}
     </section>
   );
@@ -5445,115 +5949,6 @@ function App({
               </section>
             </section>
           );
-        case "account":
-          return (
-            <section className="settings-section settings-account-section" aria-labelledby="settings-account-title">
-              <h2 id="settings-account-title">Account</h2>
-              <div className="settings-group">
-                <div className="settings-row settings-preference-row">
-                  <span>Log out of all devices</span>
-                  <button className="settings-secondary-button" type="button">
-                    Log out
-                  </button>
-                </div>
-                <div className="settings-row settings-preference-row">
-                  <span>Delete your account</span>
-                  <button className="settings-danger-button" type="button" disabled>
-                    Delete account
-                  </button>
-                </div>
-                <div className="settings-row settings-preference-row">
-                  <span>Organization ID</span>
-                  <code className="settings-readonly-value">{settingsSnapshot?.workspaceId ?? "workspace-local-alpha"}</code>
-                </div>
-              </div>
-
-              <section className="settings-group" aria-labelledby="settings-trusted-devices-title">
-                <h2 id="settings-trusted-devices-title">Trusted devices</h2>
-                <table className="settings-table" aria-label="Trusted devices">
-                  <thead>
-                    <tr>
-                      <th>Device</th>
-                      <th>Added</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td colSpan={2}>No trusted devices.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-
-              <section className="settings-group" aria-labelledby="settings-active-sessions-title">
-                <h2 id="settings-active-sessions-title">Active sessions</h2>
-                <table className="settings-table" aria-label="Active sessions">
-                  <thead>
-                    <tr>
-                      <th>Device</th>
-                      <th>Location</th>
-                      <th>Created</th>
-                      <th>Updated</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>
-                        Desktop browser <span className="settings-status-pill">Current</span>
-                      </td>
-                      <td>Local</td>
-                      <td>Private beta</td>
-                      <td>Now</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-            </section>
-          );
-        case "billing":
-          return (
-            <section className="settings-section settings-billing-section" aria-labelledby="settings-billing-title">
-              <section className="settings-plan" aria-labelledby="settings-billing-title">
-                <div className="settings-plan-icon" aria-hidden="true">
-                  <GitBranch className="ui-icon" strokeWidth={2} />
-                </div>
-                <div>
-                  <h2 id="settings-billing-title">Free plan</h2>
-                  <p>Local beta access</p>
-                </div>
-                <button className="settings-danger-button" type="button" disabled>
-                  Upgrade plan
-                </button>
-              </section>
-
-              <ul className="settings-feature-list" aria-label="Plan features">
-                <li>Chat with Orynt on this desktop preview</li>
-                <li>Create repository run drafts with approval gates</li>
-                <li>Save local run history and artifact evidence</li>
-                <li>Review memory candidates and skill drafts</li>
-                <li>Connect the local Codex CLI during first-run setup</li>
-              </ul>
-
-              <section className="settings-group" aria-labelledby="settings-invoices-title">
-                <h2 id="settings-invoices-title">Invoices</h2>
-                <table className="settings-table" aria-label="Invoices">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Total</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td colSpan={4}>No invoices yet.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-            </section>
-          );
       }
     };
 
@@ -5618,49 +6013,162 @@ function App({
     );
   };
 
-  const renderAccountMenuItem = (item: AccountMenuItem) => {
-    const MenuIcon = item.Icon;
-    const content = (
-      <>
-        <MenuIcon className="ui-icon account-menu-icon" aria-hidden="true" strokeWidth={2} />
-        <span>{item.label}</span>
-        {item.hasSubmenu ? <ChevronRight className="ui-icon account-menu-accessory" aria-hidden="true" strokeWidth={2} /> : <span className="account-menu-accessory" aria-hidden="true" />}
-      </>
-    );
-
-    if (item.action === "settings") {
-      return (
-        <button className="account-menu-item" type="button" role="menuitem" onClick={handleOpenSettingsFromAccountMenu} key={item.id}>
-          {content}
-        </button>
-      );
-    }
-
-    if (item.action === "skills") {
-      return (
-        <button className="account-menu-item" type="button" role="menuitem" onClick={handleOpenSkillsManager} key={item.id}>
-          {content}
-        </button>
-      );
-    }
-
-    if (item.action === "logout") {
-      return (
-        <a className="account-menu-item account-menu-item-logout" role="menuitem" href={landingUrl} onClick={() => setIsAccountMenuOpen(false)} key={item.id}>
-          {content}
-        </a>
-      );
-    }
-
-    return (
-      <button className="account-menu-item" type="button" role="menuitem" aria-disabled="true" onClick={(event) => event.preventDefault()} key={item.id}>
-        {content}
-      </button>
-    );
-  };
-
   const renderComposer = (variant: "start" | "inline") => (
     <form className={`composer composer-${variant} composer-scale-${composerScaleMode}`} aria-label="Task composer" onSubmit={(event) => void handleTaskSubmit(event)}>
+      {activeThreadDraft.promptUnderstanding ? (
+        <section className="prompt-understanding-card" aria-label="Task clarification">
+          <div className="prompt-understanding-heading">
+            <span>Task understanding</span>
+            <small>Round {activeThreadDraft.promptUnderstanding.round} of 3</small>
+          </div>
+          {activeThreadDraft.promptUnderstanding.message ? (
+            <p>{activeThreadDraft.promptUnderstanding.message}</p>
+          ) : null}
+          {activeThreadDraft.promptUnderstanding.requiresReconfirmation ? (
+            <div className="prompt-understanding-assumptions">
+              <p>Review the restored clarification before it can affect planning.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setThreadDraftsByWorkspace((current) => {
+                    const draft = current[activeWorkspaceId];
+                    if (!draft?.promptUnderstanding) return current;
+                    return {
+                      ...current,
+                      [activeWorkspaceId]: {
+                        ...draft,
+                        promptUnderstanding: {
+                          ...draft.promptUnderstanding,
+                          requiresReconfirmation: false,
+                        },
+                      },
+                    };
+                  });
+                  setComposerReadinessMessage("");
+                }}
+              >
+                Resume clarification
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const rawPrompt =
+                    activeThreadDraft.promptUnderstanding?.basis.rawPrompt ?? "";
+                  setThreadDraftsByWorkspace((current) => ({
+                    ...current,
+                    [activeWorkspaceId]: {
+                      version: 1,
+                      composerValue: rawPrompt,
+                      conversationSummary:
+                        current[activeWorkspaceId]?.conversationSummary,
+                    },
+                  }));
+                  setComposerReadinessMessage("");
+                }}
+              >
+                Discard and edit
+              </button>
+            </div>
+          ) : null}
+          {!activeThreadDraft.promptUnderstanding.requiresReconfirmation
+            ? activeThreadDraft.promptUnderstanding.result?.questions
+              .filter(
+                (question) =>
+                  question.id ===
+                  activeThreadDraft.promptUnderstanding?.pendingQuestionId,
+              )
+              .map((question) => (
+            <fieldset className="prompt-understanding-question" key={question.id}>
+              <legend>{question.prompt}</legend>
+              <small>{question.rationale}</small>
+              <div className="prompt-understanding-options">
+                {question.options.map((option) => (
+                  <button
+                    type="button"
+                    className="prompt-understanding-option"
+                    key={option.id}
+                    onClick={() => {
+                      setThreadDraftsByWorkspace((current) => {
+                        const draft =
+                          current[activeWorkspaceId] ?? {
+                            version: 1 as const,
+                            composerValue: "",
+                          };
+                        if (!draft.promptUnderstanding) return current;
+                        return {
+                          ...current,
+                          [activeWorkspaceId]: {
+                            ...draft,
+                            composerValue: option.label,
+                            promptUnderstanding: {
+                              ...draft.promptUnderstanding,
+                              selectedOptionId: option.id,
+                            },
+                          },
+                        };
+                      });
+                      composerTextareaRef.current?.focus();
+                    }}
+                  >
+                    <span>
+                      {option.label}
+                      {option.recommended ? <em>Recommended</em> : null}
+                    </span>
+                    <small>{option.description}</small>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="prompt-understanding-option"
+                  onClick={() => composerTextareaRef.current?.focus()}
+                >
+                  <span>Other</span>
+                  <small>Type a custom answer or add an optional note below.</small>
+                </button>
+              </div>
+            </fieldset>
+              ))
+            : null}
+          {!activeThreadDraft.promptUnderstanding.requiresReconfirmation &&
+          activeThreadDraft.promptUnderstanding.stage === "assumption_confirmation" ? (
+            <div className="prompt-understanding-assumptions">
+              {activeThreadDraft.promptUnderstanding.result?.assumptions
+                .filter((assumption) => assumption.affectsScope)
+                .map((assumption) => <p key={assumption.id}>{assumption.text}</p>)}
+              <button
+                type="button"
+                onClick={() =>
+                  void submitComposerGoal("Confirm assumptions", {
+                    confirmAssumptions: true,
+                    reconfirmDraft: true,
+                  })
+                }
+              >
+                Confirm and continue
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const rawPrompt =
+                    activeThreadDraft.promptUnderstanding?.basis.rawPrompt ?? "";
+                  setThreadDraftsByWorkspace((current) => ({
+                    ...current,
+                    [activeWorkspaceId]: {
+                      version: 1,
+                      composerValue: rawPrompt,
+                      conversationSummary:
+                        current[activeWorkspaceId]?.conversationSummary,
+                    },
+                  }));
+                  setComposerReadinessMessage("");
+                }}
+              >
+                Reject and edit
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       <div className="composer-field input-focus-shell">
         <button
           className="composer-scale-button"
@@ -5767,6 +6275,22 @@ function App({
             >
               <Gauge className="ui-icon" aria-hidden="true" strokeWidth={2} />
               <span>{thinkingEffortCopy.label}</span>
+            </button>
+            <button
+              className="composer-tier-control"
+              type="button"
+              aria-label={`Minimum model tier: ${minimumModelTier}. Activate to raise the next-request minimum.`}
+              title="Raise minimum model tier for the next request"
+              onClick={() =>
+                setMinimumModelTier((current) => {
+                  if (current === "auto") return "light";
+                  if (current === "light") return "medium";
+                  if (current === "medium") return "heavy";
+                  return "auto";
+                })
+              }
+            >
+              Tier {minimumModelTier === "auto" ? "Auto" : minimumModelTier[0].toUpperCase() + minimumModelTier.slice(1)}
             </button>
             {isComposerAttachmentMenuOpen ? (
               <div
@@ -5896,7 +6420,7 @@ function App({
               aria-busy={isComposerSubmitPending}
               onClick={() => void submitComposerGoal()}
             >
-              {isComposerSubmitPending ? <LoadingSpinner /> : <Send className="send-icon" aria-hidden="true" strokeWidth={2} />}
+              {isComposerSubmitPending ? <ProbabilityLoader /> : <Send className="send-icon" aria-hidden="true" strokeWidth={2} />}
             </button>
           </div>
         </div>
@@ -6189,39 +6713,16 @@ function App({
             </button>
           ) : null}
           <div className="workspace-footer">
-            <div className="workspace-account">
-              <button
-                ref={accountMenuButtonRef}
-                className="workspace-account-trigger"
-                type="button"
-                aria-controls="account-menu"
-                aria-expanded={isAccountMenuOpen}
-                aria-haspopup="menu"
-                aria-label="Open account menu"
-                title="Account menu"
-                onClick={handleToggleAccountMenu}
-              >
-                <span className="workspace-profile-avatar" aria-hidden="true">
-                  OP
-                </span>
-                <span className="workspace-profile-copy">
-                  <strong>Operator</strong>
-                  <small>Free plan</small>
-                </span>
-                <ChevronsUpDown className="ui-icon workspace-account-caret" aria-hidden="true" strokeWidth={2} />
-              </button>
-              {isAccountMenuOpen ? (
-                <div className="account-menu" id="account-menu" role="menu" aria-label="Account menu" ref={accountMenuRef}>
-                  <div className="account-menu-email">operator@orynt.local</div>
-                  {accountMenuGroups.map((group, index) => (
-                    <div className="account-menu-group" role="group" key={group.map((item) => item.id).join("-")}>
-                      {group.map(renderAccountMenuItem)}
-                      {index < accountMenuGroups.length - 1 ? <span className="account-menu-separator" aria-hidden="true" /> : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <button
+              className="workspace-settings-trigger"
+              type="button"
+              aria-label="Open local settings"
+              title="Local settings"
+              onClick={handleToggleSettingsDialog}
+            >
+              <SettingsIcon className="ui-icon" aria-hidden="true" strokeWidth={2} />
+              <span>Local settings</span>
+            </button>
           </div>
         </div>
       </aside>

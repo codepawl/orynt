@@ -25,6 +25,13 @@ type ArtifactEntry = {
 type ArtifactManifest = {
   schemaVersion: number;
   artifacts: ArtifactEntry[] | Record<string, string | ArtifactEntry | null>;
+  status?: string;
+  outcome?: {
+    status?: string;
+    stage?: string;
+    classification?: string;
+    code?: string;
+  };
   selectedAgentSkills?: { digest?: string; skillIds?: string[] } | null;
 };
 
@@ -140,6 +147,79 @@ export async function evaluateControlledRunArtifacts(
     } catch {
       failures.push({ code: "artifact_missing", detail: `Artifact ${key} is missing or unreadable.` });
     }
+  }
+
+  if (manifest.outcome && manifest.outcome.status !== "pass") {
+    if (
+      !manifest.outcome.status ||
+      !manifest.outcome.stage ||
+      !manifest.outcome.classification ||
+      !manifest.outcome.code ||
+      (manifest.status && manifest.status !== manifest.outcome.status)
+    ) {
+      failures.push({
+        code: "failure_outcome_invalid",
+        detail: "Failed run outcome is incomplete or conflicts with the manifest.",
+      });
+    }
+    const eventLog = [...resolvedEntries.values()].find(
+      ({ entry, filePath }) =>
+        entry.kind === "event_log" || filePath.endsWith("run-events.json"),
+    );
+    if (!eventLog) {
+      failures.push({
+        code: "failure_event_log_missing",
+        detail: "Failed runs require a reader-visible event log.",
+      });
+    } else {
+      try {
+        const payload = await json(eventLog.filePath);
+        const events = Array.isArray(payload)
+          ? payload
+          : Array.isArray(object(payload).events)
+            ? object(payload).events as unknown[]
+            : [];
+        const terminal = events.some((event) => {
+          try {
+            return object(event).type === "run_finished";
+          } catch {
+            return false;
+          }
+        });
+        if (!terminal) {
+          failures.push({
+            code: "failure_terminal_event_missing",
+            detail: "Failed run event log lacks a terminal run_finished event.",
+          });
+        }
+      } catch {
+        failures.push({
+          code: "failure_event_log_invalid",
+          detail: "Failed run event log is invalid.",
+        });
+      }
+    }
+    const exposedPayloads: unknown[] = [rawManifest];
+    for (const [, resolved] of resolvedEntries) {
+      if (
+        resolved.entry.redaction !== "private" &&
+        resolved.filePath.endsWith(".json")
+      ) {
+        exposedPayloads.push(await json(resolved.filePath).catch(() => null));
+      }
+    }
+    const serialized = JSON.stringify(exposedPayloads);
+    if (
+      serialized.includes('"nonce"') ||
+      serialized.includes('"idempotencyKey"') ||
+      serialized.includes('"executionAttempt"')
+    ) {
+      failures.push({
+        code: "private_nonce_exposed",
+        detail: "Reader-facing failure evidence contains a private approval nonce.",
+      });
+    }
+    return { passed: failures.length === 0, failures };
   }
 
   const traceArtifact = Array.isArray(manifest.artifacts)
@@ -290,5 +370,5 @@ export async function evaluateControlledRunArtifacts(
 export function evaluateReleaseArtifacts(
   manifestPath: string,
 ): Promise<ArtifactGateResult> {
-  return evaluateControlledRunArtifacts(manifestPath, { requireSchemaVersion: 3 });
+  return evaluateControlledRunArtifacts(manifestPath, { requireSchemaVersion: 4 });
 }

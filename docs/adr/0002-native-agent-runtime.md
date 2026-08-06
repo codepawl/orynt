@@ -23,8 +23,8 @@ network, and host-file tools are disabled.
 
 Set `ORYNT_AGENT_RUNTIME=native` and provide the configured OpenAI API key
 environment variable (normally `OPENAI_API_KEY`). Orynt does not read or reuse
-Codex internal OAuth/session state. API billing and quota are therefore
-separate from a Codex subscription.
+Codex internal OAuth/session state. Provider usage is therefore separate from a
+Codex subscription.
 
 The existing provider/approval flow still selects the model, thinking effort,
 managed worktree, and execution policy. Native execution does not bypass
@@ -48,16 +48,16 @@ Decision Bench v3 compares:
 The controlled command is:
 
 ```sh
-pnpm bench:decision:v3
+bun bench:decision:v3
 ```
 
 Live runs use Luna with medium reasoning and require explicit live
 confirmation:
 
 ```sh
-pnpm bench:decision:v3:live -- --confirm-live
-pnpm bench:repoops:v1:smoke -- --confirm-live
-pnpm bench:repoops:v1:live -- --confirm-live
+bun bench:decision:v3:live -- --confirm-live
+bun bench:repoops:v1:smoke -- --confirm-live
+bun bench:repoops:v1:live -- --confirm-live
 ```
 
 RepoOps v1 promotes Orynt only when task and verifier accuracy are

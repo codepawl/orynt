@@ -3,13 +3,16 @@ import WebSocket from "ws";
 import type {
   AgentRuntime,
   AgentRuntimeActivity,
+  AgentGeneratedImage,
   AgentRuntimeSession,
   AgentRuntimeSessionConfig,
   AgentRuntimeTiming,
+  AgentContextTokenBreakdown,
   AgentRuntimeTurnInput,
   AgentRuntimeTurnResult,
   AgentToolCall,
 } from "./index.js";
+import { verifiedImageDataUrl } from "./imageInputs.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -52,6 +55,7 @@ const WS_OPEN = 1;
 const DEFAULT_WS_URL = "wss://api.openai.com/v1/responses";
 const DEFAULT_HTTP_URL = "https://api.openai.com/v1/responses";
 const MAX_ERROR_TEXT = 1_000;
+const MAX_CANONICAL_CONTEXT_BYTES = 256 * 1024;
 
 function record(value: unknown): JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -63,14 +67,75 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function responseError(value: unknown): Error {
+export class ResponsesTurnError extends Error {
+  readonly code?: string;
+  readonly sideEffectsStarted: boolean;
+
+  constructor(
+    message: string,
+    options: { code?: string; sideEffectsStarted?: boolean } = {},
+  ) {
+    super(message);
+    this.name = "ResponsesTurnError";
+    this.code = options.code;
+    this.sideEffectsStarted = options.sideEffectsStarted === true;
+  }
+
+  get contextWindowExceeded(): boolean {
+    return this.code === "context_length_exceeded" ||
+      this.code === "ContextWindowExceeded";
+  }
+}
+
+function responseError(value: unknown): ResponsesTurnError {
   const event = record(value);
   const error = record(event.error);
   const code = stringValue(error.code) || stringValue(error.type);
   const message = stringValue(error.message) || stringValue(event.message) || "Responses request failed";
-  const result = new Error(`${code ? `${code}: ` : ""}${message}`.slice(0, MAX_ERROR_TEXT));
-  if (code) Object.assign(result, { code });
-  return result;
+  return new ResponsesTurnError(
+    `${code ? `${code}: ` : ""}${message}`.slice(0, MAX_ERROR_TEXT),
+    code ? { code } : {},
+  );
+}
+
+function tokenInteger(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.trunc(value))
+    : 0;
+}
+
+export function parseResponsesTokenUsage(
+  value: unknown,
+): AgentContextTokenBreakdown | undefined {
+  const usage = record(value);
+  if (Object.keys(usage).length === 0) return undefined;
+  const inputTokens = tokenInteger(usage.input_tokens ?? usage.inputTokens);
+  const outputTokens = tokenInteger(usage.output_tokens ?? usage.outputTokens);
+  const inputDetails = record(
+    usage.input_tokens_details ?? usage.inputTokensDetails,
+  );
+  const outputDetails = record(
+    usage.output_tokens_details ?? usage.outputTokensDetails,
+  );
+  return {
+    inputTokens,
+    cachedInputTokens: tokenInteger(
+      inputDetails.cached_tokens ??
+        inputDetails.cachedTokens ??
+        usage.cached_input_tokens ??
+        usage.cachedInputTokens,
+    ),
+    outputTokens,
+    reasoningOutputTokens: tokenInteger(
+      outputDetails.reasoning_tokens ??
+        outputDetails.reasoningTokens ??
+        usage.reasoning_output_tokens ??
+        usage.reasoningOutputTokens,
+    ),
+    totalTokens:
+      tokenInteger(usage.total_tokens ?? usage.totalTokens) ||
+      inputTokens + outputTokens,
+  };
 }
 
 function outputText(output: readonly JsonRecord[]): string {
@@ -101,6 +166,18 @@ function functionCalls(output: readonly JsonRecord[]): AgentToolCall[] {
   });
 }
 
+function generatedImages(output: readonly JsonRecord[]): AgentGeneratedImage[] {
+  return output.flatMap((item, index) => {
+    if (item.type !== "image_generation_call") return [];
+    return [{
+      providerItemId: stringValue(item.id) || `image-${index + 1}`,
+      revisedPrompt: stringValue(item.revised_prompt) || undefined,
+      base64: stringValue(item.result) || undefined,
+      status: item.status === "failed" ? "failed" as const : "completed" as const,
+    }];
+  });
+}
+
 function responseFormat(schema: Record<string, unknown> | undefined): JsonRecord | undefined {
   if (!schema) return undefined;
   return {
@@ -119,14 +196,18 @@ class ResponsesSession implements AgentRuntimeSession {
   private pending?: PendingResponse;
   private previousResponseId?: string;
   private canonicalInput: JsonRecord[] = [];
+  private canonicalInputBytes = 0;
+  private turnsSinceReset = 0;
   private closed = false;
   private activeAbort?: AbortController;
   private connectionReadyMs?: number;
   private transport: "websocket" | "http" = "websocket";
+  private closeNotified = false;
 
   constructor(
     private readonly config: AgentRuntimeSessionConfig,
     private readonly options: Required<Pick<ResponsesRuntimeOptions, "websocketUrl" | "httpUrl" | "fetchImpl" | "createWebSocket" | "now">> & { apiKey: string },
+    private readonly onClose: () => void,
   ) {}
 
   async prewarm(): Promise<void> {
@@ -148,6 +229,12 @@ class ResponsesSession implements AgentRuntimeSession {
     if (this.closed) throw new Error("Responses session is closed");
     if (this.activeAbort) throw new Error("Responses session already has an in-flight turn");
     if (input.signal?.aborted) throw Object.assign(new Error("Responses turn cancelled"), { name: "AbortError" });
+    if (
+      !this.config.effectiveContextWindowTokens &&
+      this.canonicalInputBytes >= MAX_CANONICAL_CONTEXT_BYTES
+    ) {
+      await this.resetContext();
+    }
     const startedMs = this.options.now();
     const controller = new AbortController();
     this.activeAbort = controller;
@@ -157,12 +244,17 @@ class ResponsesSession implements AgentRuntimeSession {
     let firstDeltaMs: number | undefined;
     let toolDurationMs = 0;
     let toolCalls = 0;
+    const imageContent = await Promise.all((input.images ?? []).map(async (image) => ({
+      type: "input_image",
+      image_url: await verifiedImageDataUrl(image),
+      detail: image.detail,
+    })));
     const userItem: JsonRecord = {
       type: "message",
       role: "user",
-      content: [{ type: "input_text", text: input.text }],
+      content: [{ type: "input_text", text: input.text }, ...imageContent],
     };
-    this.canonicalInput.push(userItem);
+    this.appendCanonicalInput([userItem]);
     let nextInput: JsonRecord[] = [userItem];
     let lastResponse: ResponseEnvelope | undefined;
     const onDelta = (text: string) => {
@@ -176,7 +268,7 @@ class ResponsesSession implements AgentRuntimeSession {
         const response = await this.createResponse(nextInput, onDelta, controller.signal);
         lastResponse = response;
         this.previousResponseId = response.id;
-        this.canonicalInput.push(...response.output);
+        this.appendCanonicalInput(response.output);
         const calls = functionCalls(response.output);
         if (calls.length === 0) break;
         if (!this.config.executeTool) throw new Error(`Model requested tools but ${this.config.role} has no tool executor`);
@@ -191,9 +283,11 @@ class ResponsesSession implements AgentRuntimeSession {
           input.onActivity?.(requested);
           const toolStarted = this.options.now();
           let output: string;
+          let resultImages: import("./index.js").AgentInlineImage[] = [];
           try {
             const result = await this.config.executeTool(call);
             output = result.output;
+            resultImages = result.images ?? [];
             const completed = {
               kind: "tool",
               name: call.name,
@@ -210,20 +304,47 @@ class ResponsesSession implements AgentRuntimeSession {
           }
           toolDurationMs += this.options.now() - toolStarted;
           nextInput.push({ type: "function_call_output", call_id: call.callId, output });
+          if (resultImages.length > 0) {
+            nextInput.push({
+              type: "message",
+              role: "user",
+              content: resultImages.map((image) => ({
+                type: "input_image",
+                image_url: image.dataUrl,
+                detail: image.detail,
+              })),
+            });
+          }
         }
-        this.canonicalInput.push(...nextInput);
+        this.appendCanonicalInput(nextInput);
       }
       if (!lastResponse) throw new Error("Responses turn produced no response");
       const completed = { kind: "response", responseId: lastResponse.id, status: "completed" } as const;
+      const normalizedUsage = parseResponsesTokenUsage(lastResponse.usage);
+      if (normalizedUsage) {
+        const contextActivity = {
+          kind: "context",
+          current: normalizedUsage,
+          precision: "provider",
+        } as const;
+        this.config.onActivity?.(contextActivity);
+        input.onActivity?.(contextActivity);
+      }
       this.config.onActivity?.(completed);
       input.onActivity?.(completed);
       const completedMs = this.options.now();
+      this.turnsSinceReset += 1;
       return {
         provider: "openai_responses",
         transport: this.transport,
         responseId: lastResponse.id,
         text: lastResponse.outputText,
+        generatedImages: generatedImages(lastResponse.output).slice(
+          0,
+          this.config.imageGeneration?.maxOutputs ?? 0,
+        ),
         usage: lastResponse.usage,
+        normalizedUsage,
         timing: {
           startedMs,
           connectionReadyMs: this.connectionReadyMs,
@@ -233,6 +354,14 @@ class ResponsesSession implements AgentRuntimeSession {
           toolDurationMs,
         },
       };
+    } catch (error) {
+      if (error instanceof ResponsesTurnError) {
+        throw new ResponsesTurnError(error.message, {
+          code: error.code,
+          sideEffectsStarted: toolCalls > 0,
+        });
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
       input.signal?.removeEventListener("abort", abort);
@@ -252,13 +381,31 @@ class ResponsesSession implements AgentRuntimeSession {
     }
     this.previousResponseId = undefined;
     this.canonicalInput = [];
+    this.canonicalInputBytes = 0;
+    this.turnsSinceReset = 0;
     if (this.transport === "websocket") await this.prewarm();
   }
 
+  private appendCanonicalInput(items: JsonRecord[]): void {
+    this.canonicalInput.push(...items);
+    for (const item of items) {
+      this.canonicalInputBytes += Buffer.byteLength(JSON.stringify(item));
+    }
+  }
+
   async close(): Promise<void> {
+    if (this.closed) return;
     this.closed = true;
     this.cancel();
     this.dropSocket();
+    this.previousResponseId = undefined;
+    this.canonicalInput = [];
+    this.canonicalInputBytes = 0;
+    this.turnsSinceReset = 0;
+    if (!this.closeNotified) {
+      this.closeNotified = true;
+      this.onClose();
+    }
   }
 
   private baseRequest(): JsonRecord {
@@ -268,7 +415,17 @@ class ResponsesSession implements AgentRuntimeSession {
       store: false,
       instructions: this.config.instructions,
       reasoning: { effort: this.config.effort },
-      tools: this.config.tools ?? [],
+      tools: [
+        ...(this.config.tools ?? []),
+        ...(this.config.imageGeneration?.enabled
+          ? [{
+              type: "image_generation",
+              ...(this.config.imageGeneration.format
+                ? { output_format: this.config.imageGeneration.format }
+                : {}),
+            }]
+          : []),
+      ],
       parallel_tool_calls: false,
       max_output_tokens: this.config.maxOutputTokens ?? 4_096,
       ...(this.config.promptCacheKey ? { prompt_cache_key: this.config.promptCacheKey } : {}),
@@ -460,10 +617,24 @@ export class ResponsesAgentRuntime implements AgentRuntime {
   }
 
   async startSession(config: AgentRuntimeSessionConfig): Promise<AgentRuntimeSession> {
-    const session = new ResponsesSession(config, this.options);
+    let session!: ResponsesSession;
+    session = new ResponsesSession(
+      config,
+      this.options,
+      () => this.sessions.delete(session),
+    );
     this.sessions.add(session);
-    await session.prewarm();
+    try {
+      await session.prewarm();
+    } catch (error) {
+      await session.close();
+      throw error;
+    }
     return session;
+  }
+
+  activeSessionCount(): number {
+    return this.sessions.size;
   }
 
   async close(): Promise<void> {

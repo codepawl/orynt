@@ -1,6 +1,6 @@
-import type { ArtifactRef, Run, RunEvent } from "./runSpine";
-import type { CodexResultBundle } from "./codexResultImportContracts";
-import type { VerificationResult } from "./verifierContracts";
+import type { ArtifactRef, Run, RunEvent } from "./runSpine.js";
+import type { CodexResultBundle } from "./codexResultImportContracts.js";
+import type { VerificationResult } from "./verifierContracts.js";
 
 export type MemoryNamespace = {
   capabilityId: string;

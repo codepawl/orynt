@@ -7,10 +7,10 @@ import type {
   RunEvent,
   RunStore,
   SafetySnapshot,
-} from "./runSpine";
-import type { CorePolicy, RepositoryInspection, RepositorySandbox } from "./corePolicy";
-import type { CodexContract } from "./codexContracts";
-import type { VerificationPlan, VerificationResult } from "./verifierContracts";
+} from "./runSpine.js";
+import type { CorePolicy, RepositoryInspection, RepositorySandbox } from "./corePolicy.js";
+import type { CodexContract } from "./codexContracts.js";
+import type { VerificationPlan, VerificationResult } from "./verifierContracts.js";
 
 export type WorkspaceItemKind =
   | "goal"

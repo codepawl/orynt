@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { evaluateControlledRunArtifacts, evaluateReleaseArtifacts } from "./artifactGate";
 
 async function fixture(trace: unknown) {
@@ -14,6 +14,47 @@ async function fixture(trace: unknown) {
 }
 
 describe("controlled-run artifact gate", () => {
+  it("accepts a finalized failed run without requiring pass-only cognitive evidence", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "orynt-artifact-failure-"));
+    await writeFile(
+      path.join(root, "run-events.json"),
+      JSON.stringify([
+        { type: "run_started" },
+        { type: "verification_finished" },
+        { type: "run_finished" },
+      ]),
+    );
+    const manifestPath = path.join(root, "artifact-manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        status: "fail",
+        outcome: {
+          status: "fail",
+          stage: "verification",
+          classification: "verification",
+          code: "validation_failed",
+        },
+        artifacts: [{ kind: "event_log", path: "run-events.json" }],
+      }),
+    );
+
+    expect(await evaluateControlledRunArtifacts(manifestPath)).toEqual({
+      passed: true,
+      failures: [],
+    });
+
+    await writeFile(
+      path.join(root, "run-events.json"),
+      JSON.stringify([{ type: "run_started" }]),
+    );
+    const incomplete = await evaluateControlledRunArtifacts(manifestPath);
+    expect(incomplete.failures.map(({ code }) => code)).toContain(
+      "failure_terminal_event_missing",
+    );
+  });
+
   it("accepts ordered, approved, verified and budget-compliant evidence", async () => {
     const manifest = await fixture({
       revision: 3,
@@ -65,7 +106,7 @@ describe("controlled-run artifact gate", () => {
     ]));
   });
 
-  it("requires recomputable v3 artifact metadata for release", async () => {
+  it("requires recomputable v4 artifact metadata for release", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "orynt-artifact-release-"));
     const tracePath = path.join(root, "cognitive-trace.json");
     await writeFile(tracePath, JSON.stringify({
@@ -94,7 +135,7 @@ describe("controlled-run artifact gate", () => {
     };
     const manifestPath = path.join(root, "artifact-manifest.json");
     await writeFile(manifestPath, JSON.stringify({
-      schemaVersion: 3,
+      schemaVersion: 4,
       artifacts: {
         cognitiveTrace: await entry(tracePath),
         memoryRetrieval: await entry(memoryPath),

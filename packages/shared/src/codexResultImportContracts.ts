@@ -1,6 +1,6 @@
-import type { CorePolicy, RepositorySandbox } from "./corePolicy";
-import type { ArtifactRef, RunBudget } from "./runSpine";
-import type { VerificationPlanRequest } from "./verifierContracts";
+import type { CorePolicy, RepositorySandbox } from "./corePolicy.js";
+import type { ArtifactRef, RunBudget } from "./runSpine.js";
+import type { VerificationPlanRequest } from "./verifierContracts.js";
 
 export type ImportStatus = "requested" | "inspected" | "redacted" | "imported" | "manual_review_required" | "failed";
 

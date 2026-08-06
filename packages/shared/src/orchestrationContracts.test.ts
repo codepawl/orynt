@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import {
   classifyAutoOrchestrationPreset,
@@ -96,6 +96,19 @@ describe("multi-model orchestration contracts", () => {
     ).toThrow("Custom coordinator model is unavailable");
   });
 
+  it("blocks an unavailable custom effort instead of silently substituting one", () => {
+    const profile = createLegacySingleModelProfile("gpt-5.6-terra", "xhigh");
+    expect(() =>
+      resolveOrchestrationProfile(
+        profile,
+        catalog.map((model) => ({
+          ...model,
+          supportedThinkingEfforts: [...model.supportedThinkingEfforts],
+        })),
+      ),
+    ).toThrow("Custom coordinator thinking effort is unavailable: xhigh");
+  });
+
   it("enforces depth, helper, dependency, and single-writer invariants", () => {
     const profile = createOrchestrationPreset("balanced");
     const plan: OrchestrationPlan = {
@@ -141,12 +154,29 @@ describe("multi-model orchestration contracts", () => {
               ...plan.tasks[1]!,
               id: "implementer-2",
               dependencies: [],
+              expectedPaths: ["src/other.ts"],
             },
           ],
         },
         profile,
       ),
-    ).toThrow("exactly one implementer");
+    ).not.toThrow();
+    expect(() =>
+      validateOrchestrationPlan(
+        {
+          ...plan,
+          tasks: [
+            ...plan.tasks,
+            {
+              ...plan.tasks[1]!,
+              id: "implementer-2",
+              dependencies: [],
+            },
+          ],
+        },
+        profile,
+      ),
+    ).toThrow("disjoint writer paths");
     expect(() =>
       validateOrchestrationPlan(
         {
@@ -179,7 +209,7 @@ describe("multi-model orchestration contracts", () => {
         },
         profile,
       ),
-    ).toThrow("exactly one implementer");
+    ).toThrow("bounded writer leases");
     expect(() =>
       validateOrchestrationPlan(
         plan,

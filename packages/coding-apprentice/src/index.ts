@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   appendFile,
   mkdir,
+  readdir,
   readFile,
   realpath,
   writeFile,
@@ -23,12 +24,23 @@ import {
 } from "@codepawl/cognitive-kernel";
 import { LocalCodexContractAdapter, LocalManualCodexResultImporter } from "@codepawl/codex-adapter";
 import { AuditableGateway, InMemoryGatewayEvidenceStore, StaticApprovalProvider, type GatewayExecutionResult } from "@codepawl/gateway";
-import { LocalJsonMemoryStore, LocalMemoryExtractor } from "@codepawl/memory";
-import { GitRepositorySandboxManager } from "@codepawl/repository-sandbox";
+import {
+  CanonicalTraceJournal,
+  canonicalTraceEventFromRunEvent,
+  LocalMemoryExtractor,
+  LocalSqliteContextVmStore,
+  SqliteContextVmMemoryStore,
+} from "@codepawl/memory";
+import {
+  captureRepositoryEvidenceScope,
+  GitRepositorySandboxManager,
+} from "@codepawl/repository-sandbox";
 import { LocalSkillRegistry } from "@codepawl/skill-registry";
+import type { AgentImageInput } from "@codepawl/model-runtime";
 import {
   createConservativeCodingApprenticePolicy,
   createDefaultRunBudget,
+  contextVmSessionId,
   InMemoryAgentLedger,
   InMemoryRunStore,
   policyDecisionToSafetySnapshot,
@@ -80,32 +92,61 @@ import {
   repositoryTaskScopeDelta,
   RepositoryTaskScopeError,
   restoreRepositoryTaskOwnedPaths,
-} from "./taskScopeGuard";
+} from "./taskScopeGuard.js";
 
-export { LocalJsonCognitiveCheckpointStore } from "./checkpointStore";
+export { LocalJsonCognitiveCheckpointStore } from "./checkpointStore.js";
+export {
+  desktopPromptUnderstandingSchema,
+  understandDesktopPrompt,
+  understandPrompt,
+  DesktopPromptUnderstandingError,
+  PromptUnderstandingError,
+  type DesktopPromptUnderstandingDependencies,
+  type DesktopPromptUnderstandingInput,
+  type PromptUnderstandingDependencies,
+  type PromptUnderstandingInput,
+} from "./promptUnderstanding.js";
+export {
+  desktopRepositoryTaskPlanSchema,
+  planDesktopRepositoryTask,
+  planRepositoryTask,
+  DesktopRepositoryTaskPlannerError,
+  RepositoryTaskPlannerError,
+  type DesktopRepositoryTaskPlannerDependencies,
+  type DesktopRepositoryTaskPlanningInput,
+  type RepositoryTaskPlannerDependencies,
+  type RepositoryTaskPlanningInput,
+} from "./repositoryTaskPlanning.js";
 export {
   DesktopRepositoryRuntimeStore,
+  DesktopRepositoryRuntimeStore as RepositoryRuntimeStore,
   cancelDesktopRepositoryRuntime,
+  cancelDesktopRepositoryRuntime as cancelRepositoryRuntime,
   desktopRuntimeSnapshot,
+  desktopRuntimeSnapshot as repositoryRuntimeSnapshot,
   markDesktopRepositoryRuntimeFailed,
+  markDesktopRepositoryRuntimeFailed as markRepositoryRuntimeFailed,
   recoverDesktopRepositoryRuntime,
+  recoverDesktopRepositoryRuntime as recoverRepositoryRuntime,
   resumeDesktopRepositoryRuntime,
+  resumeDesktopRepositoryRuntime as resumeRepositoryRuntime,
   startDesktopRepositoryRuntime,
+  startDesktopRepositoryRuntime as startRepositoryRuntime,
   type DesktopRuntimeCheckpointV2,
   type DesktopRuntimeSnapshotV2,
   type DesktopRuntimeStatus,
-} from "./desktopRuntime";
+} from "./desktopRuntime.js";
 export {
   redactCognitiveRuntimeCheckpoint,
   runRepositoryActionWithCognitiveRuntime,
   type RedactedCognitiveRuntimeTrace,
   type RepositoryRuntimeRequest,
   type RepositoryRuntimeResult,
-} from "./repositoryRuntime";
+} from "./repositoryRuntime.js";
 import {
   runRepositoryActionWithCognitiveRuntime,
   type RedactedCognitiveRuntimeTrace,
-} from "./repositoryRuntime";
+} from "./repositoryRuntime.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -150,6 +191,7 @@ export type PostVerificationReviewContext = {
 
 export type CodingApprenticeDemoRequest = {
   goal: string;
+  images?: AgentImageInput[];
   activeGoal?: string;
   acceptanceCriteria?: string[];
   taskId: string;
@@ -177,6 +219,50 @@ export type CodingApprenticeDemoRequest = {
   }) => CodexExecutionApproval | Promise<CodexExecutionApproval>;
   enableMemoryExtraction?: boolean;
   memoryRoot?: string;
+  contextPack?: {
+    schemaVersion: 1;
+    invocationId: string;
+    id: string;
+    orderedContextPackIds: string[];
+    rendered: string;
+    renderedHash: string;
+    checkpointId: string;
+    providerTransport: string;
+    modelId: string;
+    attempts: Array<{
+      attemptId: string;
+      phase: "readiness" | "inference";
+      attempt: number;
+      transport: string;
+      modelId: string;
+      thinkingEffort: string;
+      status: string;
+      contextPackIds: string[];
+      contextHash: string;
+      resultHash?: string;
+      failureReason?: string;
+    }>;
+  };
+  contextVmLifecycle?: {
+    beforeInference(input: {
+      taskId: string;
+      phase: "implementer" | "semantic_task" | "recovery";
+      contextPack: NonNullable<CodingApprenticeDemoRequest["contextPack"]>;
+    }): Promise<string>;
+    afterInference(input: {
+      attemptId: string;
+      status: "completed" | "failed";
+      result?: unknown;
+      failureReason?: string;
+    }): Promise<void>;
+    prepareRecovery(input: {
+      taskId: string;
+      parentInvocationId: string;
+      instruction: string;
+      verifierSummary: string;
+    }): Promise<NonNullable<CodingApprenticeDemoRequest["contextPack"]>>;
+  };
+  cognitiveStateRoot?: string;
   memoryNamespace?: MemoryNamespace;
   applyManualChange?: (context: ManualDemoChangeContext) => Promise<ManualDemoChangeResult | void> | ManualDemoChangeResult | void;
   modelConnection?: DesktopModelConnectionReference | null;
@@ -241,6 +327,7 @@ export type CodingApprenticeDemoResult = {
 export type DesktopRepositoryRunRequest = {
   runIdPrefix?: string;
   goal: string;
+  images?: AgentImageInput[];
   activeGoal?: string;
   acceptanceCriteria?: string[];
   taskPlan?: RepositoryTaskPlanV1;
@@ -260,6 +347,10 @@ export type DesktopRepositoryRunRequest = {
   sandboxRoot: string;
   artifactRoot: string;
   memoryRoot?: string;
+  memoryNamespace?: MemoryNamespace;
+  contextPack?: CodingApprenticeDemoRequest["contextPack"];
+  contextVmLifecycle?: CodingApprenticeDemoRequest["contextVmLifecycle"];
+  cognitiveStateRoot?: string;
   budget?: RunBudget;
   modelConnection?: DesktopModelConnectionReference | null;
   thinkingEffort?: DesktopThinkingEffort | string | null;
@@ -281,15 +372,262 @@ export type DesktopRepositoryRunOutput = {
   status: VerificationStatus;
   artifactRoot: string;
   artifactManifestPath: string;
+  eventLogPath?: string;
+  outcome?: RepositoryRunOutcomeV1;
   eventCount: number;
   events: RunEvent[];
 };
+
+export type RepositoryAgentRunRequest = DesktopRepositoryRunRequest;
+export type RepositoryAgentRunOutput = DesktopRepositoryRunOutput;
+
+function taskPlanVerificationCommands(
+  taskPlan: RepositoryTaskPlanV1 | undefined,
+): string[] {
+  if (!taskPlan) return [];
+  return unique(
+    taskPlan.tasks.flatMap((task) =>
+      task.evidence.flatMap((evidence) => {
+        if (evidence.kind !== "command" || !evidence.command) return [];
+        const normalized = evidence.command.trim().replace(/\s+/gu, " ");
+        const parts = normalized.split(" ");
+        const safeBunTest =
+          parts[0] === "bun" &&
+          parts[1] === "test" &&
+          parts.slice(2).every((part) => /^[A-Za-z0-9_./:@+-]+$/u.test(part));
+        const safeBunRunTest =
+          parts.length === 3 &&
+          parts[0] === "bun" &&
+          parts[1] === "run" &&
+          parts[2] === "test";
+        return safeBunTest || safeBunRunTest ? [normalized] : [];
+      }),
+    ),
+  );
+}
 
 export class RepositoryRunCancelledError extends Error {
   constructor() {
     super("Repository action cancelled.");
     this.name = "RepositoryRunCancelledError";
   }
+}
+
+export type RepositoryRunOutcomeStatus =
+  | "pass"
+  | "fail"
+  | "blocked"
+  | "timeout"
+  | "cancelled"
+  | "infrastructure_error";
+
+export type RepositoryRunFailureStage =
+  | "preflight"
+  | "planning"
+  | "sandbox"
+  | "provider"
+  | "import"
+  | "verification"
+  | "memory"
+  | "finalization";
+
+export type RepositoryRunFailureClassification =
+  | "permission"
+  | "environment"
+  | "transient"
+  | "model"
+  | "policy"
+  | "verification"
+  | "cancelled"
+  | "infrastructure"
+  | "unknown";
+
+export type RepositoryRunOutcomeV1 = {
+  schemaVersion: 1;
+  status: RepositoryRunOutcomeStatus;
+  stage: RepositoryRunFailureStage;
+  classification: RepositoryRunFailureClassification;
+  code: string;
+  retryable: boolean;
+  message: string;
+  verifierFailureClass?: string;
+};
+
+export class RepositoryRunFailureError extends Error {
+  readonly runId: string;
+  readonly artifactRoot: string;
+  readonly artifactManifestPath: string;
+  readonly eventLogPath: string;
+  readonly outcome: RepositoryRunOutcomeV1;
+
+  constructor(input: {
+    runId: string;
+    artifactRoot: string;
+    artifactManifestPath: string;
+    eventLogPath: string;
+    outcome: RepositoryRunOutcomeV1;
+    cause?: unknown;
+  }) {
+    super(input.outcome.message, { cause: input.cause });
+    this.name = "RepositoryRunFailureError";
+    this.runId = input.runId;
+    this.artifactRoot = input.artifactRoot;
+    this.artifactManifestPath = input.artifactManifestPath;
+    this.eventLogPath = input.eventLogPath;
+    this.outcome = structuredClone(input.outcome);
+  }
+}
+
+function normalizedRunIdPrefix(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return normalized ? `${normalized}-` : "";
+}
+
+function redactedFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const redacted = redactSensitivePayload(message).payload;
+  return typeof redacted === "string" && redacted.trim()
+    ? redacted
+    : "Repository run failed.";
+}
+
+function failureStageFromEvents(events: readonly RunEvent[]): RepositoryRunFailureStage {
+  const types = new Set(events.map(({ type }) => type));
+  if ([...types].some((type) => type.startsWith("memory_"))) return "memory";
+  if ([...types].some((type) => type.startsWith("verification_"))) {
+    return "verification";
+  }
+  if ([...types].some((type) => type.startsWith("codex_result_"))) {
+    return "import";
+  }
+  if ([...types].some((type) => type.startsWith("codex_execution_"))) {
+    return "provider";
+  }
+  if ([...types].some((type) => type.startsWith("sandbox_"))) return "sandbox";
+  if (types.has("run_started")) return "planning";
+  return "preflight";
+}
+
+function repositoryFailureOutcome(
+  error: unknown,
+  events: readonly RunEvent[],
+): RepositoryRunOutcomeV1 {
+  const message = redactedFailureMessage(error);
+  const stage = failureStageFromEvents(events);
+  const cancelled =
+    error instanceof RepositoryRunCancelledError ||
+    (error instanceof Error &&
+      (error.name === "AbortError" || error.name === "RepositoryRunCancelledError"));
+  const timedOut = /timed?\s*out|timeout/iu.test(message);
+  const blocked = /blocked|approval|unauthori[sz]ed|protected path|policy/iu.test(
+    message,
+  );
+  const code =
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : cancelled
+        ? "execution_cancelled"
+        : timedOut
+          ? "execution_timeout"
+          : blocked
+            ? "policy_blocked"
+            : stage === "verification"
+              ? "verification_failed"
+              : stage === "provider"
+                ? "provider_failed"
+                : "repository_run_failed";
+  return {
+    schemaVersion: 1,
+    status: cancelled
+      ? "cancelled"
+      : timedOut
+        ? "timeout"
+        : blocked
+          ? "blocked"
+          : stage === "preflight" || stage === "finalization"
+            ? "infrastructure_error"
+            : "fail",
+    stage,
+    classification: cancelled
+      ? "cancelled"
+      : timedOut
+        ? "transient"
+        : blocked
+          ? "policy"
+          : stage === "verification"
+            ? "verification"
+            : stage === "provider"
+              ? "model"
+              : stage === "sandbox" || stage === "preflight"
+                ? "environment"
+                : "unknown",
+    code,
+    retryable: timedOut || stage === "provider",
+    message,
+  };
+}
+
+async function manifestArtifactEntry(
+  filePath: string,
+  kind: string,
+  redaction: "public" | "redacted" | "private" = "redacted",
+) {
+  const bytes = await readFile(filePath);
+  return {
+    kind,
+    path: filePath,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    byteLength: bytes.byteLength,
+    mediaType:
+      path.extname(filePath) === ".md"
+        ? "text/markdown"
+        : path.extname(filePath) === ".log" ||
+            path.extname(filePath) === ".jsonl"
+          ? "text/plain"
+          : "application/json",
+    redaction,
+  };
+}
+
+async function collectFailureArtifactEntries(
+  root: string,
+  directory = root,
+): Promise<Awaited<ReturnType<typeof manifestArtifactEntry>>[]> {
+  const entries: Awaited<ReturnType<typeof manifestArtifactEntry>>[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const filePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      entries.push(...await collectFailureArtifactEntries(root, filePath));
+      continue;
+    }
+    if (
+      !entry.isFile() ||
+      entry.name === "artifact-manifest.json" ||
+      entry.name === "trusted-verifier-report.json"
+    ) {
+      continue;
+    }
+    entries.push(
+      await manifestArtifactEntry(
+        filePath,
+        entry.name === "run-events.json"
+          ? "event_log"
+          : entry.name === "canonical-trace.jsonl"
+            ? "canonical_trace"
+            : entry.name === "run-outcome.json"
+              ? "run_outcome"
+              : "partial_run_artifact",
+      ),
+    );
+  }
+  return entries.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 class ForwardingRunStore implements RunStore {
@@ -346,6 +684,10 @@ function desktopRepositoryVerifierScript(input?: {
   nonce: string;
   runId: string;
   commandId: string;
+  expectedPaths?: string[];
+  requireFrontend?: boolean;
+  requireBackend?: boolean;
+  requirePackageScripts?: boolean;
 }): string {
   const reportSetup = input
     ? `const reportPath = ${JSON.stringify(input.reportPath)};
@@ -373,28 +715,39 @@ writeFileSync(temporaryReportPath, JSON.stringify(report) + "\\n", { encoding: "
 renameSync(temporaryReportPath, reportPath);
 console.log(summary);`
     : `console.log("Orynt beta repository smoke passed", JSON.stringify({ changed, hasFrontend, hasBackend }));`;
+  const expectedPaths = input?.expectedPaths ?? [];
+  const requireFrontend = input?.requireFrontend ?? false;
+  const requireBackend = input?.requireBackend ?? false;
+  const requirePackageScripts = input?.requirePackageScripts ?? false;
   return `import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
 ${reportSetup}
-const changedMarkers = ["README.md", "PRODUCT.md", "package.json", "index.html", "src", "server", "api", "public", "apps", "packages"];
+const expectedPaths = ${JSON.stringify(expectedPaths)};
+const changedMarkers = [...new Set(["README.md", "PRODUCT.md", "package.json", "index.html", "src", "server", "api", "public", "apps", "packages", ...expectedPaths])];
 const changed = changedMarkers.filter((entry) => existsSync(path.join(root, entry)));
 if (changed.length === 0) {
   throw new Error("Orynt verifier expected repository task files to exist.");
 }
 
-if (existsSync(path.join(root, "package.json"))) {
+if (${JSON.stringify(requirePackageScripts)}) {
+  if (!existsSync(path.join(root, "package.json"))) {
+    throw new Error("The approved task requires package.json.");
+  }
   const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
   if (!pkg.scripts || Object.keys(pkg.scripts).length === 0) {
-    throw new Error("package.json must define at least one runnable script.");
+    throw new Error("The approved task requires package.json to define at least one runnable script.");
   }
 }
 
 const hasFrontend = ["index.html", "src", "apps"].some((entry) => existsSync(path.join(root, entry)));
 const hasBackend = ["server", "api", "packages"].some((entry) => existsSync(path.join(root, entry)));
-if (existsSync(path.join(root, "package.json")) && (!hasFrontend || !hasBackend)) {
-  throw new Error("Fullstack repository tasks with package.json need frontend and backend/API files.");
+if (${JSON.stringify(requireFrontend)} && !hasFrontend) {
+  throw new Error("The approved task requires frontend files.");
+}
+if (${JSON.stringify(requireBackend)} && !hasBackend) {
+  throw new Error("The approved task requires backend/API files.");
 }
 
 ${reportWrite}
@@ -514,7 +867,14 @@ export type LocalCodingApprenticeDemoOrchestratorOptions = {
   actor?: Actor;
 };
 
-export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequest): Promise<DesktopRepositoryRunOutput> {
+export type RepositoryAgentRunDependencies = {
+  memoryStore?: MemoryStore;
+};
+
+export async function runDesktopRepositoryBeta(
+  request: DesktopRepositoryRunRequest,
+  dependencies: RepositoryAgentRunDependencies = {},
+): Promise<DesktopRepositoryRunOutput> {
   await mkdir(request.sandboxRoot, { recursive: true });
   await mkdir(request.artifactRoot, { recursive: true });
   if (request.memoryRoot) {
@@ -563,9 +923,63 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
   const runIdPrefix =
     request.runIdPrefix ??
     `desktop-${randomUUID().replaceAll("-", "").slice(0, 10)}`;
-  const innerRunStore = new InMemoryRunStore({ runIdPrefix });
+  const prospectiveRunId = `run-${normalizedRunIdPrefix(runIdPrefix)}1`;
+  const validationCommands = [
+    "node .codex/orynt-beta-verify.mjs",
+    ...taskPlanVerificationCommands(request.taskPlan),
+  ];
+  const repositoryScope = await captureRepositoryEvidenceScope(repositoryPath);
+  const prospectiveArtifactRoot = path.join(
+    path.resolve(request.artifactRoot),
+    prospectiveRunId,
+  );
+  const canonicalJournal = await CanonicalTraceJournal.open(
+    path.join(prospectiveArtifactRoot, "canonical-trace.jsonl"),
+  );
+  const effectiveMemoryStore =
+    dependencies.memoryStore instanceof SqliteContextVmMemoryStore
+      ? dependencies.memoryStore
+      : new SqliteContextVmMemoryStore({
+          contextVm: new LocalSqliteContextVmStore({
+            root: path.join(
+              request.memoryRoot ?? request.artifactRoot,
+              "contextvm",
+            ),
+          }),
+          legacyMemoryRoot: request.memoryRoot,
+        });
+  let projectionQueue = Promise.resolve();
+  let projectionFailure: unknown;
+  const innerRunStore = new InMemoryRunStore({
+    runIdPrefix,
+    beforeAppend: (event) => {
+      const previousEventId = canonicalJournal.last()?.eventId;
+      const canonicalEvent = canonicalTraceEventFromRunEvent({
+        event,
+        taskId: request.taskId,
+        workspaceId: request.workspaceId,
+        repositoryScope,
+        ...(previousEventId ? { previousEventId } : {}),
+      });
+      canonicalJournal.append(canonicalEvent);
+      projectionQueue = projectionQueue.then(async () => {
+        try {
+          await effectiveMemoryStore.contextVm.projectCanonicalTraceEvents([
+            canonicalEvent,
+          ]);
+        } catch (error) {
+          projectionFailure = error;
+        }
+      });
+    },
+  });
   const runStore = request.onRunEvent ? new ForwardingRunStore(innerRunStore, request.onRunEvent) : innerRunStore;
-  const result = await new LocalCodingApprenticeDemoOrchestrator({ runStore }).runDemo({
+  let result: CodingApprenticeDemoResult;
+  try {
+    result = await new LocalCodingApprenticeDemoOrchestrator({
+      runStore,
+      memoryStore: effectiveMemoryStore,
+    }).runDemo({
     goal: effectiveGoal,
     activeGoal: request.activeGoal,
     acceptanceCriteria: request.acceptanceCriteria,
@@ -576,6 +990,9 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
     sandboxRoot: request.sandboxRoot,
     artifactRoot: request.artifactRoot,
     memoryRoot: request.memoryRoot,
+    memoryNamespace: request.memoryNamespace,
+    contextPack: request.contextPack,
+    cognitiveStateRoot: request.cognitiveStateRoot,
     budget: request.budget,
     modelConnection: request.modelConnection,
     thinkingEffort: request.thinkingEffort,
@@ -607,9 +1024,11 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
       allowChangedFileLimitExceeded:
         request.authorization?.allowChangedFileLimitExceeded ?? false,
     },
-    validationCommands: ["node .codex/orynt-beta-verify.mjs"],
-    allowedVerificationCommands: ["node .codex/orynt-beta-verify.mjs"],
+    validationCommands,
+    allowedVerificationCommands: validationCommands,
     enableControlledCodexExecution: useControlledCodexExecution,
+    enableMemoryExtraction:
+      process.env.ORYNT_REPOOPS_DISABLE_CONTEXT === "1" ? false : undefined,
     readOnlyRepositoryRun,
     codexPathEnv: process.env.PATH,
     createExecutionApproval: useControlledCodexExecution
@@ -639,17 +1058,125 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
           await writeFile(manualLogPath, `Manual repository-scoped beta result for: ${request.goal}\n`, "utf8");
           await writeFile(redactedLogPath, `Manual repository-scoped beta result for: ${request.goal}\n`, "utf8");
           return { manualLogPath };
+      },
+    });
+  } catch (error) {
+    const run = innerRunStore.getRun(prospectiveRunId);
+    if (!run) throw error;
+
+    let events = innerRunStore.listEvents(run.id);
+    const outcome = repositoryFailureOutcome(error, events);
+    const currentRun = innerRunStore.getRun(run.id);
+    if (
+      currentRun &&
+      currentRun.status !== "failed" &&
+      currentRun.status !== "cancelled" &&
+      currentRun.status !== "completed"
+    ) {
+      innerRunStore.updateRunStatus(
+        run.id,
+        outcome.status === "cancelled" ? "cancelled" : "failed",
+      );
+    }
+    if (!events.some(({ type }) => type === "run_finished")) {
+      runStore.appendEvent(run.id, {
+        type: "run_finished",
+        actor: DEFAULT_ACTOR,
+        payload: {
+          summary: outcome.message,
+          outcome,
         },
-  });
+        verdict: {
+          status: "fail",
+          reason: outcome.message,
+          confidence: 1,
+        },
+      });
+    }
+    events = innerRunStore.listEvents(run.id);
+    await projectionQueue.catch(() => undefined);
+
+    const eventLogPath = path.join(prospectiveArtifactRoot, "run-events.json");
+    const outcomePath = path.join(prospectiveArtifactRoot, "run-outcome.json");
+    const manifestPath = path.join(
+      prospectiveArtifactRoot,
+      "artifact-manifest.json",
+    );
+    await Promise.all([
+      writeFile(eventLogPath, `${JSON.stringify(events, null, 2)}\n`, "utf8"),
+      writeFile(outcomePath, `${JSON.stringify(outcome, null, 2)}\n`, "utf8"),
+    ]);
+    const artifacts = await collectFailureArtifactEntries(
+      prospectiveArtifactRoot,
+    );
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 4,
+          runId: run.id,
+          taskId: request.taskId,
+          workspaceId: request.workspaceId,
+          repositoryPath,
+          artifactRoot: prospectiveArtifactRoot,
+          status: "fail",
+          summary: outcome.message,
+          outcome,
+          artifacts,
+          eventTypes: events.map(({ type }) => type),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    throw new RepositoryRunFailureError({
+      runId: run.id,
+      artifactRoot: prospectiveArtifactRoot,
+      artifactManifestPath: manifestPath,
+      eventLogPath,
+      outcome,
+      cause: error,
+    });
+  }
   if (request.signal?.aborted) throw new RepositoryRunCancelledError();
+  await projectionQueue;
+  await effectiveMemoryStore.contextVm.projectCanonicalTraceEvents(
+    canonicalJournal.list(),
+  );
+  await effectiveMemoryStore.contextVm.extractSession(
+    contextVmSessionId(result.run.id),
+    contextVmMemoryNamespace(
+      request.memoryNamespace ?? {
+        capabilityId: result.run.capabilityId,
+        workspaceId: result.run.workspaceId,
+        repositoryPath,
+      },
+    ),
+  );
+  const projectionWatermark =
+    await effectiveMemoryStore.contextVm.canonicalProjectionWatermark(
+      result.run.id,
+    );
+  if (projectionWatermark !== canonicalJournal.list().length) {
+    throw new Error(
+      `canonical trace projection watermark mismatch: ${projectionWatermark}/${canonicalJournal.list().length}`,
+      { cause: projectionFailure },
+    );
+  }
 
   const runArtifactRoot = result.contractArtifact.artifactRoot;
   redactedLogPath = result.codexExecutionResult?.lastMessagePath ?? redactedLogPath;
   const eventLogPath = path.join(runArtifactRoot, "run-events.json");
+  const canonicalTracePath = path.join(
+    runArtifactRoot,
+    "canonical-trace.jsonl",
+  );
   const cognitiveTracePath = path.join(runArtifactRoot, "cognitive-trace.json");
   const skillPlanPath = path.join(runArtifactRoot, "skill-invocation-plan.json");
   const skillContextPath = path.join(runArtifactRoot, "skill-context.json");
   const manifestPath = path.join(runArtifactRoot, "artifact-manifest.json");
+  const outcomePath = path.join(runArtifactRoot, "run-outcome.json");
   const verificationResultPath = path.join(runArtifactRoot, "verification-result.json");
   const modelInvocationLedgerPath = path.join(
     runArtifactRoot,
@@ -659,10 +1186,17 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
     runArtifactRoot,
     "orchestration-attempts.json",
   );
-  const memoryStorePath = path.join(runArtifactRoot, "memory-store.json");
+  const memoryStorePath = path.join(
+    runArtifactRoot,
+    "memory-extraction-summary.json",
+  );
   const memoryRetrievalPath = path.join(
     runArtifactRoot,
     "memory-retrieval.json",
+  );
+  const contextPackPath = path.join(
+    runArtifactRoot,
+    "context-pack.json",
   );
 
   const modelInvocations = [
@@ -692,9 +1226,17 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
               `${request.taskId}-recovery-${retryIndex}`
             : request.taskId,
         role: "implementer",
-        providerId: "codex-cli",
+        providerId: implementer.providerId,
         modelId: implementer.modelId,
         thinkingEffort: implementer.thinkingEffort,
+        ...(implementer.modelTier
+          ? { modelTier: implementer.modelTier }
+          : {}),
+        ...(implementer.routingReasonCodes
+          ? {
+              routingReasonCodes: [...implementer.routingReasonCodes],
+            }
+          : {}),
         contextHash: createHash("sha256")
           .update(
             retryIndex > 0
@@ -778,6 +1320,17 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
   }
 
   if (request.signal?.aborted) throw new RepositoryRunCancelledError();
+  const canonicalEvents = canonicalJournal.list();
+  if (
+    canonicalEvents.length !== result.events.length ||
+    canonicalEvents.some(
+      (event, index) =>
+        event.sourceRunEventId !== result.events[index]?.id ||
+        event.sequenceNo !== result.events[index]?.sequence,
+    )
+  ) {
+    throw new Error("compatibility run event stream diverged from canonical trace");
+  }
   await writeFile(eventLogPath, `${JSON.stringify(result.events, null, 2)}\n`, "utf8");
   await writeFile(
     cognitiveTracePath,
@@ -838,6 +1391,13 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
     )}\n`,
     "utf8",
   );
+  if (request.contextPack) {
+    await writeFile(
+      contextPackPath,
+      `${JSON.stringify(request.contextPack, null, 2)}\n`,
+      "utf8",
+    );
+  }
   if (request.skillContext) {
     await writeFile(
       skillContextPath,
@@ -870,7 +1430,7 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
       return null;
     }
   };
-  const manifestArtifacts = {
+  const manifestArtifactsBase = {
     contract: await manifestArtifact(
       result.contractArtifact.markdownPath,
       "codex_contract",
@@ -880,6 +1440,11 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
       "codex_contract_metadata",
     ),
     eventLog: await manifestArtifact(eventLogPath, "event_log"),
+    canonicalTrace: await manifestArtifact(
+      canonicalTracePath,
+      "canonical_trace",
+      "redacted",
+    ),
     cognitiveTrace: await manifestArtifact(cognitiveTracePath, "runtime_trace"),
     verifierInput: await manifestArtifact(
       result.verifierInputPath,
@@ -888,6 +1453,12 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
     verificationResult: await manifestArtifact(
       verificationResultPath,
       "validation_report",
+    ),
+    repositoryDiff: await manifestArtifact(
+      result.importBundle.artifacts.find(({ kind }) => kind === "diff")?.path ??
+        null,
+      "repository_diff",
+      "redacted",
     ),
     redactedLog: await manifestArtifact(
       redactedLogPath || null,
@@ -904,6 +1475,11 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
       "memory_retrieval",
       "redacted",
     ),
+    contextPack: await manifestArtifact(
+      request.contextPack ? contextPackPath : null,
+      "context_pack",
+      "redacted",
+    ),
     replayPlan: await manifestArtifact(skillPlanPath, "skill_replay_plan"),
     skillContext: await manifestArtifact(
       request.skillContext ? skillContextPath : null,
@@ -918,11 +1494,49 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
       "orchestration_attempts",
     ),
   };
+  const terminalStatus =
+    result.taskPlanExecution &&
+    result.taskPlanExecution.status !== "pass"
+      ? "fail"
+      : result.verificationResult.status === "pass"
+        ? "pass"
+        : "fail";
+  const verifierFailureClass = result.verificationResult.verdict.failureClass;
+  const outcome: RepositoryRunOutcomeV1 = {
+    schemaVersion: 1,
+    status: terminalStatus,
+    stage: "verification",
+    classification:
+      terminalStatus === "pass" ? "verification" : "verification",
+    code:
+      terminalStatus === "pass"
+        ? "verification_passed"
+        : verifierFailureClass ??
+          (result.taskPlanExecution?.coverage.missingRequirementIds.length
+            ? "requirement_coverage_failed"
+            : "verification_failed"),
+    retryable: false,
+    message: redactedFailureMessage(
+      result.taskPlanExecution?.coverage.summary ?? result.summary,
+    ),
+    ...(verifierFailureClass
+      ? { verifierFailureClass }
+      : {}),
+  };
+  await writeFile(
+    outcomePath,
+    `${JSON.stringify(outcome, null, 2)}\n`,
+    "utf8",
+  );
+  const manifestArtifacts = {
+    ...manifestArtifactsBase,
+    runOutcome: await manifestArtifact(outcomePath, "run_outcome"),
+  };
   await writeFile(
     manifestPath,
     `${JSON.stringify(
       {
-        schemaVersion: 3,
+        schemaVersion: 4,
         runId: result.run.id,
         taskId: request.taskId,
         workspaceId: request.workspaceId,
@@ -950,8 +1564,9 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
                 : {}),
             }
           : null,
-        status: result.verificationResult.status,
+        status: terminalStatus,
         summary: result.summary,
+        outcome,
         budgetedAgent: {
           mode: result.cognitiveKernelResult.budgetedTrace.decision.mode,
           needState: result.cognitiveKernelResult.budgetedTrace.needState,
@@ -991,9 +1606,11 @@ export async function runDesktopRepositoryBeta(request: DesktopRepositoryRunRequ
 
   return {
     runId: result.run.id,
-    status: result.verificationResult.status,
+    status: terminalStatus,
     artifactRoot: runArtifactRoot,
     artifactManifestPath: manifestPath,
+    eventLogPath,
+    outcome,
     eventCount: result.events.length,
     events: result.events,
   };
@@ -1004,6 +1621,15 @@ const DEFAULT_ACTOR: Actor = {
   id: "coding-apprentice-demo-orchestrator",
   displayName: "Coding Apprentice Demo Orchestrator",
 };
+
+function contextVmMemoryNamespace(namespace: MemoryNamespace): string {
+  return [
+    namespace.capabilityId,
+    namespace.workspaceId,
+    namespace.repositoryPath ?? "",
+    namespace.projectId ?? "",
+  ].join("|");
+}
 
 function unique(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -1030,6 +1656,7 @@ async function resolveGitRepositoryRoot(repositoryPath: string): Promise<string>
 function createDemoPolicy(request: CodingApprenticeDemoRequest): CorePolicy {
   const basePolicy = createConservativeCodingApprenticePolicy(request.repositoryPath, request.sandboxRoot);
   const allowlist = unique([...(basePolicy.sandbox.commandPolicy.allowlist ?? []), ...(request.allowedVerificationCommands ?? [])]);
+  const taskPlanPaths = request.taskPlan?.pathEnvelope ?? [];
   return {
     ...basePolicy,
     sandbox: {
@@ -1039,6 +1666,10 @@ function createDemoPolicy(request: CodingApprenticeDemoRequest): CorePolicy {
         repositoryPath: request.repositoryPath,
         worktreePath: request.sandboxRoot,
         baseRef: request.baseRef ?? basePolicy.sandbox.repository.baseRef,
+        allowedPaths: unique([
+          ...basePolicy.sandbox.repository.allowedPaths,
+          ...taskPlanPaths,
+        ]),
       },
       commandPolicy: {
         ...basePolicy.sandbox.commandPolicy,
@@ -1189,74 +1820,59 @@ export class LocalCodingApprenticeDemoOrchestrator {
     };
     const inspection = await sandboxManager.inspectRepository(sandboxRequest, policy);
     const memoryRoot = path.resolve(request.memoryRoot ?? path.join(runArtifactRoot, "memory"));
-    const memoryStore = this.memoryStore ?? new LocalJsonMemoryStore({ memoryRoot });
+    const memoryStore = this.memoryStore ?? new SqliteContextVmMemoryStore({
+      contextVm: new LocalSqliteContextVmStore({
+        root: path.join(memoryRoot, "contextvm"),
+      }),
+      legacyMemoryRoot: memoryRoot,
+    });
     const memoryNamespace = request.memoryNamespace ?? {
       capabilityId: run.capabilityId,
       workspaceId: run.workspaceId,
       repositoryPath: inspection.gitRoot,
     };
-    const [priorEpisodes, priorRules, priorSemanticMemory] = await Promise.all([
-      memoryStore.queryEpisodes({ namespace: memoryNamespace, limit: 8 }),
-      memoryStore.listCandidateRules({
-        namespace: memoryNamespace,
-        statuses: ["accepted"],
-        limit: 8,
-      }),
-      memoryStore.listSemanticMemory({
-        namespace: memoryNamespace,
-        statuses: ["approved"],
-        limit: 8,
-      }),
-    ]);
-    const priorMemoryHits: KernelMemoryHit[] = [
-      ...priorSemanticMemory.map((memory) => ({
-        id: memory.id,
-        kind: "semantic" as const,
-        summary: memory.summary,
-        relevance: Math.max(0, Math.min(1, memory.confidence)),
-        sourceRunId: memory.provenance.runId,
-      })),
-      ...priorRules.map((rule) => ({
-        id: rule.id,
-        kind: "procedural" as const,
-        summary: `${rule.title}: ${rule.rule}`,
-        relevance: Math.max(
-          0,
-          Math.min(
-            1,
-            rule.evidence.reduce(
-              (highest, evidence) => Math.max(highest, evidence.confidence),
-              0.75,
+    const priorMemoryHits: KernelMemoryHit[] = (
+      (await Promise.all([
+          memoryStore.queryEpisodes({ namespace: memoryNamespace, limit: 8 }),
+          memoryStore.listCandidateRules({
+            namespace: memoryNamespace,
+            statuses: ["accepted"],
+            limit: 8,
+          }),
+          memoryStore.listSemanticMemory({
+            namespace: memoryNamespace,
+            statuses: ["approved"],
+            limit: 8,
+          }),
+        ])).flatMap((items, index) =>
+          items.map((item) => ({
+            id: item.id,
+            kind:
+              index === 0
+                ? "episodic" as const
+                : index === 1
+                  ? "procedural" as const
+                  : "semantic" as const,
+            summary:
+              "title" in item
+                ? `${item.title}: ${item.rule}`
+                : item.summary,
+            relevance: Math.max(
+              0,
+              Math.min(1, "confidence" in item ? item.confidence : 0.75),
             ),
-          ),
-        ),
-        sourceRunId: rule.provenance.runId,
-      })),
-      ...priorEpisodes
-        .filter(
-          (episode) =>
-            episode.expiresAt === undefined ||
-            Date.parse(episode.expiresAt) > Date.now(),
+            sourceRunId: item.provenance.runId,
+          }))
         )
-        .map((episode) => ({
-          id: episode.id,
-          kind: "episodic" as const,
-          summary: episode.summary,
-          relevance: Math.max(0, Math.min(0.85, episode.confidence)),
-          sourceRunId: episode.provenance.runId,
-        })),
-    ]
+    )
       .sort(
         (left, right) =>
           right.relevance - left.relevance || left.id.localeCompare(right.id),
       )
       .slice(0, 12);
-    const priorMemoryContext = priorMemoryHits
-      .slice(0, 6)
-      .map(
-        (memory) =>
-          `Approved prior Orynt memory (${memory.kind}, advisory only): ${memory.summary.slice(0, 500)}`,
-      );
+    const priorMemoryContext = request.contextPack?.rendered.trim()
+      ? [request.contextPack.rendered]
+      : [];
     assertNotCancelled();
     this.runStore.appendEvent(run.id, {
       type: "sandbox_create_requested",
@@ -1311,11 +1927,45 @@ export class LocalCodingApprenticeDemoOrchestrator {
         "trusted-verifier-report.json",
       );
       const nonce = randomUUID();
+      const surfacePaths = request.taskPlan
+        ? request.taskPlan.tasks
+            .filter(
+              (task) =>
+                task.authority === "single_writer" &&
+                task.operations.some((operation) =>
+                  operation === "write" ||
+                  operation === "dependency" ||
+                  operation === "migration"
+                ),
+            )
+            .flatMap((task) => task.expectedPaths)
+        : [];
+      const legacyFullstackTask =
+        !request.taskPlan && /\bfull[\s-]?stack\b/iu.test(request.goal);
       const verifyScriptContent = desktopRepositoryVerifierScript({
         reportPath,
         nonce,
         runId: run.id,
         commandId,
+        expectedPaths: request.taskPlan?.pathEnvelope ?? [],
+        requireFrontend:
+          legacyFullstackTask ||
+          surfacePaths.some(
+            (entry) =>
+              entry === "index.html" ||
+              entry.startsWith("src/") ||
+              entry.startsWith("apps/"),
+          ),
+        requireBackend:
+          legacyFullstackTask ||
+          surfacePaths.some(
+            (entry) =>
+              entry.startsWith("server/") ||
+              entry.startsWith("api/") ||
+              entry.startsWith("packages/"),
+          ),
+        requirePackageScripts:
+          legacyFullstackTask || surfacePaths.includes("package.json"),
       });
       await mkdir(path.dirname(verifyScriptPath), { recursive: true });
       await writeFile(verifyScriptPath, verifyScriptContent, "utf8");
@@ -1754,6 +2404,9 @@ export class LocalCodingApprenticeDemoOrchestrator {
               artifactRoot: attemptArtifactRoot,
               verifierPlan: verificationPlan,
               taskBinding,
+              ...(request.images?.length
+                ? { images: request.images.map((image) => ({ ...image })) }
+                : {}),
             });
             codexExecutionPlan = taskExecutionPlan;
             const beforeScope = await captureRepositoryTaskScope(
@@ -1777,8 +2430,8 @@ export class LocalCodingApprenticeDemoOrchestrator {
                 budget,
                 policy: taskPolicy,
                 stateRoot: path.join(
-                  memoryRoot,
-                  "cognitive-state",
+                  request.cognitiveStateRoot ??
+                    path.join(memoryRoot, "cognitive-state"),
                   "task-attempts",
                   attemptId,
                 ),
@@ -1824,12 +2477,48 @@ export class LocalCodingApprenticeDemoOrchestrator {
                       "Semantic task approval was not bound to its execution attempt.",
                     );
                   }
-                  taskExecutionResult =
-                    await codexAdapter.executeApprovedContract(
+                  const contextAttemptId =
+                    request.contextVmLifecycle && request.contextPack
+                      ? await request.contextVmLifecycle.beforeInference({
+                          taskId: task.id,
+                          phase: "semantic_task",
+                          contextPack: request.contextPack,
+                        })
+                      : undefined;
+                  try {
+                    taskExecutionResult =
+                      await codexAdapter.executeApprovedContract(
                       taskExecutionPlan,
                       executionApproval,
                       { signal },
                     );
+                    if (contextAttemptId) {
+                      await request.contextVmLifecycle!.afterInference({
+                        attemptId: contextAttemptId,
+                        status:
+                          taskExecutionResult.status === "finished"
+                            ? "completed"
+                            : "failed",
+                        result: taskExecutionResult,
+                        ...(taskExecutionResult.status !== "finished"
+                          ? {
+                              failureReason:
+                                `Semantic task provider ${taskExecutionResult.status}.`,
+                            }
+                          : {}),
+                      });
+                    }
+                  } catch (error) {
+                    if (contextAttemptId) {
+                      await request.contextVmLifecycle!.afterInference({
+                        attemptId: contextAttemptId,
+                        status: "failed",
+                        failureReason:
+                          error instanceof Error ? error.message : String(error),
+                      });
+                    }
+                    throw error;
+                  }
                   codexExecutionResults.push(taskExecutionResult);
                   return {
                     observation:
@@ -2100,11 +2789,18 @@ export class LocalCodingApprenticeDemoOrchestrator {
                   });
                 }),
               )
-              .map(({ id }) => id);
+              .map(({ id }) => id)
+              .sort((left, right) => left.localeCompare(right));
             const requiredIds = plan.requirements
               .filter(({ required }) => required)
               .map(({ id }) => id);
-            const missingRequirementIds = requiredIds.filter(
+            const missingRequirementIds = plan.requirements
+              .map(({ id }) => id)
+              .filter(
+                (id) => !coveredRequirementIds.includes(id),
+              )
+              .sort((left, right) => left.localeCompare(right));
+            const missingRequiredRequirementIds = requiredIds.filter(
               (id) => !coveredRequirementIds.includes(id),
             );
             const coverageRecords = plan.requirements.map((requirement) => {
@@ -2137,7 +2833,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
             });
             if (
               finalVerification.status === "pass" &&
-              missingRequirementIds.length === 0 &&
+              missingRequiredRequirementIds.length === 0 &&
               request.enableMemoryExtraction !== false
             ) {
               await learnVerifiedRepositoryResult();
@@ -2146,14 +2842,16 @@ export class LocalCodingApprenticeDemoOrchestrator {
               schemaVersion: 1,
               passed:
                 finalVerification.status === "pass" &&
-                missingRequirementIds.length === 0,
+                missingRequiredRequirementIds.length === 0,
               coveredRequirementIds,
               missingRequirementIds,
               records: coverageRecords,
               summary:
                 finalVerification.status === "pass"
-                  ? missingRequirementIds.length === 0
-                    ? "Deterministic verification and requirement coverage passed."
+                  ? missingRequiredRequirementIds.length === 0
+                    ? missingRequirementIds.length === 0
+                      ? "Deterministic verification and requirement coverage passed."
+                      : "Deterministic verification and required requirement coverage passed; optional evidence is incomplete."
                     : "Deterministic verification passed but requirement evidence is incomplete."
                   : verifier.summarizeResult(finalVerification),
               artifactRefs: finalVerification.artifacts.map(({ uri }) => uri),
@@ -2220,16 +2918,18 @@ export class LocalCodingApprenticeDemoOrchestrator {
         this.runStore.updateRunStatus(run.id, "cancelled");
         throw new RepositoryRunCancelledError();
       }
-      if (
-        taskPlanExecution.status !== "pass" ||
-        !verificationResult ||
-        verificationResult.status !== "pass"
-      ) {
+      if (!verificationResult) {
         this.runStore.updateRunStatus(run.id, "failed");
         throw new Error(
           taskPlanExecution.coverage.summary ||
             "Repository task plan failed before final verification.",
         );
+      }
+      if (
+        taskPlanExecution.status !== "pass" ||
+        verificationResult.status !== "pass"
+      ) {
+        this.runStore.updateRunStatus(run.id, "failed");
       }
     } else if (request.enableControlledCodexExecution) {
       verificationPlan = verifier.createPlan({
@@ -2254,6 +2954,9 @@ export class LocalCodingApprenticeDemoOrchestrator {
         budget,
         artifactRoot: runArtifactRoot,
         verifierPlan: verificationPlan,
+        ...(request.images?.length
+          ? { images: request.images.map((image) => ({ ...image })) }
+          : {}),
       });
       let executionApproval: CodexExecutionApproval | undefined;
       const runtimeResult = await runRepositoryActionWithCognitiveRuntime({
@@ -2268,7 +2971,9 @@ export class LocalCodingApprenticeDemoOrchestrator {
         ],
         budget,
         policy,
-        stateRoot: path.join(memoryRoot, "cognitive-state"),
+        stateRoot:
+          request.cognitiveStateRoot ??
+          path.join(memoryRoot, "cognitive-state"),
         memoryHits: priorMemoryHits,
         action: {
           id: `repository-action-${codexExecutionPlan.id}`,
@@ -2322,11 +3027,49 @@ export class LocalCodingApprenticeDemoOrchestrator {
           if (!executionApproval) {
             throw new Error("Controlled Codex execution approval was not bound to the runtime checkpoint.");
           }
-          codexExecutionResult = await codexAdapter.executeApprovedContract(
-            codexExecutionPlan!,
-            executionApproval,
-            { signal: request.signal },
-          );
+          const contextAttemptId =
+            request.contextVmLifecycle && request.contextPack
+              ? await request.contextVmLifecycle.beforeInference({
+                  taskId: run.taskId,
+                  phase: "implementer",
+                  contextPack: request.contextPack,
+                })
+              : undefined;
+          try {
+            codexExecutionResult = await codexAdapter.executeApprovedContract(
+              codexExecutionPlan!,
+              executionApproval,
+              { signal: request.signal },
+            );
+            if (contextAttemptId) {
+              await request.contextVmLifecycle!.afterInference({
+                attemptId: contextAttemptId,
+                status: codexExecutionResult.status === "finished"
+                  ? "completed"
+                  : "failed",
+                result: {
+                  id: codexExecutionResult.id,
+                  status: codexExecutionResult.status,
+                },
+                ...(codexExecutionResult.status === "finished"
+                  ? {}
+                  : {
+                      failureReason:
+                        codexExecutionResult.failureReasons.join("; "),
+                    }),
+              });
+            }
+          } catch (error) {
+            if (contextAttemptId) {
+              await request.contextVmLifecycle!.afterInference({
+                attemptId: contextAttemptId,
+                status: "failed",
+                failureReason:
+                  error instanceof Error ? error.message : String(error),
+              }).catch(() => undefined);
+            }
+            throw error;
+          }
           codexExecutionResults.push(codexExecutionResult);
           if (codexExecutionResult.status === "finished") {
             const executionImportRequest =
@@ -2481,7 +3224,9 @@ export class LocalCodingApprenticeDemoOrchestrator {
         ],
         budget,
         policy,
-        stateRoot: path.join(memoryRoot, "cognitive-state"),
+        stateRoot:
+          request.cognitiveStateRoot ??
+          path.join(memoryRoot, "cognitive-state"),
         memoryHits: priorMemoryHits,
         action: {
           id: `repository-action-${run.id}`,
@@ -2667,6 +3412,15 @@ export class LocalCodingApprenticeDemoOrchestrator {
             artifactRoot: recoveryArtifactRoot,
           },
         });
+        const recoveryContextPack =
+          request.contextVmLifecycle && request.contextPack
+            ? await request.contextVmLifecycle.prepareRecovery({
+                taskId: recoveryTask.id,
+                parentInvocationId: request.contextPack.invocationId,
+                instruction: recoveryTask.instruction,
+                verifierSummary: verifier.summarizeResult(verificationResult),
+              })
+            : request.contextPack;
         const recoveryContract = codexAdapter.createContract({
           runId: run.id,
           taskId: recoveryTask.id,
@@ -2676,6 +3430,12 @@ export class LocalCodingApprenticeDemoOrchestrator {
             `Original goal: ${request.goal}`,
             `Failed verifier result: ${verifier.summarizeResult(verificationResult)}`,
             `Reviewer summary: ${postVerificationReviewResult?.summary ?? "not available"}`,
+            ...(recoveryContextPack?.rendered
+              ? [
+                  "Recovered bounded ContextVM context:",
+                  recoveryContextPack.rendered,
+                ]
+              : []),
             "The original operator approval covers only this bounded retry in the same sandbox.",
           ],
           constraints: [
@@ -2719,6 +3479,9 @@ export class LocalCodingApprenticeDemoOrchestrator {
           budget,
           artifactRoot: recoveryArtifactRoot,
           verifierPlan: recoveryVerificationPlan,
+          ...(request.images?.length
+            ? { images: request.images.map((image) => ({ ...image })) }
+            : {}),
         });
         let recoveryApproval: CodexExecutionApproval | undefined;
         let recoveryExecutionResult: CodexExecutionResult | undefined;
@@ -2733,7 +3496,9 @@ export class LocalCodingApprenticeDemoOrchestrator {
           ],
           budget,
           policy,
-          stateRoot: path.join(memoryRoot, "cognitive-state"),
+          stateRoot:
+            request.cognitiveStateRoot ??
+            path.join(memoryRoot, "cognitive-state"),
           memoryHits: priorMemoryHits,
           action: {
             id: `repository-action-${recoveryExecutionPlan.id}`,
@@ -2767,12 +3532,50 @@ export class LocalCodingApprenticeDemoOrchestrator {
                 "Bounded recovery approval was not bound to the runtime checkpoint.",
               );
             }
-            recoveryExecutionResult =
-              await codexAdapter.executeApprovedContract(
-                recoveryExecutionPlan,
-                recoveryApproval,
-                { signal: request.signal },
-              );
+            const contextAttemptId =
+              request.contextVmLifecycle && recoveryContextPack
+                ? await request.contextVmLifecycle.beforeInference({
+                    taskId: recoveryTask.id,
+                    phase: "recovery",
+                    contextPack: recoveryContextPack,
+                  })
+                : undefined;
+            try {
+              recoveryExecutionResult =
+                await codexAdapter.executeApprovedContract(
+                  recoveryExecutionPlan,
+                  recoveryApproval,
+                  { signal: request.signal },
+                );
+              if (contextAttemptId) {
+                await request.contextVmLifecycle!.afterInference({
+                  attemptId: contextAttemptId,
+                  status: recoveryExecutionResult.status === "finished"
+                    ? "completed"
+                    : "failed",
+                  result: {
+                    id: recoveryExecutionResult.id,
+                    status: recoveryExecutionResult.status,
+                  },
+                  ...(recoveryExecutionResult.status === "finished"
+                    ? {}
+                    : {
+                        failureReason:
+                          recoveryExecutionResult.failureReasons.join("; "),
+                      }),
+                });
+              }
+            } catch (error) {
+              if (contextAttemptId) {
+                await request.contextVmLifecycle!.afterInference({
+                  attemptId: contextAttemptId,
+                  status: "failed",
+                  failureReason:
+                    error instanceof Error ? error.message : String(error),
+                }).catch(() => undefined);
+              }
+              throw error;
+            }
             return {
               observation:
                 recoveryExecutionResult.status === "finished"
@@ -2879,9 +3682,10 @@ export class LocalCodingApprenticeDemoOrchestrator {
       }
     }
     assertNotCancelled();
+    const taskPlanPassed =
+      !taskPlanExecution || taskPlanExecution.status === "pass";
     memoryExtractionResult ??=
-      request.enableMemoryExtraction === false ||
-      verificationResult.status !== "pass"
+      request.enableMemoryExtraction === false || !taskPlanPassed
         ? {
             id: `memory-extraction-skipped-${run.id}`,
             runId: run.id,
@@ -2893,10 +3697,9 @@ export class LocalCodingApprenticeDemoOrchestrator {
             artifacts: [],
             startedAt: new Date().toISOString(),
             completedAt: new Date().toISOString(),
-            summary:
-              request.enableMemoryExtraction === false
-                ? "Memory extraction skipped by request."
-                : "Memory extraction skipped because repository verification did not pass.",
+            summary: !taskPlanPassed
+              ? "Memory extraction skipped because final requirement coverage did not pass."
+              : "Memory extraction skipped by request.",
           }
         : await memoryExtractor.extractRunMemory({
             run: this.runStore.getRun(run.id) ?? run,
@@ -2911,7 +3714,12 @@ export class LocalCodingApprenticeDemoOrchestrator {
       throw new Error("Repository runtime did not resolve memory extraction.");
     }
     assertNotCancelled();
-    const summary = verifier.summarizeResult(verificationResult);
+    const terminalVerificationPassed =
+      verificationResult.status === "pass" && taskPlanPassed;
+    const summary = terminalVerificationPassed
+      ? verifier.summarizeResult(verificationResult)
+      : taskPlanExecution?.coverage.summary ??
+        verifier.summarizeResult(verificationResult);
     const cognitiveTrace = await this.createLegacyCognitiveTrace({
       run,
       request,
@@ -2953,8 +3761,8 @@ export class LocalCodingApprenticeDemoOrchestrator {
     });
     assertNotCancelled();
     this.agentLedger.appendEvent(run.id, {
-      id: `${run.id}-ledger-event-${verificationResult.status === "pass" ? "verification-passed" : "verification-failed"}`,
-      eventType: verificationResult.status === "pass" ? "verification.passed" : "verification.failed",
+      id: `${run.id}-ledger-event-${terminalVerificationPassed ? "verification-passed" : "verification-failed"}`,
+      eventType: terminalVerificationPassed ? "verification.passed" : "verification.failed",
       payloadJson: {
         summary,
         verificationResultId: verificationResult.id,
@@ -2979,8 +3787,10 @@ export class LocalCodingApprenticeDemoOrchestrator {
         },
       ],
       verdict: {
-        status: verificationResult.verdict.status,
-        reason: verificationResult.verdict.reason,
+        status: terminalVerificationPassed ? "pass" : "fail",
+        reason: terminalVerificationPassed
+          ? verificationResult.verdict.reason
+          : summary,
         confidence: verificationResult.verdict.confidence,
       },
     });
@@ -3010,7 +3820,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
       endedAt: verificationResult.completedAt,
       retryCount: recoveryAttempts,
       finalSummary: summary,
-      failureReason: verificationResult.status === "pass" ? null : verificationResult.verdict.reason,
+      failureReason: terminalVerificationPassed ? null : summary,
     });
     const usageSummary = this.agentLedger.getMonthlyUsageSummary({
       workspaceId: request.workspaceId,
@@ -3213,3 +4023,9 @@ function toLedgerArtifactKind(kind: ArtifactRef["kind"]): "command_log" | "file_
   }
   return "other";
 }
+
+/**
+ * Surface-neutral entrypoint used by CLI and future product adapters.
+ * The legacy desktop name remains exported for frozen desktop compatibility.
+ */
+export const runRepositoryAgent = runDesktopRepositoryBeta;

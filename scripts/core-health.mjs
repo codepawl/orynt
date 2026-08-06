@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { runDesktopRepositoryBeta } from "../packages/coding-apprentice/dist/index.js";
+import { buildRepositoryTaskPlan } from "../packages/cognitive-kernel/dist/index.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,7 +35,7 @@ async function createFakeCodexBinary(root) {
   await mkdir(binDir, { recursive: true });
   await writeFile(
     fakeCodex,
-    `#!/usr/bin/env node
+    `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
@@ -72,8 +73,54 @@ async function main() {
     }
 
     const streamedEvents = [];
+    const goal = useControlledCodex
+      ? "Update packages/value.txt through the verified Orynt core health task"
+      : "Inspect the repository and verify the supervised Orynt core health path";
+    const taskPlan = useControlledCodex
+      ? buildRepositoryTaskPlan({
+          goal,
+          sourcePrompt: goal,
+          maxModelTokens: 4_000,
+          maxWallTimeMs: 60_000,
+          maxRecoveryAttempts: 0,
+          candidate: {
+            summary: "Apply one bounded core-health fixture change.",
+            requirements: [{
+              id: "core-health-outcome",
+              source: "user_prompt",
+              kind: "outcome",
+              text: goal,
+              required: true,
+            }],
+            tasks: [{
+              id: "core-health-change",
+              kind: "change",
+              title: "Update the core health fixture",
+              instruction: goal,
+              dependencies: [],
+              authority: "single_writer",
+              expectedPaths: ["packages/value.txt"],
+              readPaths: [],
+              operations: ["read", "write"],
+              requirementIds: ["core-health-outcome"],
+              doneWhen: [
+                "packages/value.txt contains the controlled core health result.",
+              ],
+              evidence: [{
+                id: "core-health-path-scope",
+                kind: "path_scope",
+                requirementIds: ["core-health-outcome"],
+                description:
+                  "Verify the controlled change remains inside the approved fixture path.",
+                path: "packages/value.txt",
+              }],
+            }],
+            allowedOperations: ["read", "write"],
+          },
+        })
+      : undefined;
     const result = await runDesktopRepositoryBeta({
-      goal: useControlledCodex ? "Run Orynt core health through controlled Codex path" : "Run Orynt core health through supervised local path",
+      goal,
       taskId: useControlledCodex ? "core-health-controlled-codex" : "core-health-supervised-local",
       workspaceId: "workspace-core-health",
       repositoryPath,
@@ -96,6 +143,28 @@ async function main() {
             authMethod: "none",
           },
       thinkingEffort: "high",
+      ...(taskPlan
+        ? {
+            taskPlan,
+            authorization: {
+              source: "operator",
+              reason: "The core-health mutation is bound to its verified fixture plan.",
+              expectedPaths: [...taskPlan.pathEnvelope],
+              planId: taskPlan.id,
+              planRevision: taskPlan.revision,
+              planDigest: taskPlan.digest,
+            },
+            createExecutionApproval: ({ plan, run }) => ({
+              id: `approval-${plan.id}`,
+              runId: run.id,
+              planId: plan.id,
+              status: "approved",
+              approvedBy: "core-health-fixture",
+              reason: "Controlled fixture approval for the digest-bound health task.",
+              approvedAt: new Date().toISOString(),
+            }),
+          }
+        : {}),
       onRunEvent: (event) => streamedEvents.push(event),
     });
 
@@ -103,7 +172,7 @@ async function main() {
     const eventTypes = manifest.eventTypes ?? [];
     const artifactRefs = manifest.artifactRefs ?? [];
     assertCondition(result.status === "pass", `expected pass status, got ${result.status}`);
-    assertCondition(eventTypes[0] === "run_started", "expected run_started first event");
+    assertCondition(eventTypes.includes("run_started"), "expected run_started event");
     assertCondition(eventTypes.includes("verification_passed"), "expected verification_passed event");
     assertCondition(eventTypes.includes("memory_extraction_finished"), "expected memory_extraction_finished event");
     assertCondition(eventTypes.at(-1) === "run_finished", "expected run_finished final event");

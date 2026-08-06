@@ -2,6 +2,8 @@ export type RepositoryRequirementSource =
   | "user_prompt"
   | "active_goal"
   | "acceptance_criterion"
+  | "clarification_answer"
+  | "confirmed_assumption"
   | "repository_policy";
 
 export type RepositoryRequirementKind =
@@ -192,6 +194,8 @@ const REQUIREMENT_SOURCES = new Set<RepositoryRequirementSource>([
   "user_prompt",
   "active_goal",
   "acceptance_criterion",
+  "clarification_answer",
+  "confirmed_assumption",
   "repository_policy",
 ]);
 const REQUIREMENT_KINDS = new Set<RepositoryRequirementKind>([

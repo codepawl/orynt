@@ -8,7 +8,7 @@ Accepted for MVP implementation.
 
 ## Context
 
-Orynt is moving from a Tauri-first local Coding Apprentice MVP toward a brain-inspired supervised computer-use agent. The roadmap requires a foundation ledger, cognitive kernel, permissioned computer-use gateway, teach/adjust memory loop, evaluation harness, and productization scaffold.
+Orynt is moving from its original desktop-first local Coding Apprentice MVP toward a brain-inspired supervised computer-use agent. The roadmap requires a foundation ledger, cognitive kernel, permissioned computer-use gateway, teach/adjust memory loop, evaluation harness, and productization scaffold.
 
 The current repository already has a strong local repository-task substrate:
 - append-only run events in `packages/shared/src/runSpine.ts`;
@@ -21,7 +21,8 @@ The current repository already has a strong local repository-task substrate:
 - candidate skills and dry-run replay in `packages/skill-registry`;
 - a desktop supervision shell in `apps/desktop`.
 
-There is no production database, auth service, billing backend, or general browser/desktop action gateway in the current checkout. The architecture must therefore preserve the local-first MVP while introducing typed boundaries that can later be backed by durable storage and real adapters.
+There is no production database or auth service in this local-first checkout.
+Portable typed boundaries must remain independent of any UI adapter.
 
 ## Decision
 
@@ -48,7 +49,7 @@ Orynt will implement the roadmap as layered, testable packages around a supervis
 
 5. Evaluation and productization
    - Safety, permission coverage, blocked execution, loop termination, cost, memory, and evidence replay metrics are tested through deterministic scenarios.
-   - Product plans, quota display, Paddle copy, privacy/security docs, and private beta checklist remain secret-free and local/mock-safe by default.
+   - Privacy/security guidance and release checks remain secret-free and local.
 
 ## Consequences
 
@@ -61,7 +62,7 @@ Positive:
 Tradeoffs:
 - Some roadmap terms will be represented as typed local repositories before durable persistence exists.
 - The first gateway implementation will be fake/simulated for deterministic tests rather than broad real computer control.
-- Productization scaffolding will represent plan and quota behavior without live Paddle secrets or hosted billing.
+- Productization remains focused on the local CLI runtime.
 
 ## Guardrails
 

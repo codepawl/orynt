@@ -4,7 +4,7 @@ import path from "node:path";
 
 import type { CognitiveRunCheckpointV1 } from "@codepawl/cognitive-kernel";
 import { LocalStateError } from "@codepawl/local-state";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { LocalJsonCognitiveCheckpointStore } from "./checkpointStore";
 

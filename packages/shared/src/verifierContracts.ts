@@ -1,5 +1,5 @@
-import type { ArtifactRef, RunBudget } from "./runSpine";
-import type { CorePolicy, PolicyDecision, RepositorySandbox } from "./corePolicy";
+import type { ArtifactRef, RunBudget } from "./runSpine.js";
+import type { CorePolicy, PolicyDecision, RepositorySandbox } from "./corePolicy.js";
 
 export type VerificationStatus = "pass" | "partial" | "fail" | "inconclusive";
 

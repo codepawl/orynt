@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import {
   InMemoryRunStore,
@@ -40,7 +40,10 @@ describe("Orynt shared product contracts", () => {
   it("builds a typed mock run state with core primitives visible", () => {
     const state = createMockRunState();
 
-    expect(state.workspace.plan).toBe("trial");
+    expect(state.workspace).toEqual({
+      id: "workspace-local-alpha",
+      name: "Local Alpha Workspace",
+    });
     expect(state.activeTask.surface).toBe("repository");
     expect(state.activeTask.status).toBe("succeeded");
     expect(state.steps.map((step) => step.type)).toEqual([
@@ -122,6 +125,7 @@ describe("Orynt shared product contracts", () => {
         "codex_execution_started",
         "codex_reasoning_summary",
         "codex_tool_activity",
+        "codex_context_usage",
         "codex_agent_message",
         "codex_execution_output_recorded",
         "codex_execution_finished",
@@ -140,6 +144,7 @@ describe("Orynt shared product contracts", () => {
     expect(runEventTaskPhase("context_packet_created")).toBe("plan");
     expect(runEventTaskPhase("codex_execution_started")).toBe("act");
     expect(runEventTaskPhase("codex_tool_activity")).toBe("act");
+    expect(runEventTaskPhase("codex_context_usage")).toBe("act");
     expect(runEventTaskPhase("verification_started")).toBe("verify");
     expect(runEventTaskPhase("memory_extraction_finished")).toBe("summarize");
     expect(runEventTaskPhase("approval_required")).toBe("approval");
@@ -235,13 +240,13 @@ describe("Orynt shared product contracts", () => {
       validation: {
         requiresVerifierPass: true,
         requiresDiffWithinScope: true,
-        commands: ["pnpm test:contracts"],
+        commands: ["bun test:contracts"],
         expectedEvidenceKinds: ["command", "diff_scope"],
       },
       safety: {
         allowedPaths: ["packages/**"],
-        protectedPaths: [".env", "pnpm-lock.yaml"],
-        allowedCommands: ["pnpm test:contracts"],
+        protectedPaths: [".env", "bun.lock"],
+        allowedCommands: ["bun test:contracts"],
         blockedActions: ["automatic_execution", "secret_storage"],
         requiresManualApproval: true,
         rollbackNotes: "Archive or supersede the skill if future evidence invalidates it.",
@@ -319,7 +324,7 @@ describe("Orynt shared product contracts", () => {
       ],
       risks: ["low"],
       policyChecks: [],
-      validationExpectations: [{ command: "pnpm test:contracts", allowed: true, expectedEvidenceKinds: ["command"], requiresVerifierPass: true }],
+      validationExpectations: [{ command: "bun test:contracts", allowed: true, expectedEvidenceKinds: ["command"], requiresVerifierPass: true }],
       budgetEstimate: {
         estimatedSteps: 2,
         estimatedCommands: 1,
@@ -565,7 +570,7 @@ describe("CorePolicy and sandbox boundary", () => {
         id: "install-deps",
         kind: "command",
         summary: "Install dependencies",
-        command: "pnpm install",
+        command: "bun install",
       },
       policy,
     );
@@ -605,7 +610,7 @@ describe("CorePolicy and sandbox boundary", () => {
         id: "install-deps",
         kind: "command",
         summary: "Install dependencies",
-        command: "pnpm install",
+        command: "bun install",
       },
       policy,
     );

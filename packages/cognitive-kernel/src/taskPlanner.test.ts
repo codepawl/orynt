@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "bun:test";
 
 import {
   buildRepositoryTaskPlan,
@@ -12,6 +12,19 @@ import type {
   RepositoryTaskPlanV1,
   RepositoryTaskResultV1,
 } from "@codepawl/shared";
+
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 1_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error("Timed out waiting for task planner concurrency state");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
 
 function buildPlan(): RepositoryTaskPlanV1 {
   return buildRepositoryTaskPlan({
@@ -341,9 +354,9 @@ describe("repository task planner", () => {
         },
       },
     });
-    await vi.waitFor(() => expect(release).toHaveLength(2));
+    await waitFor(() => release.length === 2);
     release.splice(0).forEach((resolve) => resolve());
-    await vi.waitFor(() => expect(release).toHaveLength(1));
+    await waitFor(() => release.length === 1);
     release.splice(0).forEach((resolve) => resolve());
     const result = await resultPromise;
     expect(highestActive).toBe(2);

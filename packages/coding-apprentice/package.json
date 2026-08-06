@@ -12,8 +12,8 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/local-state build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/model-runtime build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && pnpm --filter @codepawl/memory build && pnpm --filter @codepawl/skill-registry build && pnpm --filter @codepawl/cognitive-kernel build && pnpm --filter @codepawl/gateway build && tsc -p tsconfig.json",
-    "test": "pnpm --filter @codepawl/shared build && pnpm --filter @codepawl/local-state build && pnpm --filter @codepawl/repository-sandbox build && pnpm --filter @codepawl/model-runtime build && pnpm --filter @codepawl/codex-adapter build && pnpm --filter @codepawl/verifier build && pnpm --filter @codepawl/memory build && pnpm --filter @codepawl/skill-registry build && pnpm --filter @codepawl/cognitive-kernel build && pnpm --filter @codepawl/gateway build && vitest run"
+    "build": "bun run --filter @codepawl/shared build && bun run --filter @codepawl/local-state build && bun run --filter @codepawl/repository-sandbox build && bun run --filter @codepawl/model-runtime build && bun run --filter @codepawl/codex-adapter build && bun run --filter @codepawl/verifier build && bun run --filter @codepawl/memory build && bun run --filter @codepawl/skill-registry build && bun run --filter @codepawl/cognitive-kernel build && bun run --filter @codepawl/gateway build && tsc -p tsconfig.json",
+    "test": "bun run --filter @codepawl/shared build && bun run --filter @codepawl/local-state build && bun run --filter @codepawl/repository-sandbox build && bun run --filter @codepawl/model-runtime build && bun run --filter @codepawl/codex-adapter build && bun run --filter @codepawl/verifier build && bun run --filter @codepawl/memory build && bun run --filter @codepawl/skill-registry build && bun run --filter @codepawl/cognitive-kernel build && bun run --filter @codepawl/gateway build && bun test src"
   },
   "dependencies": {
     "@codepawl/cognitive-kernel": "workspace:*",
@@ -29,7 +29,6 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
-    "typescript": "6.0.3",
-    "vitest": "4.1.9"
+    "typescript": "6.0.3"
   }
 }

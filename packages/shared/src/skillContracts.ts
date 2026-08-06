@@ -1,8 +1,8 @@
-import type { ArtifactRef } from "./runSpine";
-import type { CodexContract } from "./codexContracts";
-import type { ActionRisk, CorePolicy, PolicyDecisionKind, RepositorySandbox } from "./corePolicy";
-import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryRedactionResult } from "./memoryContracts";
-import type { VerificationResult, VerifierConfig } from "./verifierContracts";
+import type { ArtifactRef } from "./runSpine.js";
+import type { CodexContract } from "./codexContracts.js";
+import type { ActionRisk, CorePolicy, PolicyDecisionKind, RepositorySandbox } from "./corePolicy.js";
+import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryRedactionResult } from "./memoryContracts.js";
+import type { VerificationResult, VerifierConfig } from "./verifierContracts.js";
 
 export type SkillStatus = "candidate" | "active" | "rejected" | "superseded" | "archived";
 

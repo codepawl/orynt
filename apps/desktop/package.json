@@ -1,36 +1,40 @@
 {
   "name": "@codepawl/desktop",
   "version": "0.1.0",
+  "description": "Orynt local-first supervised repository desktop app",
+  "author": "Codepawl",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
-    "test": "vitest run",
-    "tauri": "tauri",
-    "tauri:build": "tauri build --bundles appimage --no-sign --ci"
+    "dev": "bun run sidecar:build && tauri dev",
+    "dev:renderer": "vite --host 127.0.0.1",
+    "build:renderer": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
+    "sidecar:build": "bun run ../../scripts/build-desktop-sidecar.mjs",
+    "build": "bun run build:renderer && bun run sidecar:build && cargo check --manifest-path src-tauri/Cargo.toml",
+    "test": "bun test --preload ./src/test/setup.ts ./src/features/skills/SkillsManager.test.tsx ./src/ProbabilityLoader.test.tsx ./src/App.test.tsx",
+    "package": "bun run sidecar:build && tauri build",
+    "package:unsigned": "bun run sidecar:build && tauri build"
   },
   "dependencies": {
+    "@codepawl/desktop-runtime": "workspace:*",
     "@codepawl/ipc-contracts": "workspace:*",
     "@codepawl/shared": "workspace:*",
-    "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.2",
     "lucide-react": "^1.21.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
-    "@tauri-apps/cli": "^2.0.0",
+    "@happy-dom/global-registrator": "20.11.1",
+    "@tauri-apps/cli": "2.11.4",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
     "@types/node": "^26.0.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
-    "jsdom": "29.1.1",
     "typescript": "6.0.3",
-    "vite": "8.1.0",
-    "vitest": "4.1.9"
+    "vite": "8.1.0"
   }
 }

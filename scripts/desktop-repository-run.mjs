@@ -1,4 +1,6 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
+import path from "node:path";
+
 import {
   DesktopRepositoryRuntimeStore,
   cancelDesktopRepositoryRuntime,
@@ -9,6 +11,12 @@ import {
   startDesktopRepositoryRuntime,
 } from "../packages/coding-apprentice/dist/index.js";
 import { planDesktopRepositoryTask } from "../packages/coding-apprentice/dist/repositoryTaskPlanning.js";
+import { understandDesktopPrompt } from "../packages/coding-apprentice/dist/promptUnderstanding.js";
+import {
+  isModelTierConfiguration,
+  modelTierConfigurationToOrchestrationProfile,
+  routeModelTier,
+} from "../packages/shared/dist/index.js";
 
 async function readJsonStdin() {
   const chunks = [];
@@ -53,27 +61,98 @@ function requireRevision(input) {
   return input.expectedRevision;
 }
 
-async function main() {
-  const input = await readJsonStdin();
+function tieredModelRequest(input, routeInput) {
+  const configuration = optionalObject(input, "modelTierConfiguration");
+  const currentConnection = optionalObject(input, "modelConnection");
+  const connections = Array.isArray(input.modelConnections)
+    ? input.modelConnections.filter(
+        (connection) =>
+          connection && typeof connection === "object" && !Array.isArray(connection),
+      )
+    : currentConnection
+      ? [currentConnection]
+      : [];
+  if (!configuration) {
+    return {
+      modelConnection: currentConnection,
+      thinkingEffort: optionalString(input, "thinkingEffort"),
+      configuration: undefined,
+    };
+  }
+  if (!isModelTierConfiguration(configuration)) {
+    throw new Error("modelTierConfiguration is invalid");
+  }
+  const decision = routeModelTier(configuration, routeInput);
+  const binding = configuration.tiers[decision.selectedTier];
+  const selectedConnection = connections.find(
+    (connection) =>
+      connection.providerId === binding.providerId &&
+      connection.status === "ready",
+  );
+  if (!selectedConnection) {
+    const error = new Error(
+      `MODEL_TIER_UNAVAILABLE: ${decision.selectedTier} provider is not ready`,
+    );
+    error.code = "MODEL_TIER_UNAVAILABLE";
+    throw error;
+  }
+  return {
+    modelConnection: {
+      ...selectedConnection,
+      modelId: binding.modelId,
+      modelLabel: binding.modelId,
+    },
+    thinkingEffort: binding.thinkingEffort,
+    configuration,
+    decision,
+  };
+}
+
+export async function executeDesktopRepositoryOperation(
+  input,
+  {
+    onRunEvent = () => undefined,
+    onReady = () => undefined,
+  } = {},
+) {
   const operation =
     typeof input.operation === "string" && input.operation.trim()
       ? input.operation.trim()
       : "plan_and_start";
+  if (operation === "understand_prompt") {
+    const promptBasis = optionalObject(input, "promptBasis");
+    if (!promptBasis) {
+      throw new Error("promptBasis is required");
+    }
+    const routed = tieredModelRequest(input, {
+      role: "coordinator",
+      stage: "prompt_understanding",
+      instruction: promptBasis.rawPrompt ?? "",
+      authority: "read_only",
+      requestedMinimumTier: optionalString(input, "minimumModelTier"),
+    });
+    const understanding = await understandDesktopPrompt({
+      promptBasis,
+      context: optionalObject(input, "context"),
+      repositoryPath: requireString(input, "repositoryPath"),
+      modelConnection: routed.modelConnection,
+      thinkingEffort: routed.thinkingEffort,
+    });
+    // Understanding is intentionally pre-run: do not create a store, run,
+    // checkpoint, artifact, approval, or synthetic run event here.
+    return understanding;
+  }
   const memoryRoot = requireString(input, "memoryRoot");
   const stateRoot =
     optionalString(input, "stateRoot") ??
     `${memoryRoot}/desktop-runtime`;
-  const onRunEvent = (event) => {
-    process.stderr.write(`ORYNT_RUN_EVENT ${JSON.stringify(event)}\n`);
-  };
   if (operation === "status") {
     const runId = requireString(input, "runId");
     const snapshot = await desktopRuntimeSnapshot(
       new DesktopRepositoryRuntimeStore({ stateRoot }),
       runId,
     );
-    process.stdout.write(`${JSON.stringify({ ...snapshot, operation })}\n`);
-    return;
+    return { ...snapshot, operation };
   }
   if (operation === "resume") {
     const snapshot = await resumeDesktopRepositoryRuntime({
@@ -87,12 +166,9 @@ async function main() {
           ? "rejected"
           : (() => { throw new Error("decision must be approved or rejected"); })(),
       onRunEvent,
-      onReady: (snapshot) => {
-        process.stderr.write(`ORYNT_OPERATION_READY ${JSON.stringify(snapshot)}\n`);
-      },
+      onReady,
     });
-    process.stdout.write(`${JSON.stringify({ ...snapshot, operation })}\n`);
-    return;
+    return { ...snapshot, operation };
   }
   if (operation === "cancel") {
     const snapshot = await cancelDesktopRepositoryRuntime({
@@ -101,8 +177,7 @@ async function main() {
       expectedRevision: requireRevision(input),
       reason: requireString(input, "reason"),
     });
-    process.stdout.write(`${JSON.stringify({ ...snapshot, operation })}\n`);
-    return;
+    return { ...snapshot, operation };
   }
   if (operation === "recover") {
     const snapshot = await recoverDesktopRepositoryRuntime({
@@ -111,8 +186,7 @@ async function main() {
       expectedRevision: requireRevision(input),
       onRunEvent,
     });
-    process.stdout.write(`${JSON.stringify({ ...snapshot, operation })}\n`);
-    return;
+    return { ...snapshot, operation };
   }
   if (operation === "mark_failed") {
     const snapshot = await markDesktopRepositoryRuntimeFailed({
@@ -121,8 +195,7 @@ async function main() {
       expectedRevision: requireRevision(input),
       reason: requireString(input, "reason"),
     });
-    process.stdout.write(`${JSON.stringify({ ...snapshot, operation })}\n`);
-    return;
+    return { ...snapshot, operation };
   }
   if (operation !== "plan_and_start") {
     throw new Error(`unsupported operation: ${operation}`);
@@ -138,17 +211,99 @@ async function main() {
     budget: optionalObject(input, "budget"),
     modelConnection: optionalObject(input, "modelConnection"),
     thinkingEffort: optionalString(input, "thinkingEffort"),
+    promptBasis: optionalObject(input, "promptBasis"),
+    advisoryRefinedBrief: optionalString(input, "advisoryRefinedBrief"),
     skillContext: optionalObject(input, "skillContext"),
   };
-  const taskPlan = await planDesktopRepositoryTask(request);
+  const plannerRoute = tieredModelRequest(input, {
+    role: "coordinator",
+    stage: "task_planning",
+    instruction: request.goal,
+    authority: "read_only",
+    requestedMinimumTier: optionalString(input, "minimumModelTier"),
+  });
+  const planningRequest = {
+    ...request,
+    modelConnection: plannerRoute.modelConnection,
+    thinkingEffort: plannerRoute.thinkingEffort,
+  };
+  const taskPlan = await planDesktopRepositoryTask(planningRequest);
+  const operations = [
+    ...new Set(taskPlan.tasks.flatMap((task) => task.operations)),
+  ];
+  const tieredExecution = plannerRoute.configuration
+    ? modelTierConfigurationToOrchestrationProfile(
+        plannerRoute.configuration,
+        {
+          instruction: request.goal,
+          estimatedChangedFiles: taskPlan.pathEnvelope.length,
+          operations,
+          requestedMinimumTier: optionalString(input, "minimumModelTier"),
+        },
+      )
+    : undefined;
+  const implementer = tieredExecution?.profile.roles.implementer;
+  const executionConnection = implementer
+    ? (Array.isArray(input.modelConnections)
+        ? input.modelConnections
+        : [request.modelConnection]
+      ).find(
+        (connection) =>
+          connection &&
+          connection.providerId === implementer.providerId,
+      )
+    : undefined;
+  if (implementer && !executionConnection) {
+    const error = new Error(
+      `MODEL_TIER_UNAVAILABLE: ${implementer.modelTier ?? "selected"} provider is not ready`,
+    );
+    error.code = "MODEL_TIER_UNAVAILABLE";
+    throw error;
+  }
   const snapshot = await startDesktopRepositoryRuntime({
     stateRoot,
-    request: { ...request, taskPlan },
+    request: {
+      ...request,
+      ...(implementer
+        ? {
+            modelConnection: {
+              ...executionConnection,
+              providerId: implementer.providerId,
+              modelId: implementer.modelId,
+              modelLabel: implementer.modelId,
+            },
+            thinkingEffort: implementer.thinkingEffort,
+            orchestration: {
+              profile: tieredExecution.profile,
+              priorInvocations: [],
+            },
+          }
+        : {}),
+      taskPlan,
+    },
   });
-  process.stdout.write(`${JSON.stringify({ ...snapshot, operation })}\n`);
+  return { ...snapshot, operation };
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.stack || error.message : String(error)}\n`);
-  process.exit(1);
-});
+async function main() {
+  const result = await executeDesktopRepositoryOperation(await readJsonStdin(), {
+    onRunEvent: (event) => {
+      process.stderr.write(`ORYNT_RUN_EVENT ${JSON.stringify(event)}\n`);
+    },
+    onReady: (snapshot) => {
+      process.stderr.write(`ORYNT_OPERATION_READY ${JSON.stringify(snapshot)}\n`);
+    },
+  });
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+}
+
+const isDirectExecution =
+  typeof process.argv[1] === "string" &&
+  path.basename(process.argv[1]) === "desktop-repository-run.mjs";
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.stack || error.message : String(error)}\n`);
+    process.exit(1);
+  });
+}

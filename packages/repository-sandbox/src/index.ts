@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+
+export * from "./mutation.js";
 
 import {
   appendPolicyDecisionEvent,
@@ -13,6 +15,7 @@ import {
   type CorePolicy,
   type PolicyDecision,
   type RepositoryInspection,
+  type RepositoryEvidenceScopeV1,
   type RepositorySandbox,
   type RepositorySandboxError,
   type RunStore,
@@ -73,6 +76,120 @@ async function runGit(args: string[], cwd?: string): Promise<string> {
     timeout: 30_000,
   });
   return String(stdout).trim();
+}
+
+async function runGitBuffer(args: string[], cwd: string): Promise<Buffer> {
+  const { stdout } = await execFileAsync("git", args, {
+    cwd,
+    encoding: "buffer",
+    maxBuffer: 64_000_000,
+    timeout: 30_000,
+  });
+  return Buffer.from(stdout);
+}
+
+/**
+ * Captures a local-checkout identity without writing Git objects or changing
+ * the index. Repository moves and distinct clones intentionally produce
+ * distinct identities in v1.
+ */
+export async function captureRepositoryEvidenceScope(
+  repositoryPath: string,
+  capturedAt = new Date().toISOString(),
+): Promise<RepositoryEvidenceScopeV1> {
+  try {
+    const canonicalRepositoryPath = await existingRealpath(
+      await runGit(["-C", repositoryPath, "rev-parse", "--show-toplevel"]),
+    );
+    const commonDirRaw = await runGit([
+      "-C", canonicalRepositoryPath, "rev-parse", "--git-common-dir",
+    ]);
+    const commonDir = await existingRealpath(
+      path.isAbsolute(commonDirRaw)
+        ? commonDirRaw
+        : path.join(canonicalRepositoryPath, commonDirRaw),
+    );
+    const [headCommit, branch, status] = await Promise.all([
+      runGit(["-C", canonicalRepositoryPath, "rev-parse", "HEAD"]),
+      runGit([
+        "-C", canonicalRepositoryPath, "symbolic-ref", "--quiet", "--short",
+        "HEAD",
+      ]).catch(() => ""),
+      runGitBuffer([
+        "-C", canonicalRepositoryPath, "status", "--porcelain=v1", "-z",
+        "--untracked-files=all",
+      ], canonicalRepositoryPath),
+    ]);
+    const dirty = status.byteLength > 0;
+    let workingStateDigest: string | null = null;
+    if (dirty) {
+      const [staged, unstaged] = await Promise.all([
+        runGitBuffer([
+          "-C", canonicalRepositoryPath, "diff", "--cached", "--binary",
+          "--no-ext-diff", "--",
+        ], canonicalRepositoryPath),
+        runGitBuffer([
+          "-C", canonicalRepositoryPath, "diff", "--binary", "--no-ext-diff",
+          "--",
+        ], canonicalRepositoryPath),
+      ]);
+      const digest = createHash("sha256")
+        .update("orynt-working-state-v1\0")
+        .update(status)
+        .update("\0staged\0")
+        .update(staged)
+        .update("\0unstaged\0")
+        .update(unstaged);
+      const entries = status.toString("utf8").split("\0").filter(Boolean);
+      const untracked = entries
+        .filter((entry) => entry.startsWith("?? "))
+        .map((entry) => entry.slice(3))
+        .sort();
+      for (const relative of untracked) {
+        const target = path.resolve(canonicalRepositoryPath, relative);
+        if (!isInsideOrEqual(target, canonicalRepositoryPath)) {
+          throw new Error("untracked path escaped repository scope");
+        }
+        digest.update("\0untracked-path\0").update(relative);
+        digest.update("\0untracked-bytes\0").update(await readFile(target));
+      }
+      workingStateDigest = digest.digest("hex");
+    }
+    const localRepositoryId =
+      `local-repository-${createHash("sha256")
+        .update(`orynt-local-repository-v1\0${commonDir}`)
+        .digest("hex")}`;
+    return {
+      schemaVersion: 1,
+      localRepositoryId,
+      canonicalRepositoryPath,
+      headCommit,
+      branchRef: branch || null,
+      dirty,
+      workingStateDigest,
+      revisionKey: dirty
+        ? `dirty:${headCommit}:${workingStateDigest}`
+        : `clean:${headCommit}`,
+      completeness: "complete",
+      capturedAt,
+    };
+  } catch {
+    return {
+      schemaVersion: 1,
+      localRepositoryId:
+        `unavailable-${createHash("sha256")
+          .update(path.resolve(repositoryPath))
+          .digest("hex")}`,
+      canonicalRepositoryPath: path.resolve(repositoryPath),
+      headCommit: null,
+      branchRef: null,
+      dirty: false,
+      workingStateDigest: null,
+      revisionKey: null,
+      completeness: "unavailable",
+      capturedAt,
+    };
+  }
 }
 
 export class GitRepositorySandboxManager implements SandboxManager {

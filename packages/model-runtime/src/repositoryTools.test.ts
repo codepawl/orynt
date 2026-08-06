@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "bun:test";
 
 import { RepositoryAgentToolExecutor } from "./repositoryTools.js";
 
@@ -87,7 +87,7 @@ describe("RepositoryAgentToolExecutor", () => {
       repositoryPath: root,
       mode: "workspace-write",
       allowedWritePaths: ["src/index.ts"],
-      allowedCommands: ["node --version"],
+      allowedCommands: ["bun --version"],
     });
     const allowedPatch = [
       "diff --git a/src/index.ts b/src/index.ts",
@@ -126,12 +126,12 @@ describe("RepositoryAgentToolExecutor", () => {
     const executor = new RepositoryAgentToolExecutor({
       repositoryPath: root,
       mode: "workspace-write",
-      allowedCommands: ["node --version"],
+      allowedCommands: ["bun --version"],
     });
     const result = await executor.execute({
       callId: "5",
       name: "repo_exec",
-      arguments: { argv: ["node", "--version"], cwd: null },
+      arguments: { argv: ["bun", "--version"], cwd: null },
     });
     expect(result.isError).not.toBe(true);
     await expect(executor.execute({

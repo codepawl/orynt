@@ -1,4 +1,10 @@
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import { ConservativePolicyEngine, type CorePolicy, type LedgerVisibility, type PolicyAction, type RunArtifactType } from "@codepawl/shared";
+
+export * from "./browserAdapter.js";
 
 export type GatewaySurface = "repository" | "browser" | "desktop" | "files" | "terminal";
 
@@ -14,6 +20,8 @@ export type GatewayActionRequest = {
   expectedEvidence: RunArtifactType[];
   policyAction: PolicyAction;
   untrustedContent?: string;
+  riskHint?: "review" | "sensitive" | "blocked";
+  riskReasons?: string[];
 };
 
 export type GatewayPermissionTier = "safe" | "review" | "sensitive" | "blocked";
@@ -48,6 +56,7 @@ export type GatewayAdapterResult = {
   actionId: string;
   status: "executed";
   observation: string;
+  data?: unknown;
   evidence: Omit<GatewayEvidence, "runId" | "actionId">[];
 };
 
@@ -68,6 +77,7 @@ export type GatewayExecutionResult = {
   status: GatewayExecutionStatus;
   permission: GatewayPermissionResult;
   observation?: string;
+  data?: unknown;
   evidence: GatewayEvidence[];
   reason: string;
 };
@@ -77,8 +87,8 @@ export interface ApprovalProvider {
 }
 
 export interface GatewayEvidenceStore {
-  record(evidence: GatewayEvidence): GatewayEvidence;
-  listByRun(runId: string): GatewayEvidence[];
+  record(evidence: GatewayEvidence): Promise<GatewayEvidence> | GatewayEvidence;
+  listByRun(runId: string): Promise<GatewayEvidence[]> | GatewayEvidence[];
 }
 
 export class StaticApprovalProvider implements ApprovalProvider {
@@ -104,6 +114,62 @@ export class InMemoryGatewayEvidenceStore implements GatewayEvidenceStore {
 
   listByRun(runId: string): GatewayEvidence[] {
     return this.evidence.filter((item) => item.runId === runId).map(clone);
+  }
+}
+
+export class LocalGatewayEvidenceStore implements GatewayEvidenceStore {
+  constructor(readonly root: string) {
+    if (!path.isAbsolute(root)) {
+      throw new Error("Gateway evidence root must be absolute.");
+    }
+  }
+
+  async record(evidence: GatewayEvidence): Promise<GatewayEvidence> {
+    const runId = safeSegment(evidence.runId, "run");
+    const actionId = safeSegment(evidence.actionId, "action");
+    const evidenceId = safeSegment(evidence.id, "evidence");
+    const directory = path.join(this.root, runId, actionId);
+    const filePath = path.join(directory, `${evidenceId}.json`);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const stored: GatewayEvidence = {
+      ...clone(evidence),
+      storageRef: `orynt-artifact://${runId}/${actionId}/${evidenceId}.json`,
+      metadata: {
+        ...clone(evidence.metadata),
+        sha256: createHash("sha256")
+          .update(JSON.stringify(evidence.metadata))
+          .digest("hex"),
+      },
+    };
+    await writeFile(filePath, `${JSON.stringify(stored, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    return clone(stored);
+  }
+
+  async listByRun(runId: string): Promise<GatewayEvidence[]> {
+    const runRoot = path.join(this.root, safeSegment(runId, "run"));
+    try {
+      const actionDirectories = await readdir(runRoot, { withFileTypes: true });
+      const evidence: GatewayEvidence[] = [];
+      for (const actionDirectory of actionDirectories) {
+        if (!actionDirectory.isDirectory()) continue;
+        const actionRoot = path.join(runRoot, actionDirectory.name);
+        const files = await readdir(actionRoot, { withFileTypes: true });
+        for (const file of files) {
+          if (!file.isFile() || !file.name.endsWith(".json")) continue;
+          const parsed = JSON.parse(
+            await readFile(path.join(actionRoot, file.name), "utf8"),
+          ) as GatewayEvidence;
+          evidence.push(parsed);
+        }
+      }
+      return evidence.sort((left, right) => left.id.localeCompare(right.id));
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -162,6 +228,32 @@ export class AuditableGateway {
       };
     }
 
+    if (action.riskHint === "blocked") {
+      return {
+        actionId: action.id,
+        tier: "blocked",
+        decision: "blocked",
+        policyVersion: this.policy.id,
+        reasons:
+          action.riskReasons?.length
+            ? action.riskReasons
+            : ["The typed action is outside its explicit authority scope."],
+      };
+    }
+
+    if (action.riskHint === "sensitive") {
+      return {
+        actionId: action.id,
+        tier: "sensitive",
+        decision: "takeover_required",
+        policyVersion: this.policy.id,
+        reasons:
+          action.riskReasons?.length
+            ? action.riskReasons
+            : ["The typed action is sensitive and requires user takeover."],
+      };
+    }
+
     if (isSensitive(action)) {
       return {
         actionId: action.id,
@@ -215,23 +307,24 @@ export class AuditableGateway {
   private async execute(action: GatewayActionRequest, permission: GatewayPermissionResult): Promise<GatewayExecutionResult> {
     try {
       const adapterResult = await this.adapter.execute(action);
-      const evidence = adapterResult.evidence.map((item) =>
+      const evidence = await Promise.all(adapterResult.evidence.map((item) =>
         this.evidenceStore.record({
           ...item,
           runId: action.runId,
           actionId: action.id,
         }),
-      );
+      ));
       return {
         actionId: action.id,
         status: "executed",
         permission,
         observation: adapterResult.observation,
+        ...(adapterResult.data === undefined ? {} : { data: adapterResult.data }),
         evidence,
         reason: permission.reasons.join(" "),
       };
     } catch (error) {
-      const evidence = this.evidenceStore.record({
+      const evidence = await this.evidenceStore.record({
         id: `${action.id}-gateway-failure`,
         runId: action.runId,
         actionId: action.id,
@@ -265,6 +358,13 @@ export class AuditableGateway {
 
 function clone<T>(value: T): T {
   return typeof globalThis.structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+}
+
+function safeSegment(value: string | undefined, label: string): string {
+  if (!value || !/^[a-zA-Z0-9._-]{1,200}$/u.test(value)) {
+    throw new Error(`Unsafe gateway evidence ${label} identifier.`);
+  }
+  return value;
 }
 
 function isSensitive(action: GatewayActionRequest): boolean {

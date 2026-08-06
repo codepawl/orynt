@@ -532,7 +532,17 @@ export async function runRepositoryTaskPlan(input: {
         .filter((task) => task.authority === "read_only")
         .slice(0, maxReadOnlyConcurrency);
       if (readyReadOnly.length > 0) {
-        const outcomes = await Promise.all(readyReadOnly.map((task) => invoke(task)));
+        const settled = await Promise.allSettled(
+          readyReadOnly.map((task) => invoke(task)),
+        );
+        const rejected = settled.find(
+          (entry): entry is PromiseRejectedResult =>
+            entry.status === "rejected",
+        );
+        if (rejected) throw rejected.reason;
+        const outcomes = settled.map(
+          (entry) => (entry as PromiseFulfilledResult<InvocationOutcome>).value,
+        );
         for (let index = 0; index < outcomes.length; index += 1) {
           const task = readyReadOnly[index]!;
           const outcome = outcomes[index]!;

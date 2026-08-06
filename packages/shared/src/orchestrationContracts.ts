@@ -22,12 +22,14 @@ export type OrchestrationPreset =
 export type ReviewerPolicy = "always" | "conditional" | "failure_only";
 
 export type OrchestrationRoleBinding = {
-  providerId: "codex-cli";
+  providerId: "codex-cli" | "openai-api";
   modelId: string;
   thinkingEffort: OrchestrationThinkingEffort;
   maxTokens: number;
   maxWallTimeMs: number;
   maxUsd?: number;
+  modelTier?: import("./modelTierContracts.js").ModelTier;
+  routingReasonCodes?: import("./modelTierContracts.js").TaskTierRoutingReason[];
 };
 
 export type OrchestrationProfile = {
@@ -42,6 +44,7 @@ export type OrchestrationProfile = {
 };
 
 export type CodexOrchestrationModelOption = {
+  providerId?: "codex-cli" | "openai-api";
   id: string;
   supportedThinkingEfforts: OrchestrationThinkingEffort[];
   defaultThinkingEffort?: OrchestrationThinkingEffort;
@@ -74,6 +77,8 @@ export type OrchestrationChildTask = {
   expectedPaths: string[];
   expectedArtifacts: string[];
   depth: number;
+  capabilityIds?: string[];
+  toolNamespaces?: string[];
 };
 
 export type OrchestrationPlan = {
@@ -101,7 +106,7 @@ export type ModelInvocationRecord = {
   parentInvocationId?: string;
   taskId: string;
   role: OrchestrationRole;
-  providerId: "codex-cli";
+  providerId: "codex-cli" | "openai-api";
   modelId: string;
   thinkingEffort: OrchestrationThinkingEffort;
   contextHash: string;
@@ -113,6 +118,8 @@ export type ModelInvocationRecord = {
   completedAt?: string;
   retryIndex: number;
   artifactRefs: string[];
+  modelTier?: import("./modelTierContracts.js").ModelTier;
+  routingReasonCodes?: import("./modelTierContracts.js").TaskTierRoutingReason[];
 };
 
 const ROLE_ORDER: OrchestrationRole[] = [
@@ -198,7 +205,8 @@ export function isOrchestrationProfile(
     ROLE_ORDER.every((role) => {
       const binding = record(roles[role]);
       return (
-        binding.providerId === "codex-cli" &&
+        (binding.providerId === "codex-cli" ||
+          binding.providerId === "openai-api") &&
         typeof binding.modelId === "string" &&
         binding.modelId === binding.modelId.trim() &&
         binding.modelId.length > 0 &&
@@ -319,9 +327,15 @@ export function resolveOrchestrationProfile(
           ),
         )
       : requested;
-  const byId = new Map(catalog.map((model) => [model.id, model]));
+  const byId = new Map(
+    catalog.map((model) => [
+      `${model.providerId ?? "codex-cli"}\u0000${model.id}`,
+      model,
+    ]),
+  );
   const coordinator = effective.roles.coordinator;
-  if (!byId.has(coordinator.modelId)) {
+  const coordinatorKey = `${coordinator.providerId}\u0000${coordinator.modelId}`;
+  if (!byId.has(coordinatorKey)) {
     throw new Error(
       effective.preset === "custom"
         ? `Custom coordinator model is unavailable: ${coordinator.modelId}`
@@ -332,7 +346,7 @@ export function resolveOrchestrationProfile(
   const roles = {} as Record<OrchestrationRole, ResolvedRoleBinding>;
   for (const role of ROLE_ORDER) {
     const binding = effective.roles[role];
-    let model = byId.get(binding.modelId);
+    let model = byId.get(`${binding.providerId}\u0000${binding.modelId}`);
     let fallbackReason: string | undefined;
     if (!model) {
       if (effective.preset === "custom") {
@@ -342,16 +356,21 @@ export function resolveOrchestrationProfile(
       }
       if (role === "helper") {
         omittedRoles.push(role);
-        model = byId.get(coordinator.modelId);
+        model = byId.get(coordinatorKey);
         fallbackReason = `Optional helper omitted because ${binding.modelId} is unavailable.`;
       } else {
-        model = byId.get(coordinator.modelId);
+        model = byId.get(coordinatorKey);
         fallbackReason = `${role} fell back to coordinator model because ${binding.modelId} is unavailable.`;
       }
     }
     const effortSupported = model?.supportedThinkingEfforts.includes(
       binding.thinkingEffort,
     );
+    if (!effortSupported && effective.preset === "custom") {
+      throw new Error(
+        `Custom ${role} thinking effort is unavailable: ${binding.thinkingEffort}`,
+      );
+    }
     const thinkingEffort = effortSupported
       ? binding.thinkingEffort
       : model?.defaultThinkingEffort ??
@@ -405,21 +424,58 @@ export function validateOrchestrationPlan(
   if (helpers.some((task) => task.authority !== "read_only")) {
     throw new Error("Helpers must remain read-only.");
   }
-  const writers = plan.tasks.filter(
-    (task) => task.authority === "single_writer",
-  );
   const implementers = plan.tasks.filter(
     (task) => task.role === "implementer",
   );
   if (
-    writers.length !== 1 ||
-    implementers.length !== 1 ||
-    implementers[0]?.authority !== "single_writer" ||
-    writers[0]?.id !== implementers[0]?.id
+    implementers.length < 1 ||
+    implementers.some((task) => task.authority !== "single_writer") ||
+    plan.tasks.some(
+      (task) =>
+        task.authority === "single_writer" && task.role !== "implementer",
+    )
   ) {
     throw new Error(
-      "Orchestration plan must have exactly one implementer with the single writer lease.",
+      "Orchestration plan requires one or more implementers with bounded writer leases.",
     );
+  }
+  const normalizeOwnedPath = (value: string): string =>
+    value.replaceAll("\\", "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+  const pathsOverlap = (left: string, right: string): boolean =>
+    left === right ||
+    left.startsWith(`${right}/`) ||
+    right.startsWith(`${left}/`);
+  if (
+    implementers.length > 1 &&
+    implementers.some((task) => task.expectedPaths.length === 0)
+  ) {
+    throw new Error(
+      "Parallel implementers require explicit, disjoint expected paths.",
+    );
+  }
+  for (let leftIndex = 0; leftIndex < implementers.length; leftIndex += 1) {
+    const left = implementers[leftIndex]!;
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < implementers.length;
+      rightIndex += 1
+    ) {
+      const right = implementers[rightIndex]!;
+      if (
+        left.expectedPaths.some((leftPath) =>
+          right.expectedPaths.some((rightPath) =>
+            pathsOverlap(
+              normalizeOwnedPath(leftPath),
+              normalizeOwnedPath(rightPath),
+            ),
+          ),
+        )
+      ) {
+        throw new Error(
+          "Parallel implementers must have disjoint writer paths.",
+        );
+      }
+    }
   }
   if (
     plan.tasks.some(
@@ -444,7 +500,9 @@ export function validateOrchestrationPlan(
       task.dependencies.some((dependency) => {
         const dependencyRole = roleById.get(dependency);
         if (task.role === "helper") return dependencyRole !== "helper";
-        if (task.role === "implementer") return dependencyRole !== "helper";
+        if (task.role === "implementer") {
+          return dependencyRole !== "helper" && dependencyRole !== "implementer";
+        }
         return dependencyRole === "reviewer";
       }),
     )
@@ -476,10 +534,14 @@ export function validateOrchestrationRecoveryTask(
   plan: OrchestrationPlan,
   profile: OrchestrationProfile | ResolvedOrchestrationProfile,
 ): void {
-  const originalWriter = plan.tasks.find(
+  const dependencyWriters = plan.tasks.filter(
     (task) =>
-      task.role === "implementer" && task.authority === "single_writer",
+      recoveryTask.dependencies.includes(task.id) &&
+      task.role === "implementer" &&
+      task.authority === "single_writer",
   );
+  const originalWriter =
+    dependencyWriters.length === 1 ? dependencyWriters[0] : undefined;
   const existingTaskIds = new Set(plan.tasks.map((task) => task.id));
   if (
     !originalWriter ||

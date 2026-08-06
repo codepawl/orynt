@@ -9,7 +9,7 @@ import {
   createDefaultRunBudget,
   InMemoryRunStore,
 } from "@codepawl/shared";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { GitRepositorySandboxManager, RepositorySandboxFailure } from "./index";
 

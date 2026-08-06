@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
+
+import { hashPromptUnderstandingBasis } from "@codepawl/shared";
 
 import type { ProposedRepositoryAction } from "./agent";
 import {
@@ -73,6 +75,58 @@ describe("CLI task-plan approval binding", () => {
         source: "acceptance_criterion",
         text: "The focused test passes.",
         required: true,
+      }),
+    ]));
+  });
+
+  it("binds only explicit clarification answers and confirmed assumptions from ready understanding", () => {
+    const basis = {
+      rawPrompt: "Implement the feature.",
+      activeGoal: "Complete the milestone.",
+      acceptanceCriteria: ["The focused test passes."],
+      clarificationAnswers: [{
+        questionId: "scope",
+        answer: "Only the CLI package.",
+      }],
+      confirmedAssumptions: [{
+        assumptionId: "compatibility",
+        text: "Preserve the existing public API.",
+      }],
+    };
+    const plan = buildBoundRepositoryTaskPlan({
+      action: action(),
+      prompt: basis.rawPrompt,
+      activeGoal: basis.activeGoal,
+      acceptanceCriteria: basis.acceptanceCriteria,
+      promptUnderstandingBasis: basis,
+      promptUnderstanding: {
+        schemaVersion: 1,
+        promptId: hashPromptUnderstandingBasis(basis),
+        outcome: "repository_action",
+        readiness: "ready",
+        reply: "The task is ready to plan.",
+        refinedBrief: {
+          goal: "Implement the feature.",
+          deliverables: ["Updated CLI feature."],
+          constraints: [],
+          acceptanceCriteria: ["The focused test passes."],
+          nonGoals: [],
+        },
+        questions: [],
+        assumptions: [],
+      },
+      maxModelTokens: 10_000,
+      maxWallTimeMs: 60_000,
+    });
+
+    expect(plan.requirements).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: "clarification_answer",
+        text: "Only the CLI package.",
+      }),
+      expect.objectContaining({
+        source: "confirmed_assumption",
+        text: "Preserve the existing public API.",
       }),
     ]));
   });

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
@@ -9,7 +9,11 @@ import {
   loadVersionedJson,
   LocalStateError,
 } from "@codepawl/local-state";
-import { MEMORY_STORE_SCHEMA_VERSION } from "@codepawl/shared";
+import {
+  MEMORY_STORE_SCHEMA_VERSION,
+  contextVmSessionId,
+  contextVmTaskId,
+} from "@codepawl/shared";
 import type {
   Actor,
   ArtifactRef,
@@ -50,7 +54,30 @@ import type {
   RunStore,
   VerificationEvidence,
   VerificationResult,
+  ContextVmEventKind,
 } from "@codepawl/shared";
+import {
+  ContextVmFailure,
+  LocalSqliteContextVmStore,
+} from "./contextVm.js";
+
+export {
+  CONTEXTVM_DATABASE_SCHEMA_VERSION,
+  ContextVmFailure,
+  LocalSqliteContextVmStore,
+  type ContextVmStoreOptions,
+} from "./contextVm.js";
+export {
+  DEFAULT_CONTEXTVM_CACHE_BYTES,
+  MAX_CONTEXTVM_CACHE_BYTES,
+  DeterministicContextVmPageCache,
+  type ContextVmCacheSignals,
+} from "./contextVmCache.js";
+export {
+  CanonicalTraceFailure,
+  CanonicalTraceJournal,
+  canonicalTraceEventFromRunEvent,
+} from "./canonicalTrace.js";
 
 type LegacyMemoryDatabase = {
   episodes: EpisodicMemoryItem[];
@@ -72,6 +99,24 @@ type LocalMemoryExtractorOptions = {
   managedMemoryRoot?: string;
 };
 
+type MemoryArtifactWriter = {
+  artifactRef(
+    kind: ArtifactRef["kind"],
+    label: string,
+    source: unknown,
+    suffix: string,
+  ): Promise<ArtifactRef>;
+};
+
+function isMemoryArtifactWriter(value: MemoryStore): value is MemoryStore & MemoryArtifactWriter {
+  return typeof (value as Partial<MemoryArtifactWriter>).artifactRef === "function";
+}
+
+function managedMemoryRoot(value: MemoryStore): string | undefined {
+  const candidate = (value as { memoryRoot?: unknown }).memoryRoot;
+  return typeof candidate === "string" ? candidate : undefined;
+}
+
 export class MemoryStoreFailure extends Error {
   readonly code:
     | "unsafe_path"
@@ -80,6 +125,7 @@ export class MemoryStoreFailure extends Error {
     | "semantic_memory_not_found"
     | "invalid_status_transition"
     | "revision_conflict"
+    | "authority_migrated"
     | "not_restorable"
     | "purge_not_due";
 
@@ -1209,7 +1255,7 @@ export class LocalJsonMemoryStore implements MemoryStore {
     };
   }
 
-  private async readDatabase(storePath = this.storePath): Promise<MemoryDatabase> {
+  protected async readDatabase(storePath = this.storePath): Promise<MemoryDatabase> {
     const safeStorePath = this.validateStorePath(storePath);
     return loadVersionedJson({
       filePath: safeStorePath,
@@ -1283,12 +1329,21 @@ export class LocalJsonMemoryStore implements MemoryStore {
     );
   }
 
-  private async mutateDatabase<T>(
+  protected async mutateDatabase<T>(
     storePath: string,
     options: MemoryMutationOptions,
     mutate: (database: MemoryDatabase) => T,
   ): Promise<T> {
     const safeStorePath = this.validateStorePath(storePath);
+    if (
+      await access(path.join(this.memoryRoot, ".contextvm-authority"))
+        .then(() => true, () => false)
+    ) {
+      throw new MemoryStoreFailure(
+        "authority_migrated",
+        "legacy JSON memory is read-only after ContextVM authority migration",
+      );
+    }
     try {
       const { result } = await compareAndSwapVersionedJson({
         filePath: safeStorePath,
@@ -1318,6 +1373,119 @@ export class LocalJsonMemoryStore implements MemoryStore {
   private async writeAtomic(targetPath: string, content: string): Promise<void> {
     const safeTarget = this.validateStorePath(targetPath);
     await atomicWriteFileDurable(safeTarget, content);
+  }
+}
+
+/**
+ * MemoryStore compatibility adapter backed by ContextVM SQLite.
+ *
+ * The inherited domain operations retain the established lifecycle, redaction,
+ * retrieval and audit semantics. Only persistence and artifact ownership are
+ * replaced; this adapter never creates or updates the legacy JSON store.
+ */
+export class SqliteContextVmMemoryStore extends LocalJsonMemoryStore {
+  readonly contextVm: LocalSqliteContextVmStore;
+
+  constructor(options: {
+    contextVm: LocalSqliteContextVmStore;
+    legacyMemoryRoot?: string;
+  }) {
+    super({
+      memoryRoot:
+        options.legacyMemoryRoot ??
+        path.join(options.contextVm.root, "legacy-memory-disabled"),
+      storeFileName: "store-v3.json",
+    });
+    this.contextVm = options.contextVm;
+  }
+
+  async ingestRunEvents(
+    events: RunEvent[],
+    sourceTaskId: string,
+  ): Promise<void> {
+    if (events.length === 0) return;
+    const canonicalWatermark =
+      await this.contextVm.canonicalProjectionWatermark(events[0]!.runId);
+    if (canonicalWatermark > 0) return;
+    const sessionId = contextVmSessionId(events[0]!.runId);
+    const taskId = contextVmTaskId(sourceTaskId);
+    const mapKind = (event: RunEvent): ContextVmEventKind => {
+      if (event.type === "goal_received") return "user_message";
+      if (event.type.includes("verification_command")) return "command_run";
+      if (event.type.startsWith("verification_")) return "test_result";
+      if (event.type.includes("policy") || event.type.includes("approval")) return "constraint";
+      if (event.type.includes("diff") || event.type.includes("imported")) return "file_write";
+      if (event.type.includes("failed") || event.type.includes("violation")) return "error";
+      if (event.type.includes("codex_")) return "tool_result";
+      if (event.type.includes("candidate_rule")) return "decision";
+      return "state_transition";
+    };
+    await this.contextVm.appendEvents(events.map((event) => ({
+      sessionId,
+      taskId,
+      source: { kind: "orynt_run_event" as const, id: event.id },
+      occurredAt: event.timestamp,
+      actor: event.actor,
+      kind: mapKind(event),
+      payload: {
+        runEventType: event.type,
+        payload: event.payload,
+        verdict: event.verdict,
+        budget: event.budget,
+        safety: event.safety,
+        artifactRefs: event.artifacts.map(({ id, kind, uri, label, sha256 }) => ({
+          id, kind, uri, label, sha256,
+        })),
+      },
+      sensitivity: "internal" as const,
+    })));
+  }
+
+  override async artifactRef(
+    kind: ArtifactRef["kind"],
+    label: string,
+    source: unknown,
+    suffix: string,
+  ): Promise<ArtifactRef> {
+    const artifactJson = `${JSON.stringify(source, null, 2)}\n`;
+    const ref = await this.contextVm.archiveArtifact({
+      mediaType: "application/json",
+      bytes: Buffer.from(artifactJson, "utf8"),
+      sensitivity: "personal",
+      label,
+    });
+    return {
+      id: `${slug(label)}-${ref.sha256.slice(0, 10)}`,
+      kind,
+      uri: `contextvm://${ref.id}/${encodeURIComponent(suffix)}`,
+      label,
+      sha256: ref.sha256,
+    };
+  }
+
+  protected override async readDatabase(): Promise<MemoryDatabase> {
+    return this.contextVm.getMemoryEnvelope();
+  }
+
+  protected override async mutateDatabase<T>(
+    _storePath: string,
+    options: MemoryMutationOptions,
+    mutate: (database: MemoryDatabase) => T,
+  ): Promise<T> {
+    try {
+      return await this.contextVm.mutateMemoryEnvelope(
+        options.expectedRevision,
+        mutate,
+      );
+    } catch (error) {
+      if (
+        error instanceof ContextVmFailure &&
+        error.code === "duplicate_conflict"
+      ) {
+        throw new MemoryStoreFailure("revision_conflict", error.message);
+      }
+      throw error;
+    }
   }
 }
 
@@ -1402,7 +1570,8 @@ export class LocalMemoryExtractor implements MemoryExtractor {
     this.actor = options.actor ?? DEFAULT_ACTOR;
     this.managedMemoryRoot =
       options.managedMemoryRoot ??
-      (options.memoryStore instanceof LocalJsonMemoryStore ? options.memoryStore.memoryRoot : path.join(tmpdir(), "orynt", "memory"));
+      managedMemoryRoot(options.memoryStore) ??
+      path.join(tmpdir(), "orynt", "memory");
   }
 
   async extractRunMemory(input: MemoryExtractionInput): Promise<MemoryExtractionResult> {
@@ -1417,6 +1586,9 @@ export class LocalMemoryExtractor implements MemoryExtractor {
     });
 
     try {
+      if (this.memoryStore instanceof SqliteContextVmMemoryStore) {
+        await this.memoryStore.ingestRunEvents(input.events, input.run.taskId);
+      }
       validateExtractorArtifactRoot(input.artifactRoot, this.managedMemoryRoot);
       const rawEpisodes = await this.createEpisodes(input);
       const rawCandidateRules = await this.createCandidateRules(input);
@@ -1510,6 +1682,13 @@ export class LocalMemoryExtractor implements MemoryExtractor {
         artifacts: [summaryArtifact],
       });
 
+      if (this.memoryStore instanceof SqliteContextVmMemoryStore) {
+        await this.memoryStore.contextVm.extractSession(
+          contextVmSessionId(input.run.id),
+          namespaceKey(input.namespace),
+        );
+      }
+
       return clone(result);
     } catch (error) {
       this.runStore?.appendEvent(input.run.id, {
@@ -1524,7 +1703,7 @@ export class LocalMemoryExtractor implements MemoryExtractor {
   }
 
   private async memoryArtifact(kind: ArtifactRef["kind"], label: string, source: unknown, suffix: string): Promise<ArtifactRef> {
-    if (this.memoryStore instanceof LocalJsonMemoryStore) {
+    if (isMemoryArtifactWriter(this.memoryStore)) {
       return this.memoryStore.artifactRef(kind, label, source, suffix);
     }
     return {

@@ -9,7 +9,7 @@ import {
 } from "@codepawl/cognitive-kernel";
 import type { CorePolicy, RunBudget } from "@codepawl/shared";
 
-import { LocalJsonCognitiveCheckpointStore } from "./checkpointStore";
+import { LocalJsonCognitiveCheckpointStore } from "./checkpointStore.js";
 
 export type RedactedCognitiveRuntimeTrace = Omit<
   CognitiveRunCheckpointV1,

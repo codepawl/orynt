@@ -2,39 +2,42 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Orynt",
   "version": "0.1.0",
-  "identifier": "com.codepawl.orynt",
+  "identifier": "dev.orynt.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build",
+    "beforeDevCommand": "bun run dev:renderer",
     "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "bun run build:renderer",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "Orynt",
         "label": "main",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 960,
-        "minHeight": 680
+        "title": "Orynt",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 900,
+        "minHeight": 640,
+        "resizable": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' asset: data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://api.openai.com"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["appimage"],
-    "createUpdaterArtifacts": false,
+    "targets": "all",
+    "externalBin": [
+      "binaries/orynt-desktop-sidecar"
+    ],
+    "resources": {
+      "../../../packages/skill-registry/builtins/": "builtins/"
+    },
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico",
-      "icons/icon.png"
+      "../build/icon.png",
+      "../build/icon.ico",
+      "../build/icon.icns"
     ]
   }
 }

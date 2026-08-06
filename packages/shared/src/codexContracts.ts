@@ -1,12 +1,12 @@
-import type { ArtifactRef, RunBudget } from "./runSpine";
-import type { CorePolicy, PolicyDecision, RepositoryInspection, RepositorySandbox } from "./corePolicy";
-import type { CodexResultImportRequest } from "./codexResultImportContracts";
-import type { VerificationPlan } from "./verifierContracts";
+import type { ArtifactRef, RunBudget } from "./runSpine.js";
+import type { CorePolicy, PolicyDecision, RepositoryInspection, RepositorySandbox } from "./corePolicy.js";
+import type { CodexResultImportRequest } from "./codexResultImportContracts.js";
+import type { VerificationPlan } from "./verifierContracts.js";
 import type {
   OrchestrationRole,
   OrchestrationThinkingEffort,
-} from "./orchestrationContracts";
-import type { RepositoryTaskOperation } from "./taskPlanContracts";
+} from "./orchestrationContracts.js";
+import type { RepositoryTaskOperation } from "./taskPlanContracts.js";
 
 export type CodexExecutionMode =
   | "contract_only"
@@ -244,6 +244,7 @@ export type CodexExecutionRequest = {
   artifactRoot: string;
   verifierPlan?: VerificationPlan;
   executionPolicy?: Partial<CodexExecutionPolicy>;
+  images?: CodexAttachedImage[];
   /** Must exactly match a bound contract when either side carries a binding. */
   taskBinding?: CodexTaskAttemptBinding;
 };
@@ -259,6 +260,16 @@ export type CodexExecutionApproval = {
   authorizationSource?: "automatic_policy" | "operator" | "headless";
   /** Provider-internal derivation of the outer task-plan approval. */
   taskBinding?: CodexTaskAttemptBinding;
+};
+
+export type CodexAttachedImage = {
+  kind: "local_file";
+  path: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  sha256: string;
+  byteLength: number;
+  detail: "low" | "high" | "original";
+  source: "browser_crop" | "repository_asset" | "user_attachment";
 };
 
 export type CodexProcessRef = {
@@ -280,6 +291,7 @@ export type CodexExecutionPlan = {
   provider: CodexProvider;
   executablePath?: string;
   argv: string[];
+  images?: CodexAttachedImage[];
   cwd: string;
   contractPath: string;
   artifactRoot: string;
@@ -327,6 +339,12 @@ export type CodexExecutionResult = {
   exitCode: number | null;
   timedOut: boolean;
   failureReasons: CodexExecutionFailureReason[];
+  streamStats?: {
+    parsedLineCount: number;
+    emittedEventCount: number;
+    duplicateEventCount: number;
+    malformedLineCount: number;
+  };
   redaction: {
     applied: boolean;
     redactedPaths: string[];

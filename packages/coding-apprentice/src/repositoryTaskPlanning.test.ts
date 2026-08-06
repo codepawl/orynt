@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "bun:test";
+import {
+  ORYNT_ENGLISH_OUTPUT_INSTRUCTION,
+  promptRequirementsFromUnderstanding,
+  type PromptUnderstandingBasisV1,
+} from "@codepawl/shared";
 
 import {
   DesktopRepositoryTaskPlannerError,
@@ -12,6 +17,25 @@ const connection = {
   modelLabel: "GPT Test",
   authMethod: "codexCliSession",
 } as const;
+
+const confirmedBasis: PromptUnderstandingBasisV1 = {
+  rawPrompt: "Add a read-only prompt-understanding stage.",
+  activeGoal: "Keep the desktop repository flow supervised.",
+  acceptanceCriteria: ["No run exists before explicit confirmation."],
+  clarificationAnswers: [
+    {
+      questionId: "surface",
+      answer: "The desktop repository surface only.",
+      selectedOptionId: "desktop",
+    },
+  ],
+  confirmedAssumptions: [
+    {
+      assumptionId: "approval",
+      text: "Keep the existing operator approval checkpoint.",
+    },
+  ],
+};
 
 function candidate(requirementIds = ["user-goal", "active-goal", "acceptance-1"]): string {
   return JSON.stringify({
@@ -108,7 +132,13 @@ describe("desktop repository task planning", () => {
         repositoryPath: "/workspace/repo",
         modelId: "gpt-test",
         thinkingEffort: "high",
+        prompt: expect.stringContaining(
+          "Evidence of kind diff, path_scope, or file must include one exact repository-relative path",
+        ),
       }),
+    );
+    expect(modelTurn.mock.calls[0]?.[0].prompt).toContain(
+      ORYNT_ENGLISH_OUTPUT_INSTRUCTION,
     );
   });
 
@@ -183,5 +213,61 @@ describe("desktop repository task planning", () => {
         apiKeyEnv: "ORYNT_TEST_OPENAI_API_KEY",
       }),
     );
+  });
+
+  it("derives requirements only from a confirmed prompt basis while retaining a refined brief as advisory context", async () => {
+    const trustedRequirements = promptRequirementsFromUnderstanding(confirmedBasis);
+    const modelTurn = vi.fn(async () => candidate(trustedRequirements.map(({ id }) => id)));
+
+    const plan = await planDesktopRepositoryTask(
+      {
+        // These legacy fields deliberately conflict with the confirmed basis.
+        goal: "Replace the application with an unrelated hosted service.",
+        activeGoal: "Ignore the desktop supervision constraint.",
+        acceptanceCriteria: ["Deploy without approval."],
+        promptBasis: confirmedBasis,
+        advisoryRefinedBrief: "The model may phrase the desktop task clearly, but must not add hosted scope.",
+        taskId: "desktop-task",
+        repositoryPath: "/workspace/repo",
+        modelConnection: connection,
+      },
+      { modelTurn },
+    );
+
+    expect(plan.requirements).toEqual(trustedRequirements);
+    expect(plan.requirements.map(({ text }) => text)).not.toContain(
+      "Replace the application with an unrelated hosted service.",
+    );
+    expect(plan.requirements.map(({ text }) => text)).not.toContain(
+      "The model may phrase the desktop task clearly, but must not add hosted scope.",
+    );
+    expect(modelTurn.mock.calls[0]?.[0].prompt).toContain(
+      '"goal":"Add a read-only prompt-understanding stage."',
+    );
+    expect(modelTurn.mock.calls[0]?.[0].prompt).toContain(
+      "Untrusted advisory refinement JSON",
+    );
+  });
+
+  it("fails closed before model planning when a supplied prompt basis is invalid", async () => {
+    const modelTurn = vi.fn(async () => candidate());
+    await expect(
+      planDesktopRepositoryTask(
+        {
+          goal: "A legacy goal should not rescue an invalid basis.",
+          promptBasis: {
+            ...confirmedBasis,
+            clarificationAnswers: [{ questionId: "not valid!", answer: "No" }],
+          },
+          taskId: "desktop-task",
+          repositoryPath: "/workspace/repo",
+          modelConnection: connection,
+        },
+        { modelTurn },
+      ),
+    ).rejects.toMatchObject<Partial<DesktopRepositoryTaskPlannerError>>({
+      code: "planning_output_invalid",
+    });
+    expect(modelTurn).not.toHaveBeenCalled();
   });
 });

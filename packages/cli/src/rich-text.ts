@@ -1,4 +1,14 @@
 import { common, createLowlight } from "lowlight";
+import { marked, type Token, type Tokens } from "marked";
+
+import {
+  terminalTextWidth,
+} from "./terminal-presentation.js";
+import { wrapTerminalText } from "./terminal-screen.js";
+import type {
+  TerminalRole,
+  TerminalTheme,
+} from "./terminal-theme.js";
 
 const ANSI = "\u001b[";
 const RESET = `${ANSI}0m`;
@@ -14,16 +24,38 @@ type AstNode = {
 
 export type RichTextOptions = {
   enabled: boolean;
-  color: boolean;
+  theme: TerminalTheme;
   preserveMarkers?: boolean;
+  width?: number;
+  continuationIndent?: string;
 };
 
-const COLORS = {
-  blue: "38;2;143;182;232",
-  green: "38;2;120;201;155",
-  amber: "38;2;212;169;79",
-  mist: "38;2;198;196;191",
-} as const;
+function safeText(value: string): string {
+  return value
+    .replace(/\u001b/gu, "")
+    .replace(/[\u0080-\u009f]/gu, "");
+}
+
+function isPathToken(value: string): boolean {
+  if (/^https?:\/\//iu.test(value)) return false;
+  const suffix = value.match(/[.,;!?]+$/u)?.[0] ?? "";
+  const candidate = suffix ? value.slice(0, -suffix.length) : value;
+  const withoutLocation = candidate.replace(/:\d+(?::\d+)?$/u, "");
+  return (
+    /^(?:\.{1,2}\/|\/)[^\s]+$/u.test(withoutLocation) ||
+    /^(?:[\w@.-]+\/)+[\w@.+-]+$/u.test(withoutLocation)
+  );
+}
+
+function renderPlainText(value: string, options: RichTextOptions): string {
+  return safeText(value).split(/(\s+)/u).map((part) =>
+    isPathToken(part)
+      ? options.theme.enabled
+        ? options.theme.paint("path", part)
+        : styled(part, ["4"])
+      : part
+  ).join("");
+}
 
 function styled(value: string, codes: string[]): string {
   return value && codes.length > 0
@@ -31,20 +63,8 @@ function styled(value: string, codes: string[]): string {
     : value;
 }
 
-function colorCode(
-  color: boolean,
-  name: keyof typeof COLORS,
-): string[] {
-  return color ? [COLORS[name]] : [];
-}
-
-function marker(value: string, options: RichTextOptions): string {
-  return options.preserveMarkers ? styled(value, ["2"]) : "";
-}
-
 function syntaxRole(classNames: string[]): {
-  color?: keyof typeof COLORS;
-  dim?: boolean;
+  role: TerminalRole;
 } {
   const names = new Set(classNames.map((name) => name.replace(/^hljs-/u, "")));
   if (
@@ -52,39 +72,35 @@ function syntaxRole(classNames: string[]): {
       (name) => names.has(name),
     )
   ) {
-    return { color: "blue" };
+    return { role: "codeKeyword" };
   }
   if (
     ["string", "attr", "attribute", "regexp", "template-tag"].some(
       (name) => names.has(name),
     )
   ) {
-    return { color: "green" };
+    return { role: "codeString" };
   }
   if (
     ["number", "literal", "built_in", "bullet", "symbol"].some(
       (name) => names.has(name),
     )
   ) {
-    return { color: "amber" };
+    return { role: "codeNumber" };
   }
   if (["comment", "quote"].some((name) => names.has(name))) {
-    return { dim: true };
+    return { role: "codeComment" };
   }
-  return { color: "mist" };
+  return { role: "codePlain" };
 }
 
 function renderAst(
   node: AstNode,
-  color: boolean,
+  theme: TerminalTheme,
   inherited?: ReturnType<typeof syntaxRole>,
 ): string {
   if (node.type === "text") {
-    const codes = [
-      ...(inherited?.dim ? ["2"] : []),
-      ...(inherited?.color ? colorCode(color, inherited.color) : []),
-    ];
-    return styled(node.value ?? "", codes);
+    return theme.paint(inherited?.role ?? "codePlain", safeText(node.value ?? ""));
   }
   let role = inherited;
   if (node.type === "element") {
@@ -95,235 +111,332 @@ function renderAst(
     role = syntaxRole(classes);
   }
   return (node.children ?? [])
-    .map((child) => renderAst(child, color, role))
+    .map((child) => renderAst(child, theme, role))
     .join("");
 }
 
 function highlightCode(
   source: string,
   language: string,
-  color: boolean,
+  theme: TerminalTheme,
 ): string {
-  if (!color) return source;
+  const bounded = safeText(source.slice(0, MAX_CODE_BLOCK_LENGTH));
+  if (!theme.enabled) return bounded;
   try {
     const normalized = language.trim().toLowerCase();
     const tree = normalized
       ? highlighter.registered(normalized)
-        ? highlighter.highlight(normalized, source)
+        ? highlighter.highlight(normalized, bounded)
         : undefined
-      : highlighter.highlightAuto(source);
+      : highlighter.highlightAuto(bounded);
     if (!tree || (!normalized && (tree.data?.relevance ?? 0) < 3)) {
-      return styled(source, colorCode(color, "mist"));
+      return theme.paint("codePlain", bounded);
     }
-    return renderAst(tree as AstNode, color);
+    return renderAst(tree as AstNode, theme);
   } catch {
-    return styled(source, colorCode(color, "mist"));
+    return theme.paint("codePlain", bounded);
   }
 }
 
-function isPathToken(value: string): boolean {
-  if (/^https?:\/\//iu.test(value)) return false;
-  const withoutLocation = value.replace(/:\d+(?::\d+)?$/u, "");
-  return (
-    /^(?:\.{1,2}\/|\/)[^\s]+$/u.test(withoutLocation) ||
-    /^(?:[\w@.-]+\/)+[\w@.+-]+$/u.test(withoutLocation)
+function inlineTokens(
+  tokens: readonly Token[] | undefined,
+  options: RichTextOptions,
+): string {
+  return (tokens ?? []).map((token) => inlineToken(token, options)).join("");
+}
+
+function inlineToken(token: Token, options: RichTextOptions): string {
+  switch (token.type) {
+    case "text":
+      return token.tokens
+        ? inlineTokens(token.tokens, options)
+        : renderPlainText(token.text, options);
+    case "escape":
+      return safeText(token.text);
+    case "strong": {
+      const content = inlineTokens(token.tokens, options);
+      return options.preserveMarkers
+        ? `${styled("**", ["2"])}${styled(content, ["1"])}${styled("**", ["2"])}`
+        : styled(content, ["1"]);
+    }
+    case "em": {
+      const content = inlineTokens(token.tokens, options);
+      return options.preserveMarkers
+        ? `${styled("*", ["2"])}${styled(content, ["3"])}${styled("*", ["2"])}`
+        : styled(content, ["3"]);
+    }
+    case "del": {
+      const content = inlineTokens(token.tokens, options);
+      return options.preserveMarkers
+        ? `${styled("~~", ["2"])}${styled(content, ["9"])}${styled("~~", ["2"])}`
+        : styled(content, ["9"]);
+    }
+    case "codespan": {
+      const content = options.theme.paint("inlineCode", safeText(token.text));
+      return options.preserveMarkers
+        ? `${styled("`", ["2"])}${content}${styled("`", ["2"])}`
+        : content;
+    }
+    case "link": {
+      const label = inlineTokens(token.tokens, options) || safeText(token.text);
+      const href = safeText(token.href);
+      return label === href ? href : `${label} (${href})`;
+    }
+    case "image": {
+      const label = safeText(token.text).trim() || "image";
+      return `Image: ${label} (${safeText(token.href)})`;
+    }
+    case "br":
+      return "\n";
+    case "html":
+      return safeText(token.text);
+    default:
+      return "tokens" in token && Array.isArray(token.tokens)
+        ? inlineTokens(token.tokens, options)
+        : safeText("text" in token && typeof token.text === "string"
+          ? token.text
+          : token.raw);
+  }
+}
+
+function alignCell(
+  value: string,
+  width: number,
+  alignment: "center" | "left" | "right" | null,
+): string {
+  const padding = Math.max(0, width - terminalTextWidth(value));
+  if (alignment === "right") return `${" ".repeat(padding)}${value}`;
+  if (alignment === "center") {
+    const left = Math.floor(padding / 2);
+    return `${" ".repeat(left)}${value}${" ".repeat(padding - left)}`;
+  }
+  return `${value}${" ".repeat(padding)}`;
+}
+
+function columnWidths(
+  table: Tokens.Table,
+  availableWidth: number,
+  options: RichTextOptions,
+): number[] | undefined {
+  const count = table.header.length;
+  if (count === 0) return [];
+  if (availableWidth < 44) return undefined;
+  const contentRoom = availableWidth - (count * 3 + 1);
+  const minimum = 3;
+  if (contentRoom < count * minimum) return undefined;
+  const desired = table.header.map((cell, index) =>
+    Math.max(
+      minimum,
+      ...[cell, ...table.rows.map((row) => row[index])]
+        .filter((item): item is Tokens.TableCell => Boolean(item))
+        .map((item) =>
+          Math.min(
+            32,
+            Math.max(
+              ...inlineTokens(item.tokens, options)
+                .split("\n")
+                .map(terminalTextWidth),
+            ),
+          )
+        ),
+    )
   );
+  const widths = desired.map(() => minimum);
+  let remaining = contentRoom - count * minimum;
+  while (remaining > 0 && widths.some((width, index) => width < desired[index]!)) {
+    for (let index = 0; index < widths.length && remaining > 0; index += 1) {
+      if (widths[index]! >= desired[index]!) continue;
+      widths[index] = widths[index]! + 1;
+      remaining -= 1;
+    }
+  }
+  return widths;
 }
 
-function renderPath(value: string, options: RichTextOptions): string {
-  return styled(value, [
-    "4",
-    ...colorCode(options.color, "blue"),
-  ]);
-}
-
-function nextPlainBoundary(value: string): number {
-  const candidates = [
-    value.indexOf("\\"),
-    value.indexOf("`"),
-    value.indexOf("*"),
-  ].filter((index) => index >= 0);
-  const path = value.search(/(?:^|\s)(?:\.{1,2}\/|\/|[\w@.-]+\/)/u);
-  if (path >= 0) candidates.push(path === 0 ? 0 : path + 1);
-  return candidates.length > 0 ? Math.min(...candidates) : value.length;
-}
-
-function renderSegment(
-  value: string,
+function renderWideTable(
+  table: Tokens.Table,
+  widths: number[],
   options: RichTextOptions,
-  final: boolean,
-  atLineStart: boolean,
-): { rendered: string; consumed: number; wait?: boolean; lineStart: boolean } {
-  if (!value) {
-    return { rendered: "", consumed: 0, lineStart: atLineStart };
-  }
-
-  if (
-    atLineStart &&
-    !final &&
-    (value === "`" || value === "``")
-  ) {
-    return { rendered: "", consumed: 0, wait: true, lineStart: atLineStart };
-  }
-
-  if (atLineStart && value.startsWith("```")) {
-    const headerEnd = value.indexOf("\n");
-    if (headerEnd < 0 && !final) {
-      return { rendered: "", consumed: 0, wait: true, lineStart: atLineStart };
-    }
-    const language = headerEnd >= 0 ? value.slice(3, headerEnd).trim() : "";
-    const bodyStart = headerEnd >= 0 ? headerEnd + 1 : value.length;
-    const close = value.indexOf("\n```", bodyStart);
-    if (close < 0 && !final && value.length <= MAX_CODE_BLOCK_LENGTH) {
-      return { rendered: "", consumed: 0, wait: true, lineStart: atLineStart };
-    }
-    if (close < 0) {
-      const raw = value.slice(bodyStart, MAX_CODE_BLOCK_LENGTH);
-      const prefix = marker(value.slice(0, bodyStart), options);
-      return {
-        rendered:
-          prefix +
-          highlightCode(raw, language, options.color) +
-          value.slice(bodyStart + raw.length),
-        consumed: value.length,
-        lineStart: value.endsWith("\n"),
-      };
-    }
-    const closingEnd = close + 4;
-    const source = value.slice(bodyStart, close);
-    return {
-      rendered:
-        marker(value.slice(0, bodyStart), options) +
-        highlightCode(source, language, options.color) +
-        marker(value.slice(close, closingEnd), options),
-      consumed: closingEnd,
-      lineStart: false,
-    };
-  }
-
-  if (/^\\[*`\\]/u.test(value)) {
-    if (value.length === 1 && !final) {
-      return { rendered: "", consumed: 0, wait: true, lineStart: atLineStart };
-    }
-    return {
-      rendered: value.slice(1, 2) || "\\",
-      consumed: Math.min(2, value.length),
-      lineStart: false,
-    };
-  }
-
-  const delimiters = value.startsWith("**")
-    ? { open: "**", close: "**", codes: ["1"] }
-    : value.startsWith("*")
-      ? { open: "*", close: "*", codes: ["3"] }
-      : value.startsWith("`")
-        ? {
-            open: "`",
-            close: "`",
-            codes: colorCode(options.color, "mist"),
-          }
-        : undefined;
-  if (delimiters) {
-    const end = value.indexOf(delimiters.close, delimiters.open.length);
-    if (end < 0 && !final) {
-      return { rendered: "", consumed: 0, wait: true, lineStart: atLineStart };
-    }
-    if (end >= 0) {
-      const content = value.slice(delimiters.open.length, end);
-      return {
-        rendered:
-          marker(delimiters.open, options) +
-          styled(content, delimiters.codes) +
-          marker(delimiters.close, options),
-        consumed: end + delimiters.close.length,
-        lineStart: content.endsWith("\n"),
-      };
-    }
-  }
-
-  const tokenEnd = value.search(/\s/u);
-  const candidateEnd = tokenEnd < 0 ? value.length : tokenEnd;
-  const candidate = value.slice(0, candidateEnd);
-  if (
-    !final &&
-    tokenEnd < 0 &&
-    candidate.includes("/") &&
-    !/^https?:\/\//iu.test(candidate)
-  ) {
-    return { rendered: "", consumed: 0, wait: true, lineStart: atLineStart };
-  }
-  if (isPathToken(candidate)) {
-    if (tokenEnd < 0 && !final) {
-      return { rendered: "", consumed: 0, wait: true, lineStart: atLineStart };
-    }
-    return {
-      rendered: renderPath(candidate, options),
-      consumed: candidateEnd,
-      lineStart: false,
-    };
-  }
-
-  const boundary = nextPlainBoundary(value);
-  if (!final && boundary === value.length) {
-    const lastWhitespace = Math.max(
-      value.lastIndexOf(" "),
-      value.lastIndexOf("\n"),
-      value.lastIndexOf("\t"),
-    );
-    if (lastWhitespace < 0) {
-      return { rendered: "", consumed: 0, wait: true, lineStart: atLineStart };
-    }
-    const plain = value.slice(0, lastWhitespace + 1);
-    return {
-      rendered: plain,
-      consumed: plain.length,
-      lineStart: plain.endsWith("\n"),
-    };
-  }
-  const consumed = boundary > 0 ? boundary : 1;
-  const plain = value.slice(0, consumed);
-  return {
-    rendered: plain,
-    consumed,
-    lineStart: plain.endsWith("\n"),
+): string {
+  const border = (
+    left: string,
+    joint: string,
+    right: string,
+  ) => `${left}${widths.map((width) => "─".repeat(width + 2)).join(joint)}${right}`;
+  const renderRow = (
+    cells: Tokens.TableCell[],
+    header: boolean,
+  ): string[] => {
+    const wrapped = widths.map((width, index) => {
+      const cell = cells[index];
+      const rendered = cell ? inlineTokens(cell.tokens, options) : "";
+      return wrapTerminalText(rendered, width);
+    });
+    const height = Math.max(1, ...wrapped.map((lines) => lines.length));
+    return Array.from({ length: height }, (_, lineIndex) => {
+      const values = widths.map((width, index) => {
+        const cell = cells[index];
+        const value = wrapped[index]?.[lineIndex] ?? "";
+        const aligned = alignCell(value, width, cell?.align ?? null);
+        return header ? styled(aligned, ["1"]) : aligned;
+      });
+      return `│ ${values.join(" │ ")} │`;
+    });
   };
+  return [
+    border("┌", "┬", "┐"),
+    ...renderRow(table.header, true),
+    border("├", "┼", "┤"),
+    ...table.rows.flatMap((row, index) => [
+      ...renderRow(row, false),
+      ...(index === table.rows.length - 1
+        ? []
+        : [border("├", "┼", "┤")]),
+    ]),
+    border("└", "┴", "┘"),
+  ].join("\n");
 }
 
-function renderAvailable(
-  value: string,
+function renderStackedTable(
+  table: Tokens.Table,
   options: RichTextOptions,
-  final: boolean,
-  initialLineStart = true,
-): { output: string; pending: string; lineStart: boolean } {
-  if (!options.enabled) {
-    return { output: value, pending: "", lineStart: value.endsWith("\n") };
+): string {
+  const headers = table.header.map((cell, index) =>
+    inlineTokens(cell.tokens, options).trim() || `Column ${index + 1}`
+  );
+  if (table.rows.length === 0) {
+    return headers.map((header) => options.theme.paint("heading", header)).join("\n");
   }
-  let remaining = value;
-  let output = "";
-  let lineStart = initialLineStart;
-  while (remaining) {
-    const result = renderSegment(remaining, options, final, lineStart);
-    if (result.wait) break;
-    if (result.consumed <= 0) break;
-    output += result.rendered;
-    remaining = remaining.slice(result.consumed);
-    lineStart = result.lineStart;
+  return table.rows.map((row, rowIndex) => [
+    options.theme.paint("heading", `Row ${rowIndex + 1}`),
+    ...headers.map((header, columnIndex) =>
+      `  ${options.theme.paint("label", header)}: ${
+        inlineTokens(row[columnIndex]?.tokens, options)
+      }`
+    ),
+  ].join("\n")).join("\n\n");
+}
+
+function renderTable(
+  table: Tokens.Table,
+  options: RichTextOptions,
+): string {
+  const width = Math.max(20, Math.floor(options.width ?? 88));
+  const widths = columnWidths(table, width, options);
+  return widths
+    ? renderWideTable(table, widths, options)
+    : renderStackedTable(table, options);
+}
+
+function indentBlock(value: string, prefix: string, continuation = prefix): string {
+  return value.split("\n")
+    .map((line, index) => `${index === 0 ? prefix : continuation}${line}`)
+    .join("\n");
+}
+
+function renderList(
+  token: Tokens.List,
+  options: RichTextOptions,
+  depth: number,
+): string {
+  const start = typeof token.start === "number" ? token.start : 1;
+  return token.items.map((item, index) => {
+    const marker = item.task
+      ? item.checked ? "☑" : "☐"
+      : token.ordered ? `${start + index}.` : "•";
+    const body = renderBlocks(
+      item.tokens.filter((child) => child.type !== "checkbox"),
+      options,
+      depth + 1,
+    ).trim();
+    const indent = "  ".repeat(depth);
+    const prefix = `${indent}${marker} `;
+    return indentBlock(
+      body,
+      prefix,
+      `${indent}${" ".repeat(terminalTextWidth(marker) + 1)}`,
+    );
+  }).join("\n");
+}
+
+function renderBlock(
+  token: Token,
+  options: RichTextOptions,
+  depth: number,
+): string {
+  switch (token.type) {
+    case "space":
+    case "def":
+      return "";
+    case "heading": {
+      const content = inlineTokens(token.tokens, options);
+      return options.theme.paint("heading", content);
+    }
+    case "paragraph":
+      return inlineTokens(token.tokens, options);
+    case "text":
+      return token.tokens
+        ? inlineTokens(token.tokens, options)
+        : safeText(token.text);
+    case "blockquote": {
+      const content = renderBlocks(token.tokens ?? [], options, depth).trim();
+      return content.split("\n")
+        .map((line) =>
+          `${options.theme.paint("muted", "│")} ${line}`
+        )
+        .join("\n");
+    }
+    case "list":
+      return renderList(token as Tokens.List, options, depth);
+    case "hr": {
+      const width = Math.max(3, Math.min(72, Math.floor(options.width ?? 88)));
+      return options.theme.paint("separator", "─".repeat(width));
+    }
+    case "code":
+      return highlightCode(token.text, token.lang ?? "", options.theme);
+    case "table":
+      return renderTable(token as Tokens.Table, options);
+    case "html":
+      return safeText(token.text);
+    default:
+      return inlineToken(token, options);
   }
-  return { output, pending: remaining, lineStart };
+}
+
+function renderBlocks(
+  tokens: readonly Token[],
+  options: RichTextOptions,
+  depth = 0,
+): string {
+  const blocks = tokens
+    .map((token) => renderBlock(token, options, depth))
+    .filter((value) => value.length > 0);
+  return blocks.join("\n\n");
 }
 
 export function renderRichText(
   value: string,
   options: RichTextOptions,
 ): string {
-  const result = renderAvailable(value, options, true);
-  return result.output + result.pending;
+  const indentContinuation = (rendered: string) =>
+    options.continuationIndent
+      ? rendered.replace(/\n/gu, `\n${options.continuationIndent}`)
+      : rendered;
+  if (!options.enabled) return indentContinuation(value);
+  try {
+    return indentContinuation(
+      renderBlocks(marked.lexer(value, {
+        gfm: true,
+        breaks: false,
+      }), options),
+    );
+  } catch {
+    return indentContinuation(safeText(value));
+  }
 }
 
 export class IncrementalRichTextRenderer {
   private source = "";
-  private pending = "";
-  private lineStart = true;
 
   constructor(private options: RichTextOptions) {}
 
@@ -334,32 +447,13 @@ export class IncrementalRichTextRenderer {
   update(nextSource: string): { output: string; divergent: boolean } {
     if (!nextSource.startsWith(this.source)) {
       this.source = nextSource;
-      this.pending = "";
-      this.lineStart = true;
       return { output: "", divergent: true };
     }
-    const delta = nextSource.slice(this.source.length);
     this.source = nextSource;
-    const result = renderAvailable(
-      `${this.pending}${delta}`,
-      this.options,
-      false,
-      this.lineStart,
-    );
-    this.pending = result.pending;
-    this.lineStart = result.lineStart;
-    return { output: result.output, divergent: false };
+    return { output: "", divergent: false };
   }
 
   finish(): string {
-    const result = renderAvailable(
-      this.pending,
-      this.options,
-      true,
-      this.lineStart,
-    );
-    this.pending = "";
-    this.lineStart = result.lineStart;
-    return result.output + result.pending;
+    return renderRichText(this.source, this.options);
   }
 }

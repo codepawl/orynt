@@ -1,0 +1,29 @@
+{
+  "name": "@codepawl/intelligence-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run --filter @codepawl/capability-runtime build && bun run --filter @codepawl/memory build && bun run --filter @codepawl/model-runtime build && tsc -p tsconfig.json",
+    "test": "bun run build && bun test src"
+  },
+  "dependencies": {
+    "@codepawl/capability-runtime": "workspace:*",
+    "@codepawl/local-state": "workspace:*",
+    "@codepawl/memory": "workspace:*",
+    "@codepawl/model-runtime": "workspace:*",
+    "@codepawl/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "typescript": "6.0.3"
+  }
+}

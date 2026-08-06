@@ -11,7 +11,7 @@ import {
   type CorePolicy,
   type RepositorySandbox,
 } from "@codepawl/shared";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { LocalRepositoryVerifier } from "./index";
 import { parsePorcelainStatusPaths } from "./gitStatus";
@@ -101,7 +101,7 @@ describe("LocalRepositoryVerifier", () => {
   it("creates a plan from explicit commands plus conservative defaults", async () => {
     const { repoPath, worktreePath, commit } = await createTempGitRepository();
     const sandbox = createSandbox(repoPath, worktreePath, commit);
-    const policy = policyWithAllowlist(repoPath, worktreePath, ["node scripts/pass.mjs", "pnpm test"]);
+    const policy = policyWithAllowlist(repoPath, worktreePath, ["bun run scripts/pass.mjs", "bun test"]);
 
     const plan = new LocalRepositoryVerifier({ managedArtifactRoot: path.join(tempRoot, "artifacts") }).createPlan({
       runId: "run-test",
@@ -109,13 +109,13 @@ describe("LocalRepositoryVerifier", () => {
       sandbox,
       policy,
       budget: createDefaultRunBudget(),
-      commands: ["node scripts/pass.mjs"],
+      commands: ["bun run scripts/pass.mjs"],
       artifactRoot: path.join(tempRoot, "artifacts", "run-test"),
     });
 
-    expect(plan.commands.map((command) => command.displayName)).toContain("node scripts/pass.mjs");
-    expect(plan.commands.map((command) => command.displayName)).toContain("pnpm test");
-    expect(plan.commands.find((command) => command.displayName === "node scripts/pass.mjs")?.allowed).toBe(true);
+    expect(plan.commands.map((command) => command.displayName)).toContain("bun run scripts/pass.mjs");
+    expect(plan.commands.map((command) => command.displayName)).toContain("bun test");
+    expect(plan.commands.find((command) => command.displayName === "bun run scripts/pass.mjs")?.allowed).toBe(true);
   });
 
   it("does not execute blocked non-allowlisted commands", async () => {
@@ -129,7 +129,7 @@ describe("LocalRepositoryVerifier", () => {
       sandbox,
       policy,
       budget: createDefaultRunBudget(),
-      commands: ["node scripts/marker.mjs"],
+      commands: ["bun run scripts/marker.mjs"],
       artifactRoot: path.join(tempRoot, "artifacts", "run-test"),
       config: { defaultCommands: [] },
     });
@@ -144,7 +144,7 @@ describe("LocalRepositoryVerifier", () => {
   it("executes policy-allowed validation commands in a sandbox worktree", async () => {
     const { repoPath, worktreePath, commit } = await createTempGitRepository();
     const sandbox = createSandbox(repoPath, worktreePath, commit);
-    const policy = policyWithAllowlist(repoPath, worktreePath, ["node scripts/pass.mjs"]);
+    const policy = policyWithAllowlist(repoPath, worktreePath, ["bun run scripts/pass.mjs"]);
     const verifier = new LocalRepositoryVerifier({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
     const plan = verifier.createPlan({
       runId: "run-test",
@@ -152,7 +152,7 @@ describe("LocalRepositoryVerifier", () => {
       sandbox,
       policy,
       budget: createDefaultRunBudget(),
-      commands: ["node scripts/pass.mjs"],
+      commands: ["bun run scripts/pass.mjs"],
       artifactRoot: path.join(tempRoot, "artifacts", "run-test"),
       config: { defaultCommands: [] },
     });
@@ -171,7 +171,7 @@ describe("LocalRepositoryVerifier", () => {
     const { repoPath, worktreePath, commit } =
       await createTempGitRepository("repo-trusted-report");
     const sandbox = createSandbox(repoPath, worktreePath, commit);
-    const command = "node scripts/pass.mjs";
+    const command = "bun run scripts/pass.mjs";
     const policy = policyWithAllowlist(repoPath, worktreePath, [command]);
     const artifactRoot = path.join(tempRoot, "artifacts-trusted-report");
     const reportPath = path.join(artifactRoot, "run-test", "trusted-report.json");
@@ -231,7 +231,7 @@ describe("LocalRepositoryVerifier", () => {
   it("classifies command timeout when practical", async () => {
     const { repoPath, worktreePath, commit } = await createTempGitRepository();
     const sandbox = createSandbox(repoPath, worktreePath, commit);
-    const policy = policyWithAllowlist(repoPath, worktreePath, ["node scripts/slow.mjs"]);
+    const policy = policyWithAllowlist(repoPath, worktreePath, ["bun run scripts/slow.mjs"]);
     const verifier = new LocalRepositoryVerifier({ managedArtifactRoot: path.join(tempRoot, "artifacts") });
     const plan = verifier.createPlan({
       runId: "run-test",
@@ -239,7 +239,7 @@ describe("LocalRepositoryVerifier", () => {
       sandbox,
       policy,
       budget: createDefaultRunBudget(),
-      commands: ["node scripts/slow.mjs"],
+      commands: ["bun run scripts/slow.mjs"],
       artifactRoot: path.join(tempRoot, "artifacts", "run-test"),
       config: { defaultCommands: [], commandTimeoutMs: 25 },
     });
@@ -255,7 +255,7 @@ describe("LocalRepositoryVerifier", () => {
       await createTempGitRepository("repo-cancel-verification");
     const sandbox = createSandbox(repoPath, worktreePath, commit);
     const policy = policyWithAllowlist(repoPath, worktreePath, [
-      "node scripts/slow.mjs",
+      "bun run scripts/slow.mjs",
     ]);
     const verifier = new LocalRepositoryVerifier({
       managedArtifactRoot: path.join(tempRoot, "artifacts-cancel-verification"),
@@ -266,7 +266,7 @@ describe("LocalRepositoryVerifier", () => {
       sandbox,
       policy,
       budget: createDefaultRunBudget(),
-      commands: ["node scripts/slow.mjs"],
+      commands: ["bun run scripts/slow.mjs"],
       artifactRoot: path.join(
         tempRoot,
         "artifacts-cancel-verification",
@@ -628,7 +628,7 @@ describe("LocalRepositoryVerifier", () => {
     const store = new InMemoryRunStore();
     const run = createRun(store);
     const sandbox = { ...createSandbox(repoPath, worktreePath, commit), runId: run.id, taskId: run.taskId };
-    const policy = policyWithAllowlist(repoPath, worktreePath, ["node scripts/pass.mjs"]);
+    const policy = policyWithAllowlist(repoPath, worktreePath, ["bun run scripts/pass.mjs"]);
     const verifier = new LocalRepositoryVerifier({ managedArtifactRoot: path.join(tempRoot, "artifacts"), runStore: store });
     const plan = verifier.createPlan({
       runId: run.id,
@@ -636,7 +636,7 @@ describe("LocalRepositoryVerifier", () => {
       sandbox,
       policy,
       budget: createDefaultRunBudget(),
-      commands: ["node scripts/pass.mjs"],
+      commands: ["bun run scripts/pass.mjs"],
       artifactRoot: path.join(tempRoot, "artifacts", run.id),
       config: { defaultCommands: [] },
     });

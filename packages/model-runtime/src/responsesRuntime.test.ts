@@ -1,8 +1,42 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
-import { ResponsesAgentRuntime } from "./responsesRuntime.js";
+import {
+  parseResponsesTokenUsage,
+  ResponsesAgentRuntime,
+  ResponsesTurnError,
+} from "./responsesRuntime.js";
+
+describe("Responses context telemetry", () => {
+  it("normalizes provider usage for context tracking", () => {
+    expect(parseResponsesTokenUsage({
+      input_tokens: 12_000,
+      input_tokens_details: { cached_tokens: 10_000 },
+      output_tokens: 500,
+      output_tokens_details: { reasoning_tokens: 120 },
+      total_tokens: 12_500,
+    })).toEqual({
+      inputTokens: 12_000,
+      cachedInputTokens: 10_000,
+      outputTokens: 500,
+      reasoningOutputTokens: 120,
+      totalTokens: 12_500,
+    });
+    expect(parseResponsesTokenUsage({})).toBeUndefined();
+  });
+
+  it("classifies context-window errors structurally", () => {
+    const error = new ResponsesTurnError("full", {
+      code: "context_length_exceeded",
+    });
+    expect(error.contextWindowExceeded).toBe(true);
+  });
+});
 
 class FakeSocket extends EventEmitter {
   readyState = 0;
@@ -37,6 +71,84 @@ class FakeSocket extends EventEmitter {
 }
 
 describe("ResponsesAgentRuntime", () => {
+  it("sends verified image inputs with explicit detail and captures generated images", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "orynt-responses-image-"));
+    const imagePath = path.join(root, "crop.png");
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB", "base64");
+    await writeFile(imagePath, png);
+    let socket: FakeSocket | undefined;
+    try {
+      const runtime = new ResponsesAgentRuntime({
+        apiKey: "test-key",
+        createWebSocket: () => {
+          socket = new FakeSocket((message, target) => {
+            if (message.generate === false) {
+              target.respond({ type: "response.completed", response: { id: "warm", output: [] } });
+              return;
+            }
+            target.respond({
+              type: "response.completed",
+              response: {
+                id: "image-response",
+                output: [{
+                  type: "image_generation_call",
+                  id: "image-1",
+                  status: "completed",
+                  revised_prompt: "A concise icon",
+                  result: "generated-base64",
+                }],
+              },
+            });
+          });
+          return socket;
+        },
+      });
+      const session = await runtime.startSession({
+        sessionId: "images",
+        role: "implementer",
+        model: "gpt-test",
+        effort: "medium",
+        instructions: "Inspect and generate only as explicitly requested.",
+        imageGeneration: { enabled: true, maxOutputs: 1 },
+      });
+      expect(runtime.activeSessionCount()).toBe(1);
+      const result = await session.runTurn({
+        text: "Use this crop",
+        images: [{
+          kind: "local_file",
+          path: imagePath,
+          mimeType: "image/png",
+          sha256: createHash("sha256").update(png).digest("hex"),
+          byteLength: png.length,
+          detail: "original",
+          source: "browser_crop",
+        }],
+      });
+      const request = socket?.sent[1] as Record<string, unknown>;
+      expect(request.tools).toContainEqual({ type: "image_generation" });
+      expect(request.input).toEqual([expect.objectContaining({
+        content: [
+          { type: "input_text", text: "Use this crop" },
+          expect.objectContaining({
+            type: "input_image",
+            detail: "original",
+            image_url: expect.stringMatching(/^data:image\/png;base64,/u),
+          }),
+        ],
+      })]);
+      expect(result.generatedImages).toEqual([expect.objectContaining({
+        providerItemId: "image-1",
+        revisedPrompt: "A concise icon",
+        status: "completed",
+      })]);
+      await session.close();
+      expect(runtime.activeSessionCount()).toBe(0);
+      await runtime.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("prewarms, chains tool output, and returns structured text", async () => {
     let socket: FakeSocket | undefined;
     const runtime = new ResponsesAgentRuntime({
@@ -103,7 +215,14 @@ describe("ResponsesAgentRuntime", () => {
         required: ["ok"],
         properties: { ok: { type: "boolean" } },
       },
-      executeTool: async () => ({ output: "{\"clean\":true}" }),
+      executeTool: async () => ({
+        output: "{\"clean\":true}",
+        images: [{
+          dataUrl: "data:image/png;base64,cG5n",
+          detail: "original",
+          source: "browser_crop",
+        }],
+      }),
       onActivity: (activity) => activities.push(activity.kind),
     });
     const result = await session.runTurn({ text: "Check status" });
@@ -112,9 +231,21 @@ describe("ResponsesAgentRuntime", () => {
     expect(socket?.sent).toHaveLength(3);
     expect(socket?.sent[2]).toMatchObject({
       previous_response_id: "resp-tool",
-      input: [{ type: "function_call_output", call_id: "call-1" }],
+      input: [
+        { type: "function_call_output", call_id: "call-1" },
+        {
+          type: "message",
+          role: "user",
+          content: [{
+            type: "input_image",
+            image_url: "data:image/png;base64,cG5n",
+            detail: "original",
+          }],
+        },
+      ],
     });
     expect(activities).toContain("tool");
+    expect(activities).toContain("context");
     await runtime.close();
   });
 

@@ -23,9 +23,9 @@ believable path from supervised coding work to broader computer workflows.
 
 ## Product Purpose
 
-Orynt is a brain-like operating system for adaptive AI agents from CodePawl. It gives AI
-agents a working brain: structured memory, reusable skills, verification,
-self-improvement loops, and safe tool use.
+Orynt is an open-source, local-first CLI control plane for supervised AI agents
+from CodePawl. It combines structured memory, reusable skills, verification,
+bounded improvement loops, and policy-controlled tool use.
 
 The product is built around a brain-like loop: perceive, remember, plan, act,
 verify, and improve. It helps an agent understand goals, act through tools,
@@ -33,9 +33,9 @@ verify results, learn from experience, and turn successful work into reusable
 skills.
 
 Success for the brand surface means a technical visitor quickly understands that
-Orynt is not a black-box autonomy pitch. It is a closed-source operating
-layer for safer, cheaper, more observable adaptive agents, starting with
-supervised repository and computer-based workflows.
+Orynt is not a black-box autonomy pitch. It is an inspectable operating layer
+for safer, more observable agent work, starting with supervised repositories
+and opt-in browser workflows.
 
 ## Brand Personality
 
@@ -66,13 +66,14 @@ Do not make Orynt look or sound like:
    traces, and run state.
 2. Make the invisible runtime visible. UI semantics, action ledgers, context
    packets, model routing, and replay should become tangible product evidence.
-3. Stay closed-source and operator-led. The brand should reinforce that
-   sensitive workflows stay bounded by the user's decisions.
+3. Stay open-source and operator-led. The brand should make trust boundaries
+   inspectable while reinforcing that sensitive workflows remain bounded by
+   the user's decisions.
 4. Be technical without costume. Use real product mechanics, not generic hacker
    aesthetics, to earn credibility with builders and QA users.
 5. Promise the wedge, not the whole future at once. Supervised repository work
-   is the MVP; browser and full-system control are the direction, not the launch
-   claim.
+   and opt-in browser tooling define the public beta; general desktop control is
+   not a launch claim.
 6. Simplify the user's supervision loop. A first customer should understand the
    selected repo, sandbox state, approval requirement, current run milestone,
    verifier result, and next human decision without reading an analytics

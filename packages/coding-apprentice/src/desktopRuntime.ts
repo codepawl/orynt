@@ -15,7 +15,7 @@ import {
   runDesktopRepositoryBeta,
   type DesktopRepositoryRunOutput,
   type DesktopRepositoryRunRequest,
-} from "./index";
+} from "./index.js";
 
 const RUN_ID_PATTERN = /^run-desktop-[a-z0-9]{12}-1$/;
 
