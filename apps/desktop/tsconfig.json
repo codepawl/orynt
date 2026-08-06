@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
+    "skipLibCheck": true,
     "paths": {
       "@codepawl/ipc-contracts": ["../../packages/ipc-contracts/src/index.ts"],
       "@codepawl/shared": ["../../packages/shared/src/index.ts"]

@@ -11,11 +11,13 @@
     "build:renderer": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
     "sidecar:build": "bun run ../../scripts/build-desktop-sidecar.mjs",
     "build": "bun run build:renderer && bun run sidecar:build && cargo check --manifest-path src-tauri/Cargo.toml",
-    "test": "bun test --preload ./src/test/setup.ts ./src/features/skills/SkillsManager.test.tsx ./src/ProbabilityLoader.test.tsx ./src/App.test.tsx",
+    "test": "bun test --preload ./src/test/setup.ts ./src/features/skills/SkillsManager.test.tsx ./src/ProbabilityLoader.test.tsx ./src/chat/oryntChatAdapter.test.ts ./src/chat/OryntAssistantThread.test.tsx ./src/App.test.tsx",
     "package": "bun run sidecar:build && tauri build",
     "package:unsigned": "bun run sidecar:build && tauri build"
   },
   "dependencies": {
+    "@assistant-ui/react": "0.14.28",
+    "@assistant-ui/react-markdown": "0.14.7",
     "@codepawl/desktop-runtime": "workspace:*",
     "@codepawl/ipc-contracts": "workspace:*",
     "@codepawl/shared": "workspace:*",
@@ -23,7 +25,8 @@
     "@tauri-apps/plugin-dialog": "2.7.2",
     "lucide-react": "^1.21.0",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.11.1",

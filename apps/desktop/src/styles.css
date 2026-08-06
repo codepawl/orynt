@@ -5627,3 +5627,303 @@ h3 {
     grid-template-columns: 1fr;
   }
 }
+/* assistant-ui is a rendering layer only; Orynt remains the state and runtime owner. */
+.orynt-assistant-thread {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.orynt-assistant-viewport {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 18px clamp(16px, 4vw, 48px) 0;
+}
+
+.orynt-assistant-empty {
+  display: grid;
+  width: min(100%, 620px);
+  margin: auto;
+  justify-items: start;
+  gap: 10px;
+  color: var(--mono-100);
+}
+
+.orynt-assistant-empty h2,
+.orynt-assistant-empty p {
+  margin: 0;
+}
+
+.orynt-assistant-empty p {
+  max-width: 58ch;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.orynt-assistant-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--message-bubble);
+  color: var(--accent-info);
+  font-weight: 750;
+}
+
+.orynt-chat-message,
+.orynt-tool-card,
+.orynt-assistant-error {
+  width: min(100%, 760px);
+  margin: 0 auto 14px;
+  overflow-wrap: anywhere;
+}
+
+.orynt-chat-message {
+  color: var(--mono-100);
+  font-size: 15.5px;
+  line-height: 1.62;
+}
+
+.orynt-chat-message-user {
+  width: fit-content;
+  max-width: min(82%, 680px);
+  margin-right: max(0px, calc((100% - 760px) / 2));
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px 14px 4px 14px;
+  background: var(--message-bubble-user);
+}
+
+.orynt-chat-message-status {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.orynt-chat-message-error,
+.orynt-assistant-error {
+  color: var(--danger-text, #efb4b4);
+}
+
+.orynt-markdown > :first-child {
+  margin-top: 0;
+}
+
+.orynt-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.orynt-markdown a {
+  color: var(--accent-info);
+  text-underline-offset: 3px;
+}
+
+.orynt-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+  background: var(--mono-950);
+}
+
+.orynt-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.orynt-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-block-end: 0;
+  border-radius: 10px 10px 0 0;
+  background: var(--message-bubble);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.orynt-code-header button,
+.orynt-assistant-error button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.orynt-code-header svg,
+.orynt-assistant-error svg,
+.orynt-tool-heading svg {
+  width: 15px;
+  height: 15px;
+}
+
+.orynt-tool-card {
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--message-bubble);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.orynt-tool-heading {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.orynt-tool-heading strong {
+  color: var(--mono-100);
+}
+
+.orynt-tool-heading span {
+  justify-self: start;
+  text-transform: capitalize;
+}
+
+.orynt-tool-failed {
+  border-color: color-mix(in srgb, var(--danger-text, #efb4b4), transparent 45%);
+}
+
+.orynt-tool-card details {
+  margin-top: 8px;
+}
+
+.orynt-tool-card summary {
+  cursor: pointer;
+}
+
+.orynt-assistant-footer {
+  position: sticky;
+  bottom: 0;
+  width: min(100%, 760px);
+  margin: auto auto 0;
+  padding: 30px 0 14px;
+  background: linear-gradient(to bottom, transparent, var(--thread-surface) 30%);
+}
+
+.orynt-assistant-composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+  padding: 9px 9px 9px 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--message-bubble);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+}
+
+.orynt-assistant-composer:focus-within {
+  border-color: var(--accent-info);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-info), transparent 78%);
+}
+
+.orynt-assistant-composer label {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.orynt-assistant-composer textarea {
+  min-height: 26px;
+  max-height: 180px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--mono-100);
+  font: inherit;
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+
+.orynt-assistant-composer textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.88;
+}
+
+.orynt-assistant-send,
+.orynt-assistant-stop {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--accent-info);
+  color: var(--mono-950);
+}
+
+.orynt-assistant-stop {
+  border-color: var(--border);
+  background: var(--mono-800);
+  color: var(--mono-100);
+}
+
+.orynt-assistant-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.orynt-assistant-send:not(:disabled):active,
+.orynt-assistant-stop:active {
+  transform: translateY(1px);
+}
+
+.orynt-scroll-bottom {
+  display: block;
+  margin: 0 auto 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--message-bubble);
+  color: var(--text-muted);
+  padding: 6px 10px;
+}
+
+.orynt-assistant-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+}
+
+.orynt-assistant-error button {
+  flex: none;
+}
+
+@media (max-width: 720px) {
+  .orynt-assistant-viewport {
+    padding-inline: 12px;
+  }
+
+  .orynt-chat-message-user {
+    max-width: 92%;
+    margin-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orynt-assistant-send,
+  .orynt-assistant-stop {
+    transition: none;
+  }
+}
