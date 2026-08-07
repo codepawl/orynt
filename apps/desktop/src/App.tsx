@@ -64,14 +64,6 @@ import { SkillsManager } from "./features/skills/SkillsManager";
 import { MemoryManager } from "./features/memory/MemoryManager";
 import { ProbabilityLoader } from "./ProbabilityLoader";
 import { orynt } from "./oryntClient";
-import { OryntAssistantThread } from "./chat/OryntAssistantThread";
-import {
-  messageFromRunEvent,
-  runStatusFromEvent,
-  type OryntChatMessage,
-  type OryntChatTool,
-  type OryntChatRunStatus,
-} from "./chat/oryntChatAdapter";
 import type {
   ArtifactEvidenceContent,
   ArtifactEvidenceStatus,
@@ -118,7 +110,6 @@ type ThreadMessage = {
   detailKind?: ThreadMessageDetailKind;
   runId?: string;
   detailItems?: string[];
-  tool?: OryntChatTool;
 };
 
 type ThreadStateSnapshot = {
@@ -2446,7 +2437,6 @@ function App({
   const codexSetupAutoCheckKeyRef = useRef<string | null>(null);
   const codexManualLoginActionsRevealedRef = useRef(false);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
-  const runThreadIdsRef = useRef(new Map<string, string>());
   const activeThreadRef = useRef<HTMLElement>(null);
   const nextNotificationIdRef = useRef(1);
   const setupAutoCompleteInFlightRef = useRef(false);
@@ -2819,58 +2809,18 @@ function App({
     orynt.onRunEvent((event) => {
       if (event.type === "run_started") {
         setCurrentRunId(event.runId);
-        if (!runThreadIdsRef.current.has(event.runId)) {
-          runThreadIdsRef.current.set(event.runId, activeWorkspaceIdRef.current);
-        }
       }
       if (event.type === "action_blocked_or_approved") {
         const summary = (event.payload as { summary?: unknown }).summary;
         setApprovalStatus(typeof summary === "string" ? summary : event.type.replaceAll("_", " "));
       }
       if (renderedRunEventTypes[event.type]) {
-        const threadId =
-          runThreadIdsRef.current.get(event.runId) ??
-          activeWorkspaceIdRef.current;
-        const chatMessage =
-          typeof (globalThis as { Bun?: unknown }).Bun === "undefined"
-            ? messageFromRunEvent(event)
-            : null;
-        const runEventMessage: ThreadMessage = chatMessage
-          ? {
-              id: chatMessage.id,
-              runId: chatMessage.runId,
-              role:
-                chatMessage.role === "user"
-                  ? "user"
-                  : chatMessage.role === "assistant"
-                    ? "agent"
-                    : "system",
-              content: chatMessage.text,
-              detailKind:
-                chatMessage.role === "error"
-                  ? "error"
-                  : chatMessage.tool
-                    ? "tool"
-                    : chatMessage.role === "status"
-                      ? "done"
-                      : undefined,
-              tool: chatMessage.tool,
-            }
-          : runEventToThreadMessage(event);
+        const threadId = activeWorkspaceIdRef.current;
+        const runEventMessage = runEventToThreadMessage(event);
         setThreadMessagesByWorkspace((current) => {
           const currentMessages = current[threadId] ?? [];
-          const messageIndex = currentMessages.findIndex(
-            (message) => message.id === runEventMessage.id,
-          );
-          if (messageIndex >= 0) {
-            return {
-              ...current,
-              [threadId]: currentMessages.map((message, index) =>
-                index === messageIndex
-                  ? { ...message, ...runEventMessage }
-                  : message,
-              ),
-            };
+          if (currentMessages.some((message) => message.id === event.id)) {
+            return current;
           }
           return {
             ...current,
@@ -3527,7 +3477,6 @@ function App({
         const run = await orynt.createRun(runInput);
         setMinimumModelTier("auto");
         const createdRunId = run.runId ?? run.id;
-        runThreadIdsRef.current.set(createdRunId, threadId);
         setSelectedAgentSkillIds([]);
         setCurrentRunId(createdRunId);
         setDesktopRunSnapshot(run);
@@ -4427,79 +4376,6 @@ function App({
   const activeWorkspace = visibleWorkspaces.find((space) => space.id === activeWorkspaceId) ?? visibleWorkspaces[0] ?? workspaces[0];
   const threadStartCopy = useMemo(() => randomThreadStartCopy(), [activeWorkspace.id]);
   const activeThreadMessages = threadMessagesByWorkspace[activeWorkspace.id] ?? [];
-  const assistantThreadMessages = useMemo<OryntChatMessage[]>(
-    () =>
-      activeThreadMessages.reduce<OryntChatMessage[]>((messages, message) => {
-        if (message.role === "user") {
-          messages.push(
-            {
-              id: message.id,
-              role: "user" as const,
-              text: message.content ?? "",
-              ...(message.runId ? { runId: message.runId } : {}),
-            },
-          );
-          return messages;
-        }
-        if (message.role === "agent") {
-          messages.push(
-            {
-              id: message.id,
-              role: "assistant" as const,
-              text: message.content ?? "",
-              ...(message.runId ? { runId: message.runId } : {}),
-            },
-          );
-          return messages;
-        }
-        if (message.tool) {
-          messages.push(
-            {
-              id: message.id,
-              role:
-                message.tool.state === "failed"
-                  ? ("error" as const)
-                  : ("status" as const),
-              text: message.content ?? message.tool.summary,
-              runId: message.runId,
-              tool: message.tool,
-            },
-          );
-          return messages;
-        }
-        if (message.detailKind === "error" || message.detailKind === "done") {
-          messages.push(
-            {
-              id: message.id,
-              role:
-                message.detailKind === "error"
-                  ? ("error" as const)
-                  : ("status" as const),
-              text: message.content ?? message.label ?? "Run status",
-              ...(message.runId ? { runId: message.runId } : {}),
-            },
-          );
-          return messages;
-        }
-        return messages;
-      }, []),
-    [activeThreadMessages],
-  );
-  const assistantRunStatus: OryntChatRunStatus = isComposerSubmitPending
-    ? activeThreadMessages.some(
-        (message) =>
-          message.tool?.state === "requested" ||
-          message.tool?.state === "running",
-      )
-      ? "running_tool"
-      : "thinking"
-    : desktopRunSnapshot?.status === "cancelled"
-      ? "cancelled"
-      : desktopRunSnapshot?.status === "failed"
-        ? "failed"
-        : desktopRunSnapshot?.status === "completed"
-          ? "completed"
-          : "idle";
   const isActiveThreadEmpty = activeThreadMessages.length === 0;
   const normalizedWorkspaceSearchQuery = workspaceSearchQuery.trim().toLowerCase();
   const filteredWorkspaces = normalizedWorkspaceSearchQuery
@@ -4536,16 +4412,7 @@ function App({
     setIsMobileWorkspaceDrawerOpen(false);
   };
 
-  const handleCreateWorkspace = async () => {
-    if (
-      typeof (globalThis as { Bun?: unknown }).Bun === "undefined" &&
-      desktopRunSnapshot &&
-      !desktopRunSnapshot.terminal &&
-      desktopRunSnapshot.runId &&
-      desktopRunSnapshot.checkpointRevision !== undefined
-    ) {
-      await handleCancelRuntime();
-    }
+  const handleCreateWorkspace = () => {
     const currentMessages = threadMessagesByWorkspace[activeWorkspace.id] ?? [];
     if (activeWorkspace.label === "New task" && currentMessages.length === 0) {
       setComposerValue("");
@@ -4574,9 +4441,6 @@ function App({
     setDeleteWorkspaceId(null);
     setEditingThreadHeaderId(null);
     setIsMobileWorkspaceDrawerOpen(false);
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLTextAreaElement>("#orynt-assistant-input")?.focus();
-    });
   };
 
   const previousUserGoalForAgentResponse = (messageId: string): string => {
@@ -6567,11 +6431,9 @@ function App({
   const renderCockpitSurface = ({
     children,
     showComposer = false,
-    assistantUi = false,
   }: {
     children: ReactNode;
     showComposer?: boolean;
-    assistantUi?: boolean;
   }) => (
     <section ref={activeThreadRef} className={`thread${showComposer && isActiveThreadEmpty ? " thread-empty" : ""}`} aria-label="Task conversation">
       <header className="thread-header">
@@ -6616,9 +6478,7 @@ function App({
           </div>
         )}
       </header>
-      {assistantUi ? (
-        children
-      ) : showComposer && isActiveThreadEmpty ? (
+      {showComposer && isActiveThreadEmpty ? (
         <>
           <div className="thread-start">
             {setupWarningMessage || composerReadinessMessage ? (
@@ -6646,51 +6506,9 @@ function App({
       return <NoRunSelected />;
     }
 
-    // The legacy shell suite exercises its historical cockpit controls under
-    // Bun. Production Vite/Tauri builds do not expose Bun in the renderer and
-    // use the assistant-ui surface below; that surface has focused integration
-    // coverage with an in-memory Orynt adapter.
-    if (typeof (globalThis as { Bun?: unknown }).Bun !== "undefined") {
-      return renderCockpitSurface({
-        showComposer: true,
-        children: renderThreadMessages(),
-      });
-    }
-
     return renderCockpitSurface({
       showComposer: true,
-      assistantUi: true,
-      children: (
-        <OryntAssistantThread
-          messages={assistantThreadMessages}
-          status={assistantRunStatus}
-          canSend={Boolean(
-            effectiveRepositoryPath &&
-              hasDismissedPrivateBetaOnboarding &&
-              !isComposerSubmitPending,
-          )}
-          emptyTitle={threadStartCopy.title}
-          emptyDescription={threadStartCopy.description}
-          error={
-            assistantRunStatus === "failed"
-              ? desktopRunSnapshot?.summary ?? "The Orynt run failed."
-              : composerReadinessMessage || undefined
-          }
-          onSend={async (text) => {
-            await submitComposerGoal(text);
-          }}
-          onCancel={handleCancelRuntime}
-          onRetry={
-            previousUserGoalForAgentResponse("missing")
-              ? async () => {
-                  await submitComposerGoal(
-                    previousUserGoalForAgentResponse("missing"),
-                  );
-                }
-              : undefined
-          }
-        />
-      ),
+      children: renderThreadMessages(),
     });
   };
 
