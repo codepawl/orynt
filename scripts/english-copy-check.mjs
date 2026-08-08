@@ -88,6 +88,20 @@ const INTERNAL_MULTILINGUAL_LINES = new Map([
       'const writeIntentPattern = /\\b(build|create|implement|fix|repair|change|modify|update|add|remove|delete|refactor|migrate|generate|scaffold|write|sửa|sua|tạo|tao|thêm|them|xóa|xoa|đổi|doi|cập nhật|cap nhat)\\b/;',
     ]),
   ],
+  [
+    "packages/cli/src/agent.ts",
+    new Set([
+      "return /(?:^|[.!?\\n]\\s*|\\b(?:please|can you|hãy|vui lòng)\\s+)(?:do not\\s+|don't\\s+|không\\s+)?(?:build|create|implement|fix|update|add|remove|change|write|modify|repair|refactor|xây dựng|tạo|triển khai|sửa|cập nhật|thêm|xóa|thay đổi)\\b/iu",
+      "!/^(?:do not|don't|không)\\s+(?:build|create|implement|fix|update|add|remove|change|write|modify|repair|refactor|xây dựng|tạo|triển khai|sửa|cập nhật|thêm|xóa|thay đổi)\\b/iu",
+    ]),
+  ],
+  [
+    "packages/shared/src/modelTierContracts.ts",
+    new Set([
+      "/\\b(?:do not|don't|never|must not|without|avoid|no|không|đừng|không được|tránh)\\b[^.!?;\\n]{0,120}$/iu;",
+      "/(?:[.!?;\\n]+|\\b(?:but|however|then|nhưng|tuy nhiên|sau đó)\\b)/iu,",
+    ]),
+  ],
 ]);
 
 function normalizedRelativePath(value) {
@@ -104,23 +118,35 @@ function ignoredPath(relativePath, entryName, isDirectory) {
   return false;
 }
 
+/**
+ * Characters used as technical glyphs rather than as prose.
+ *
+ * `Δ` labels a diff in the terminal icon set beside `≡`, `⌕`, `▶`, `✎`, and
+ * `◆`. Those siblings pass only because Unicode classifies them as symbols;
+ * `Δ` fails on the accident that it is classified as a letter. Excluding it
+ * keeps this check about authored copy rather than about the icon table.
+ *
+ * Keep this set to characters that carry no language. Anything that could read
+ * as a word belongs in the reviewed multilingual line data instead, where the
+ * whole line is recorded and can be re-reviewed.
+ */
+const GLYPH_CHARACTERS = new Set(["Δ"]);
+
+function isNonEnglishAlphabetic(character) {
+  if (character.codePointAt(0) <= 0x7f) return false;
+  if (GLYPH_CHARACTERS.has(character)) return false;
+  return /\p{Letter}/u.test(character);
+}
+
 function containsNonEnglishAlphabeticCharacter(value) {
   for (const character of value) {
-    if (character.codePointAt(0) <= 0x7f) continue;
-    if (/\p{Letter}/u.test(character)) return true;
+    if (isNonEnglishAlphabetic(character)) return true;
   }
   return false;
 }
 
 function nonEnglishCharacters(value) {
-  return [
-    ...new Set(
-      [...value].filter(
-        (character) =>
-          character.codePointAt(0) > 0x7f && /\p{Letter}/u.test(character),
-      ),
-    ),
-  ].join(" ");
+  return [...new Set([...value].filter(isNonEnglishAlphabetic))].join(" ");
 }
 
 async function collectTextFiles(repositoryRoot) {

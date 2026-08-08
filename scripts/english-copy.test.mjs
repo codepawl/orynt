@@ -63,3 +63,27 @@ test("does not treat test fixtures as Orynt-authored product copy", async () => 
     assert.deepEqual(result.violations, []);
   });
 });
+
+test("allows a diff glyph without allowing prose in the same script", async () => {
+  await withFixture(async (root) => {
+    await writeFile(
+      path.join(root, "packages", "example", "src", "icons.ts"),
+      'export const icons = { diff: "Δ", list: "≡", run: "▶" };\n',
+    );
+    const allowed = await findEnglishCopyViolations(root, {
+      allowInternalMultilingualLines: false,
+    });
+    assert.deepEqual(allowed.violations, []);
+
+    // The allowance is one language-neutral glyph, not the Greek alphabet:
+    // a word must still be reported.
+    await writeFile(
+      path.join(root, "packages", "example", "src", "icons.ts"),
+      'export const label = "παράδειγμα";\n',
+    );
+    const reported = await findEnglishCopyViolations(root, {
+      allowInternalMultilingualLines: false,
+    });
+    assert.equal(reported.violations.length, 1);
+  });
+});
