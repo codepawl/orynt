@@ -5,7 +5,7 @@
   "packageManager": "bun@1.3.14",
   "scripts": {
     "build": "bun run build:cli",
-    "build:cli": "bun run --filter @codepawl/cli build",
+    "build:cli": "bun run --filter @codepawl/cli build && bun run scripts/cli-build-manifest.mjs",
     "package:cli": "bun run build:cli && bun run scripts/package-cli.mjs",
     "package:cli:native": "bun run build:cli && bun run scripts/package-cli.mjs --native",
     "release:manifest": "bun run scripts/sign-release-manifest.mjs",
@@ -33,7 +33,9 @@
     "dev": "bun run cli",
     "dev:desktop": "bun run --filter @codepawl/desktop dev",
     "dev:desktop:web": "bun run --filter @codepawl/desktop dev:renderer",
-    "test": "bun run test:contracts && bun run --filter @codepawl/local-state test && bun run --filter @codepawl/skill-registry test && bun run --filter @codepawl/memory test && bun run --filter @codepawl/model-runtime test && bun run --filter @codepawl/codex-adapter test && bun run --filter @codepawl/cognitive-kernel test && bun run --filter @codepawl/browser-runtime test && bun run --filter @codepawl/gateway test && bun run test:capabilities && bun run --filter @codepawl/agent-runtime test && bun run --filter @codepawl/intelligence-runtime test && bun run --filter @codepawl/coding-apprentice test && bun run --filter @codepawl/verifier test && bun run test:cli && bun run test:eval",
+    "brand:sync": "bun run scripts/sync-brand-assets.mjs",
+    "brand:check": "bun run scripts/check-brand-assets.mjs",
+    "test": "bun run test:contracts && bun run --filter @codepawl/local-state test && bun run --filter @codepawl/skill-registry test && bun run --filter @codepawl/memory test && bun run --filter @codepawl/model-runtime test && bun run --filter @codepawl/codex-adapter test && bun run --filter @codepawl/claude-adapter test && bun run --filter @codepawl/cognitive-kernel test && bun run --filter @codepawl/browser-runtime test && bun run --filter @codepawl/gateway test && bun run test:capabilities && bun run --filter @codepawl/agent-runtime test && bun run --filter @codepawl/intelligence-runtime test && bun run --filter @codepawl/coding-apprentice test && bun run --filter @codepawl/verifier test && bun run test:cli && bun run test:eval",
     "test:contracts": "bun run --filter @codepawl/shared test && bun run --filter @codepawl/ipc-contracts test",
     "test:cli": "bun run --filter @codepawl/cli test",
     "test:contextvm": "bun run --filter @codepawl/shared test && bun run --filter @codepawl/memory test && bun run --filter @codepawl/intelligence-runtime test && bun test packages/cli/src/intelligence.test.ts",
@@ -59,7 +61,10 @@
     "bench:repoops:v1:live": "bun run --filter @codepawl/eval-harness build && bun run scripts/repoops-bench.mjs --live-v1",
     "bench:repoops:v2:live": "bun run build:cli && bun run --filter @codepawl/eval-harness build && bun run scripts/repoops-v2-live.mjs --confirm-live --repetitions 2",
     "battle:real:preflight": "bun run package:cli && bun run --filter @codepawl/eval-harness build && bun run scripts/real-project-battle.mjs preflight",
+    "battle:real:prepare": "bun run scripts/real-project-battle.mjs prepare",
     "battle:real:run": "bun run scripts/real-project-battle.mjs run",
+    "battle:real:resume": "bun run scripts/real-project-battle.mjs resume",
+    "battle:real:visual": "bun run scripts/real-project-battle.mjs record-visual",
     "battle:real:audit": "bun run scripts/real-project-battle.mjs audit",
     "bench:decision": "bun run --filter @codepawl/eval-harness build && bun run scripts/decision-bench.mjs --controlled",
     "bench:decision:live": "bun run --filter @codepawl/eval-harness build && bun run scripts/decision-bench.mjs --live",
@@ -78,8 +83,8 @@
     "walkthrough:real-codex": "bun run --filter @codepawl/coding-apprentice build && bun run scripts/real-codex-walkthrough.mjs"
   },
   "devDependencies": {
-    "@types/node": "^26.0.1",
-    "@types/bun": "1.3.10"
+    "@types/bun": "1.3.10",
+    "@types/node": "^26.0.1"
   },
   "workspaces": [
     "apps/*",

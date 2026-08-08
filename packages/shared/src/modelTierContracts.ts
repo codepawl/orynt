@@ -1,12 +1,19 @@
 import type {
   OrchestrationProfile,
+  OrchestrationProviderId,
   OrchestrationRole,
   OrchestrationThinkingEffort,
 } from "./orchestrationContracts.js";
+import { ORCHESTRATION_PROVIDER_IDS } from "./orchestrationContracts.js";
 import type { OrchestrationRoleBinding } from "./orchestrationContracts.js";
 
 export type ModelTier = "light" | "medium" | "heavy";
-export type ModelTierProviderId = "codex-cli" | "openai-api";
+/**
+ * Tier bindings are spread directly into `OrchestrationRoleBinding` by
+ * `modelTierConfigurationToOrchestrationProfile`, so the two provider
+ * vocabularies must stay identical. Alias rather than duplicate.
+ */
+export type ModelTierProviderId = OrchestrationProviderId;
 export type ModelTierRoutingStage =
   | "prompt_understanding"
   | "coordination"
@@ -33,6 +40,7 @@ export type ModelTierConfigurationV1 = {
   roles: RoleTierAssignments;
   fallbackPolicy: "block";
   manualOverridePolicy: "raise_only";
+  reviewerPolicy?: import("./orchestrationContracts.js").ReviewerPolicy;
   maxReadOnlyHelpers: number;
   maxDepth: number;
   maxRecoveryAttempts: number;
@@ -115,7 +123,7 @@ const EFFORTS = new Set<OrchestrationThinkingEffort>([
   "high",
   "xhigh",
 ]);
-const PROVIDERS = new Set<ModelTierProviderId>(["codex-cli", "openai-api"]);
+const PROVIDERS = new Set<ModelTierProviderId>(ORCHESTRATION_PROVIDER_IDS);
 
 export const DEFAULT_ROLE_TIER_ASSIGNMENTS: RoleTierAssignments = {
   coordinator: "medium",
@@ -215,6 +223,7 @@ export function createSingleModelTierConfiguration(
     roles: { ...DEFAULT_ROLE_TIER_ASSIGNMENTS },
     fallbackPolicy: "block",
     manualOverridePolicy: "raise_only",
+    reviewerPolicy: "conditional",
     maxReadOnlyHelpers: 2,
     maxDepth: 2,
     maxRecoveryAttempts: 1,
@@ -229,6 +238,57 @@ export function createDefaultModelTierConfiguration(): ModelTierConfigurationV1 
       light: binding("light", "codex-cli", "gpt-5.6-luna", "medium"),
       medium: binding("medium", "codex-cli", "gpt-5.6-terra", "medium"),
       heavy: binding("heavy", "codex-cli", "gpt-5.6-sol", "high"),
+    },
+    needsTierReview: false,
+  };
+}
+
+/**
+ * Anthropic tier defaults, applied only by `orynt setup --provider anthropic`.
+ *
+ * The default configuration deliberately stays on Codex: flipping it would
+ * change every existing install. Heavy is bound at `high` rather than `xhigh`
+ * because `MODEL_TIER_INVOCATION_CAPS` caps heavy at 20 minutes of wall time,
+ * which `xhigh` on a 1M-context model exceeds routinely.
+ */
+export function createClaudeModelTierConfiguration(): ModelTierConfigurationV1 {
+  return {
+    ...createSingleModelTierConfiguration(
+      "claude-sonnet-5",
+      "high",
+      "anthropic-api",
+    ),
+    tiers: {
+      light: binding("light", "anthropic-api", "claude-haiku-4-5", "medium"),
+      medium: binding("medium", "anthropic-api", "claude-sonnet-5", "high"),
+      heavy: binding("heavy", "anthropic-api", "claude-opus-5", "high"),
+    },
+    needsTierReview: false,
+  };
+}
+
+/**
+ * OpenCode Go tier defaults, applied only by `orynt setup --provider opencode`.
+ *
+ * Model ids are taken from the live `GET /zen/go/v1/models` catalog observed on
+ * 2026-08-09 rather than from documentation, because this gateway curates its
+ * own list and renames models independently of their upstream vendors.
+ *
+ * Only Go is bound here. OpenCode Zen is a different base URL with a different
+ * curated list; binding tiers to model ids nobody has verified would produce a
+ * configuration that fails at the first turn.
+ */
+export function createOpencodeGoModelTierConfiguration(): ModelTierConfigurationV1 {
+  return {
+    ...createSingleModelTierConfiguration("glm-5.2", "high", "opencode-api"),
+    tiers: {
+      // Triage and skill routing: the cheapest model that still returns strict
+      // JSON reliably.
+      light: binding("light", "opencode-api", "deepseek-v4-flash", "medium"),
+      medium: binding("medium", "opencode-api", "glm-5.2", "high"),
+      // Sensitive, destructive, and recovery work stays on the strongest model
+      // the plan offers.
+      heavy: binding("heavy", "opencode-api", "gpt-5.6-luna", "high"),
     },
     needsTierReview: false,
   };
@@ -282,6 +342,7 @@ export function migrateOrchestrationProfileToModelTiers(
     roles: { ...DEFAULT_ROLE_TIER_ASSIGNMENTS },
     fallbackPolicy: "block",
     manualOverridePolicy: "raise_only",
+    reviewerPolicy: profile.reviewerPolicy,
     maxReadOnlyHelpers: profile.maxReadOnlyHelpers,
     maxDepth: profile.maxDepth,
     maxRecoveryAttempts: profile.maxRecoveryAttempts,
@@ -316,11 +377,7 @@ function taskFloor(input: TaskTierRoutingInputV1): {
   ) {
     return { tier: "heavy", reasons: ["sensitive_operation"] };
   }
-  if (
-    /\b(auth|authentication|authorization|permission|permissions|security|secret|secrets|credential|credentials|payment|payments|tenancy|tenant|migration|database)\b/u.test(
-      text,
-    )
-  ) {
+  if (hasPositiveHighRiskIntent(text)) {
     return { tier: "heavy", reasons: ["high_risk_domain"] };
   }
   if (
@@ -344,6 +401,37 @@ function taskFloor(input: TaskTierRoutingInputV1): {
     return { tier: "medium", reasons: ["mutable_work"] };
   }
   return { tier: "light", reasons: ["bounded_read_only"] };
+}
+
+const HIGH_RISK_TERM =
+  /\b(auth|authentication|authorization|permission|permissions|security|secret|secrets|credential|credentials|payment|payments|tenancy|tenant|migration|database)\b/gu;
+const NEGATED_HIGH_RISK_PREFIX =
+  /\b(?:do not|don't|never|must not|without|avoid|no|không|đừng|không được|tránh)\b[^.!?;\n]{0,120}$/iu;
+
+/**
+ * Whether the text asserts a high-risk domain rather than excluding one.
+ *
+ * Negation-aware: "do not touch authentication" states a boundary, not an
+ * intent, and must not escalate. Exported so callers that decide whether work
+ * may skip a safety step reuse this judgement instead of writing a second
+ * term list that will drift from it.
+ */
+export function promptHasPositiveHighRiskIntent(text: string): boolean {
+  return hasPositiveHighRiskIntent(text);
+}
+
+function hasPositiveHighRiskIntent(text: string): boolean {
+  const clauses = text.split(
+    /(?:[.!?;\n]+|\b(?:but|however|then|nhưng|tuy nhiên|sau đó)\b)/iu,
+  );
+  return clauses.some((clause) => {
+    HIGH_RISK_TERM.lastIndex = 0;
+    for (const match of clause.matchAll(HIGH_RISK_TERM)) {
+      const prefix = clause.slice(0, match.index);
+      if (!NEGATED_HIGH_RISK_PREFIX.test(prefix)) return true;
+    }
+    return false;
+  });
 }
 
 export function routeModelTier(
@@ -457,7 +545,7 @@ export function modelTierConfigurationToOrchestrationProfile(
       preset: "custom",
       roles,
       budgetSemantics: "wall_time_hard_tokens_and_cost_advisory",
-      reviewerPolicy: "always",
+      reviewerPolicy: configuration.reviewerPolicy ?? "conditional",
       maxReadOnlyHelpers: configuration.maxReadOnlyHelpers,
       maxDepth: configuration.maxDepth,
       maxRecoveryAttempts: configuration.maxRecoveryAttempts,

@@ -1,3 +1,4 @@
+import { promptHasPositiveHighRiskIntent } from "./modelTierContracts.js";
 import type { PromptRequirementV1, RepositoryRequirementKind } from "./taskPlanContracts.js";
 
 export type PromptUnderstandingOutcomeV1 =
@@ -15,6 +16,10 @@ export type PromptUnderstandingQuestionOptionV1 = {
   label: string;
   description: string;
   recommended: boolean;
+  /** Explicit compatibility graph for multiple-choice questions. */
+  conflictsWith?: string[];
+  /** Required for newly generated recommended options; absent on legacy drafts. */
+  recommendationReason?: string | null;
 };
 
 export type PromptUnderstandingQuestionV1 = {
@@ -22,6 +27,8 @@ export type PromptUnderstandingQuestionV1 = {
   prompt: string;
   rationale: string;
   kind: Extract<RepositoryRequirementKind, "outcome" | "constraint" | "validation">;
+  /** Legacy questions without this field are normalized as single selection. */
+  selectionMode?: "single" | "multiple";
   options: PromptUnderstandingQuestionOptionV1[];
 };
 
@@ -43,7 +50,12 @@ export type PromptUnderstandingAnswerV1 = {
   questionId: string;
   answer: string;
   selectedOptionId?: string;
+  selectedOptionIds?: string[];
   note?: string;
+  optionNotes?: Array<{
+    optionId: string;
+    note: string;
+  }>;
 };
 
 export type PromptUnderstandingConfirmedAssumptionV1 = {
@@ -258,7 +270,14 @@ export function validatePromptUnderstandingBasis(
     const answer = record(candidate, "Prompt understanding answer");
     exactKeys(
       answer,
-      ["questionId", "answer", "selectedOptionId", "note"],
+      [
+        "questionId",
+        "answer",
+        "selectedOptionId",
+        "selectedOptionIds",
+        "note",
+        "optionNotes",
+      ],
       "Prompt understanding answer",
     );
     const questionId = text(answer.questionId, "Prompt understanding question id", 100);
@@ -275,7 +294,69 @@ export function validatePromptUnderstandingBasis(
     if (optionId && !ID.test(optionId)) {
       throw new Error("Prompt understanding selected option id is invalid.");
     }
+    if (answer.selectedOptionIds !== undefined) {
+      if (
+        !Array.isArray(answer.selectedOptionIds) ||
+        answer.selectedOptionIds.length < 1 ||
+        answer.selectedOptionIds.length > 4
+      ) {
+        throw new Error(
+          "Prompt understanding selected option ids must be bounded.",
+        );
+      }
+      const selectedIds = new Set<string>();
+      for (const candidateId of answer.selectedOptionIds) {
+        const selectedId = text(
+          candidateId,
+          "Prompt understanding selected option id",
+          100,
+        );
+        if (!ID.test(selectedId) || selectedIds.has(selectedId)) {
+          throw new Error(
+            "Prompt understanding selected option ids must be unique and valid.",
+          );
+        }
+        selectedIds.add(selectedId);
+      }
+      if (optionId && !selectedIds.has(optionId)) {
+        throw new Error(
+          "Prompt understanding singular option id must match its selected option ids.",
+        );
+      }
+    }
     optionalText(answer.note, "Prompt understanding answer note", 2_000);
+    if (answer.optionNotes !== undefined) {
+      if (
+        !Array.isArray(answer.optionNotes) ||
+        answer.optionNotes.length > 4
+      ) {
+        throw new Error("Prompt understanding option notes must be bounded.");
+      }
+      const noteOptionIds = new Set<string>();
+      for (const candidateNote of answer.optionNotes) {
+        const optionNote = record(
+          candidateNote,
+          "Prompt understanding option note",
+        );
+        exactKeys(
+          optionNote,
+          ["optionId", "note"],
+          "Prompt understanding option note",
+        );
+        const noteOptionId = text(
+          optionNote.optionId,
+          "Prompt understanding option note id",
+          100,
+        );
+        if (!ID.test(noteOptionId) || noteOptionIds.has(noteOptionId)) {
+          throw new Error(
+            "Prompt understanding option note ids must be unique and valid.",
+          );
+        }
+        noteOptionIds.add(noteOptionId);
+        text(optionNote.note, "Prompt understanding option note text", 2_000);
+      }
+    }
   }
   if (!Array.isArray(value.confirmedAssumptions) || value.confirmedAssumptions.length > 12) {
     throw new Error("Prompt understanding confirmed assumptions must be bounded.");
@@ -305,7 +386,13 @@ export function canonicalPromptUnderstandingBasis(
       questionId: answer.questionId,
       answer: answer.answer.trim(),
       selectedOptionId: answer.selectedOptionId ?? null,
+      selectedOptionIds: answer.selectedOptionIds ?? null,
       note: answer.note?.trim() ?? null,
+      optionNotes:
+        answer.optionNotes?.map((optionNote) => ({
+          optionId: optionNote.optionId,
+          note: optionNote.note.trim(),
+        })) ?? null,
     })),
     confirmedAssumptions: basis.confirmedAssumptions.map((assumption) => ({
       assumptionId: assumption.assumptionId,
@@ -428,13 +515,24 @@ export function validatePromptUnderstandingV1(
   const questionIds = new Set<string>();
   for (const candidate of value.questions) {
     const question = record(candidate, "Prompt understanding question");
-    exactKeys(question, ["id", "prompt", "rationale", "kind", "options"], "Prompt understanding question");
+    exactKeys(
+      question,
+      ["id", "prompt", "rationale", "kind", "selectionMode", "options"],
+      "Prompt understanding question",
+    );
     const id = text(question.id, "Prompt understanding question id", 100);
     if (!ID.test(id) || questionIds.has(id)) throw new Error("Prompt question ids must be unique and valid.");
     questionIds.add(id);
     text(question.prompt, "Prompt understanding question prompt", 2_000);
     text(question.rationale, "Prompt understanding question rationale", 1_000);
     if (!KINDS.has(question.kind as string)) throw new Error("Prompt question kind is invalid.");
+    if (
+      question.selectionMode !== undefined &&
+      question.selectionMode !== "single" &&
+      question.selectionMode !== "multiple"
+    ) {
+      throw new Error("Prompt question selection mode is invalid.");
+    }
     if (
       !Array.isArray(question.options) ||
       (question.options.length !== 0 &&
@@ -446,7 +544,18 @@ export function validatePromptUnderstandingV1(
     let recommended = 0;
     for (const optionCandidate of question.options) {
       const option = record(optionCandidate, "Prompt question option");
-      exactKeys(option, ["id", "label", "description", "recommended"], "Prompt question option");
+      exactKeys(
+        option,
+        [
+          "id",
+          "label",
+          "description",
+          "recommended",
+          "conflictsWith",
+          "recommendationReason",
+        ],
+        "Prompt question option",
+      );
       const optionId = text(option.id, "Prompt question option id", 100);
       if (!ID.test(optionId) || optionIds.has(optionId)) throw new Error("Prompt option ids must be unique and valid.");
       optionIds.add(optionId);
@@ -454,8 +563,76 @@ export function validatePromptUnderstandingV1(
       text(option.description, "Prompt question option description", 500);
       if (typeof option.recommended !== "boolean") throw new Error("Prompt option recommendation must be boolean.");
       if (option.recommended) recommended += 1;
+      if (option.conflictsWith !== undefined) {
+        uniqueStrings(
+          option.conflictsWith,
+          "Prompt option conflicts",
+          4,
+        );
+      }
+      if (option.recommendationReason !== undefined) {
+        if (
+          option.recommendationReason !== null &&
+          typeof option.recommendationReason !== "string"
+        ) {
+          throw new Error("Prompt option recommendation reason is invalid.");
+        }
+        if (
+          option.recommended &&
+          !option.recommendationReason?.trim()
+        ) {
+          throw new Error(
+            "Recommended prompt options need a recommendation reason.",
+          );
+        }
+        if (!option.recommended && option.recommendationReason !== null) {
+          throw new Error(
+            "Non-recommended prompt options cannot have a recommendation reason.",
+          );
+        }
+      }
     }
-    if (recommended > 1) throw new Error("Prompt question may recommend at most one option.");
+    const selectionMode = question.selectionMode ?? "single";
+    if (
+      selectionMode === "single" &&
+      recommended > 1
+    ) {
+      throw new Error("Single prompt question may recommend only one option.");
+    }
+    if (question.selectionMode !== undefined && recommended < 1) {
+      throw new Error("Interactive prompt questions need a recommended option.");
+    }
+    const options = question.options.map((candidate) =>
+      record(candidate, "Prompt question option")
+    );
+    for (const option of options) {
+      const optionId = String(option.id);
+      const conflicts = new Set(
+        Array.isArray(option.conflictsWith)
+          ? option.conflictsWith.map(String)
+          : [],
+      );
+      if (conflicts.has(optionId)) {
+        throw new Error("Prompt options cannot conflict with themselves.");
+      }
+      for (const conflictId of conflicts) {
+        const conflict = options.find(
+          (candidate) => candidate.id === conflictId,
+        );
+        if (!conflict) {
+          throw new Error("Prompt option conflict id is unknown.");
+        }
+        if (
+          !Array.isArray(conflict.conflictsWith) ||
+          !conflict.conflictsWith.includes(optionId)
+        ) {
+          throw new Error("Prompt option conflicts must be symmetric.");
+        }
+        if (option.recommended && conflict.recommended) {
+          throw new Error("Recommended prompt options cannot conflict.");
+        }
+      }
+    }
   }
 
   if (!Array.isArray(value.assumptions) || value.assumptions.length > 12) {
@@ -501,6 +678,140 @@ export function parsePromptUnderstandingV1(input: unknown): PromptUnderstandingV
   const parsed = typeof input === "string" ? (JSON.parse(input) as unknown) : input;
   validatePromptUnderstandingV1(parsed);
   return structuredClone(parsed);
+}
+
+/**
+ * Why a prompt did not qualify for the deterministic gate, or the candidate it
+ * produced. `reason` names the first failing condition so a run's evidence can
+ * show which check kept the model gate in the loop.
+ */
+export type DeterministicPromptUnderstandingDecisionV1 =
+  | { bypass: false; reason: string }
+  | { bypass: true; candidate: PromptUnderstandingCandidateV1 };
+
+/**
+ * Openings that can only introduce a request to explain what already exists.
+ * This is an allowlist, not a denylist: anything unrecognized keeps the model
+ * gate. A denylist of "risky" words would silently admit every phrasing nobody
+ * thought to forbid, which is the wrong failure direction for a safety gate.
+ */
+const READ_ONLY_QUESTION_OPENINGS = new Set([
+  "what",
+  "why",
+  "how",
+  "where",
+  "which",
+  "who",
+  "when",
+  "is",
+  "are",
+  "was",
+  "were",
+  "does",
+  "do",
+  "did",
+  "can",
+  "could",
+  "should",
+  "explain",
+  "summarize",
+  "summarise",
+  "describe",
+  "compare",
+]);
+
+/**
+ * Verbs that ask for work rather than an explanation. A prompt that opens with
+ * an allowlisted word but contains one of these later ("Explain the parser and
+ * fix the failing test") is a request for work and keeps the model gate.
+ */
+const ACTION_VERB =
+  /\b(add|apply|build|change|check|clean|configure|convert|create|delete|deploy|disable|edit|enable|execute|fix|generate|implement|improve|init|initialize|inspect|install|keep|make|migrate|modify|move|persist|refactor|remove|rename|repair|replace|report|reset|run|set|setup|start|stop|test|update|upgrade|use|validate|verify|write)\b/iu;
+
+/** A path, URL, or flag turns an explanatory question into a targeted request. */
+const CONCRETE_TARGET = /(?:^|\s)(?:[./~]|--|[a-z]+:\/\/)/iu;
+
+const MAX_DETERMINISTIC_PROMPT_LENGTH = 300;
+
+/**
+ * Decides whether a prompt is unambiguous enough to skip the model-backed
+ * prompt-understanding gate.
+ *
+ * The gate exists to catch ambiguity, missing scope, and requests that reach
+ * outside the repository boundary. Most prompts carry none of those, and paying
+ * a model round trip to discover that is the largest fixed cost on an easy
+ * turn. This decides the easy case without a provider call.
+ *
+ * It may only ever produce a `ready` `answer`: never `takeover_required`, never
+ * a repository action, never a question or a scope-affecting assumption. Every
+ * condition must hold, and any doubt returns `bypass: false` so the model gate
+ * runs exactly as it does today. Skipping a question the model gate would have
+ * asked is the failure this design must not permit, so the checks are written
+ * to fail toward the gate.
+ */
+export function classifyDeterministicPromptUnderstanding(
+  basis: PromptUnderstandingBasisV1,
+  context: PromptUnderstandingContextV1,
+): DeterministicPromptUnderstandingDecisionV1 {
+  // An amended basis means an earlier round already found something worth
+  // asking about. That history belongs to the model gate.
+  if (basis.clarificationAnswers.length > 0) {
+    return { bypass: false, reason: "basis_carries_clarification_answers" };
+  }
+  if (basis.confirmedAssumptions.length > 0) {
+    return { bypass: false, reason: "basis_carries_confirmed_assumptions" };
+  }
+  if ((basis.attachments?.length ?? 0) > 0) {
+    return { bypass: false, reason: "basis_carries_attachments" };
+  }
+  if (basis.acceptanceCriteria.length > 0) {
+    return { bypass: false, reason: "basis_declares_acceptance_criteria" };
+  }
+  if (basis.activeGoal?.trim()) {
+    return { bypass: false, reason: "session_has_active_goal" };
+  }
+  // Conversational context is what makes a prompt referential ("do the same
+  // for desktop") and is also the surface an injected transcript would use.
+  if (context.recentTurns.length > 0) {
+    return { bypass: false, reason: "context_carries_recent_turns" };
+  }
+  if (context.conversationSummary?.trim()) {
+    return { bypass: false, reason: "context_carries_conversation_summary" };
+  }
+
+  const prompt = basis.rawPrompt.trim();
+  if (prompt.length === 0) {
+    return { bypass: false, reason: "prompt_is_empty" };
+  }
+  if (prompt.length > MAX_DETERMINISTIC_PROMPT_LENGTH) {
+    return { bypass: false, reason: "prompt_exceeds_bounded_length" };
+  }
+  const opening = prompt.toLowerCase().match(/^[a-z]+/u)?.[0] ?? "";
+  if (!READ_ONLY_QUESTION_OPENINGS.has(opening)) {
+    return { bypass: false, reason: "prompt_is_not_an_explanatory_question" };
+  }
+  if (ACTION_VERB.test(prompt)) {
+    return { bypass: false, reason: "prompt_requests_work" };
+  }
+  if (CONCRETE_TARGET.test(prompt)) {
+    return { bypass: false, reason: "prompt_names_a_concrete_target" };
+  }
+  if (promptHasPositiveHighRiskIntent(prompt)) {
+    return { bypass: false, reason: "prompt_asserts_high_risk_domain" };
+  }
+
+  return {
+    bypass: true,
+    candidate: {
+      outcome: "answer",
+      readiness: "ready",
+      reply: "The request is understood.",
+      conversationSummary: "A bounded read-only question was understood without clarification.",
+      refinedBrief: null,
+      questions: [],
+      assumptions: [],
+    },
+  };
 }
 
 export function bindPromptUnderstandingCandidate(
@@ -593,8 +904,23 @@ export function promptRequirementsFromUnderstanding(
       required: true,
     })),
     ...basis.clarificationAnswers.map((answer) => ({
-      id: requirementId(`answer-${answer.questionId}`, `${answer.answer}\n${answer.note ?? ""}`),
-      text: [answer.answer.trim(), answer.note?.trim()].filter(Boolean).join(" — "),
+      id: requirementId(
+        `answer-${answer.questionId}`,
+        [
+          answer.answer,
+          answer.note ?? "",
+          ...(answer.optionNotes ?? []).map(
+            ({ optionId, note }) => `${optionId}: ${note}`,
+          ),
+        ].join("\n"),
+      ),
+      text: [
+        answer.answer.trim(),
+        answer.note?.trim(),
+        ...(answer.optionNotes ?? []).map(
+          ({ optionId, note }) => `${optionId}: ${note.trim()}`,
+        ),
+      ].filter(Boolean).join(" — "),
       source: "clarification_answer" as const,
       kind: "constraint" as const,
       required: true,

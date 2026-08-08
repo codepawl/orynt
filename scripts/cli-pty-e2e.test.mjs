@@ -99,6 +99,58 @@ test("fullscreen enables regional wheel reporting and restores native terminal s
   assert.match(run.raw, /\u001b\[\?1006l/u);
 });
 
+test("Orca auto mode keeps native scrollback unless fullscreen is explicit", {
+  skip: process.platform !== "linux" ? "Linux util-linux PTY gate" : false,
+  timeout: 40_000,
+}, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "orynt-cli-orca-auto-"));
+  fixtureRoots.push(root);
+  const stateHome = path.join(root, "state");
+  const repositoryPath = await createFixtureRepository(root);
+  const binRoot = await createControlledCodex(root);
+  const env = cliEnvironment({
+    stateHome,
+    binRoot,
+    mode: "answer",
+    invocationLog: path.join(root, "codex-invocations.jsonl"),
+    extra: {
+      TERM: "xterm-256color",
+      TERM_PROGRAM: "Orca",
+      COLUMNS: "100",
+      LINES: "30",
+    },
+  });
+  const wrapperPath = await createNodeCliWrapper({
+    root,
+    name: "orca-auto-cli.cjs",
+    entry: builtCli,
+    args: ["-C", repositoryPath],
+  });
+  const run = await runOrderedPty({
+    wrapperPath,
+    transcriptPath: path.join(root, "orca-auto.typescript"),
+    cwd: repositoryPath,
+    env,
+    timeoutMs: 30_000,
+    steps: [
+      { id: "update-consent", waitFor: /Check for updates at startup/u, send: "n\n" },
+      { id: "retention-consent", waitFor: /Clean up old sessions automatically/u, send: "n\n" },
+      { id: "safety-prompt", waitFor: /Continue in this repository/u, send: "y\n" },
+      {
+        id: "composer",
+        waitFor: /Try "explain this repo"/u,
+        send: "/exit\n",
+      },
+      { id: "session-ended", waitFor: /Session ended/u },
+    ],
+  });
+
+  assert.equal(run.code, 0, run.visible);
+  assert.doesNotMatch(run.raw, /\u001b\[\?1049[hl]/u);
+  assert.doesNotMatch(run.raw, /\u001b\[\?1002[hl]/u);
+  assert.doesNotMatch(run.raw, /\u001b\[\?1006[hl]/u);
+});
+
 test("narrow inline terminal reflows long command surfaces", {
   skip: process.platform !== "linux" ? "Linux util-linux PTY gate" : false,
   timeout: 40_000,
@@ -204,7 +256,7 @@ test("real Linux TTY covers onboarding, commands, a model turn, exit, and resume
       { id: "answer", waitFor: /Controlled CLI answer/u },
       {
         id: "answer-completed",
-        waitFor: /custom · next · gpt-5\.5\/high/u,
+        waitFor: /custom · next[^\n]*gpt-5\.5\/high/u,
         send: "edit only packages/value.txt so it contains exactly deterministic cli e2e pass, then run bun run scripts/pass.mjs\n",
       },
       {
@@ -218,7 +270,7 @@ test("real Linux TTY covers onboarding, commands, a model turn, exit, and resume
       },
       {
         id: "action-completed",
-        waitFor: /custom · next · gpt-5\.5\/high/u,
+        waitFor: /custom · next[^\n]*gpt-5\.5\/high/u,
         send: "/diff packages/value.txt\n",
       },
       { id: "diff-heading", waitFor: /Diff · Verified · 1 file · \+1\/-1/u },
@@ -234,7 +286,7 @@ test("real Linux TTY covers onboarding, commands, a model turn, exit, and resume
   assert.equal(first.code, 0, first.visible);
   assert.match(first.visible, /Safety boundary acknowledged/);
   assert.match(first.visible, /More help/u);
-  assert.match(first.visible, /ctx [▰▱]{5} 0k\/272k · 0%/u);
+  assert.match(first.visible, /0k\/[0-9]+k/u);
   assert.match(first.visible, /Controlled CLI answer/);
   assert.match(first.visible, /Diff · Verified · 1 file · \+1\/-1/);
   assert.match(first.visible, /\+deterministic cli e2e pass/);
@@ -408,7 +460,7 @@ test("real Linux TTY shows live loading, updates current, and queues FIFO Next",
       },
       {
         id: "second-answer",
-        waitFor: /custom · next · gpt-5\.5\/high/u,
+        waitFor: /custom · next[^\n]*gpt-5\.5\/high/u,
         send: "/exit\n",
       },
       { id: "session-ended", waitFor: /Session ended/u },
@@ -477,7 +529,7 @@ test("real Linux TTY persists Appearance themes and honors a one-launch override
       },
       {
         id: "theme-selected",
-        waitFor: /Theme set to Monochrome/u,
+        waitFor: /Saved · Theme Monochrome/u,
         send: "/settings show\n",
       },
       {

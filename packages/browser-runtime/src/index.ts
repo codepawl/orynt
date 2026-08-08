@@ -467,6 +467,26 @@ type DomNodeMetadata = {
   geometryBucket?: [number, number, number, number];
 };
 
+export function browserLaunchArguments(input: {
+  userDataDir: string;
+  headless?: boolean;
+  initialUrl?: string;
+}): string[] {
+  return [
+    "--remote-debugging-address=127.0.0.1",
+    "--remote-debugging-port=0",
+    // The Origin allowance does not expand the network listener: CDP remains
+    // explicitly bound to loopback and the descriptor stays process-local.
+    "--remote-allow-origins=*",
+    `--user-data-dir=${input.userDataDir}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-background-networking",
+    ...(input.headless === false ? [] : ["--headless=new"]),
+    normalizeNavigableUrl(input.initialUrl ?? "about:blank"),
+  ];
+}
+
 export class OryntCdpBrowserRuntime {
   private connection?: CdpConnection;
   private process?: ChildProcess;
@@ -503,15 +523,11 @@ export class OryntCdpBrowserRuntime {
       ? path.resolve(options.userDataDir)
       : await mkdtemp(path.join(os.tmpdir(), "orynt-cdp-profile-"));
     await mkdir(userDataDir, { recursive: true, mode: 0o700 });
-    const args = [
-      "--remote-debugging-port=0",
-      `--user-data-dir=${userDataDir}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-background-networking",
-      ...(options.headless === false ? [] : ["--headless=new"]),
-      normalizeNavigableUrl(options.initialUrl ?? "about:blank"),
-    ];
+    const args = browserLaunchArguments({
+      userDataDir,
+      headless: options.headless,
+      initialUrl: options.initialUrl,
+    });
     this.process = spawn(options.executablePath, args, {
       stdio: "ignore",
       detached: options.detached ?? false,

@@ -14,6 +14,7 @@ import {
   createControlledCodex,
   runProcess,
 } from "./cli-e2e-lib.mjs";
+import { releaseSourceDigest } from "./release-source-digest.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const executableIndex = process.argv.indexOf("--executable");
@@ -36,6 +37,20 @@ const stateRoot = await mkdtemp(path.join(os.tmpdir(), "orynt-package-smoke-"));
 try {
   const binRoot = await createControlledCodex(stateRoot);
   if (!explicitExecutable) {
+    const buildManifest = JSON.parse(
+      await readFile(
+        path.join(path.dirname(packagedModule), "build-manifest.json"),
+        "utf8",
+      ),
+    );
+    if (
+      buildManifest.schemaVersion !== 1 ||
+      buildManifest.sourceDigest !== await releaseSourceDigest(repositoryRoot) ||
+      !Array.isArray(buildManifest.packages) ||
+      buildManifest.packages.length === 0
+    ) {
+      throw new Error("Packaged CLI build manifest is stale or incomplete.");
+    }
     const archiveRoot = path.join(stateRoot, "archive");
     const installRoot = path.join(stateRoot, "install");
     await mkdir(archiveRoot);

@@ -6,11 +6,46 @@ This guide shows how to run Orynt from source.
 
 - Bun 1.3.14 or newer
 - Corepack
-- Bun 1.3.14 or newer
 - A signed in Codex CLI
 
-Orynt uses Codex for model access. Orynt does not read or save your Codex
-passwords or tokens.
+Orynt uses Codex for model access by default, and supports the Anthropic API and
+OpenCode as opt-in providers. Orynt does not read or save your Codex passwords
+or tokens, and it does not read or save an API key: it reads the value of an
+environment variable you set and stores only that variable's name.
+
+## Use a different provider
+
+Each provider reads its own environment variable. Set the variable in your
+shell, then run its setup command, which checks the credential and points the
+model tiers at that provider.
+
+To use Anthropic:
+
+```bash
+export ANTHROPIC_API_KEY="<your key>"
+bun cli setup --provider anthropic
+```
+
+Anthropic also accepts a short-lived OAuth token in `ANTHROPIC_AUTH_TOKEN`
+instead. That token comes from Anthropic's own CLI, which is
+[`anthropic-cli`](https://github.com/anthropics/anthropic-cli) and is installed
+as `ant`. It is not the Apache Ant build tool of the same name. Do not set both
+variables: the API rejects a request carrying both.
+
+To use OpenCode:
+
+```bash
+export OPENCODE_API_KEY="<your key>"
+bun cli setup --provider opencode
+```
+
+Sign in and copy an OpenCode key at https://opencode.ai/auth. OpenCode is a
+gateway serving many models under one plan, so Orynt reports no per-token cost
+for it, the way it reports none for a Codex subscription. OpenCode also does not
+report prompt-cache counts, so cache figures read as zero for that provider.
+
+Add `--check` to any of these to verify the credential without changing your
+configuration.
 
 ## Install
 

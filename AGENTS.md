@@ -33,6 +33,8 @@ evidence is required before calling it complete.
   image inputs, and provider usage.
 - `packages/codex-adapter`: local Codex transport, result import, and provider
   usage integration.
+- `packages/claude-adapter`: Anthropic Messages transport, streaming, tool
+  translation, and token-usage normalization.
 - `packages/browser-runtime`: owned CDP browser sessions, observations,
   actions, and browser-agent tools.
 - `packages/gateway`: permission decisions, approvals, execution boundaries,
@@ -90,6 +92,26 @@ not source code and does not belong in the repository map.
 - Choose the implementation language, framework, library, and package boundary
   before writing code. Use the workload and existing architecture to make the
   choice; do not apply one language or framework to every problem.
+
+## How Should Codex Use Subagents?
+
+- Keep planning, architecture decisions, decomposition, conflict resolution,
+  integration, final validation, and user interaction in the Sol parent.
+- Use only the named `scout`, `builder`, and `verifier` custom agents for
+  routine delegation. Every named child must run `gpt-5.6-luna` with `max`
+  reasoning effort and `fork_turns="none"`.
+- Use Scouts for independent read-only discovery, Builders only for disjoint
+  file ownership, and Verifiers for independent review after risky or
+  cross-cutting integration. Children must not spawn children.
+- Treat 10 threads as a ceiling and 2–4 as the normal range. Spawn only the
+  smallest set of genuinely independent lanes and assign each mutable file to
+  exactly one writer.
+- Do not use an untyped generic child or silently substitute Terra. If the
+  collaboration runtime does not expose the named custom roles or Luna/max,
+  keep the lane in the Sol parent and report the limitation once.
+- Follow the global custom-agent brief, report, ownership, lifecycle, and
+  safety contracts; this repository section only adds Orynt-specific routing
+  invariants.
 
 ## How Should You Justify Removing, Replacing, Changing, or Improving Existing Work?
 

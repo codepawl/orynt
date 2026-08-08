@@ -58,7 +58,8 @@ import { runEventTaskPhase, type CandidateRule, type MemoryReviewSnapshot, type 
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, FocusEvent, FormEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
-import lightbulbLogoOnDark from "../../../assets/pictures/lightbulb-mark-on-dark.svg";
+import codePawlLockup from "../../../assets/brand/codepawl-orynt/codepawl/codepawl-lockup.svg";
+import oryntLockup from "../../../assets/brand/codepawl-orynt/orynt/orynt-lockup.svg";
 
 import { SkillsManager } from "./features/skills/SkillsManager";
 import { MemoryManager } from "./features/memory/MemoryManager";
@@ -2391,6 +2392,9 @@ function App({
   const [operatorCallSign, setOperatorCallSign] = useState("Operator");
   const [operatorWorkType, setOperatorWorkType] = useState<SettingsSnapshot["operatorProfile"]["workType"]>("engineering");
   const [appearancePreference, setAppearancePreference] = useState<SettingsSnapshot["uiPreferences"]["appearance"]>("dark");
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    typeof window === "undefined" ? true : window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
   const [chatFontPreference, setChatFontPreference] = useState<SettingsSnapshot["uiPreferences"]["chatFont"]>("orynt-sans");
   const [motionPreference, setMotionPreference] = useState<SettingsSnapshot["uiPreferences"]["motion"]>("system");
   const [voiceLanguage, setVoiceLanguage] = useState<SettingsSnapshot["voicePreferences"]["language"]>("english");
@@ -4395,6 +4399,20 @@ function App({
         : "app-shell-mobile-workspace-closed"
       : "app-shell-desktop-workspace",
   ].join(" ");
+  const resolvedAppearance =
+    appearancePreference === "system"
+      ? systemPrefersDark
+        ? "dark"
+        : "light"
+      : appearancePreference;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
+    setSystemPrefersDark(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
   const workspacePanelToggleLabel = isMobileWorkspaceViewport
     ? isMobileWorkspaceDrawerOpen
       ? "Close tasks"
@@ -5926,6 +5944,14 @@ function App({
                 <p>Orynt is running in repository-only private beta. Repository work is available after setup; every other executable surface stays disabled.</p>
               </section>
 
+              <section className="settings-group company-endorsement" aria-label="Company">
+                <img src={codePawlLockup} alt="CodePawl" />
+                <div>
+                  <strong>Orynt is a CodePawl product.</strong>
+                  <span>Built for supervised, local-first repository work.</span>
+                </div>
+              </section>
+
               <section className="settings-group settings-surface-status" aria-label="Unavailable beta surfaces">
                 <h2>Surface availability</h2>
                 <div className="settings-surface-status-list">
@@ -6564,12 +6590,16 @@ function App({
   };
 
   return (
-    <main className={shellClassName} onMouseUp={handleAppMouseUp}>
+    <main
+      className={shellClassName}
+      data-appearance={resolvedAppearance}
+      data-appearance-preference={appearancePreference}
+      onMouseUp={handleAppMouseUp}
+    >
       <aside className="workspace-panel" id="workspace-panel">
         <div className="workspace-panel-header">
           <button className="workspace-brand" type="button" aria-label="Open Cockpit">
-            <img className="workspace-brand-logo" src={lightbulbLogoOnDark} alt="" aria-hidden="true" />
-            <span className="workspace-brand-wordmark">Orynt</span>
+            <img className="workspace-brand-lockup" src={oryntLockup} alt="Orynt" />
           </button>
           <button
             className="workspace-search-toggle"

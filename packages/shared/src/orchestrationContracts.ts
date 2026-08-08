@@ -21,8 +21,87 @@ export type OrchestrationPreset =
 
 export type ReviewerPolicy = "always" | "conditional" | "failure_only";
 
+export type OrchestrationProviderId =
+  | "codex-cli"
+  | "openai-api"
+  | "anthropic-api"
+  | "opencode-api";
+
+export const ORCHESTRATION_PROVIDER_IDS: readonly OrchestrationProviderId[] = [
+  "codex-cli",
+  "openai-api",
+  "anthropic-api",
+  "opencode-api",
+];
+
+/**
+ * How a provider charges. `subscription` providers bill a flat fee outside the
+ * token stream, so a per-token estimate for one would be a confident wrong
+ * number rather than a missing one.
+ */
+export type ProviderBillingModel = "per_token" | "subscription";
+
+export type ProviderFacts = {
+  billing: ProviderBillingModel;
+  /**
+   * Whether the provider reports prompt-cache counts. When false,
+   * `cachedInputTokens` is structurally zero and a cache-hit ratio derived from
+   * it says nothing about caching — it says the provider does not measure it.
+   */
+  reportsCacheTokens: boolean;
+};
+
+/**
+ * Provider traits that subsystems must branch on, stated once.
+ *
+ * Declared as a total `Record` so adding a provider id fails to compile until
+ * its traits are supplied. That is deliberate: the previous pattern of scattered
+ * `providerId === "codex-cli"` checks meant a new provider silently inherited
+ * whichever default each call site happened to use.
+ */
+const PROVIDER_FACTS: Record<OrchestrationProviderId, ProviderFacts> = {
+  "codex-cli": { billing: "subscription", reportsCacheTokens: true },
+  "openai-api": { billing: "per_token", reportsCacheTokens: true },
+  "anthropic-api": { billing: "per_token", reportsCacheTokens: true },
+  // OpenCode Zen and Go proxy many upstream models behind one flat plan and
+  // return only `input_tokens` and `output_tokens`; verified against the live
+  // service on 2026-08-09.
+  "opencode-api": { billing: "subscription", reportsCacheTokens: false },
+};
+
+/** Traits for a known provider, or `undefined` for an unrecognized id. */
+export function providerFacts(value: unknown): ProviderFacts | undefined {
+  return isOrchestrationProviderId(value)
+    ? { ...PROVIDER_FACTS[value] }
+    : undefined;
+}
+
+/**
+ * Billing model for a provider. An unrecognized id is treated as
+ * `subscription` so callers withhold a price they cannot justify instead of
+ * inventing one.
+ */
+export function providerBilling(value: unknown): ProviderBillingModel {
+  return providerFacts(value)?.billing ?? "subscription";
+}
+
+/** Whether the provider reports prompt-cache counts. Unknown ids report none. */
+export function providerReportsCacheTokens(value: unknown): boolean {
+  return providerFacts(value)?.reportsCacheTokens ?? false;
+}
+
+const PROVIDER_IDS = new Set<OrchestrationProviderId>(
+  ORCHESTRATION_PROVIDER_IDS,
+);
+
+export function isOrchestrationProviderId(
+  value: unknown,
+): value is OrchestrationProviderId {
+  return PROVIDER_IDS.has(value as OrchestrationProviderId);
+}
+
 export type OrchestrationRoleBinding = {
-  providerId: "codex-cli" | "openai-api";
+  providerId: OrchestrationProviderId;
   modelId: string;
   thinkingEffort: OrchestrationThinkingEffort;
   maxTokens: number;
@@ -44,7 +123,7 @@ export type OrchestrationProfile = {
 };
 
 export type CodexOrchestrationModelOption = {
-  providerId?: "codex-cli" | "openai-api";
+  providerId?: OrchestrationProviderId;
   id: string;
   supportedThinkingEfforts: OrchestrationThinkingEffort[];
   defaultThinkingEffort?: OrchestrationThinkingEffort;
@@ -106,14 +185,34 @@ export type ModelInvocationRecord = {
   parentInvocationId?: string;
   taskId: string;
   role: OrchestrationRole;
-  providerId: "codex-cli" | "openai-api";
+  providerId: OrchestrationProviderId;
   modelId: string;
   thinkingEffort: OrchestrationThinkingEffort;
   contextHash: string;
   status: ModelInvocationStatus;
   inputTokens: number | null;
+  cachedInputTokens?: number | null;
   outputTokens: number | null;
+  reasoningOutputTokens?: number | null;
   estimatedCostUsd: number | null;
+  requestedModelId?: string;
+  requestedThinkingEffort?: OrchestrationThinkingEffort;
+  /**
+   * How the phase was satisfied. `deterministic` records a phase that ran
+   * without a provider call, so evidence still shows the gate happened rather
+   * than leaving a gap that reads as a skipped step. Absent means `model`.
+   */
+  executionKind?: "model" | "deterministic";
+  phase?:
+    | "prompt_understanding"
+    | "skill_routing"
+    | "coordination"
+    | "implementation"
+    | "validation"
+    | "review"
+    | "recovery";
+  durationMs?: number;
+  usagePrecision?: "provider" | "estimated" | "unknown";
   startedAt?: string;
   completedAt?: string;
   retryIndex: number;
@@ -205,8 +304,7 @@ export function isOrchestrationProfile(
     ROLE_ORDER.every((role) => {
       const binding = record(roles[role]);
       return (
-        (binding.providerId === "codex-cli" ||
-          binding.providerId === "openai-api") &&
+        isOrchestrationProviderId(binding.providerId) &&
         typeof binding.modelId === "string" &&
         binding.modelId === binding.modelId.trim() &&
         binding.modelId.length > 0 &&

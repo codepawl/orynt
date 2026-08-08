@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   appendFile,
+  lstat,
   mkdir,
   readdir,
   readFile,
@@ -41,6 +42,7 @@ import {
   createConservativeCodingApprenticePolicy,
   createDefaultRunBudget,
   contextVmSessionId,
+  estimateInvocationCostUsd,
   InMemoryAgentLedger,
   InMemoryRunStore,
   policyDecisionToSafetySnapshot,
@@ -89,12 +91,26 @@ import { LocalRepositoryVerifier } from "@codepawl/verifier";
 import {
   assertRepositoryTaskScope,
   captureRepositoryTaskScope,
+  exactAuthorizedChangedPaths,
   repositoryTaskScopeDelta,
   RepositoryTaskScopeError,
   restoreRepositoryTaskOwnedPaths,
 } from "./taskScopeGuard.js";
+import { authoritativeRequirementsForTask } from "./repositoryTaskPlanning.js";
+import {
+  deriveRepositoryExecutionPlan,
+  type RepositoryExecutionBatchV1,
+} from "./executionBatching.js";
+import {
+  MANAGED_REPOSITORY_VALIDATION_COMMAND,
+  normalizeRepositoryValidationCommand,
+} from "./repositoryValidationCommands.js";
 
 export { LocalJsonCognitiveCheckpointStore } from "./checkpointStore.js";
+export {
+  deriveRepositoryExecutionPlan,
+  type RepositoryExecutionBatchV1,
+} from "./executionBatching.js";
 export {
   desktopPromptUnderstandingSchema,
   understandDesktopPrompt,
@@ -107,6 +123,7 @@ export {
   type PromptUnderstandingInput,
 } from "./promptUnderstanding.js";
 export {
+  authoritativeRequirementsForTask,
   desktopRepositoryTaskPlanSchema,
   planDesktopRepositoryTask,
   planRepositoryTask,
@@ -194,6 +211,7 @@ export type CodingApprenticeDemoRequest = {
   images?: AgentImageInput[];
   activeGoal?: string;
   acceptanceCriteria?: string[];
+  skillContext?: SkillContextSnapshot;
   taskId: string;
   workspaceId: string;
   userId?: string;
@@ -271,6 +289,7 @@ export type CodingApprenticeDemoRequest = {
   postVerificationReview?: (
     context: PostVerificationReviewContext,
   ) => Promise<PostVerificationReviewResult | undefined>;
+  postVerificationReviewSkipReason?: string;
   orchestration?: {
     profile: ResolvedOrchestrationProfile;
     plan?: OrchestrationPlan;
@@ -297,6 +316,7 @@ export type CodingApprenticeDemoResult = {
   codexExecutionResult?: CodexExecutionResult;
   codexExecutionResults: CodexExecutionResult[];
   taskPlanExecution?: RepositoryTaskPlanRunResult;
+  executionBatch?: RepositoryExecutionBatchV1;
   importBundle: CodexResultBundle;
   verifierInput: VerificationPlanRequest;
   verifierInputPath: string;
@@ -363,6 +383,7 @@ export type DesktopRepositoryRunRequest = {
   postVerificationReview?: (
     context: PostVerificationReviewContext,
   ) => Promise<PostVerificationReviewResult | undefined>;
+  postVerificationReviewSkipReason?: string;
   onRunEvent?: (event: RunEvent) => void;
   signal?: AbortSignal;
 };
@@ -389,18 +410,10 @@ function taskPlanVerificationCommands(
     taskPlan.tasks.flatMap((task) =>
       task.evidence.flatMap((evidence) => {
         if (evidence.kind !== "command" || !evidence.command) return [];
-        const normalized = evidence.command.trim().replace(/\s+/gu, " ");
-        const parts = normalized.split(" ");
-        const safeBunTest =
-          parts[0] === "bun" &&
-          parts[1] === "test" &&
-          parts.slice(2).every((part) => /^[A-Za-z0-9_./:@+-]+$/u.test(part));
-        const safeBunRunTest =
-          parts.length === 3 &&
-          parts[0] === "bun" &&
-          parts[1] === "run" &&
-          parts[2] === "test";
-        return safeBunTest || safeBunRunTest ? [normalized] : [];
+        const normalized = normalizeRepositoryValidationCommand(
+          evidence.command,
+        );
+        return normalized ? [normalized] : [];
       }),
     ),
   );
@@ -510,6 +523,50 @@ function failureStageFromEvents(events: readonly RunEvent[]): RepositoryRunFailu
   if ([...types].some((type) => type.startsWith("sandbox_"))) return "sandbox";
   if (types.has("run_started")) return "planning";
   return "preflight";
+}
+
+type ProviderInvocationUsage = {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  precision: "provider" | "estimated" | "unknown";
+};
+
+function providerUsageByPlan(
+  events: readonly RunEvent[],
+): Map<string, ProviderInvocationUsage> {
+  const usage = new Map<string, ProviderInvocationUsage>();
+  for (const event of events) {
+    if (event.type !== "codex_context_usage") continue;
+    const payload =
+      typeof event.payload === "object" && event.payload !== null
+        ? (event.payload as Record<string, unknown>)
+        : {};
+    const current =
+      typeof payload.current === "object" && payload.current !== null
+        ? (payload.current as Record<string, unknown>)
+        : {};
+    const planId =
+      typeof payload.planId === "string" ? payload.planId : undefined;
+    if (!planId) continue;
+    const token = (value: unknown) =>
+      typeof value === "number" && Number.isFinite(value)
+        ? Math.max(0, Math.trunc(value))
+        : 0;
+    usage.set(planId, {
+      inputTokens: token(current.inputTokens),
+      cachedInputTokens: token(current.cachedInputTokens),
+      outputTokens: token(current.outputTokens),
+      reasoningOutputTokens: token(current.reasoningOutputTokens),
+      precision:
+        payload.precision === "provider" ||
+        payload.precision === "estimated"
+          ? payload.precision
+          : "unknown",
+    });
+  }
+  return usage;
 }
 
 function repositoryFailureOutcome(
@@ -664,7 +721,7 @@ class ForwardingRunStore implements RunStore {
 }
 
 type TrustedVerifierReport = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   nonce: string;
   runId: string;
   commandId: string;
@@ -674,10 +731,173 @@ type TrustedVerifierReport = {
     changed: string[];
     hasFrontend: boolean;
     hasBackend: boolean;
+    sourceReadability: {
+      checkedFiles: string[];
+      maxLineLength: 400;
+      manuallyMinifiedThresholdBytes: 1024;
+      minimumLineCount: 5;
+    };
   };
   startedAt: string;
   completedAt: string;
 };
+
+const MANAGED_REPOSITORY_SOURCE_READABILITY_COMMAND =
+  `${MANAGED_REPOSITORY_VALIDATION_COMMAND} --source-readability-only`;
+const PRODUCT_UI_SKILL_ID = "orynt-builtin:product-ui-design";
+
+const AUTHORED_SOURCE_EXTENSIONS = new Set([
+  ".html",
+  ".css",
+  ".scss",
+  ".sass",
+  ".less",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".jsx",
+  ".vue",
+  ".svelte",
+]);
+const GENERATED_SOURCE_SEGMENTS = new Set([
+  ".codex",
+  ".git",
+  ".cache",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+]);
+const SOURCE_READABILITY_MAX_FILES = 2_000;
+const SOURCE_READABILITY_MAX_BYTES = 64 * 1024 * 1024;
+
+function isAuthoredSourcePath(relativePath: string): boolean {
+  const normalized = relativePath.replaceAll("\\", "/");
+  if (
+    path.posix.isAbsolute(normalized) ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.split("/").some((segment) => GENERATED_SOURCE_SEGMENTS.has(segment))
+  ) {
+    return false;
+  }
+  const extension = path.posix.extname(normalized).toLowerCase();
+  if (!AUTHORED_SOURCE_EXTENSIONS.has(extension)) return false;
+  return !path.posix.basename(normalized).toLowerCase().includes(".min.");
+}
+
+function selectedAgentSkillConstraints(
+  skillContext: SkillContextSnapshot | undefined,
+): string[] {
+  if (!skillContext?.skills.length) return [];
+  const constraints = [
+    "Use the selected Agent Skill snapshots already included in Context as the complete task-specific skill guidance.",
+    "Do not discover, read, load, or apply another skill package unless the operator explicitly selected it for this run.",
+  ];
+  if (
+    skillContext.skills.some(
+      ({ skillId }) => skillId === PRODUCT_UI_SKILL_ID,
+    )
+  ) {
+    constraints.push(
+      "Start new product workflows with empty user data. Do not fabricate starter, demo, sample, mock, or placeholder records unless the approved task explicitly requires them.",
+    );
+  }
+  return constraints;
+}
+
+async function captureSourceReadabilityBaseline(input: {
+  root: string;
+  expectedPaths: string[];
+}): Promise<Record<string, string>> {
+  const root = path.resolve(input.root);
+  const candidates = new Set<string>();
+
+  const visit = async (absolutePath: string): Promise<void> => {
+    let metadata;
+    try {
+      metadata = await lstat(absolutePath);
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return;
+      }
+      throw error;
+    }
+    const relativePath = path.relative(root, absolutePath).replaceAll("\\", "/");
+    if (
+      relativePath === "" ||
+      relativePath.startsWith("../") ||
+      path.posix.isAbsolute(relativePath)
+    ) {
+      throw new Error("source readability baseline path escaped the repository");
+    }
+    if (metadata.isSymbolicLink()) {
+      throw new Error(
+        `source readability baseline refuses symbolic link: ${relativePath}`,
+      );
+    }
+    if (metadata.isDirectory()) {
+      if (
+        relativePath
+          .split("/")
+          .some((segment) => GENERATED_SOURCE_SEGMENTS.has(segment))
+      ) {
+        return;
+      }
+      const entries = await readdir(absolutePath, { withFileTypes: true });
+      for (const entry of entries.sort((left, right) =>
+        left.name.localeCompare(right.name),
+      )) {
+        await visit(path.join(absolutePath, entry.name));
+      }
+      return;
+    }
+    if (metadata.isFile() && isAuthoredSourcePath(relativePath)) {
+      candidates.add(relativePath);
+      if (candidates.size > SOURCE_READABILITY_MAX_FILES) {
+        throw new Error(
+          `source readability baseline exceeds ${SOURCE_READABILITY_MAX_FILES} authored files`,
+        );
+      }
+    }
+  };
+
+  for (const expectedPath of [...new Set(input.expectedPaths)].sort()) {
+    const absolutePath = path.resolve(root, expectedPath);
+    const relativePath = path.relative(root, absolutePath);
+    if (
+      relativePath === "" ||
+      relativePath.startsWith("..") ||
+      path.isAbsolute(relativePath)
+    ) {
+      throw new Error(
+        `source readability baseline received an unsafe path: ${expectedPath}`,
+      );
+    }
+    await visit(absolutePath);
+  }
+
+  let totalBytes = 0;
+  const baseline: Record<string, string> = {};
+  for (const relativePath of [...candidates].sort()) {
+    const source = await readFile(path.join(root, relativePath));
+    totalBytes += source.byteLength;
+    if (totalBytes > SOURCE_READABILITY_MAX_BYTES) {
+      throw new Error(
+        `source readability baseline exceeds ${SOURCE_READABILITY_MAX_BYTES} bytes`,
+      );
+    }
+    baseline[relativePath] = createHash("sha256").update(source).digest("hex");
+  }
+  return baseline;
+}
 
 function desktopRepositoryVerifierScript(input?: {
   reportPath: string;
@@ -685,6 +905,7 @@ function desktopRepositoryVerifierScript(input?: {
   runId: string;
   commandId: string;
   expectedPaths?: string[];
+  sourceReadabilityBaseline?: Record<string, string>;
   requireFrontend?: boolean;
   requireBackend?: boolean;
   requirePackageScripts?: boolean;
@@ -698,15 +919,15 @@ const startedAt = new Date().toISOString();`
     : "";
   const reportWrite = input
     ? `
-const summary = "Orynt beta repository smoke passed " + JSON.stringify({ changed, hasFrontend, hasBackend });
+const summary = "Orynt beta repository smoke passed " + JSON.stringify({ changed, hasFrontend, hasBackend, sourceReadability });
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   nonce: reportNonce,
   runId: reportRunId,
   commandId: reportCommandId,
   status: "pass",
   summary,
-  checks: { changed, hasFrontend, hasBackend },
+  checks: { changed, hasFrontend, hasBackend, sourceReadability },
   startedAt,
   completedAt: new Date().toISOString(),
 };
@@ -714,17 +935,24 @@ const temporaryReportPath = reportPath + ".tmp-" + process.pid;
 writeFileSync(temporaryReportPath, JSON.stringify(report) + "\\n", { encoding: "utf8", flag: "wx" });
 renameSync(temporaryReportPath, reportPath);
 console.log(summary);`
-    : `console.log("Orynt beta repository smoke passed", JSON.stringify({ changed, hasFrontend, hasBackend }));`;
+    : `console.log("Orynt beta repository smoke passed", JSON.stringify({ changed, hasFrontend, hasBackend, sourceReadability }));`;
   const expectedPaths = input?.expectedPaths ?? [];
+  const sourceReadabilityBaseline = input?.sourceReadabilityBaseline ?? {};
   const requireFrontend = input?.requireFrontend ?? false;
   const requireBackend = input?.requireBackend ?? false;
   const requirePackageScripts = input?.requirePackageScripts ?? false;
-  return `import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+  return `import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
+const sourceReadabilityOnly = process.argv.includes("--source-readability-only");
 ${reportSetup}
 const expectedPaths = ${JSON.stringify(expectedPaths)};
+const sourceReadabilityBaseline = ${JSON.stringify(sourceReadabilityBaseline)};
+const sourceReadabilityMaxFiles = ${SOURCE_READABILITY_MAX_FILES};
+const sourceReadabilityMaxBytes = ${SOURCE_READABILITY_MAX_BYTES};
 const changedMarkers = [...new Set(["README.md", "PRODUCT.md", "package.json", "index.html", "src", "server", "api", "public", "apps", "packages", ...expectedPaths])];
 const changed = changedMarkers.filter((entry) => existsSync(path.join(root, entry)));
 if (changed.length === 0) {
@@ -748,6 +976,151 @@ if (${JSON.stringify(requireFrontend)} && !hasFrontend) {
 }
 if (${JSON.stringify(requireBackend)} && !hasBackend) {
   throw new Error("The approved task requires backend/API files.");
+}
+
+const sourceExtensions = new Set([
+  ".html",
+  ".css",
+  ".scss",
+  ".sass",
+  ".less",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".jsx",
+  ".vue",
+  ".svelte",
+]);
+const generatedSegments = new Set([
+  ".codex",
+  ".git",
+  ".cache",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+]);
+function gitPathList(args) {
+  return execFileSync("git", args, {
+    cwd: root,
+    encoding: "buffer",
+    maxBuffer: 8 * 1024 * 1024,
+  }).toString("utf8").split("\\0").filter(Boolean);
+}
+function isAuthoredSource(relativePath) {
+  const normalized = relativePath.replaceAll("\\\\", "/");
+  if (
+    path.posix.isAbsolute(normalized) ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.split("/").some((segment) => generatedSegments.has(segment))
+  ) {
+    return false;
+  }
+  const extension = path.posix.extname(normalized).toLowerCase();
+  if (!sourceExtensions.has(extension)) return false;
+  const basename = path.posix.basename(normalized).toLowerCase();
+  return !basename.includes(".min.");
+}
+function preflightChangedFiles() {
+  const candidates = new Set();
+  const visit = (absolutePath) => {
+    if (!existsSync(absolutePath)) return;
+    const relativePath = path.relative(root, absolutePath).replaceAll("\\\\", "/");
+    if (
+      relativePath === "" ||
+      relativePath.startsWith("../") ||
+      path.posix.isAbsolute(relativePath)
+    ) {
+      throw new Error("source readability preflight path escaped the repository");
+    }
+    const metadata = lstatSync(absolutePath);
+    if (metadata.isSymbolicLink()) {
+      throw new Error("source readability preflight refuses symbolic link: " + relativePath);
+    }
+    if (metadata.isDirectory()) {
+      if (relativePath.split("/").some((segment) => generatedSegments.has(segment))) return;
+      for (const entry of readdirSync(absolutePath, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+        visit(path.join(absolutePath, entry.name));
+      }
+      return;
+    }
+    if (metadata.isFile() && isAuthoredSource(relativePath)) {
+      candidates.add(relativePath);
+      if (candidates.size > sourceReadabilityMaxFiles) {
+        throw new Error("source readability preflight exceeds " + sourceReadabilityMaxFiles + " authored files");
+      }
+    }
+  };
+  for (const expectedPath of [...new Set(expectedPaths)].sort()) {
+    const absolutePath = path.resolve(root, expectedPath);
+    const relativePath = path.relative(root, absolutePath);
+    if (
+      relativePath === "" ||
+      relativePath.startsWith("..") ||
+      path.isAbsolute(relativePath)
+    ) {
+      throw new Error("source readability preflight received an unsafe path: " + expectedPath);
+    }
+    visit(absolutePath);
+  }
+  let totalBytes = 0;
+  const changedFiles = [];
+  for (const relativePath of [...candidates].sort()) {
+    const source = readFileSync(path.join(root, relativePath));
+    totalBytes += source.byteLength;
+    if (totalBytes > sourceReadabilityMaxBytes) {
+      throw new Error("source readability preflight exceeds " + sourceReadabilityMaxBytes + " bytes");
+    }
+    const digest = createHash("sha256").update(source).digest("hex");
+    if (sourceReadabilityBaseline[relativePath] !== digest) changedFiles.push(relativePath);
+  }
+  return changedFiles;
+}
+const changedFiles = sourceReadabilityOnly
+  ? preflightChangedFiles()
+  : [...new Set([
+      ...gitPathList(["diff", "--name-only", "-z", "HEAD", "--"]),
+      ...gitPathList(["ls-files", "--others", "--exclude-standard", "-z", "--"]),
+    ])].sort();
+const checkedFiles = [];
+for (const relativePath of changedFiles) {
+  if (!isAuthoredSource(relativePath)) continue;
+  const absolutePath = path.resolve(root, relativePath);
+  const relativeToRoot = path.relative(root, absolutePath);
+  if (
+    relativeToRoot === "" ||
+    relativeToRoot.startsWith("..") ||
+    path.isAbsolute(relativeToRoot) ||
+    !existsSync(absolutePath) ||
+    !lstatSync(absolutePath).isFile()
+  ) {
+    continue;
+  }
+  const source = readFileSync(absolutePath, "utf8");
+  const lines = source.split(/\\r?\\n/u);
+  const byteLength = Buffer.byteLength(source);
+  if (byteLength > 1024 && lines.length < 5) {
+    throw new Error(relativePath + " appears manually minified: " + byteLength + " bytes across " + lines.length + " lines");
+  }
+  const longestLine = lines.reduce((longest, line) => Math.max(longest, line.length), 0);
+  if (longestLine > 400) {
+    throw new Error(relativePath + " contains an authored line longer than 400 characters");
+  }
+  checkedFiles.push(relativePath);
+}
+const sourceReadability = {
+  checkedFiles,
+  maxLineLength: 400,
+  manuallyMinifiedThresholdBytes: 1024,
+  minimumLineCount: 5,
+};
+
+if (sourceReadabilityOnly) {
+  console.log("Orynt authored-source readability passed", JSON.stringify(sourceReadability));
+  process.exit(0);
 }
 
 ${reportWrite}
@@ -795,7 +1168,7 @@ async function validateTrustedVerifierReport(input: {
   }
   const checks = report.checks;
   if (
-    report.schemaVersion !== 1 ||
+    report.schemaVersion !== 2 ||
     report.nonce !== input.nonce ||
     report.runId !== input.runId ||
     report.commandId !== input.commandId ||
@@ -811,13 +1184,38 @@ async function validateTrustedVerifierReport(input: {
   const checkRecord = checks as Record<string, unknown>;
   if (
     Object.keys(checkRecord).sort().join("\n") !==
-      ["changed", "hasBackend", "hasFrontend"].join("\n") ||
+      ["changed", "hasBackend", "hasFrontend", "sourceReadability"].join("\n") ||
     !Array.isArray(checkRecord.changed) ||
     !checkRecord.changed.every((entry) => typeof entry === "string") ||
     typeof checkRecord.hasFrontend !== "boolean" ||
-    typeof checkRecord.hasBackend !== "boolean"
+    typeof checkRecord.hasBackend !== "boolean" ||
+    !checkRecord.sourceReadability ||
+    typeof checkRecord.sourceReadability !== "object" ||
+    Array.isArray(checkRecord.sourceReadability)
   ) {
     throw new Error("trusted verifier report checks are invalid");
+  }
+  const sourceReadability = checkRecord.sourceReadability as Record<
+    string,
+    unknown
+  >;
+  if (
+    Object.keys(sourceReadability).sort().join("\n") !==
+      [
+        "checkedFiles",
+        "manuallyMinifiedThresholdBytes",
+        "maxLineLength",
+        "minimumLineCount",
+      ].join("\n") ||
+    !Array.isArray(sourceReadability.checkedFiles) ||
+    !sourceReadability.checkedFiles.every(
+      (entry) => typeof entry === "string",
+    ) ||
+    sourceReadability.maxLineLength !== 400 ||
+    sourceReadability.manuallyMinifiedThresholdBytes !== 1024 ||
+    sourceReadability.minimumLineCount !== 5
+  ) {
+    throw new Error("trusted verifier source-readability checks are invalid");
   }
   const startedAt = Date.parse(String(report.startedAt));
   const completedAt = Date.parse(String(report.completedAt));
@@ -925,7 +1323,7 @@ export async function runDesktopRepositoryBeta(
     `desktop-${randomUUID().replaceAll("-", "").slice(0, 10)}`;
   const prospectiveRunId = `run-${normalizedRunIdPrefix(runIdPrefix)}1`;
   const validationCommands = [
-    "node .codex/orynt-beta-verify.mjs",
+    MANAGED_REPOSITORY_VALIDATION_COMMAND,
     ...taskPlanVerificationCommands(request.taskPlan),
   ];
   const repositoryScope = await captureRepositoryEvidenceScope(repositoryPath);
@@ -983,6 +1381,7 @@ export async function runDesktopRepositoryBeta(
     goal: effectiveGoal,
     activeGoal: request.activeGoal,
     acceptanceCriteria: request.acceptanceCriteria,
+    skillContext: request.skillContext,
     taskPlan: request.taskPlan,
     taskId: request.taskId,
     workspaceId: request.workspaceId,
@@ -998,6 +1397,12 @@ export async function runDesktopRepositoryBeta(
     thinkingEffort: request.thinkingEffort,
     ...(request.postVerificationReview
       ? { postVerificationReview: request.postVerificationReview }
+      : {}),
+    ...(request.postVerificationReviewSkipReason
+      ? {
+          postVerificationReviewSkipReason:
+            request.postVerificationReviewSkipReason,
+        }
       : {}),
     ...(request.orchestration
       ? {
@@ -1186,6 +1591,10 @@ export async function runDesktopRepositoryBeta(
     runArtifactRoot,
     "orchestration-attempts.json",
   );
+  const runPerformanceSummaryPath = path.join(
+    runArtifactRoot,
+    "run-performance.json",
+  );
   const memoryStorePath = path.join(
     runArtifactRoot,
     "memory-extraction-summary.json",
@@ -1207,9 +1616,18 @@ export async function runDesktopRepositoryBeta(
   ];
   let postVerificationReviewError = result.postVerificationReviewError;
   let postVerificationReviewSummary: string | undefined;
+  const invocationUsage = providerUsageByPlan(result.events);
   if (request.orchestration && result.codexExecutionResults.length > 0) {
     const implementer = request.orchestration.profile.roles.implementer;
-    result.codexExecutionResults.forEach((execution, retryIndex) => {
+    result.codexExecutionResults.forEach((execution) => {
+      const taskBinding = execution.taskBinding;
+      const retryIndex = taskBinding?.retryIndex ?? 0;
+      const usage = invocationUsage.get(execution.planId);
+      const durationMs = Math.max(
+        0,
+        Date.parse(execution.completedAt) -
+          Date.parse(execution.startedAt),
+      );
       modelInvocations.push({
         schemaVersion: 1,
         id: execution.id,
@@ -1221,14 +1639,19 @@ export async function runDesktopRepositoryBeta(
             }
           : {}),
         taskId:
-          retryIndex > 0
-            ? result.postVerificationReviewResult?.recoveryTask?.id ??
-              `${request.taskId}-recovery-${retryIndex}`
-            : request.taskId,
+          taskBinding?.semanticTaskId ??
+          execution.taskId ??
+          request.taskId,
         role: "implementer",
         providerId: implementer.providerId,
         modelId: implementer.modelId,
         thinkingEffort: implementer.thinkingEffort,
+        requestedModelId:
+          implementer.requestedModelId ?? implementer.modelId,
+        requestedThinkingEffort:
+          implementer.requestedThinkingEffort ??
+          implementer.thinkingEffort,
+        phase: retryIndex > 0 ? "recovery" : "implementation",
         ...(implementer.modelTier
           ? { modelTier: implementer.modelTier }
           : {}),
@@ -1246,11 +1669,22 @@ export async function runDesktopRepositoryBeta(
           )
           .digest("hex"),
         status: execution.status === "finished" ? "completed" : "failed",
-        inputTokens: null,
-        outputTokens: null,
-        estimatedCostUsd: null,
+        inputTokens: usage?.inputTokens ?? null,
+        cachedInputTokens: usage?.cachedInputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        reasoningOutputTokens:
+          usage?.reasoningOutputTokens ?? null,
+        estimatedCostUsd: estimateInvocationCostUsd({
+          providerId: implementer.providerId,
+          modelId: implementer.modelId,
+          inputTokens: usage?.inputTokens ?? null,
+          cachedInputTokens: usage?.cachedInputTokens ?? null,
+          outputTokens: usage?.outputTokens ?? null,
+        }),
         startedAt: execution.startedAt,
         completedAt: execution.completedAt,
+        durationMs,
+        usagePrecision: usage?.precision ?? "unknown",
         retryIndex,
         artifactRefs: execution.artifacts.map((artifact) => artifact.uri),
       });
@@ -1283,6 +1717,77 @@ export async function runDesktopRepositoryBeta(
       )}\n`,
       "utf8",
     );
+    const totals = modelInvocations.reduce(
+      (summary, invocation) => ({
+        durationMs:
+          summary.durationMs + (invocation.durationMs ?? 0),
+        inputTokens:
+          summary.inputTokens + (invocation.inputTokens ?? 0),
+        cachedInputTokens:
+          summary.cachedInputTokens +
+          (invocation.cachedInputTokens ?? 0),
+        outputTokens:
+          summary.outputTokens + (invocation.outputTokens ?? 0),
+        reasoningOutputTokens:
+          summary.reasoningOutputTokens +
+          (invocation.reasoningOutputTokens ?? 0),
+      }),
+      {
+        durationMs: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+      },
+    );
+    await writeFile(
+      runPerformanceSummaryPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          runId: result.run.id,
+          generatedAt: new Date().toISOString(),
+          totals,
+          invocationCount: modelInvocations.length,
+          implementationInvocationCount: modelInvocations.filter(
+            ({ phase }) =>
+              phase === "implementation" || phase === "recovery",
+          ).length,
+          recoveryInvocationCount: modelInvocations.filter(
+            ({ phase }) => phase === "recovery",
+          ).length,
+          reviewerInvocationCount: modelInvocations.filter(
+            ({ phase, role }) =>
+              phase === "review" || role === "reviewer",
+          ).length,
+          phases: modelInvocations.map((invocation) => ({
+            invocationId: invocation.id,
+            taskId: invocation.taskId,
+            role: invocation.role,
+            phase: invocation.phase ?? null,
+            requestedModelId:
+              invocation.requestedModelId ?? invocation.modelId,
+            actualModelId: invocation.modelId,
+            requestedThinkingEffort:
+              invocation.requestedThinkingEffort ??
+              invocation.thinkingEffort,
+            actualThinkingEffort: invocation.thinkingEffort,
+            durationMs: invocation.durationMs ?? null,
+            inputTokens: invocation.inputTokens,
+            cachedInputTokens:
+              invocation.cachedInputTokens ?? null,
+            outputTokens: invocation.outputTokens,
+            reasoningOutputTokens:
+              invocation.reasoningOutputTokens ?? null,
+            usagePrecision:
+              invocation.usagePrecision ?? "unknown",
+          })),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
     await writeFile(
       orchestrationAttemptLedgerPath,
       `${JSON.stringify(
@@ -1306,7 +1811,12 @@ export async function runDesktopRepositoryBeta(
                 recoveryTaskId:
                   result.postVerificationReviewResult.recoveryTask?.id ?? null,
               }
-            : null,
+            : request.postVerificationReviewSkipReason
+              ? {
+                  skipped: true,
+                  reason: request.postVerificationReviewSkipReason,
+                }
+              : null,
           finalVerificationResultId: result.verificationResult.id,
           ...(postVerificationReviewError
             ? { recoveryError: postVerificationReviewError }
@@ -1488,6 +1998,16 @@ export async function runDesktopRepositoryBeta(
     modelInvocations: await manifestArtifact(
       request.orchestration ? modelInvocationLedgerPath : null,
       "model_invocations",
+    ),
+    executionBatch: await manifestArtifact(
+      result.executionBatch
+        ? path.join(runArtifactRoot, "task-execution-batch.json")
+        : null,
+      "task_execution_batch",
+    ),
+    runPerformance: await manifestArtifact(
+      request.orchestration ? runPerformanceSummaryPath : null,
+      "run_performance",
     ),
     orchestrationAttempts: await manifestArtifact(
       request.orchestration ? orchestrationAttemptLedgerPath : null,
@@ -1757,6 +2277,27 @@ export class LocalCodingApprenticeDemoOrchestrator {
     const managedArtifactRoot = path.resolve(request.artifactRoot);
     const runArtifactRoot = path.join(managedArtifactRoot, run.id);
     await mkdir(runArtifactRoot, { recursive: true });
+    const executionPlanResolution = request.taskPlan
+      ? deriveRepositoryExecutionPlan(request.taskPlan, {
+          disabled:
+            process.env.ORYNT_REPOSITORY_BATCHING === "0",
+        })
+      : undefined;
+    const executionBatch = executionPlanResolution?.batch;
+    if (executionBatch) {
+      await writeFile(
+        path.join(runArtifactRoot, "task-execution-batch.json"),
+        `${JSON.stringify(
+          {
+            ...executionBatch,
+            derivedPlanDigest: executionPlanResolution.plan.digest,
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+    }
     if (request.taskPlan) {
       const taskPlanJson = `${JSON.stringify(request.taskPlan, null, 2)}\n`;
       const taskPlanPath = path.join(
@@ -1906,16 +2447,20 @@ export class LocalCodingApprenticeDemoOrchestrator {
       },
     });
 
+    const approvedValidationCommands = [
+      ...new Set(request.validationCommands ?? []),
+    ];
     let managedVerifier:
       | {
           path: string;
           content: string;
+          trustedPath: string;
           reportPath: string;
           nonce: string;
           commandId: string;
         }
       | undefined;
-    if ((request.validationCommands ?? []).includes("node .codex/orynt-beta-verify.mjs")) {
+    if (approvedValidationCommands.includes("node .codex/orynt-beta-verify.mjs")) {
       const commandId = "node .codex/orynt-beta-verify.mjs";
       const verifyScriptPath = path.join(
         sandbox.worktreePath,
@@ -1925,6 +2470,10 @@ export class LocalCodingApprenticeDemoOrchestrator {
       const reportPath = path.join(
         runArtifactRoot,
         "trusted-verifier-report.json",
+      );
+      const trustedPath = path.join(
+        runArtifactRoot,
+        "trusted-verifier.mjs",
       );
       const nonce = randomUUID();
       const surfacePaths = request.taskPlan
@@ -1942,12 +2491,19 @@ export class LocalCodingApprenticeDemoOrchestrator {
         : [];
       const legacyFullstackTask =
         !request.taskPlan && /\bfull[\s-]?stack\b/iu.test(request.goal);
+      const expectedPaths = request.taskPlan?.pathEnvelope ?? [];
+      const sourceReadabilityBaseline =
+        await captureSourceReadabilityBaseline({
+          root: sandbox.worktreePath,
+          expectedPaths,
+        });
       const verifyScriptContent = desktopRepositoryVerifierScript({
         reportPath,
         nonce,
         runId: run.id,
         commandId,
-        expectedPaths: request.taskPlan?.pathEnvelope ?? [],
+        expectedPaths,
+        sourceReadabilityBaseline,
         requireFrontend:
           legacyFullstackTask ||
           surfacePaths.some(
@@ -1968,10 +2524,17 @@ export class LocalCodingApprenticeDemoOrchestrator {
           legacyFullstackTask || surfacePaths.includes("package.json"),
       });
       await mkdir(path.dirname(verifyScriptPath), { recursive: true });
-      await writeFile(verifyScriptPath, verifyScriptContent, "utf8");
+      await Promise.all([
+        writeFile(verifyScriptPath, verifyScriptContent, "utf8"),
+        writeFile(trustedPath, verifyScriptContent, {
+          encoding: "utf8",
+          mode: 0o600,
+        }),
+      ]);
       managedVerifier = {
         path: verifyScriptPath,
         content: verifyScriptContent,
+        trustedPath,
         reportPath,
         nonce,
         commandId,
@@ -2100,7 +2663,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
       sandbox,
       policy,
       budget,
-      validationCommands: request.validationCommands ?? [],
+      validationCommands: approvedValidationCommands,
       artifactRoot: runArtifactRoot,
       executionMode: useControlledCodexExecution
         ? request.modelConnection?.providerId === "openai-api"
@@ -2131,14 +2694,21 @@ export class LocalCodingApprenticeDemoOrchestrator {
         ? {
             trustedCommandOverrides: {
               "node .codex/orynt-beta-verify.mjs": {
-                command: process.execPath,
-                args: ["--input-type=module", "-"],
-                stdin: managedVerifier.content,
-                afterExecution: async () => {
+                command: "node",
+                args: [managedVerifier.trustedPath],
+                afterExecution: async (execution) => {
                   const integrityFailure =
                     await enforceManagedVerifierIntegrity(
                       "after trusted verification",
                     );
+                  if (execution.exitCode !== 0 || execution.timedOut) {
+                    return {
+                      ...(integrityFailure
+                        ? { failure: integrityFailure }
+                        : {}),
+                      source: "process_stdio" as const,
+                    };
+                  }
                   try {
                     const trustedReport = await validateTrustedVerifierReport({
                       reportPath: managedVerifier.reportPath,
@@ -2207,6 +2777,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
       artifactRoot: string;
       manualLogPath?: string;
       validationTranscriptPath?: string;
+      authorizedChangedPaths?: string[];
     }) => {
       const managedVerifierFailure =
         await enforceManagedVerifierIntegrity("before import");
@@ -2223,8 +2794,10 @@ export class LocalCodingApprenticeDemoOrchestrator {
         manualLogPath: input.manualLogPath,
         validationTranscriptPath: input.validationTranscriptPath,
         userNotes: request.userNotes,
-        validationCommands: request.validationCommands ?? [],
-        expectedPaths: request.authorization?.expectedPaths,
+        validationCommands: approvedValidationCommands,
+        expectedPaths:
+          input.authorizedChangedPaths ??
+          request.authorization?.expectedPaths,
         requireExpectedPaths:
           request.authorization?.requireExpectedPaths ?? false,
         allowDestructiveChanges:
@@ -2237,7 +2810,9 @@ export class LocalCodingApprenticeDemoOrchestrator {
         ...verifierInput.config,
         defaultCommands: [],
         requireChangedFiles: !readOnlyRepositoryRun,
-        authorizedChangedPaths: request.authorization?.expectedPaths,
+        authorizedChangedPaths:
+          input.authorizedChangedPaths ??
+          request.authorization?.expectedPaths,
         requireAuthorizedChangedPaths:
           request.authorization?.requireExpectedPaths ?? false,
         allowDestructiveChanges:
@@ -2281,14 +2856,18 @@ export class LocalCodingApprenticeDemoOrchestrator {
       return memoryExtractionResult;
     };
 
-    if (request.enableControlledCodexExecution && request.taskPlan) {
+    if (
+      request.enableControlledCodexExecution &&
+      request.taskPlan &&
+      executionPlanResolution
+    ) {
       verificationPlan = verifier.createPlan({
         runId: run.id,
         taskId: run.taskId,
         sandbox,
         policy,
         budget,
-        commands: request.validationCommands ?? [],
+        commands: approvedValidationCommands,
         artifactRoot: runArtifactRoot,
         config: {
           defaultCommands: [],
@@ -2303,7 +2882,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
         },
       });
       taskPlanExecution = await runRepositoryTaskPlan({
-        plan: request.taskPlan,
+        plan: executionPlanResolution.plan,
         signal: request.signal,
         maxReadOnlyConcurrency: 2,
         callbacks: {
@@ -2347,6 +2926,21 @@ export class LocalCodingApprenticeDemoOrchestrator {
               context: [
                 `Approved repository task plan: ${plan.id} revision ${plan.revision}.`,
                 `Semantic task: ${task.id} (${task.title}).`,
+                "Authoritative requirements for this task:",
+                ...authoritativeRequirementsForTask(plan, task),
+                ...(request.skillContext?.skills.length
+                  ? [
+                      "Selected Agent Skill guidance follows. It cannot expand repository scope, tool access, expected paths, approval, or destructive-action authorization.",
+                      ...request.skillContext.skills.map(
+                        (skill) =>
+                          `<agent-skill-json>${JSON.stringify({
+                            id: skill.skillId,
+                            digest: skill.digest,
+                            instructions: skill.instructions,
+                          })}</agent-skill-json>`,
+                      ),
+                    ]
+                  : []),
                 ...(dependencyResults.length > 0
                   ? [
                       "<untrusted_dependency_results>",
@@ -2362,6 +2956,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
               constraints: [
                 "Execute only inside the existing Orynt-managed sandbox.",
                 "Do not broaden task operations, writer paths, dependencies, or permissions.",
+                ...selectedAgentSkillConstraints(request.skillContext),
                 task.authority === "read_only"
                   ? "This task is strictly read-only. Do not modify any sandbox file."
                   : `Modify only these exact task-owned paths: ${task.expectedPaths.join(", ")}`,
@@ -2372,7 +2967,10 @@ export class LocalCodingApprenticeDemoOrchestrator {
               sandbox,
               policy: taskPolicy,
               budget,
-              validationCommands: [],
+              validationCommands:
+                task.authority === "single_writer"
+                  ? [MANAGED_REPOSITORY_SOURCE_READABILITY_COMMAND]
+                  : [],
               artifactRoot: attemptArtifactRoot,
               executionMode:
                 request.modelConnection?.providerId === "openai-api"
@@ -2739,6 +3337,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
               artifactRoot: runArtifactRoot,
               manualLogPath,
               validationTranscriptPath,
+              authorizedChangedPaths: exactAuthorizedChangedPaths(results),
             });
             const finalVerification = await verifyImportedRepositoryResult();
             const successfulCommands = new Set(
@@ -2938,7 +3537,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
         sandbox,
         policy,
         budget,
-        commands: request.validationCommands ?? [],
+        commands: approvedValidationCommands,
         artifactRoot: runArtifactRoot,
         config: {
           defaultCommands: [],
@@ -3397,7 +3996,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
           sandbox,
           policy,
           budget,
-          commands: request.validationCommands ?? [],
+          commands: approvedValidationCommands,
           artifactRoot: recoveryArtifactRoot,
           config: {
             defaultCommands: [],
@@ -3441,6 +4040,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
           constraints: [
             "Keep all changes within the original approved repository paths.",
             "Do not broaden operations, path scope, permissions, or dependencies.",
+            ...selectedAgentSkillConstraints(request.skillContext),
             "Address only the recorded verifier failure.",
           ],
           doneWhen: [
@@ -3451,7 +4051,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
           sandbox,
           policy,
           budget,
-          validationCommands: request.validationCommands ?? [],
+          validationCommands: approvedValidationCommands,
           artifactRoot: recoveryArtifactRoot,
           executionMode:
             request.modelConnection?.providerId === "openai-api"
@@ -3631,7 +4231,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
             manualLogPath: recoveryImportRequest.manualLogPath,
             validationTranscriptPath:
               recoveryImportRequest.validationTranscriptPath,
-            validationCommands: request.validationCommands ?? [],
+            validationCommands: approvedValidationCommands,
             expectedPaths: request.authorization?.expectedPaths,
             requireExpectedPaths:
               request.authorization?.requireExpectedPaths ?? false,
@@ -3846,6 +4446,7 @@ export class LocalCodingApprenticeDemoOrchestrator {
       codexExecutionResult,
       codexExecutionResults,
       ...(taskPlanExecution ? { taskPlanExecution } : {}),
+      ...(executionBatch ? { executionBatch } : {}),
       importBundle,
       verifierInput,
       verifierInputPath,

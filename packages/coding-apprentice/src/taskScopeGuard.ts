@@ -113,6 +113,13 @@ export function repositoryTaskScopeDelta(
     .sort((left, right) => left.localeCompare(right));
 }
 
+export function exactAuthorizedChangedPaths(
+  results: ReadonlyArray<{ changedPaths: readonly string[] }>,
+): string[] {
+  return [...new Set(results.flatMap((result) => result.changedPaths))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
 export function assertRepositoryTaskScope(
   task: RepositorySemanticTaskV1,
   changedPaths: string[],
@@ -125,8 +132,11 @@ export function assertRepositoryTaskScope(
       "Read-only repository task changed sandbox files.",
     );
   }
-  const allowed = new Set(task.expectedPaths);
-  const unauthorized = changedPaths.filter((entry) => !allowed.has(entry));
+  const unauthorized = changedPaths.filter((entry) =>
+    !task.expectedPaths.some(
+      (ownedPath) => entry === ownedPath || entry.startsWith(`${ownedPath}/`),
+    )
+  );
   if (unauthorized.length > 0) {
     throw new RepositoryTaskScopeError(
       "unauthorized_path",

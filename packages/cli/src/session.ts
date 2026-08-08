@@ -19,6 +19,7 @@ import {
   validateOrchestrationPlan,
   type OrchestrationPreset,
   type OrchestrationProfile,
+  type OrchestrationProviderId,
   type OrchestrationRole,
   type OrchestrationChildTask,
   type OrchestrationPlan,
@@ -26,6 +27,7 @@ import {
   type CapabilityRuntimeSettingsV1,
   type ContextTokenBreakdownV1,
   type ModelTier,
+  type ModelTierProviderId,
   type PromptUnderstandingAssumptionV1,
   type PromptUnderstandingBasisV1,
   type PromptUnderstandingQuestionV1,
@@ -79,6 +81,8 @@ import {
   truncate,
   type InlineActivityHandle,
   type InlineMessageStreamHandle,
+  type ClarificationRequest,
+  type ClarificationResult,
   type ComposerChoice,
   type ComposerDraftSnapshot,
   type ComposerInitialValue,
@@ -199,6 +203,7 @@ export type CliRunRequest = {
       }
     | undefined
   >;
+  postVerificationReviewSkipReason?: string;
   activeGoal?: string;
   acceptanceCriteria: string[];
   selectedSkillIds?: string[];
@@ -227,22 +232,48 @@ export type CodexProviderCode =
   | "CODEX_AUTH_REQUIRED"
   | "CODEX_PROBE_FAILED";
 
+export type ClaudeProviderCode =
+  | "CLAUDE_READY"
+  | "CLAUDE_AUTH_REQUIRED"
+  | "CLAUDE_AUTH_INVALID"
+  | "CLAUDE_CREDENTIAL_CONFLICT"
+  | "CLAUDE_MODEL_ACCESS_DENIED"
+  | "CLAUDE_RATE_LIMITED"
+  | "CLAUDE_CLI_MISSING"
+  | "CLAUDE_STREAM_PROTOCOL_UNAVAILABLE"
+  | "CLAUDE_PROBE_FAILED";
+
+export type OpencodeProviderCode =
+  | "OPENCODE_READY"
+  | "OPENCODE_AUTH_REQUIRED"
+  | "OPENCODE_AUTH_INVALID"
+  | "OPENCODE_PROBE_FAILED";
+
+export type ProviderCode =
+  | CodexProviderCode
+  | ClaudeProviderCode
+  | OpencodeProviderCode;
+
 export type CodexNextAction =
   | "none"
   | "install"
   | "update"
   | "login"
+  | "configure"
   | "diagnose";
+
+/** Retained for callers that only handle the Codex provider. */
+export type ProviderNextAction = CodexNextAction;
 
 export type ProviderStatus = {
   ready: boolean;
   detail: string;
-  provider?: "codex";
-  transport?: "app_server";
+  provider?: "codex" | "anthropic" | "opencode";
+  transport?: "app_server" | "http" | "stdio";
   version?: string;
   authenticated?: boolean;
   dynamicTools?: boolean;
-  code?: CodexProviderCode;
+  code?: ProviderCode;
   nextAction?: CodexNextAction;
   remediationCommand?: string;
 };
@@ -293,8 +324,14 @@ export type InteractiveTerminal = {
     choices: ComposerChoice[],
     currentValue?: string,
   ) => Promise<string>;
+  clarify?: (
+    request: ClarificationRequest,
+  ) => Promise<ClarificationResult>;
   remember?: (value: string) => void;
-  beginActivity?: (label: string) => InlineActivityHandle;
+  beginActivity?: (
+    label: string,
+    options?: { immediate?: boolean },
+  ) => InlineActivityHandle;
   beginMessageStream?: (label?: string) => InlineMessageStreamHandle;
   write: (value: TerminalOutput) => void;
   /** Writes one responsive centered line using the first variant that fits. */
@@ -353,6 +390,13 @@ export type InteractiveSessionOptions = {
     activeGoal?: string;
     candidates: CliSkillRoutingCandidate[];
     modelId: string;
+    /**
+     * Provider of the routed binding. The skill router selects the Light tier,
+     * whose provider need not match the coordinator's, so this must travel with
+     * the model id: an omitted provider falls back to the Codex transport and
+     * would dispatch a non-Codex model id there.
+     */
+    providerId?: ModelTierProviderId;
     thinkingEffort: ThinkingEffort;
     signal?: AbortSignal;
     timeoutMs?: number;
@@ -439,9 +483,13 @@ const NOOP_ACTIVITY: InlineActivityHandle = {
 function beginTerminalActivity(
   terminal: InteractiveTerminal,
   label: string,
-  options: { fallbackRow?: boolean } = {},
+  options: { fallbackRow?: boolean; immediate?: boolean } = {},
 ): InlineActivityHandle {
-  if (terminal.beginActivity) return terminal.beginActivity(label);
+  if (terminal.beginActivity) {
+    return terminal.beginActivity(label, {
+      immediate: options.immediate,
+    });
+  }
   if (options.fallbackRow) {
     terminal.write(
       createTerminalDesignSystem(
@@ -751,14 +799,74 @@ function compactAgentActivity(event: CliAgentActivityEvent): string {
       event.detail ? ` · ${compact(event.detail)}` : ""
     }`;
   }
-  const labels: Record<Extract<CliAgentActivityEvent, { kind: "tool" }>["toolKind"], string> = {
-    command: "Tool shell",
-    mcp: "Tool MCP",
-    web_search: "Search",
-    file_change: "Files",
-    other: "Tool",
-  };
-  return `${labels[event.toolKind]} ${compact(event.label)}`;
+  const presentation = toolActivityPresentation(event);
+  return `${presentation.label} ${compactToolActivityDetail(event)}`;
+}
+
+type ToolActivityEvent = Extract<CliAgentActivityEvent, { kind: "tool" }>;
+
+const TOOL_ACTIVITY_PRESENTATION = {
+  read: { icon: "▤", label: "Read" },
+  list: { icon: "≡", label: "List" },
+  search: { icon: "⌕", label: "Search" },
+  run: { icon: "▶", label: "Run" },
+  edit: { icon: "✎", label: "Edit" },
+  diff: { icon: "Δ", label: "Diff" },
+  web: { icon: "◎", label: "Web" },
+  mcp: { icon: "◆", label: "MCP" },
+  inspect: { icon: "◇", label: "Inspect" },
+  other: { icon: "◇", label: "Tool" },
+} as const;
+
+function fallbackToolAction(
+  event: ToolActivityEvent,
+): keyof typeof TOOL_ACTIVITY_PRESENTATION {
+  if (event.toolKind === "command") return "run";
+  if (event.toolKind === "mcp") return "mcp";
+  if (event.toolKind === "web_search") return "web";
+  if (event.toolKind === "file_change") return "edit";
+  return "other";
+}
+
+function toolActivityPresentation(event: ToolActivityEvent): {
+  icon: string;
+  label: string;
+} {
+  return TOOL_ACTIVITY_PRESENTATION[
+    event.action ?? fallbackToolAction(event)
+  ];
+}
+
+function compactToolActivityDetail(event: ToolActivityEvent): string {
+  const redacted = redactSensitivePayload(event.label).payload;
+  const detail = terminalSafeMultilineText(String(redacted))
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (detail) return detail.slice(0, 180);
+  return terminalSafeText(event.toolName ?? "tool").slice(0, 180);
+}
+
+function toolActivityLine(event: ToolActivityEvent): string {
+  const presentation = toolActivityPresentation(event);
+  const duration = event.durationMs === undefined
+    ? ""
+    : ` · ${formatToolDuration(event.durationMs)}`;
+  const suffix = event.status === "failed" ? `${duration} · failed` : duration;
+  const icon = event.status === "failed" ? "✕" : presentation.icon;
+  return `  ${icon} ${presentation.label.padEnd(7)} ${compactToolActivityDetail(event)}${suffix}`;
+}
+
+function formatToolDuration(durationMs: number): string {
+  const safeDurationMs = Math.max(0, durationMs);
+  if (safeDurationMs < 100) return "<0.1s";
+  if (safeDurationMs < 10_000) {
+    return `${(safeDurationMs / 1_000).toFixed(1)}s`;
+  }
+  const totalSeconds = Math.floor(safeDurationMs / 1_000);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes === 0) return `${totalSeconds}s`;
+  return `${totalMinutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
 function activityAuditSummary(
@@ -883,11 +991,23 @@ function appendConversationOutcome(
   state.conversationSummary = `${base.slice(0, availableBaseLength)}${separator}${suffix}`;
 }
 
+const PROVIDER_LABELS: Record<OrchestrationProviderId, string> = {
+  "codex-cli": "Codex",
+  "openai-api": "OpenAI API",
+  "anthropic-api": "Anthropic API",
+  "opencode-api": "OpenCode",
+};
+
 function modelChoiceDescription(model: CliModelOption): string {
   const efforts = model.supportedThinkingEfforts.length > 0
     ? `effort: ${model.supportedThinkingEfforts.join(", ")}`
     : "effort: provider default";
-  return model.description ? `${model.description} · ${efforts}` : efforts;
+  // The catalog can mix providers, so the picker has to say which one a model
+  // belongs to; the id alone is not always obvious.
+  const provider = PROVIDER_LABELS[model.providerId ?? "codex-cli"] ?? "Codex";
+  return model.description
+    ? `${provider} · ${model.description} · ${efforts}`
+    : `${provider} · ${efforts}`;
 }
 
 function modelSelectionText(models: CliModelOption[], currentModelId: string): string {
@@ -1325,6 +1445,118 @@ export function promptUnderstandingQuestionsText(
     `Task clarification · round ${options.round}/3`,
     ...rows,
     "Reply to the next question with an option id, its label, or any free-form answer.",
+  ].join("\n");
+}
+
+function promptClarificationRequest(
+  understanding: PromptUnderstandingV1,
+  round: number,
+): ClarificationRequest {
+  return {
+    title: `Task clarification · round ${round}/3`,
+    timeoutMs: 120_000,
+    questions: understanding.questions.map((question) => ({
+      id: question.id,
+      prompt: question.prompt,
+      rationale: question.rationale,
+      group: promptQuestionGroup(question.kind),
+      selectionMode: question.selectionMode ?? "single",
+      options: question.options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        description: option.description,
+        recommended: option.recommended,
+        ...(option.recommendationReason !== undefined
+          ? { recommendationReason: option.recommendationReason }
+          : {}),
+        ...(option.conflictsWith !== undefined
+          ? { conflictsWith: option.conflictsWith }
+          : {}),
+      })),
+    })),
+  };
+}
+
+function clarificationBasis(
+  basis: PromptUnderstandingBasisV1,
+  understanding: PromptUnderstandingV1,
+  result: Extract<
+    ClarificationResult,
+    { status: "submitted" | "auto_submitted" }
+  >,
+): PromptUnderstandingBasisV1 {
+  const questions = new Map(
+    understanding.questions.map((question) => [question.id, question]),
+  );
+  return {
+    ...basis,
+    clarificationAnswers: [
+      ...basis.clarificationAnswers,
+      ...result.answers.map((answer) => {
+        const question = questions.get(answer.questionId);
+        const selectedOptions = answer.selectedOptionIds.flatMap((optionId) => {
+          const option = question?.options.find(
+            (candidate) => candidate.id === optionId,
+          );
+          return option ? [option] : [];
+        });
+        return {
+          questionId: answer.questionId,
+          answer: selectedOptions.map(({ label }) => label).join(", "),
+          selectedOptionIds: [...answer.selectedOptionIds],
+          ...(selectedOptions.length === 1
+            ? { selectedOptionId: selectedOptions[0]!.id }
+            : {}),
+          ...(answer.note ? { note: answer.note } : {}),
+          ...(answer.optionNotes?.length
+            ? {
+                optionNotes: answer.optionNotes.map((optionNote) => ({
+                  ...optionNote,
+                })),
+              }
+            : {}),
+        };
+      }),
+    ],
+  };
+}
+
+function clarificationSummaryText(
+  understanding: PromptUnderstandingV1,
+  result: Extract<
+    ClarificationResult,
+    { status: "submitted" | "auto_submitted" }
+  >,
+): string {
+  const questions = new Map(
+    understanding.questions.map((question) => [question.id, question]),
+  );
+  return [
+    result.status === "auto_submitted"
+      ? "Clarification summary · auto-submitted after 120s"
+      : "Clarification summary",
+    ...result.answers.flatMap((answer, index) => {
+      const question = questions.get(answer.questionId);
+      const labels = answer.selectedOptionIds.map(
+        (optionId) =>
+          question?.options.find((option) => option.id === optionId)?.label ??
+          optionId,
+      );
+      return [
+        `  ${index + 1}. ${terminalSafeText(question?.prompt ?? answer.questionId)}`,
+        `     ${terminalSafeText(labels.join(", "))}${answer.autoFilled ? " · auto-filled" : ""}`,
+        ...(answer.note
+          ? [`     Note · ${terminalSafeText(answer.note)}`]
+          : []),
+        ...(answer.optionNotes ?? []).map((optionNote) => {
+          const label =
+            question?.options.find(
+              (option) => option.id === optionNote.optionId,
+            )?.label ?? optionNote.optionId;
+          return `     ${terminalSafeText(label)} · ${terminalSafeText(optionNote.note)}`;
+        }),
+      ];
+    }),
   ].join("\n");
 }
 
@@ -1957,6 +2189,7 @@ export async function runInteractiveSession(
     };
   let pendingCommand: InteractiveCommand | undefined;
   let pendingCommandImages: AgentImageInput[] = [];
+  let pendingClarificationBasis: PromptUnderstandingBasisV1 | undefined;
   type PendingPrompt = {
     value: string;
     images: AgentImageInput[];
@@ -2075,7 +2308,10 @@ export async function runInteractiveSession(
   };
   const beginActivity = (
     label: string,
-    activityOptions: { fallbackRow?: boolean } = {},
+    activityOptions: {
+      fallbackRow?: boolean;
+      immediate?: boolean;
+    } = {},
   ): InlineActivityHandle => {
     if (state.activityDetails === "off") return NOOP_ACTIVITY;
     const activity = beginTerminalActivity(
@@ -2840,6 +3076,7 @@ export async function runInteractiveSession(
           nextProfile.preset = "custom";
           nextProfile.roles[role] = {
             ...nextProfile.roles[role],
+            providerId: model.providerId ?? "codex-cli",
             modelId: model.id,
             thinkingEffort: selectedEffort as ThinkingEffort,
           };
@@ -3745,7 +3982,12 @@ export async function runInteractiveSession(
 
   sessionLoop: for (;;) {
     synchronizeContextForModel(state.modelId);
-    if (!pendingCommand && !pendingInitialPrompt && !pendingPaused && pendingPrompts.length > 0) {
+    if (pendingClarificationBasis && !pendingCommand) {
+      pendingCommand = {
+        kind: "prompt",
+        value: pendingClarificationBasis.rawPrompt,
+      };
+    } else if (!pendingCommand && !pendingInitialPrompt && !pendingPaused && pendingPrompts.length > 0) {
       const pending = pendingPrompts.shift()!;
       pendingCommand = {
         kind: "prompt",
@@ -5148,6 +5390,7 @@ export async function runInteractiveSession(
       profile.preset = "custom";
       profile.roles[role] = {
         ...profile.roles[role],
+        providerId: model.providerId ?? "codex-cli",
         modelId: model.id,
         thinkingEffort: selectedEffort as ThinkingEffort,
       };
@@ -5173,7 +5416,15 @@ export async function runInteractiveSession(
     let criteriaForTurn = [...(state.acceptanceCriteria ?? [])];
     let promptUnderstandingBasisForTurn: PromptUnderstandingBasisV1 | undefined;
     const pendingDraft = state.promptUnderstandingDraft;
-    if (pendingDraft) {
+    const resolvedClarificationBasis = pendingClarificationBasis;
+    pendingClarificationBasis = undefined;
+    if (pendingDraft && resolvedClarificationBasis) {
+      imagesForTurn = promptUnderstandingImages.map((image) => ({ ...image }));
+      promptForTurn = resolvedClarificationBasis.rawPrompt;
+      activeGoalForTurn = resolvedClarificationBasis.activeGoal;
+      criteriaForTurn = [...resolvedClarificationBasis.acceptanceCriteria];
+      promptUnderstandingBasisForTurn = resolvedClarificationBasis;
+    } else if (pendingDraft) {
       imagesForTurn = promptUnderstandingImages.map((image) => ({ ...image }));
       if (pendingDraft.requiresReconfirmation) {
         if (/^(confirm|yes)$/iu.test(command.value.trim())) {
@@ -5503,6 +5754,7 @@ export async function runInteractiveSession(
     const logicalTurnId = `coordinate-${randomUUID()}`;
     let turnResult: CliAgentTurnResult;
     let coordinatorStream: InlineMessageStreamHandle | undefined;
+    let coordinatorMessageItemId: string | undefined;
     const coordinatorToolCalls = new Set<string>();
     const coordinatorFailedToolCalls = new Set<string>();
     const coordinatorPersistedToolCalls = new Set<string>();
@@ -5739,6 +5991,9 @@ export async function runInteractiveSession(
             ...(activeGoalForTurn ? { activeGoal: activeGoalForTurn } : {}),
             candidates,
             modelId: lightBinding.modelId,
+            ...(lightBinding.providerId
+              ? { providerId: lightBinding.providerId }
+              : {}),
             thinkingEffort: lightBinding.thinkingEffort,
             ...(signal ? { signal } : {}),
             timeoutMs: lightBinding.maxWallTimeMs,
@@ -5782,7 +6037,7 @@ export async function runInteractiveSession(
       restartRequested = false;
       promptForTurn = canonicalCurrentPrompt();
       const coordinator = turnProfile.roles.coordinator;
-      const coordinatorActivity = beginActivity(
+      let coordinatorActivity: InlineActivityHandle | undefined = beginActivity(
         `Coordinate ${coordinator.modelId} · ${coordinator.thinkingEffort}`,
         { fallbackRow: true },
       );
@@ -5792,7 +6047,7 @@ export async function runInteractiveSession(
         if (activeTurnSignal) options.cancelRunSignal?.(activeTurnSignal);
       };
       if (stopRequested) {
-        coordinatorActivity.stop();
+        coordinatorActivity?.stop();
         if (turnSignal) options.releaseRunSignal?.(turnSignal);
         activeTurnSignal = undefined;
         writeCancellationComplete();
@@ -5808,6 +6063,7 @@ export async function runInteractiveSession(
             : {}),
           repositoryPath: state.repositoryPath,
           modelId: coordinator.modelId,
+          providerId: coordinator.providerId,
           thinkingEffort: coordinator.thinkingEffort,
           activeGoal: activeGoalForTurn,
           acceptanceCriteria: criteriaForTurn,
@@ -5834,9 +6090,28 @@ export async function runInteractiveSession(
           },
           onActivity: (event) => {
             if (event.kind === "message") {
-              coordinatorActivity.stop();
-              coordinatorStream ??= beginTerminalMessageStream(terminal, "Agent");
-              coordinatorStream.update(event.text);
+              coordinatorActivity?.stop();
+              coordinatorActivity = undefined;
+              let stream = coordinatorStream;
+              if (
+                coordinatorMessageItemId !== event.itemId ||
+                stream === undefined
+              ) {
+                coordinatorStream?.finish();
+                stream = beginTerminalMessageStream(
+                  terminal,
+                  "Agent",
+                );
+                coordinatorStream = stream;
+                coordinatorMessageItemId = event.itemId;
+              }
+              stream.update(event.text);
+              if (
+                event.status === "completed" ||
+                event.status === "failed"
+              ) {
+                stream.finish();
+              }
               return;
             }
             const detail = compactAgentActivity(event);
@@ -5852,7 +6127,18 @@ export async function runInteractiveSession(
               return;
             }
             if (event.kind === "tool") {
+              if (event.status === "started") {
+                coordinatorStream?.finish();
+                coordinatorStream = undefined;
+                coordinatorMessageItemId = undefined;
+                coordinatorActivity ??= beginActivity(detail, {
+                  immediate: true,
+                });
+                coordinatorActivity.update(detail);
+              }
               if (event.status === "completed" || event.status === "failed") {
+                coordinatorActivity?.stop();
+                coordinatorActivity = undefined;
                 coordinatorToolCalls.add(event.itemId);
                 if (event.status === "failed") {
                   coordinatorFailedToolCalls.add(event.itemId);
@@ -5864,11 +6150,7 @@ export async function runInteractiveSession(
                 !coordinatorPersistedToolCalls.has(event.itemId)
               ) {
                 coordinatorPersistedToolCalls.add(event.itemId);
-                write(
-                  event.status === "failed"
-                    ? `  ✕ ${detail} · failed`
-                    : `  ◇ ${detail}`,
-                );
+                write(toolActivityLine(event));
                 return;
               }
             }
@@ -5878,6 +6160,7 @@ export async function runInteractiveSession(
             ) {
               write(`  ◇ ${detail}`);
             } else {
+              coordinatorActivity ??= beginActivity(detail);
               coordinatorActivity.update(detail);
             }
           },
@@ -5891,33 +6174,26 @@ export async function runInteractiveSession(
         if (restartRequested) {
           coordinatorStream?.abort();
           coordinatorStream = undefined;
-          coordinatorActivity.stop();
+          coordinatorActivity?.stop();
           continue coordinatorLoop;
         }
         turnResult = result;
         if (state.activityDetails === "full") {
-          coordinatorActivity.settle(
+          coordinatorActivity?.settle(
             `Coordinate ${coordinator.modelId} · ${coordinator.thinkingEffort}`,
           );
-          write(
-            activityAuditSummary(
-              coordinatorToolCalls.size,
-              coordinatorFailedToolCalls.size,
-              effectiveSkillIds.length,
-            ),
-          );
         } else {
-          coordinatorActivity.stop();
+          coordinatorActivity?.stop();
         }
         break coordinatorLoop;
       } catch (error) {
         coordinatorStream?.abort();
         coordinatorStream = undefined;
         if (restartRequested && !stopRequested) {
-          coordinatorActivity.stop();
+          coordinatorActivity?.stop();
           continue coordinatorLoop;
         }
-        coordinatorActivity.fail(
+        coordinatorActivity?.fail(
           turnSignal?.aborted ? "Coordinate cancelled" : "Coordinate failed",
         );
         if (turnSignal?.aborted) {
@@ -5965,6 +6241,18 @@ export async function runInteractiveSession(
       typeof redactedReply === "string" ? redactedReply : "Agent response unavailable.";
     if (coordinatorStream) {
       coordinatorStream.finish(safeReply);
+    } else {
+      const finalStream = beginTerminalMessageStream(terminal, "Agent");
+      finalStream.finish(safeReply);
+    }
+    if (state.activityDetails === "full") {
+      write(
+        activityAuditSummary(
+          coordinatorToolCalls.size,
+          coordinatorFailedToolCalls.size,
+          effectiveSkillIds.length,
+        ),
+      );
     }
     state.conversationSummary =
       typeof redactedSummary === "string"
@@ -6005,9 +6293,6 @@ export async function runInteractiveSession(
       );
     }
     await persist();
-    if (!coordinatorStream) {
-      write(terminalAgentMessage(terminal, "Agent", safeReply));
-    }
 
     const understanding = turnResult.promptUnderstanding;
     const understandingBasis = turnResult.promptUnderstandingBasis;
@@ -6040,6 +6325,55 @@ export async function runInteractiveSession(
         nextClarificationRound,
       );
       await persist();
+      if (
+        understanding.readiness === "clarification_required" &&
+        terminal.clarify
+      ) {
+        turnTimer.pause();
+        const pauseLiveInput = liveInput?.pauseForModal();
+        let clarificationResult: ClarificationResult;
+        try {
+          clarificationResult = await terminal.clarify(
+            promptClarificationRequest(
+              understanding,
+              nextClarificationRound,
+            ),
+          );
+        } finally {
+          pendingComposerDraft =
+            liveInput?.close() ?? pendingComposerDraft;
+          liveInput = undefined;
+          pauseLiveInput?.();
+          turnTimer.resume();
+        }
+        if (clarificationResult.status === "cancelled") {
+          write(
+            "Task clarification cancelled. No repository plan was created.",
+          );
+          finishTurn("cancelled");
+          continue;
+        }
+        const resolvedBasis = clarificationBasis(
+          understandingBasis,
+          understanding,
+          clarificationResult,
+        );
+        state.promptUnderstandingDraft = promptUnderstandingDraft(
+          resolvedBasis,
+          understanding,
+          nextClarificationRound,
+        );
+        await persist();
+        write(
+          clarificationSummaryText(
+            understanding,
+            clarificationResult,
+          ),
+        );
+        pendingClarificationBasis = resolvedBasis;
+        finishTurn("success");
+        continue;
+      }
       write(
         understanding.readiness === "clarification_required"
           ? promptUnderstandingQuestionsText(understanding, {

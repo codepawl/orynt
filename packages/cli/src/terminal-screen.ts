@@ -62,6 +62,7 @@ function positiveInteger(value: number | undefined, fallback: number): number {
 }
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
 function graphemes(value: string): string[] {
   return [...segmenter.segment(value)].map(({ segment }) => segment);
@@ -450,6 +451,46 @@ export class TerminalScreen {
     return true;
   }
 
+  selectWord(row: number, column: number): boolean {
+    const point = this.historyPoint(row, column, false);
+    if (!point) return false;
+    const entry = this.history.find(({ id }) => id === point.entryId);
+    if (!entry?.plainText) return false;
+    const offset = Math.min(point.offset, entry.plainText.length - 1);
+    const segment = [...wordSegmenter.segment(entry.plainText)].find(
+      (candidate) =>
+        candidate.index <= offset &&
+        offset < candidate.index + candidate.segment.length,
+    );
+    if (!segment || segment.segment.trim().length === 0) return false;
+    this.setSelectionRange(
+      { entryId: entry.id, offset: segment.index },
+      {
+        entryId: entry.id,
+        offset: segment.index + segment.segment.length,
+      },
+    );
+    return true;
+  }
+
+  selectRow(row: number): boolean {
+    if (!Number.isSafeInteger(row)) return false;
+    const historyRow = this.lastVisibleHistoryRows[row - 1];
+    if (
+      historyRow?.entryId === undefined ||
+      historyRow.start === undefined ||
+      historyRow.end === undefined ||
+      historyRow.end <= historyRow.start
+    ) {
+      return false;
+    }
+    this.setSelectionRange(
+      { entryId: historyRow.entryId, offset: historyRow.start },
+      { entryId: historyRow.entryId, offset: historyRow.end },
+    );
+    return true;
+  }
+
   clearSelection(): boolean {
     if (!this.selection) return false;
     this.selection = undefined;
@@ -507,6 +548,12 @@ export class TerminalScreen {
       if (to > from) chunks.push(entry.plainText.slice(from, to));
     }
     return chunks.join("");
+  }
+
+  private setSelectionRange(anchor: HistoryPoint, focus: HistoryPoint): void {
+    this.selection = { anchor, focus, snapshot: "" };
+    this.selection.snapshot = this.selectionTextFromPoints();
+    this.forceRepaint = true;
   }
 
   private wrapEntry(entry: HistoryEntry, width: number): HistoryRow[] {

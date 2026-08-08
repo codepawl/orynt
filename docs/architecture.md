@@ -20,6 +20,20 @@ The completed invocation boundary and sole Context Pack authority are defined
 in [ContextVM v1](contextvm-v1.md) and
 [ADR 0013](adr/0013-contextvm-invocation-authority.md).
 
+## Model providers
+
+Orynt routes a turn through one of four providers, chosen by the model tier
+bound to that turn: the Codex CLI, the OpenAI Responses API, the Anthropic
+Messages API, and OpenCode. See [ADR 0014](adr/0014-anthropic-provider.md) and
+[ADR 0015](adr/0015-opencode-provider.md).
+
+Provider differences that other subsystems must respect are declared once, in
+shared contracts, rather than checked ad hoc at each call site. Two matter
+today: whether a provider bills per token or by subscription, which decides
+whether a cost estimate exists at all, and whether it reports prompt-cache
+counts, which decides whether a cache figure carries meaning. Adding a provider
+fails to compile until both are stated.
+
 ## Trust boundaries
 
 - User input and repository content are untrusted intent/data, not authority.

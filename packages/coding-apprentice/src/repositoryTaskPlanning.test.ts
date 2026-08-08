@@ -6,6 +6,7 @@ import {
 } from "@codepawl/shared";
 
 import {
+  authoritativeRequirementsForTask,
   DesktopRepositoryTaskPlannerError,
   planDesktopRepositoryTask,
 } from "./repositoryTaskPlanning";
@@ -92,6 +93,25 @@ function candidate(requirementIds = ["user-goal", "active-goal", "acceptance-1"]
   });
 }
 
+function candidateWithValidationCommand(command: string): string {
+  const value = JSON.parse(candidate()) as {
+    tasks: Array<{
+      evidence: Array<{
+        kind: string;
+        command: string | null;
+        path: string | null;
+      }>;
+    }>;
+  };
+  value.tasks[1]!.evidence[0] = {
+    ...value.tasks[1]!.evidence[0]!,
+    kind: "command",
+    command,
+    path: null,
+  };
+  return JSON.stringify(value);
+}
+
 describe("desktop repository task planning", () => {
   it("binds model-proposed tasks to server-derived requirements and an immutable digest", async () => {
     const modelTurn = vi.fn(async () => candidate());
@@ -116,6 +136,13 @@ describe("desktop repository task planning", () => {
         modelTurn,
         now: () => "2026-08-02T00:00:00.000Z",
       },
+    );
+    expect(authoritativeRequirementsForTask(plan, plan.tasks[0]!)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Implement a bounded repository change"),
+        expect.stringContaining("Preserve the selected repository scope"),
+        expect.stringContaining("Add a focused regression test"),
+      ]),
     );
 
     expect(plan.requirements.map(({ id }) => id)).toEqual([
@@ -269,5 +296,79 @@ describe("desktop repository task planning", () => {
       code: "planning_output_invalid",
     });
     expect(modelTurn).not.toHaveBeenCalled();
+  });
+
+  it("accepts the managed verifier as canonical command evidence", async () => {
+    const modelTurn = vi.fn(async () =>
+      candidateWithValidationCommand(
+        "  node   .codex/orynt-beta-verify.mjs ",
+      )
+    );
+    const plan = await planDesktopRepositoryTask(
+      {
+        goal: "Implement a bounded repository change",
+        activeGoal: "Preserve the selected repository scope",
+        acceptanceCriteria: ["Add a focused regression test"],
+        taskId: "desktop-task",
+        repositoryPath: "/workspace/repo",
+        modelConnection: connection,
+      },
+      { modelTurn },
+    );
+
+    expect(plan.tasks[1]?.evidence[0]?.command).toBe(
+      "node .codex/orynt-beta-verify.mjs",
+    );
+    expect(modelTurn.mock.calls[0]?.[0].prompt).toContain(
+      "Never use placeholders, prose, shell control syntax, Git inspection commands",
+    );
+  });
+
+  it("rejects placeholder and policy-incompatible command evidence before execution", async () => {
+    for (const command of [
+      "[exact available local validation command selected after inspection]",
+      "git status --short",
+      "bun test && git status",
+    ]) {
+      await expect(
+        planDesktopRepositoryTask(
+          {
+            goal: "Implement a bounded repository change",
+            activeGoal: "Preserve the selected repository scope",
+            acceptanceCriteria: ["Add a focused regression test"],
+            taskId: "desktop-task",
+            repositoryPath: "/workspace/repo",
+            modelConnection: connection,
+          },
+          { modelTurn: async () => candidateWithValidationCommand(command) },
+        ),
+      ).rejects.toMatchObject<Partial<DesktopRepositoryTaskPlannerError>>({
+        code: "planning_output_invalid",
+      });
+    }
+  });
+
+  it("preserves exact calculator test ids in the implementer requirement contract", () => {
+    const exactRequirement =
+      "Use data-testid values calculator, display, key-0 through key-9, key-decimal, key-add, key-subtract, key-multiply, key-divide, key-equals, and key-clear.";
+    const requirements = authoritativeRequirementsForTask(
+      {
+        requirements: [{
+          id: "calculator-dom-contract",
+          text: exactRequirement,
+          source: "user_prompt",
+          kind: "constraint",
+          required: true,
+        }],
+      },
+      { requirementIds: ["calculator-dom-contract"] },
+    );
+
+    expect(requirements).toEqual([
+      `calculator-dom-contract: ${exactRequirement}`,
+    ]);
+    expect(requirements[0]).toContain("key-0 through key-9");
+    expect(requirements[0]).toContain("key-add");
+    expect(requirements[0]).toContain("key-clear");
   });
 });

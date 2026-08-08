@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "id": "047-v2-real-runtime-transfer-orynt_no_context-r1",
+  "taskId": "v2-real-runtime-transfer",
+  "methodId": "orynt_no_context",
+  "repetition": 0,
+  "startedAt": "2026-08-05T07:46:24.179Z",
+  "completedAt": "2026-08-05T07:47:57.067Z",
+  "totalWallMs": 92888,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [
+      "ackages/coding-apprentice/src/index.test.ts",
+      "packages/coding-apprentice/src/index.ts"
+    ],
+    "unexpectedPaths": [
+      "ackages/coding-apprentice/src/index.test.ts"
+    ],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "result",
+    "runId": "run-desktop-6fb5fd1526-1",
+    "status": "pass",
+    "artifactRoot": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1",
+    "artifactManifestPath": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/artifact-manifest.json",
+    "eventLogPath": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/run-events.json",
+    "outcome": {
+      "schemaVersion": 1,
+      "status": "pass",
+      "stage": "verification",
+      "classification": "verification",
+      "code": "verification_passed",
+      "retryable": false,
+      "message": "Deterministic verification and requirement coverage passed."
+    },
+    "snapshot": {
+      "runId": "run-desktop-6fb5fd1526-1",
+      "status": "pass",
+      "summary": "Verification pass: All policy-allowed verification commands passed and diff scope is allowed.",
+      "verification": "passed",
+      "evidenceCount": 18,
+      "artifactManifestPath": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/artifact-manifest.json",
+      "artifacts": {
+        "contract": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/codex-contract.md",
+        "contractMetadata": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/codex-contract.metadata.json",
+        "eventLog": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/run-events.json",
+        "canonicalTrace": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/canonical-trace.jsonl",
+        "cognitiveTrace": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/cognitive-trace.json",
+        "verifierInput": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/verifier-input.json",
+        "verificationResult": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/verification-result.json",
+        "repositoryDiff": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/repository-diff.json",
+        "redactedLog": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/task-executions/t1/attempts/t1-attempt-2dafa2f0-638d-421b-809b-7eccb0bce327/codex-execution-last-message.redacted.md",
+        "memoryStore": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/memory-extraction-summary.json",
+        "memoryRetrieval": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/memory-retrieval.json",
+        "intelligenceContext": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/intelligence-context.json",
+        "evidencePacket": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/evidence-packet.json",
+        "renderedEvidence": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/evidence-packet.txt",
+        "replayPlan": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/skill-invocation-plan.json",
+        "skillContext": null,
+        "modelInvocations": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/model-invocations.json",
+        "orchestrationAttempts": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/orchestration-attempts.json",
+        "runOutcome": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/run-outcome.json"
+      },
+      "eventTypes": [
+        "action_proposed",
+        "run_started",
+        "goal_received",
+        "sandbox_inspected",
+        "sandbox_create_requested",
+        "sandbox_create_allowed",
+        "sandbox_created",
+        "codex_contract_requested",
+        "codex_contract_created",
+        "codex_manual_next_step",
+        "verification_planned",
+        "verification_policy_checked",
+        "codex_contract_requested",
+        "codex_contract_created",
+        "codex_manual_next_step",
+        "codex_detected",
+        "codex_execution_planned",
+        "codex_execution_approval_required",
+        "codex_execution_approved",
+        "codex_execution_started",
+        "codex_agent_message",
+        "codex_tool_activity",
+        "codex_tool_activity",
+        "codex_reasoning_summary",
+        "codex_tool_activity",
+        "codex_tool_activity",
+        "codex_tool_activity",
+        "codex_tool_activity",
+        "codex_agent_message",
+        "codex_execution_output_recorded",
+        "codex_execution_finished",
+        "codex_execution_result_ready",
+        "codex_result_import_requested",
+        "codex_sandbox_diff_inspected",
+        "codex_manual_log_imported",
+        "codex_result_redacted",
+        "codex_result_imported",
+        "verifier_input_created",
+        "verification_planned",
+        "verification_policy_checked",
+        "verification_started",
+        "verification_command_started",
+        "verification_command_finished",
+        "verification_command_started",
+        "verification_command_finished",
+        "verification_diff_checked",
+        "verification_recorded",
+        "verification_passed",
+        "verification_passed",
+        "run_finished"
+      ],
+      "resources": {
+        "artifactRoot": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1",
+        "sandboxWorktreePath": "/home/an/.local/state/orynt/sandboxes/repo-dd9a76645b/run-desktop-6fb5fd1526-1-cli-8e762c24c465-5329d959126e-614eb26842",
+        "sandboxChanged": true
+      },
+      "repositoryDiff": {
+        "available": true,
+        "reference": {
+          "artifactRoot": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1",
+          "path": "/home/an/.local/state/orynt/artifacts/run-desktop-6fb5fd1526-1/repository-diff.json",
+          "sha256": "5f58ca5a3d879e4163f8a5d017f4d431a3de2cc478047b51f538976c53e00fb5",
+          "byteLength": 2496
+        },
+        "totals": {
+          "files": 2,
+          "additions": 28,
+          "deletions": 2,
+          "binaryFiles": 0
+        },
+        "truncated": false,
+        "redactionCount": 0
+      },
+      "estimatedTotalTokens": 1280,
+      "estimatedCostUsd": 0.00256,
+      "costPerSuccessfulTask": 0.00256,
+      "workingState": {
+        "mode": "HABIT",
+        "activeChunkCount": 7,
+        "hardConstraints": [
+          "supervised repository run",
+          "kernel trace only",
+          "no additional execution"
+        ],
+        "selectedOptionId": "O1"
+      },
+      "memory": {
+        "summary": "Memory extraction skipped by request.",
+        "episodeCount": 0,
+        "candidateRuleCount": 0
+      }
+    }
+  },
+  "evaluatedRepository": "/home/an/.local/state/orynt/sandboxes/repo-dd9a76645b/run-desktop-6fb5fd1526-1-cli-8e762c24c465-5329d959126e-614eb26842"
+}

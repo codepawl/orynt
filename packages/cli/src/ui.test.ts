@@ -135,8 +135,9 @@ describe("Orynt terminal UI", () => {
     expect(help).toContain("Inspect");
     expect(help).toContain("Session");
     expect(help).toContain(
-      "drag chat text without Shift and use Ctrl+Shift+C",
+      "drag to select a range, double-click a word",
     );
+    expect(help).toContain("Auto uses native inline scrollback in Orca");
     expect(filterSlashCommands("/do").map(({ command }) => command)).toEqual(["/doctor"]);
     expect(filterSlashCommands("/seittings").map(({ command }) => command)).toEqual([
       "/settings",
@@ -583,7 +584,7 @@ describe("Orynt terminal UI", () => {
       "  ◇ Prepare   Creating isolated worktree and contract",
       "  ◇ Run       Codex working inside repository sandbox",
       "  ◇ Think     Inspecting the repository",
-      "  ◇ Tool      bun test",
+      "  ▶ Run       bun test",
       "  ◇ Verify    Running policy and verifier checks",
     ]);
     expect(progress.join("\n")).not.toContain("Approval");
@@ -664,6 +665,76 @@ describe("Orynt terminal UI", () => {
       "  ◇ Think     Inspecting repository state",
     );
     expect(render("off").snapshot.verifierSummary).toBe("All checks passed");
+  });
+
+  it("renders semantic tool glyphs and deduplicates completed activity", () => {
+    const presenter = new RunPresenter({
+      color: false,
+      activityDetails: "full",
+    });
+    const events = [
+      {
+        type: "codex_tool_activity",
+        payload: {
+          itemId: "read-1",
+          status: "completed",
+          toolKind: "other",
+          toolName: "repo_read",
+          detail: "README.md",
+        },
+      },
+      {
+        type: "codex_tool_activity",
+        payload: {
+          itemId: "read-1",
+          status: "completed",
+          toolKind: "other",
+          toolName: "repo_read",
+          detail: "README.md",
+        },
+      },
+      {
+        type: "codex_tool_activity",
+        payload: {
+          itemId: "edit-1",
+          status: "completed",
+          toolKind: "file_change",
+          toolName: "file_change",
+          detail: "packages/cli/src/ui.ts",
+        },
+      },
+      {
+        type: "codex_tool_activity",
+        payload: {
+          itemId: "web-1",
+          status: "completed",
+          toolKind: "web_search",
+          toolName: "web_search",
+          detail: "Orynt terminal activity",
+        },
+      },
+      {
+        type: "codex_tool_activity",
+        payload: {
+          itemId: "mcp-1",
+          status: "failed",
+          toolKind: "mcp",
+          toolName: "github.search",
+          detail: "github.search",
+        },
+      },
+    ] as const;
+
+    expect(events.flatMap((event) => presenter.present(event))).toEqual([
+      "  ▤ Read      README.md",
+      "  ✎ Edit      packages/cli/src/ui.ts",
+      "  ◎ Web       Orynt terminal activity",
+      "  ✕ MCP       github.search · failed",
+    ]);
+    expect(presenter.snapshot()).toMatchObject({
+      toolCallCount: 4,
+      failedToolCallCount: 1,
+    });
   });
 
   it("preserves multiline report layout and printable punctuation while escaping controls", () => {

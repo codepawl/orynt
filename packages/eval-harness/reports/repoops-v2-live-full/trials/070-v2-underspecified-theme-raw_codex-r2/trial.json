@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "070-v2-underspecified-theme-raw_codex-r2",
+  "taskId": "v2-underspecified-theme",
+  "methodId": "raw_codex",
+  "repetition": 1,
+  "startedAt": "2026-08-05T07:59:46.345Z",
+  "completedAt": "2026-08-05T08:00:10.077Z",
+  "totalWallMs": 23732,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 70093,
+      "cached_input_tokens": 53248,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 625,
+      "reasoning_output_tokens": 116
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/070-v2-underspecified-theme-raw_codex-r2/repo"
+}

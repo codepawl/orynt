@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "065-v2-long-migration-raw_codex-r2",
+  "taskId": "v2-long-migration",
+  "methodId": "raw_codex",
+  "repetition": 1,
+  "startedAt": "2026-08-05T07:57:10.821Z",
+  "completedAt": "2026-08-05T07:58:33.714Z",
+  "totalWallMs": 82893,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [
+      "rc/calculator.ts",
+      "src/state.ts",
+      "test/calculator.test.ts"
+    ],
+    "unexpectedPaths": [
+      "rc/calculator.ts"
+    ],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 139988,
+      "cached_input_tokens": 116992,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3498,
+      "reasoning_output_tokens": 754
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/065-v2-long-migration-raw_codex-r2/repo"
+}

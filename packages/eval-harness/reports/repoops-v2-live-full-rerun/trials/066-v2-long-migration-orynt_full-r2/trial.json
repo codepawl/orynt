@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "066-v2-long-migration-orynt_full-r2",
+  "taskId": "v2-long-migration",
+  "methodId": "orynt_full",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:44:54.326Z",
+  "completedAt": "2026-08-05T08:44:54.483Z",
+  "totalWallMs": 157,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/066-v2-long-migration-orynt_full-r2/repo"
+}

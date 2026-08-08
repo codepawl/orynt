@@ -32,6 +32,48 @@ export type RepositoryTaskEvidenceKind =
   | "semantic_review"
   | "operator_review";
 
+export const MANAGED_REPOSITORY_VALIDATION_COMMAND =
+  "node .codex/orynt-beta-verify.mjs";
+
+const SAFE_VALIDATION_ARGUMENT = /^[A-Za-z0-9_./:@+-]+$/u;
+
+function safeValidationArgument(argument: string): boolean {
+  return (
+    SAFE_VALIDATION_ARGUMENT.test(argument) &&
+    !argument.split("/").some((segment) => segment === "..")
+  );
+}
+
+/**
+ * Returns the canonical command only when repository task evidence can execute
+ * it through the conservative verifier allowlist.
+ */
+export function normalizeRepositoryValidationCommand(
+  command: string,
+): string | undefined {
+  const normalized = command.trim().replace(/\s+/gu, " ");
+  if (normalized === MANAGED_REPOSITORY_VALIDATION_COMMAND) {
+    return normalized;
+  }
+  const parts = normalized.split(" ");
+  const safeBunTest =
+    parts[0] === "bun" &&
+    parts[1] === "test" &&
+    parts.slice(2).every(safeValidationArgument);
+  const safeBunRunTest =
+    parts.length === 3 &&
+    parts[0] === "bun" &&
+    parts[1] === "run" &&
+    parts[2] === "test";
+  const safeNpmTest =
+    parts.length === 2 &&
+    parts[0] === "npm" &&
+    parts[1] === "test";
+  return safeBunTest || safeBunRunTest || safeNpmTest
+    ? normalized
+    : undefined;
+}
+
 export type PromptRequirementV1 = {
   id: string;
   text: string;
@@ -96,6 +138,30 @@ export type RepositoryTaskPlanV1 = {
   createdAt: string;
   digest: string;
 };
+
+export type RepositoryTaskPlanViolation = {
+  code: string;
+  path: string;
+  taskId?: string;
+  evidenceId?: string;
+  repairable: boolean;
+};
+
+/**
+ * A sanitized, machine-readable task-plan validation failure.
+ *
+ * Callers may expose the stable violation metadata to operators, but must not
+ * attach the raw provider output or prompt to this error.
+ */
+export class RepositoryTaskPlanValidationError extends Error {
+  readonly violation: RepositoryTaskPlanViolation;
+
+  constructor(message: string, violation: RepositoryTaskPlanViolation) {
+    super(message);
+    this.name = "RepositoryTaskPlanValidationError";
+    this.violation = { ...violation };
+  }
+}
 
 export type RepositoryTaskExecutionStatus =
   | "planned"
@@ -279,6 +345,23 @@ function uniqueCleanStrings(values: string[]): boolean {
   );
 }
 
+function invalidTask(
+  task: RepositorySemanticTaskV1,
+  code: string,
+  path: string,
+  message: string,
+  repairable = true,
+): never {
+  throw new RepositoryTaskPlanValidationError(message, {
+    code,
+    path,
+    taskId: typeof task.id === "string" && task.id.trim()
+      ? task.id.trim().slice(0, 100)
+      : undefined,
+    repairable,
+  });
+}
+
 function pathWithinScope(path: string, scopes: string[]): boolean {
   return scopes.some(
     (scope) => path === scope || path.startsWith(scope + "/"),
@@ -389,35 +472,137 @@ export function validateRepositoryTaskPlan(
   const writerByPath = new Map<string, string>();
   const coveredRequirementIds = new Set<string>();
   const evidencedRequirementIds = new Set<string>();
-  for (const task of plan.tasks) {
+  for (const [taskIndex, task] of plan.tasks.entries()) {
+    const taskPath = `tasks[${taskIndex}]`;
+    if (!cleanString(task.id)) {
+      invalidTask(task, "TASK_ID_INVALID", `${taskPath}.id`, "Repository task id is invalid.");
+    }
+    if (!cleanString(task.title)) {
+      invalidTask(task, "TASK_TITLE_INVALID", `${taskPath}.title`, "Repository task title is invalid.");
+    }
+    if (!cleanString(task.instruction)) {
+      invalidTask(
+        task,
+        "TASK_INSTRUCTION_INVALID",
+        `${taskPath}.instruction`,
+        "Repository task instruction is invalid.",
+      );
+    }
+    if (!TASK_KINDS.has(task.kind)) {
+      invalidTask(task, "TASK_KIND_INVALID", `${taskPath}.kind`, "Repository task kind is invalid.");
+    }
+    if (!TASK_AUTHORITIES.has(task.authority)) {
+      invalidTask(
+        task,
+        "TASK_AUTHORITY_INVALID",
+        `${taskPath}.authority`,
+        "Repository task authority is invalid.",
+        false,
+      );
+    }
+    if (!uniqueCleanStrings(task.dependencies)) {
+      invalidTask(
+        task,
+        "TASK_DEPENDENCIES_INVALID",
+        `${taskPath}.dependencies`,
+        "Repository task dependencies must be unique, non-empty ids.",
+      );
+    }
     if (
-      !cleanString(task.id) ||
-      !cleanString(task.title) ||
-      !cleanString(task.instruction) ||
-      !TASK_KINDS.has(task.kind) ||
-      !TASK_AUTHORITIES.has(task.authority) ||
-      task.requirementIds.length === 0 ||
-      task.doneWhen.length === 0 ||
-      task.evidence.length === 0 ||
-      !uniqueCleanStrings(task.dependencies) ||
-      !uniqueCleanStrings(task.requirementIds) ||
-      !uniqueCleanStrings(task.operations) ||
-      !uniqueCleanStrings(task.expectedPaths) ||
-      !uniqueCleanStrings(task.doneWhen) ||
-      (task.readPaths !== undefined &&
-        (!uniqueCleanStrings(task.readPaths) ||
-          task.readPaths.some((entry) => !safeRepositoryPath(entry)))) ||
       task.dependencies.some(
         (dependency) => dependency === task.id || !taskIds.has(dependency),
-      ) ||
-      task.requirementIds.some((id) => !requirementIds.has(id)) ||
+      )
+    ) {
+      invalidTask(
+        task,
+        "TASK_DEPENDENCY_REFERENCE_INVALID",
+        `${taskPath}.dependencies`,
+        "Repository task references an unknown or self dependency.",
+      );
+    }
+    if (
+      task.requirementIds.length === 0 ||
+      !uniqueCleanStrings(task.requirementIds)
+    ) {
+      invalidTask(
+        task,
+        "TASK_REQUIREMENT_IDS_INVALID",
+        `${taskPath}.requirementIds`,
+        "Repository task requirement ids must be non-empty and unique.",
+      );
+    }
+    if (task.requirementIds.some((id) => !requirementIds.has(id))) {
+      invalidTask(
+        task,
+        "TASK_REQUIREMENT_REFERENCE_UNKNOWN",
+        `${taskPath}.requirementIds`,
+        "Repository task references an unknown trusted requirement.",
+        false,
+      );
+    }
+    if (!uniqueCleanStrings(task.operations)) {
+      invalidTask(
+        task,
+        "TASK_OPERATIONS_INVALID",
+        `${taskPath}.operations`,
+        "Repository task operations must be unique.",
+      );
+    }
+    if (
       task.operations.some(
         (operation) =>
           !TASK_OPERATIONS.has(operation) || !allowedOperations.has(operation),
-      ) ||
+      )
+    ) {
+      invalidTask(
+        task,
+        "TASK_OPERATION_NOT_ALLOWED",
+        `${taskPath}.operations`,
+        "Repository task uses an operation outside the plan allowance.",
+      );
+    }
+    if (
+      !uniqueCleanStrings(task.expectedPaths) ||
       task.expectedPaths.some((entry) => !safeRepositoryPath(entry))
     ) {
-      throw new Error("Repository task plan contains an invalid task.");
+      invalidTask(
+        task,
+        "TASK_EXPECTED_PATHS_INVALID",
+        `${taskPath}.expectedPaths`,
+        "Repository task expected paths must be safe, exact, and unique.",
+        false,
+      );
+    }
+    if (
+      task.readPaths !== undefined &&
+      (
+        !uniqueCleanStrings(task.readPaths) ||
+        task.readPaths.some((entry) => !safeRepositoryPath(entry))
+      )
+    ) {
+      invalidTask(
+        task,
+        "TASK_READ_PATHS_INVALID",
+        `${taskPath}.readPaths`,
+        "Repository task read paths must be safe, exact, and unique.",
+        false,
+      );
+    }
+    if (task.doneWhen.length === 0 || !uniqueCleanStrings(task.doneWhen)) {
+      invalidTask(
+        task,
+        "TASK_DONE_WHEN_INVALID",
+        `${taskPath}.doneWhen`,
+        "Repository task completion conditions must be non-empty and unique.",
+      );
+    }
+    if (task.evidence.length === 0) {
+      invalidTask(
+        task,
+        "TASK_EVIDENCE_MISSING",
+        `${taskPath}.evidence`,
+        "Repository task requires evidence expectations.",
+      );
     }
     if (
       (task.kind === "change" && task.authority !== "single_writer") ||
@@ -479,7 +664,9 @@ export function validateRepositoryTaskPlan(
         ) ||
         !EVIDENCE_KINDS.has(evidence.kind) ||
         (evidence.path !== undefined && !safeRepositoryPath(evidence.path)) ||
-        (evidence.command !== undefined && !cleanString(evidence.command))
+        (evidence.kind !== "command" &&
+          evidence.command !== undefined &&
+          !cleanString(evidence.command))
       ) {
         throw new Error(
           "Repository task contains an invalid evidence expectation.",
@@ -510,6 +697,19 @@ export function validateRepositoryTaskPlan(
         throw new Error(
           "Repository task command evidence requires a command.",
         );
+      }
+      if (evidence.kind === "command" && evidence.command !== undefined) {
+        const canonicalCommand = normalizeRepositoryValidationCommand(
+          evidence.command,
+        );
+        if (!canonicalCommand || canonicalCommand !== evidence.command) {
+          invalidTask(
+            task,
+            "TASK_EVIDENCE_COMMAND_INVALID",
+            `${taskPath}.evidence.${evidence.id}.command`,
+            "Repository task command evidence must use one canonical policy-allowed validation command.",
+          );
+        }
       }
       for (const requirementId of evidence.requirementIds) {
         evidencedRequirementIds.add(requirementId);

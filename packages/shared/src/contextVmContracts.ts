@@ -472,6 +472,8 @@ export type ContextVmProviderTransportV1 =
   | "codex-cli"
   | "codex-app-server"
   | "openai-responses"
+  | "anthropic-messages"
+  | "claude-cli"
   | "scripted";
 
 export type ContextVmThinkingEffortV1 =

@@ -39,7 +39,7 @@ type LocalRepositoryVerifierOptions = {
         command: string;
         args: readonly string[];
         stdin?: string;
-        afterExecution?: () => Promise<
+        afterExecution?: (outcome: Readonly<ExecOutcome>) => Promise<
           string | TrustedCommandPostExecution | undefined
         >;
       }
@@ -310,7 +310,7 @@ export class LocalRepositoryVerifier implements Verifier {
       command: string;
       args: readonly string[];
       stdin?: string;
-      afterExecution?: () => Promise<
+      afterExecution?: (outcome: Readonly<ExecOutcome>) => Promise<
         string | TrustedCommandPostExecution | undefined
       >;
     }
@@ -490,7 +490,7 @@ export class LocalRepositoryVerifier implements Verifier {
       );
       if (options.signal?.aborted) throw new VerificationCancelledError();
       const trustedCommandPostExecution =
-        await trustedCommand?.afterExecution?.();
+        await trustedCommand?.afterExecution?.(outcome);
       const trustedCommandResult =
         typeof trustedCommandPostExecution === "string"
           ? { failure: trustedCommandPostExecution }

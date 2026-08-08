@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "074-v2-contradictory-rounding-raw_codex-r2",
+  "taskId": "v2-contradictory-rounding",
+  "methodId": "raw_codex",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:01:02.760Z",
+  "completedAt": "2026-08-05T08:01:33.758Z",
+  "totalWallMs": 30998,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 70375,
+      "cached_input_tokens": 53248,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 630,
+      "reasoning_output_tokens": 109
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/074-v2-contradictory-rounding-raw_codex-r2/repo"
+}

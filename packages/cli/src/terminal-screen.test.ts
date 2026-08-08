@@ -284,4 +284,24 @@ describe("TerminalScreen", () => {
     expect(screen.selectedText()).toBeUndefined();
     screen.leave();
   });
+
+  it("selects Unicode words and complete visual rows from mouse coordinates", () => {
+    const harness = output(20, 3);
+    const screen = new TerminalScreen(harness.stream);
+    screen.enter();
+    screen.appendHistory("alpha café\ngamma delta");
+    const frame = {
+      composer: ["prompt"],
+      composerCursorRow: 0,
+      composerCursorColumn: 0,
+    };
+    screen.render(frame);
+
+    expect(screen.selectWord(1, 8)).toBe(true);
+    expect(screen.selectedText()).toBe("café");
+    expect(screen.selectRow(2)).toBe(true);
+    expect(screen.selectedText()).toBe("gamma delta");
+    expect(screen.selectWord(1, 6)).toBe(false);
+    screen.leave();
+  });
 });

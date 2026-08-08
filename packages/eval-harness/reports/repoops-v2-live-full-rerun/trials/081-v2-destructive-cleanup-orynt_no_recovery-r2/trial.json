@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "081-v2-destructive-cleanup-orynt_no_recovery-r2",
+  "taskId": "v2-destructive-cleanup",
+  "methodId": "orynt_no_recovery",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:45:55.244Z",
+  "completedAt": "2026-08-05T08:45:55.390Z",
+  "totalWallMs": 146,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/081-v2-destructive-cleanup-orynt_no_recovery-r2/repo"
+}

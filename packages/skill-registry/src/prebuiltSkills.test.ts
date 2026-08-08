@@ -18,6 +18,7 @@ const builtinSkillNames = [
   "bug-fixer",
   "change-planner",
   "code-reviewer",
+  "product-ui-design",
   "release-readiness",
   "repository-onboarding",
 ] as const;
@@ -33,7 +34,7 @@ const builtinSource: SkillSourceDescriptor = {
 };
 
 describe("Orynt prebuilt skills", () => {
-  it("ships the exact explicit-only core engineering pack", async () => {
+  it("ships the exact core engineering and product UI pack", async () => {
     const directories = (await readdir(builtinRoot, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
@@ -53,6 +54,20 @@ describe("Orynt prebuilt skills", () => {
       expect(parsed.manifest.name).toBe(name);
       expect(parsed.manifest.description).not.toMatch(/TODO/i);
       expect(parsed.instructions.trim().length).toBeGreaterThan(100);
+      if (name === "product-ui-design") {
+        expect(parsed.instructions).toContain(
+          "Keep every authored line at or below 400 characters.",
+        );
+        expect(parsed.instructions).toContain(
+          "Remove decorative eyebrows, dots, badges, menus, avatars, and status chrome",
+        );
+        expect(parsed.instructions).toContain(
+          "Start greenfield workflows with empty user data.",
+        );
+        expect(parsed.instructions).toContain(
+          "running the first readability preflight.",
+        );
+      }
 
       const interfaceDocument = await readFile(
         path.join(skillRoot, "agents", "openai.yaml"),
@@ -60,7 +75,9 @@ describe("Orynt prebuilt skills", () => {
       );
       expect(interfaceDocument).toContain(`Use $${name}`);
       expect(interfaceDocument).toContain(
-        "allow_implicit_invocation: false",
+        name === "product-ui-design"
+          ? "allow_implicit_invocation: true"
+          : "allow_implicit_invocation: false",
       );
 
       const fingerprint = await fingerprintSkillDirectory(skillRoot);

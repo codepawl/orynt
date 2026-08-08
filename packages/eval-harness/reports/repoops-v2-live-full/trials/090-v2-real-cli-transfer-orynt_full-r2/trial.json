@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "090-v2-real-cli-transfer-orynt_full-r2",
+  "taskId": "v2-real-cli-transfer",
+  "methodId": "orynt_full",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:07:44.841Z",
+  "completedAt": "2026-08-05T08:08:14.798Z",
+  "totalWallMs": 29957,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "model",
+    "message": "Could not complete the agent turn: Selected model is at capacity. Please try a different model."
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/090-v2-real-cli-transfer-orynt_full-r2/repo"
+}

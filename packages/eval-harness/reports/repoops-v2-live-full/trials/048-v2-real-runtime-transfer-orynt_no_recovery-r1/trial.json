@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "048-v2-real-runtime-transfer-orynt_no_recovery-r1",
+  "taskId": "v2-real-runtime-transfer",
+  "methodId": "orynt_no_recovery",
+  "repetition": 0,
+  "startedAt": "2026-08-05T07:47:57.070Z",
+  "completedAt": "2026-08-05T07:48:36.799Z",
+  "totalWallMs": 39729,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "environment",
+    "message": "Repository task contains an invalid evidence expectation."
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/048-v2-real-runtime-transfer-orynt_no_recovery-r1/repo"
+}

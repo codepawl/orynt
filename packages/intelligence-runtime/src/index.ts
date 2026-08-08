@@ -1005,7 +1005,10 @@ export class LocalIntelligenceRuntime {
           }))
         : [{
             missing: undefined,
-            query: request.userRequest,
+            // The full request remains mandatory trusted context. Retrieval is
+            // advisory and has a stricter storage contract, so bound only its
+            // lexical query instead of rejecting otherwise valid long goals.
+            query: request.userRequest.slice(0, 1_000),
           }];
         const retrieved = new Map<string, ContextVmRetrievalCandidateV1>();
         for (const retrievalQuery of retrievalQueries) {
@@ -1392,12 +1395,8 @@ export class LocalIntelligenceRuntime {
       initialPack: rootPack,
       decide: async ({ pack, round, signal }) => {
         if (packs.at(-1)?.manifest.id !== pack.manifest.id) packs.push(pack);
-        const deterministicReadinessRole =
-          invocation.role === "prompt_understanding" ||
-          invocation.role === "coordinator";
         if (
           round === 0 &&
-          deterministicReadinessRole &&
           pack.manifest.status === "ready" &&
           pack.manifest.gaps.length === 0 &&
           pack.manifest.unresolvedDependencies.length === 0
@@ -1674,6 +1673,12 @@ export class LocalIntelligenceRuntime {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const errorName = error instanceof Error ? error.name : "";
+      if (process.env.ORYNT_CONTEXTVM_DEBUG_ERRORS === "1") {
+        const compact = message.replace(/\s+/gu, " ").slice(0, 500);
+        process.stderr.write(
+          `[ContextVM] ${invocation.invocationId} ${errorName || "Error"}: ${compact}\n`,
+        );
+      }
       const reason = input.signal?.aborted || errorName === "AbortError"
         ? "provider_cancelled" as const
         : errorName === "TimeoutError" || /timed? out|timeout/iu.test(message)

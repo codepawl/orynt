@@ -66,6 +66,8 @@ const REVIEW_OPERATION = new Set<AgentActionOperation>([
 ]);
 const TAKEOVER_TEXT =
   /\b(sudo|root user|outside (?:the )?repo|outside (?:the )?repository|host filesystem|personal (?:computer|machine)|credential|secret|password|api[-_ ]?key|token|git push|rm\s+-rf|curl|wget)\b/i;
+const NEGATED_TAKEOVER_TEXT =
+  /\b(?:do not|don't|never|must not|without|avoid|no)\b[^.!?\n]{0,120}\b(?:sudo|root user|outside (?:the )?repo|outside (?:the )?repository|host filesystem|personal (?:computer|machine)|credential|secret|password|api[-_ ]?key|token|git push|rm\s+-rf|curl|wget)\b/i;
 const REVIEW_TEXT =
   /\b(delete|remove|rename|migrat|install|dependency|dependencies|lockfile|lock file|large refactor|broad change|xóa|xoá|cài đặt|phụ thuộc|di chuyển)\b/i;
 const HARD_PROTECTED_PATH =
@@ -79,6 +81,17 @@ const EXTENSIONLESS_FILE_NAMES = new Set([
 
 function normalizeAgentPath(value: string): string {
   return value.trim().replaceAll("\\", "/").replace(/^\.\//, "");
+}
+
+function requestsTakeoverCapability(text: string): boolean {
+  return text
+    .split(/(?:[.!?\n]+|\bbut\b|\bhowever\b)/iu)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .some(
+      (segment) =>
+        TAKEOVER_TEXT.test(segment) && !NEGATED_TAKEOVER_TEXT.test(segment),
+    );
 }
 
 function unsafePath(value: string): boolean {
@@ -111,7 +124,7 @@ export function evaluateAgentAction(
   if (action.operations.some((operation) => TAKEOVER_OPERATION.has(operation))) {
     takeoverReasons.push("The requested capability reaches host, network, privileged, or secret access.");
   }
-  if (TAKEOVER_TEXT.test(text)) {
+  if (requestsTakeoverCapability(text)) {
     takeoverReasons.push("The action text requests a capability outside the repository-only runtime.");
   }
   if (estimatedPaths.some((filePath) => unsafePath(filePath))) {

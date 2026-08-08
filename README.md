@@ -1,9 +1,13 @@
+![Orynt](assets/brand/codepawl-orynt/orynt/orynt-banner.png)
+
 # Orynt
 
 **An agent that just works.**
 
 Orynt reads your code, makes a plan, does the work, and checks the result.
 You stay in control.
+
+Orynt is a CodePawl product.
 
 ## What it can do
 

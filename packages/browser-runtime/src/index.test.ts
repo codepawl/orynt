@@ -6,6 +6,7 @@ import {
   MAX_OBSERVATION_BYTES,
   MAX_OBSERVATION_NODES,
   OryntCdpBrowserRuntime,
+  browserLaunchArguments,
   boundNodes,
   type CdpConnection,
 } from "./index";
@@ -73,6 +74,17 @@ class FakeConnection implements CdpConnection {
 }
 
 describe("Orynt CDP browser runtime", () => {
+  it("keeps the permissive CDP Origin handshake bound to loopback", () => {
+    const args = browserLaunchArguments({
+      userDataDir: "/tmp/orynt-browser-profile",
+      initialUrl: "http://127.0.0.1:3000",
+    });
+    expect(args).toContain("--remote-debugging-address=127.0.0.1");
+    expect(args).toContain("--remote-debugging-port=0");
+    expect(args).toContain("--remote-allow-origins=*");
+    expect(args).not.toContain("--remote-debugging-address=0.0.0.0");
+  });
+
   it("exposes only four typed model tools and no raw evaluation surface", () => {
     expect(BROWSER_AGENT_TOOLS.map((tool) => tool.name)).toEqual([
       "browser_tabs",

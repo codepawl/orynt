@@ -2,7 +2,7 @@
 name = "orynt-desktop"
 version = "0.1.0"
 description = "Orynt Tauri compatibility shell"
-authors = ["Codepawl"]
+authors = ["CodePawl"]
 edition = "2021"
 
 [lib]

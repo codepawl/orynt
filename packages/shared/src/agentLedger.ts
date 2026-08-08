@@ -1,3 +1,5 @@
+import { providerBilling } from "./orchestrationContracts.js";
+
 export type AgentRunStatus = "created" | "running" | "completed" | "failed" | "cancelled";
 
 export type AgentRiskLevel = "safe" | "review" | "sensitive" | "blocked";
@@ -236,7 +238,7 @@ export type MonthlyUsageSummary = {
 
 export function createDefaultUsagePricingCatalog(): UsagePricingCatalog {
   return {
-    version: "2026-07-04.local-mock",
+    version: "2026-08-08.local-mock",
     modelPrices: [
       {
         provider: "openai",
@@ -246,12 +248,32 @@ export function createDefaultUsagePricingCatalog(): UsagePricingCatalog {
         outputUsdPerMillionTokens: 2,
         toolCallUsd: 1 / 3000,
       },
+      // Anthropic list prices. Cached input is 0.1x base per the published
+      // cache-read rate. Claude Sonnet 5 carries an introductory $2/$10 rate
+      // that expires 2026-08-31; the standard rate is used so the catalog does
+      // not go stale mid-release.
       {
         provider: "anthropic",
-        model: "claude-sonnet-4",
-        inputUsdPerMillionTokens: 2.5,
-        cachedInputUsdPerMillionTokens: 0.25,
-        outputUsdPerMillionTokens: 18,
+        model: "claude-opus-5",
+        inputUsdPerMillionTokens: 5,
+        cachedInputUsdPerMillionTokens: 0.5,
+        outputUsdPerMillionTokens: 25,
+        toolCallUsd: 0.0005,
+      },
+      {
+        provider: "anthropic",
+        model: "claude-sonnet-5",
+        inputUsdPerMillionTokens: 3,
+        cachedInputUsdPerMillionTokens: 0.3,
+        outputUsdPerMillionTokens: 15,
+        toolCallUsd: 0.0005,
+      },
+      {
+        provider: "anthropic",
+        model: "claude-haiku-4-5",
+        inputUsdPerMillionTokens: 1,
+        cachedInputUsdPerMillionTokens: 0.1,
+        outputUsdPerMillionTokens: 5,
         toolCallUsd: 0.0005,
       },
     ],
@@ -309,6 +331,41 @@ function getGatewayPrice(input: GatewayUsageInput, catalog: UsagePricingCatalog)
   return price;
 }
 
+/**
+ * The prompt tokens a provider had to process at full price for one call.
+ *
+ * `inputTokens` is the whole prompt, including the part served from the
+ * provider's prompt cache. Comparing budgets against it makes a well-cached run
+ * look as expensive as an uncached one, so improving cache reuse cannot show up
+ * as an improvement — and can look like a regression, because cache writes move
+ * tokens into the total without reducing it.
+ *
+ * This derivation is deliberately price-independent so a spend budget stays
+ * comparable across providers and survives a stale price catalog. Use
+ * `calculateModelUsageCostUsd` when an actual currency amount is required.
+ */
+export function calculateFreshInputTokens(
+  usage: Pick<ModelUsageInput, "inputTokens" | "cachedInputTokens">,
+): number {
+  return Math.max(0, usage.inputTokens - usage.cachedInputTokens);
+}
+
+/**
+ * The share of prompt tokens served from the provider's cache, `0` through `1`.
+ *
+ * Reported beside a token budget so a run that cuts spend by caching more is
+ * visibly distinguishable from one that cuts spend by doing less work. Returns
+ * `null` when no prompt tokens were recorded, because a ratio over zero tokens
+ * would read as "no cache reuse" rather than "nothing measured".
+ */
+export function calculateCacheHitRatio(
+  usage: Pick<ModelUsageInput, "inputTokens" | "cachedInputTokens">,
+): number | null {
+  if (usage.inputTokens <= 0) return null;
+  const cached = Math.min(Math.max(0, usage.cachedInputTokens), usage.inputTokens);
+  return cached / usage.inputTokens;
+}
+
 export function calculateModelUsageCostUsd(input: ModelUsageInput, catalog: UsagePricingCatalog): ModelUsageCost {
   const price = getModelPrice(input, catalog);
   const uncachedInputTokens = Math.max(0, input.inputTokens - input.cachedInputTokens);
@@ -322,6 +379,76 @@ export function calculateModelUsageCostUsd(input: ModelUsageInput, catalog: Usag
     configVersion: catalog.version,
     estimatedCostUsd: roundUsd(cost),
   };
+}
+
+/**
+ * Maps an orchestration provider id onto the price catalog's provider name.
+ *
+ * Only per-token providers have catalog names. Subscription providers are not
+ * mapped here at all — {@link estimateInvocationCostUsd} withholds their
+ * estimate before a lookup is attempted, using `providerBilling` as the single
+ * source of that judgement.
+ */
+export function usagePricingProviderId(orchestrationProviderId: string): string {
+  if (orchestrationProviderId === "anthropic-api") return "anthropic";
+  if (orchestrationProviderId === "openai-api") return "openai";
+  return orchestrationProviderId;
+}
+
+/**
+ * Estimates the cost of one model invocation, or `null` when the catalog has no
+ * entry for that provider and model.
+ *
+ * Use this wherever a cost estimate is advisory. `calculateModelUsageCostUsd`
+ * throws on a missing price, which is correct for billing paths but wrong for
+ * telemetry: an unpriced model must leave the estimate absent rather than fail
+ * the run or borrow another model's rate.
+ */
+export function estimateModelUsageCostUsd(
+  input: ModelUsageInput,
+  catalog: UsagePricingCatalog,
+): ModelUsageCost | null {
+  const priced = catalog.modelPrices.some(
+    (item) => item.provider === input.provider && item.model === input.model,
+  );
+  if (!priced) return null;
+  return calculateModelUsageCostUsd(input, catalog);
+}
+
+/**
+ * Advisory cost for one recorded model invocation, in the nullable shape the
+ * invocation ledger stores.
+ *
+ * Returns `null` when the provider bills by subscription, when usage was not
+ * reported, or when the model carries no catalog price. All three mean "not
+ * known"; substituting zero would read as a free call, and pricing a flat-fee
+ * plan per token would read as a real charge that never happened.
+ */
+export function estimateInvocationCostUsd(
+  input: {
+    providerId: string;
+    modelId: string;
+    inputTokens: number | null;
+    cachedInputTokens?: number | null;
+    outputTokens: number | null;
+    toolCalls?: number;
+  },
+  catalog: UsagePricingCatalog = createDefaultUsagePricingCatalog(),
+): number | null {
+  if (providerBilling(input.providerId) === "subscription") return null;
+  if (input.inputTokens === null && input.outputTokens === null) return null;
+  const estimate = estimateModelUsageCostUsd(
+    {
+      provider: usagePricingProviderId(input.providerId),
+      model: input.modelId,
+      inputTokens: Math.max(0, input.inputTokens ?? 0),
+      cachedInputTokens: Math.max(0, input.cachedInputTokens ?? 0),
+      outputTokens: Math.max(0, input.outputTokens ?? 0),
+      toolCalls: input.toolCalls ?? 0,
+    },
+    catalog,
+  );
+  return estimate?.estimatedCostUsd ?? null;
 }
 
 export function calculateGatewayUsageCostUsd(input: GatewayUsageInput, catalog: UsagePricingCatalog): GatewayUsageCost {

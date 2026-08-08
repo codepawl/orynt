@@ -67,7 +67,7 @@ describe("terminal theme", () => {
         "You › \u001b[1mbold\u001b[0m",
       ),
     ).toBe(
-      "\u001b[38;2;235;239;246;48;2;32;43;57mYou › \u001b[1mbold\u001b[0m\u001b[38;2;235;239;246;48;2;32;43;57m\u001b[K\u001b[0m",
+      "\u001b[38;2;52;64;84;48;2;238;241;245mYou › \u001b[1mbold\u001b[0m\u001b[38;2;52;64;84;48;2;238;241;245m\u001b[K\u001b[0m",
     );
     expect(theme.strong("ORYNT")).toBe("\u001b[1mORYNT\u001b[0m");
   });
@@ -92,7 +92,7 @@ describe("terminal theme", () => {
       "\u001b[1;7m Commands\u001b[K\u001b[0m",
     );
     expect(theme.paintRenderedRow("userMessage", "You › hello")).toBe(
-      "\u001b[38;5;255;48;5;236mYou › hello\u001b[K\u001b[0m",
+      "\u001b[38;5;238;48;5;255mYou › hello\u001b[K\u001b[0m",
     );
   });
 
@@ -265,6 +265,53 @@ describe("terminal theme", () => {
     ).toMatchObject({
       screenMode: "inline",
       screenOverride: "TERM=dumb",
+    });
+    expect(
+      resolveTerminalAppearance({
+        isTTY: true,
+        saved: {
+          color: true,
+          motion: true,
+          richText: true,
+          screenMode: "auto",
+        },
+        argv: [],
+        env: { TERM_PROGRAM: "Orca" },
+      }),
+    ).toMatchObject({
+      screenMode: "inline",
+      screenOverride: "TERM_PROGRAM=Orca",
+    });
+    expect(
+      resolveTerminalAppearance({
+        isTTY: true,
+        saved: {
+          color: true,
+          motion: true,
+          richText: true,
+          screenMode: "fullscreen",
+        },
+        argv: [],
+        env: { TERM_PROGRAM: "orca" },
+      }),
+    ).toMatchObject({
+      screenMode: "fullscreen",
+    });
+    expect(
+      resolveTerminalAppearance({
+        isTTY: true,
+        saved: {
+          color: true,
+          motion: true,
+          richText: true,
+          screenMode: "auto",
+        },
+        argv: ["--screen", "fullscreen"],
+        env: { TERM_PROGRAM: "Orca" },
+      }),
+    ).toMatchObject({
+      screenMode: "fullscreen",
+      screenOverride: "--screen",
     });
   });
 });

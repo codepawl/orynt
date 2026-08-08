@@ -195,7 +195,10 @@ describe("ResponsesAgentRuntime", () => {
         return socket;
       },
     });
-    const activities: string[] = [];
+    const activities: Array<{
+      kind: string;
+      descriptor?: { action: string; toolName: string; detail: string };
+    }> = [];
     const session = await runtime.startSession({
       sessionId: "session-1",
       role: "helper",
@@ -223,7 +226,12 @@ describe("ResponsesAgentRuntime", () => {
           source: "browser_crop",
         }],
       }),
-      onActivity: (activity) => activities.push(activity.kind),
+      describeTool: (call) => ({
+        action: "inspect",
+        toolName: call.name,
+        detail: "git status --short",
+      }),
+      onActivity: (activity) => activities.push(activity),
     });
     const result = await session.runTurn({ text: "Check status" });
     expect(result.transport).toBe("websocket");
@@ -244,8 +252,35 @@ describe("ResponsesAgentRuntime", () => {
         },
       ],
     });
-    expect(activities).toContain("tool");
-    expect(activities).toContain("context");
+    expect(activities.map(({ kind }) => kind)).toContain("tool");
+    expect(activities.map(({ kind }) => kind)).toContain("context");
+    expect(
+      activities.filter(({ kind }) => kind === "tool"),
+    ).toEqual([
+      {
+        kind: "tool",
+        name: "repo_status",
+        callId: "call-1",
+        status: "requested",
+        descriptor: {
+          action: "inspect",
+          toolName: "repo_status",
+          detail: "git status --short",
+        },
+      },
+      {
+        kind: "tool",
+        name: "repo_status",
+        callId: "call-1",
+        status: "completed",
+        durationMs: expect.any(Number),
+        descriptor: {
+          action: "inspect",
+          toolName: "repo_status",
+          detail: "git status --short",
+        },
+      },
+    ]);
     await runtime.close();
   });
 

@@ -2,7 +2,7 @@
   "name": "@codepawl/desktop",
   "version": "0.1.0",
   "description": "Orynt local-first supervised repository desktop app",
-  "author": "Codepawl",
+  "author": "CodePawl",
   "private": true,
   "type": "module",
   "scripts": {

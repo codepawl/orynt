@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "075-v2-contradictory-rounding-orynt_full-r2",
+  "taskId": "v2-contradictory-rounding",
+  "methodId": "orynt_full",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:45:33.917Z",
+  "completedAt": "2026-08-05T08:45:34.072Z",
+  "totalWallMs": 155,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/075-v2-contradictory-rounding-orynt_full-r2/repo"
+}

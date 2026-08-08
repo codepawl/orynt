@@ -3,7 +3,12 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import type { AgentFunctionTool, AgentToolCall, AgentToolResult } from "./index.js";
+import type {
+  AgentFunctionTool,
+  AgentToolActivityDescriptor,
+  AgentToolCall,
+  AgentToolResult,
+} from "./index.js";
 
 declare const Bun: {
   spawn(
@@ -47,6 +52,30 @@ function record(value: unknown): Record<string, unknown> {
 function bounded(value: string, max: number): string {
   if (Buffer.byteLength(value) <= max) return value;
   return `${Buffer.from(value).subarray(0, max).toString("utf8")}\n… output truncated …`;
+}
+
+function displayArgument(value: string): string {
+  return /^[a-zA-Z0-9_./:@%+=,-]+$/u.test(value)
+    ? value
+    : JSON.stringify(value);
+}
+
+function displayCommand(argv: string[]): string {
+  return argv.map(displayArgument).join(" ").replace(/\s+/gu, " ").slice(0, 240);
+}
+
+function patchActivityPaths(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  const paths: string[] = [];
+  for (const match of value.matchAll(/^(?:\+\+\+|---) [ab]\/(.+)$/gmu)) {
+    try {
+      const relative = normalizeRelative(match[1]);
+      if (!paths.includes(relative)) paths.push(relative);
+    } catch {
+      // Invalid paths are rejected by execution; activity stays safely generic.
+    }
+  }
+  return paths;
 }
 
 function normalizeRelative(value: unknown): string {
@@ -202,6 +231,92 @@ export class RepositoryAgentToolExecutor {
       return REPOSITORY_AGENT_TOOLS.filter((tool) => tool.name !== "repo_exec");
     }
     return REPOSITORY_AGENT_TOOLS;
+  }
+
+  describe(call: AgentToolCall): AgentToolActivityDescriptor | undefined {
+    const args = record(call.arguments);
+    switch (call.name) {
+      case "repo_list": {
+        const argv = ["rg", "--files", "--hidden", "-g", "!.git"];
+        if (typeof args.glob === "string" && args.glob.trim()) {
+          argv.push("-g", args.glob.trim());
+        }
+        return {
+          action: "list",
+          toolName: call.name,
+          detail: displayCommand(argv),
+        };
+      }
+      case "repo_read":
+        return {
+          action: "read",
+          toolName: call.name,
+          detail:
+            typeof args.path === "string" && args.path.trim()
+              ? args.path.trim().slice(0, 240)
+              : "repository file",
+        };
+      case "repo_search": {
+        const argv = ["rg", "-n", "--hidden", "-g", "!.git"];
+        if (typeof args.glob === "string" && args.glob.trim()) {
+          argv.push("-g", args.glob.trim());
+        }
+        if (typeof args.query === "string" && args.query) {
+          argv.push("--", args.query, ".");
+        }
+        return {
+          action: "search",
+          toolName: call.name,
+          detail: displayCommand(argv),
+        };
+      }
+      case "repo_status":
+        return {
+          action: "inspect",
+          toolName: call.name,
+          detail: "git status --short",
+        };
+      case "repo_diff": {
+        const argv = ["git", "diff", "--"];
+        if (typeof args.path === "string" && args.path) argv.push(args.path);
+        return {
+          action: "diff",
+          toolName: call.name,
+          detail: displayCommand(argv),
+        };
+      }
+      case "repo_apply_patch": {
+        const paths = patchActivityPaths(args.patch);
+        const visible = paths.slice(0, 3);
+        return {
+          action: "edit",
+          toolName: call.name,
+          detail:
+            visible.length > 0
+              ? `${visible.join(", ")}${paths.length > visible.length ? ` · +${paths.length - visible.length} more` : ""}`.slice(0, 240)
+              : "repository files",
+        };
+      }
+      case "repo_exec": {
+        const argv = Array.isArray(args.argv)
+          ? args.argv.filter((entry): entry is string => typeof entry === "string")
+          : [];
+        const command = argv.length > 0
+          ? displayCommand(argv)
+          : "repository command";
+        const cwd =
+          typeof args.cwd === "string" && args.cwd.trim()
+            ? ` · in ${args.cwd.trim()}`
+            : "";
+        return {
+          action: "run",
+          toolName: call.name,
+          detail: `${command}${cwd}`.slice(0, 240),
+        };
+      }
+      default:
+        return undefined;
+    }
   }
 
   async execute(call: AgentToolCall): Promise<AgentToolResult> {

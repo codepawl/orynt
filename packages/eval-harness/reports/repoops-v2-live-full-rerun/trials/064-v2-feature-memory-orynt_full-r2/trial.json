@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "064-v2-feature-memory-orynt_full-r2",
+  "taskId": "v2-feature-memory",
+  "methodId": "orynt_full",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:43:37.536Z",
+  "completedAt": "2026-08-05T08:43:37.681Z",
+  "totalWallMs": 145,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/064-v2-feature-memory-orynt_full-r2/repo"
+}

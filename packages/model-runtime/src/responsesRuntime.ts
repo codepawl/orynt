@@ -278,7 +278,14 @@ class ResponsesSession implements AgentRuntimeSession {
         nextInput = [];
         for (const call of calls) {
           toolCalls += 1;
-          const requested = { kind: "tool", name: call.name, callId: call.callId, status: "requested" } as const;
+          const descriptor = this.config.describeTool?.(call);
+          const requested = {
+            kind: "tool",
+            name: call.name,
+            callId: call.callId,
+            status: "requested",
+            ...(descriptor ? { descriptor } : {}),
+          } as const;
           this.config.onActivity?.(requested);
           input.onActivity?.(requested);
           const toolStarted = this.options.now();
@@ -293,12 +300,21 @@ class ResponsesSession implements AgentRuntimeSession {
               name: call.name,
               callId: call.callId,
               status: result.isError ? "failed" : "completed",
+              durationMs: this.options.now() - toolStarted,
+              ...(descriptor ? { descriptor } : {}),
             } as const;
             this.config.onActivity?.(completed);
             input.onActivity?.(completed);
           } catch (error) {
             output = JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
-            const failed = { kind: "tool", name: call.name, callId: call.callId, status: "failed" } as const;
+            const failed = {
+              kind: "tool",
+              name: call.name,
+              callId: call.callId,
+              status: "failed",
+              durationMs: this.options.now() - toolStarted,
+              ...(descriptor ? { descriptor } : {}),
+            } as const;
             this.config.onActivity?.(failed);
             input.onActivity?.(failed);
           }

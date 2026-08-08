@@ -717,6 +717,9 @@ function sanitizePromptUnderstanding(
         prompt: redactBoundedText(question.prompt, 2_000),
         rationale: redactBoundedText(question.rationale, 1_000),
         kind: question.kind,
+        ...(question.selectionMode === undefined
+          ? {}
+          : { selectionMode: question.selectionMode }),
         options: question.options
           .slice(0, MAX_PROMPT_DRAFT_OPTION_COUNT)
           .map((option) => ({
@@ -724,6 +727,20 @@ function sanitizePromptUnderstanding(
             label: redactBoundedText(option.label, 200),
             description: redactBoundedText(option.description, 500),
             recommended: option.recommended,
+            ...(option.conflictsWith === undefined
+              ? {}
+              : { conflictsWith: option.conflictsWith.slice(0, 4) }),
+            ...(option.recommendationReason === undefined
+              ? {}
+              : {
+                  recommendationReason:
+                    option.recommendationReason === null
+                      ? null
+                      : redactBoundedText(
+                          option.recommendationReason,
+                          500,
+                        ),
+                }),
           })),
       })),
     assumptions: source.assumptions
@@ -773,9 +790,27 @@ export function sanitizeCliPromptUnderstandingDraft(
         ...(answer.selectedOptionId === undefined
           ? {}
           : { selectedOptionId: answer.selectedOptionId.slice(0, 120) }),
+        ...(answer.selectedOptionIds === undefined
+          ? {}
+          : {
+              selectedOptionIds: answer.selectedOptionIds
+                .slice(0, 4)
+                .map((optionId) => optionId.slice(0, 120)),
+            }),
         ...(answer.note === undefined
           ? {}
           : { note: redactBoundedText(answer.note, MAX_PROMPT_DRAFT_ANSWER_TEXT) }),
+        ...(answer.optionNotes === undefined
+          ? {}
+          : {
+              optionNotes: answer.optionNotes.slice(0, 4).map((optionNote) => ({
+                optionId: optionNote.optionId.slice(0, 120),
+                note: redactBoundedText(
+                  optionNote.note,
+                  MAX_PROMPT_DRAFT_ANSWER_TEXT,
+                ),
+              })),
+            }),
       })),
     confirmedAssumptions: draft.basis.confirmedAssumptions
       .slice(0, MAX_PROMPT_DRAFT_COLLECTION)

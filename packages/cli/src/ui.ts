@@ -36,6 +36,11 @@ export type HelpTopic = "commands" | "shortcuts" | "getting-started";
 
 export type CliModelOption = {
   id: string;
+  /**
+   * Owning provider. Absent means `codex-cli`, matching the tier-binding
+   * default, so a mixed-provider catalog resolves against the right bindings.
+   */
+  providerId?: "codex-cli" | "openai-api" | "anthropic-api" | "opencode-api";
   label: string;
   description?: string;
   supportedThinkingEfforts: ThinkingEffort[];
@@ -1392,7 +1397,7 @@ export function renderCommandHelp(
         {
           label: "Screen",
           value:
-            "Auto uses a clean fullscreen viewport on interactive terminals; set /settings appearance screen inline for native scrollback.",
+            "Auto uses native inline scrollback in Orca and fullscreen on other interactive terminals; choose Fullscreen explicitly to override it.",
         },
         {
           label: "History",
@@ -1407,7 +1412,7 @@ export function renderCommandHelp(
         {
           label: "Terminal",
           value:
-            "In fullscreen, drag chat text without Shift and use Ctrl+Shift+C; inline mode keeps terminal-native selection.",
+            "In fullscreen, drag to select a range, double-click a word, or triple-click a row; inline mode keeps terminal-native selection.",
         },
         {
           label: "Input",
@@ -1508,7 +1513,7 @@ export function renderShortcutHelp(
           {
             label: "Select chat",
             value:
-              "Drag over conversation text without Shift. The selection stays active while the chat scrolls.",
+              "Single-click does not select. Drag selects a range, double-click selects a word, and triple-click selects a row.",
           },
           {
             label: "Mouse wheel",
@@ -1801,6 +1806,27 @@ function row(icon: string, label: string, detail: string): string {
   return `  ${icon} ${label.padEnd(9)} ${detail}`;
 }
 
+function runToolPresentation(
+  toolKind: string,
+  toolName: string,
+): { icon: string; label: string } {
+  const normalized = toolName.toLocaleLowerCase();
+  if (normalized === "repo_read") return { icon: "▤", label: "Read" };
+  if (normalized === "repo_list") return { icon: "≡", label: "List" };
+  if (normalized === "repo_search") return { icon: "⌕", label: "Search" };
+  if (normalized === "repo_exec" || toolKind === "command") {
+    return { icon: "▶", label: "Run" };
+  }
+  if (normalized === "repo_apply_patch" || toolKind === "file_change") {
+    return { icon: "✎", label: "Edit" };
+  }
+  if (normalized === "repo_diff") return { icon: "Δ", label: "Diff" };
+  if (normalized === "repo_status") return { icon: "◇", label: "Inspect" };
+  if (toolKind === "web_search") return { icon: "◎", label: "Web" };
+  if (toolKind === "mcp") return { icon: "◆", label: "MCP" };
+  return { icon: "◇", label: "Tool" };
+}
+
 const FAILED_EVENTS = new Set<RunEventType>([
   "sandbox_create_failed",
   "codex_contract_write_failed",
@@ -1970,21 +1996,16 @@ export class RunPresenter {
             this.failedToolItems.add(itemId);
           }
           const toolKind = payloadText(payload, ["toolKind"]) ?? "other";
-          const labels: Record<string, string> = {
-            command: "Tool",
-            mcp: "Tool",
-            web_search: "Search",
-            file_change: "Files",
-            other: "Tool",
-          };
+          const toolName = payloadText(payload, ["toolName"]) ?? "tool";
+          const presentation = runToolPresentation(toolKind, toolName);
           const detail = payloadText(payload, ["detail", "summary"]);
           if (detail) {
             output.push(
               this.theme.paint(
                 "muted",
                 row(
-                  payload.status === "failed" ? "✕" : "◇",
-                  labels[toolKind] ?? "Tool",
+                  payload.status === "failed" ? "✕" : presentation.icon,
+                  presentation.label,
                   `${detail.replace(/\s+/gu, " ").slice(0, 180)}${payload.status === "failed" ? " · failed" : ""}`,
                 ),
               ),
@@ -2044,19 +2065,14 @@ export class RunPresenter {
         : undefined;
     }
     const kind = payloadText(payload, ["toolKind"]) ?? "other";
-    const label =
-      kind === "command"
-        ? "Tool shell"
-        : kind === "mcp"
-          ? "Tool MCP"
-          : kind === "web_search"
-            ? "Search"
-            : kind === "file_change"
-              ? "Files"
-              : "Tool";
+    const toolName = payloadText(payload, ["toolName"]) ?? "tool";
+    const presentation = runToolPresentation(kind, toolName);
     const detail = payloadText(payload, ["detail", "summary"]);
     return detail
-      ? { detail: `${label} ${detail.replace(/\s+/gu, " ").slice(0, 180)}`, status }
+      ? {
+          detail: `${presentation.label} ${detail.replace(/\s+/gu, " ").slice(0, 180)}`,
+          status,
+        }
       : undefined;
   }
 

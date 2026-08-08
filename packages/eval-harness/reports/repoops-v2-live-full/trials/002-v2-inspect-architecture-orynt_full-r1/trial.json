@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "002-v2-inspect-architecture-orynt_full-r1",
+  "taskId": "v2-inspect-architecture",
+  "methodId": "orynt_full",
+  "repetition": 0,
+  "startedAt": "2026-08-05T07:24:52.540Z",
+  "completedAt": "2026-08-05T07:25:05.462Z",
+  "totalWallMs": 12922,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "unknown",
+    "message": "Could not complete prompt understanding: Clarification-required prompt understanding needs questions."
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/002-v2-inspect-architecture-orynt_full-r1/repo"
+}

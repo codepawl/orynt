@@ -15,7 +15,7 @@ const [
     cliHelp,
     createCliContextVmInvocationPort,
     diagnoseModelTierLive,
-    listCodexModels,
+    listCliModels,
     oryntStateRoot,
     probeCodexCli,
     runCliRepositoryTask,
@@ -51,6 +51,8 @@ const [
   { runSessionCli },
   { checkForStartupUpdate, runUpdateCli },
   { codexChildEnvironment, probeCodexEnvironment, runCodexSetup },
+  { probeClaudeEnvironment },
+  { probeOpencodeEnvironment },
   { cliCodexAppServerRuntime, readCliProviderUsage },
 ] = await Promise.all([
   import("./app.js"),
@@ -76,6 +78,8 @@ const [
   import("./sessions.js"),
   import("./update.js"),
   import("./codexSetup.js"),
+  import("./claudeSetup.js"),
+  import("./opencodeSetup.js"),
   import("./provider.js"),
 ]);
 
@@ -527,7 +531,7 @@ try {
         probe: probeCodexCli,
         runExternal: runExternalCodexCommand,
       }),
-    listModels: listCodexModels,
+    listModels: listCliModels,
     turn: async (request) => {
       let prepared: Awaited<ReturnType<typeof prepareCliCapabilities>>;
       if (request.capabilitySettings) {
@@ -610,7 +614,9 @@ try {
       themeId,
     }, {
       probeCodexEnvironment,
-      listModels: listCodexModels,
+      probeClaudeEnvironment: () => probeClaudeEnvironment(),
+      probeOpencodeEnvironment: () => probeOpencodeEnvironment(),
+      listModels: listCliModels,
       loadPreferences: () => preferencesStore.load(),
       codeIntelStatus: cliCodeIntelStatus,
       runLiveTier: async (tier, binding) => {
@@ -625,7 +631,16 @@ try {
         await diagnoseModelTierLive(tier, binding);
       },
     }),
-    readProviderUsage: readCliProviderUsage,
+    readProviderUsage: async (detail) => {
+      // Usage is provider-specific, so it follows the coordinator tier's
+      // binding rather than assuming Codex.
+      const preferences = await preferencesStore.load();
+      const tiers = preferences.workingConfig?.modelTierConfiguration;
+      const providerId = tiers
+        ? tiers.tiers[tiers.roles.coordinator].providerId
+        : "codex-cli";
+      return readCliProviderUsage(detail, providerId);
+    },
     listSkills: async (repositoryPath) => {
       const inventory = (await skillManager.list({
         repositoryPath,

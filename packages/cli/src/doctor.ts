@@ -15,6 +15,8 @@ import {
 } from "@codepawl/shared";
 
 import { readBrowserSessionDescriptor } from "./browser.js";
+import type { ClaudeEnvironmentProbe } from "./claudeSetup.js";
+import type { OpencodeProviderStatus } from "./opencodeSetup.js";
 import type {
   CodexEnvironmentProbe,
   CodexProbeStage,
@@ -108,6 +110,8 @@ export type DoctorCollectorInput = DoctorRequest & {
 
 export type DoctorCollectorDependencies = {
   probeCodexEnvironment: () => Promise<CodexEnvironmentProbe>;
+  probeClaudeEnvironment?: () => Promise<ClaudeEnvironmentProbe>;
+  probeOpencodeEnvironment?: () => Promise<OpencodeProviderStatus>;
   listModels: () => Promise<CliModelOption[]>;
   loadPreferences?: () => Promise<CliPreferences>;
   intelligenceStatus?: () => Promise<{
@@ -687,7 +691,7 @@ function configuredTierChecks(
   });
 }
 
-async function providerChecks(
+async function codexProviderChecks(
   input: DoctorCollectorInput,
   dependencies: DoctorCollectorDependencies,
   now: () => number,
@@ -751,6 +755,15 @@ async function providerChecks(
     );
     return checks;
   }
+  return checks;
+}
+
+async function catalogAndTierChecks(
+  input: DoctorCollectorInput,
+  dependencies: DoctorCollectorDependencies,
+  now: () => number,
+): Promise<DoctorCheckV1[]> {
+  const checks: DoctorCheckV1[] = [];
   const catalogStarted = now();
   try {
     const models = await dependencies.listModels();
@@ -801,6 +814,190 @@ async function providerChecks(
     );
   }
   return checks;
+}
+
+
+/**
+ * Probes every provider the tier configuration actually binds.
+ *
+ * Tiers may mix providers, so a Codex-only probe would report a hard failure
+ * on a host that never intends to use Codex, and would say nothing about the
+ * provider the run will actually reach. Check ids stay stable for the
+ * Codex-only case, which is what release gates and JSON consumers read.
+ */
+async function providerChecks(
+  input: DoctorCollectorInput,
+  dependencies: DoctorCollectorDependencies,
+  now: () => number,
+): Promise<DoctorCheckV1[]> {
+  const tiers = input.modelTierConfiguration;
+  const providers = new Set(
+    tiers ? Object.values(tiers.tiers).map((binding) => binding.providerId) : [],
+  );
+  // No configuration yet means the Codex default is what a run would use.
+  const usesCodex = providers.size === 0 || providers.has("codex-cli");
+  const usesAnthropic = providers.has("anthropic-api");
+  const usesOpencode = providers.has("opencode-api");
+  const checks: DoctorCheckV1[] = [];
+  if (usesCodex) {
+    const codex = await codexProviderChecks(input, dependencies, now);
+    checks.push(...codex);
+    // The Codex path reports its own catalog skips when it is not ready.
+    const codexReady = !codex.some(
+      (entry) => entry.id === "provider.catalog" && entry.status === "skip",
+    );
+    if (usesAnthropic) {
+      checks.push(...(await anthropicProviderChecks(dependencies, now)));
+    }
+    if (usesOpencode) {
+      checks.push(...(await opencodeProviderChecks(dependencies, now)));
+    }
+    if (codexReady) {
+      checks.push(...(await catalogAndTierChecks(input, dependencies, now)));
+    }
+    return checks;
+  }
+  checks.push(
+    skipped(
+      "provider.probe",
+      "provider",
+      "Codex CLI",
+      "not configured",
+      "No model tier binds the Codex provider.",
+    ),
+  );
+  if (usesAnthropic) {
+    checks.push(...(await anthropicProviderChecks(dependencies, now)));
+  }
+  if (usesOpencode) {
+    checks.push(...(await opencodeProviderChecks(dependencies, now)));
+  }
+  checks.push(...(await catalogAndTierChecks(input, dependencies, now)));
+  return checks;
+}
+
+async function opencodeProviderChecks(
+  dependencies: DoctorCollectorDependencies,
+  now: () => number,
+): Promise<DoctorCheckV1[]> {
+  if (!dependencies.probeOpencodeEnvironment) {
+    return [
+      skipped(
+        "provider.probe.opencode",
+        "provider",
+        "OpenCode",
+        "not inspected",
+        "OpenCode probing is unavailable in this host.",
+      ),
+    ];
+  }
+  const started = now();
+  try {
+    const status = await dependencies.probeOpencodeEnvironment();
+    return [
+      check({
+        id: "provider.probe.opencode",
+        group: "provider",
+        label: "OpenCode",
+        status: status.ready ? "pass" : "fail",
+        required: true,
+        summary: status.ready ? "ready" : status.code,
+        // Evidence records the outcome, never the credential value.
+        evidence: { code: status.code, transport: status.transport },
+        cause: status.ready ? null : status.detail,
+        remediation: status.ready
+          ? null
+          : {
+              description: "Configure the OpenCode credential, then rerun doctor.",
+              command: "orynt setup --provider opencode --check",
+            },
+        durationMs: elapsed(started, now),
+      }),
+    ];
+  } catch (error) {
+    return [
+      check({
+        id: "provider.probe.opencode",
+        group: "provider",
+        label: "OpenCode",
+        status: "fail",
+        required: true,
+        summary: "probe failed",
+        evidence: {},
+        cause: safeDetail(error, "Could not inspect the OpenCode provider."),
+        remediation: {
+          description: "Rerun the OpenCode readiness check.",
+          command: "orynt setup --provider opencode --check",
+        },
+        durationMs: elapsed(started, now),
+      }),
+    ];
+  }
+}
+
+async function anthropicProviderChecks(
+  dependencies: DoctorCollectorDependencies,
+  now: () => number,
+): Promise<DoctorCheckV1[]> {
+  if (!dependencies.probeClaudeEnvironment) {
+    return [
+      skipped(
+        "provider.probe.anthropic",
+        "provider",
+        "Anthropic API",
+        "not inspected",
+        "Anthropic probing is unavailable in this host.",
+      ),
+    ];
+  }
+  const started = now();
+  try {
+    const probe = await dependencies.probeClaudeEnvironment();
+    return [
+      check({
+        id: "provider.probe.anthropic",
+        group: "provider",
+        label: "Anthropic API",
+        status: probe.status.ready ? "pass" : "fail",
+        required: true,
+        summary: probe.status.ready ? "ready" : probe.status.code,
+        // Stage evidence records the credential variable name, never a value.
+        evidence: {
+          code: probe.status.code,
+          transport: probe.status.transport,
+          stages: probe.stages.map((stage) => stage.id).join(","),
+        },
+        cause: probe.status.ready ? null : probe.status.detail,
+        remediation: probe.status.ready
+          ? null
+          : {
+              description: "Configure the Anthropic credential, then rerun doctor.",
+              command:
+                probe.status.remediationCommand ??
+                "orynt setup --provider anthropic --check",
+            },
+        durationMs: elapsed(started, now),
+      }),
+    ];
+  } catch (error) {
+    return [
+      check({
+        id: "provider.probe.anthropic",
+        group: "provider",
+        label: "Anthropic API",
+        status: "fail",
+        required: true,
+        summary: "probe failed",
+        evidence: {},
+        cause: safeDetail(error, "Could not inspect the Anthropic provider."),
+        remediation: {
+          description: "Rerun the Anthropic readiness check.",
+          command: "orynt setup --provider anthropic --check",
+        },
+        durationMs: elapsed(started, now),
+      }),
+    ];
+  }
 }
 
 async function optionalChecks(

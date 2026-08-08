@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import {
   assertRepositoryTaskScope,
   captureRepositoryTaskScope,
+  exactAuthorizedChangedPaths,
   repositoryTaskScopeDelta,
 } from "./taskScopeGuard";
 
@@ -77,5 +78,41 @@ describe("repository task scope guard", () => {
         expectedPaths: ["src/one.ts"],
       }, ["src/two.ts"]),
     ).toThrow("outside its single-writer ownership");
+  });
+
+  it("allows descendants of an owned directory without allowing sibling prefixes", () => {
+    const task = {
+      id: "task",
+      title: "Task",
+      instruction: "Task",
+      kind: "change" as const,
+      dependencies: [],
+      requirementIds: ["requirement"],
+      authority: "single_writer" as const,
+      operations: ["write" as const],
+      expectedPaths: ["src"],
+      doneWhen: ["Done"],
+      evidence: [{
+        id: "evidence",
+        requirementIds: ["requirement"],
+        kind: "path_scope" as const,
+        description: "Owned source path",
+        path: "src",
+      }],
+    };
+
+    expect(() =>
+      assertRepositoryTaskScope(task, ["src/app.js", "src/features/board.js"])
+    ).not.toThrow();
+    expect(() =>
+      assertRepositoryTaskScope(task, ["src-old/app.js"])
+    ).toThrow("outside its single-writer ownership");
+  });
+
+  it("reduces validated task results to an exact final verifier grant", () => {
+    expect(exactAuthorizedChangedPaths([
+      { changedPaths: ["src/main.js", "index.html"] },
+      { changedPaths: ["src/main.js", "styles.css"] },
+    ])).toEqual(["index.html", "src/main.js", "styles.css"]);
   });
 });

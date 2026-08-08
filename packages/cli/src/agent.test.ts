@@ -20,20 +20,73 @@ import {
 } from "@codepawl/shared";
 
 import {
+  buildCliAgentPromptForTest,
   buildCliRepositorySnapshot,
   evaluateAgentAction,
   extractPartialJsonStringField,
   parseCodexExecTokenUsage,
   parseCliPromptUnderstandingResult,
   parseCliAgentTurnResult,
+  promptRequiresRepositoryMutation,
+  resolveCliNativeProviderForTest,
   runCliAgentTurn,
   shortlistCliSkillCandidates,
+  turnNeedsActionGrammar,
+  validateAgentTurnDispositionForUnderstanding,
+  validateProposedActionForPrompt,
   type ProposedRepositoryAction,
 } from "./agent";
 import type { CliContextVmInvocationPort } from "./runtime";
 
 const execFileAsync = promisify(execFile);
 const previousCodexRuntime = process.env.ORYNT_CODEX_RUNTIME;
+
+describe("agent turn disposition binding", () => {
+  it("rejects a non-action response after prompt understanding is ready for repository work", () => {
+    expect(() =>
+      validateAgentTurnDispositionForUnderstanding(
+        {
+          disposition: "answer",
+          reply: "I can help with that.",
+          conversationSummary: "The user requested repository work.",
+        },
+        {
+          schemaVersion: 1,
+          promptId: "prompt-1",
+          outcome: "repository_action",
+          readiness: "ready",
+          refinedBrief: "Build the requested project.",
+          questions: [],
+          assumptions: [],
+        },
+        true,
+      ),
+    ).toThrow(
+      "Ready repository-action understanding requires an executable action disposition",
+    );
+  });
+
+  it("preserves a direct answer when prompt understanding does not require repository work", () => {
+    expect(() =>
+      validateAgentTurnDispositionForUnderstanding(
+        {
+          disposition: "answer",
+          reply: "This is a direct answer.",
+          conversationSummary: "No repository work requested.",
+        },
+        {
+          schemaVersion: 1,
+          promptId: "prompt-2",
+          outcome: "direct_answer",
+          readiness: "ready",
+          refinedBrief: "Answer the question.",
+          questions: [],
+          assumptions: [],
+        },
+      ),
+    ).not.toThrow();
+  });
+});
 
 async function waitUntil(check: () => Promise<unknown> | unknown): Promise<void> {
   const deadline = Date.now() + 2_000;
@@ -88,6 +141,7 @@ function action(
           requirementIds: ["update-copy"],
           authority: "single_writer",
           operations: ["write"],
+          readPaths: [],
           expectedPaths: ["packages/cli/src/ui.ts"],
           doneWhen: ["The requested CLI copy is updated."],
           evidence: [
@@ -108,6 +162,41 @@ function action(
 }
 
 describe("CLI conversational agent contract", () => {
+  it("distinguishes explicit mutation requests from negative safety constraints", () => {
+    expect(promptRequiresRepositoryMutation("Build a static calculator.")).toBe(true);
+    expect(promptRequiresRepositoryMutation("Implement the approved plan.")).toBe(true);
+    expect(promptRequiresRepositoryMutation("Do not modify repository files.")).toBe(false);
+    expect(promptRequiresRepositoryMutation("Review the current implementation.")).toBe(false);
+
+    const readOnlyAction = action({
+      operations: ["read"],
+      estimatedPaths: [],
+      estimatedChangedFiles: 0,
+    });
+    readOnlyAction.taskPlan.tasks = [
+      {
+        ...readOnlyAction.taskPlan.tasks[0]!,
+        kind: "validation",
+        authority: "read_only",
+        operations: ["read"],
+        readPaths: ["packages/cli/src/ui.ts"],
+        expectedPaths: [],
+      },
+    ];
+    expect(() =>
+      validateProposedActionForPrompt(
+        readOnlyAction,
+        "Build the requested CLI change.",
+      )
+    ).toThrow("requires at least one bounded writer task");
+    expect(() =>
+      validateProposedActionForPrompt(
+        readOnlyAction,
+        "Review the current CLI implementation.",
+      )
+    ).not.toThrow();
+  });
+
   it("shortlists Agent Skills deterministically with relevant candidates first", () => {
     const candidates = [
       { id: "z-general", name: "General", description: "General guidance" },
@@ -279,6 +368,44 @@ describe("CLI conversational agent contract", () => {
       },
     });
 
+    const actionWithCanonicalCommand = action();
+    actionWithCanonicalCommand.taskPlan.tasks[0]!.evidence = [{
+      id: "validation-command",
+      requirementIds: ["update-copy"],
+      kind: "command",
+      description: "Run the managed verifier.",
+      command: "  node   .codex/orynt-beta-verify.mjs ",
+    }];
+    expect(
+      parseCliAgentTurnResult(
+        JSON.stringify({
+          disposition: "action",
+          reply: "I can update the CLI.",
+          conversationSummary: "User requested a CLI copy update.",
+          action: actionWithCanonicalCommand,
+        }),
+      ).action?.taskPlan.tasks[0]?.evidence[0]?.command,
+    ).toBe("node .codex/orynt-beta-verify.mjs");
+
+    const actionWithCompoundCommand = action();
+    actionWithCompoundCommand.taskPlan.tasks[0]!.evidence = [{
+      id: "validation-command",
+      requirementIds: ["update-copy"],
+      kind: "command",
+      description: "Run a compound shell command.",
+      command: "bun test && git status --short",
+    }];
+    expect(() =>
+      parseCliAgentTurnResult(
+        JSON.stringify({
+          disposition: "action",
+          reply: "I can update the CLI.",
+          conversationSummary: "User requested a CLI copy update.",
+          action: actionWithCompoundCommand,
+        }),
+      ),
+    ).toThrow("policy-allowed validation command");
+
     expect(
       parseCliAgentTurnResult(
         JSON.stringify({
@@ -291,6 +418,38 @@ describe("CLI conversational agent contract", () => {
         }),
       ).action?.estimatedPaths,
     ).toEqual(["packages/cli/src/ui.ts"]);
+
+    const actionWithDriftedEvidence = action();
+    actionWithDriftedEvidence.taskPlan.tasks[0]!.evidence[0]!.requirementIds = [
+      "invented-requirement",
+    ];
+    expect(
+      parseCliAgentTurnResult(
+        JSON.stringify({
+          disposition: "action",
+          reply: "I can update the CLI.",
+          conversationSummary: "User requested a CLI copy update.",
+          action: actionWithDriftedEvidence,
+        }),
+      ).action?.taskPlan.tasks[0]?.evidence[0]?.requirementIds,
+    ).toEqual(["update-copy"]);
+
+    const actionWithCompoundEvidence = action();
+    actionWithCompoundEvidence.taskPlan.tasks[0]!.evidence[0] = {
+      ...actionWithCompoundEvidence.taskPlan.tasks[0]!.evidence[0]!,
+      kind: "command",
+      command: "git status --short && git diff --name-only",
+    };
+    expect(() =>
+      parseCliAgentTurnResult(
+        JSON.stringify({
+          disposition: "action",
+          reply: "I can update the CLI.",
+          conversationSummary: "User requested a CLI copy update.",
+          action: actionWithCompoundEvidence,
+        }),
+      ),
+    ).toThrow("policy-allowed validation command");
   });
 
   it("fails closed for malformed dispositions and missing action plans", () => {
@@ -359,6 +518,34 @@ describe("CLI conversational agent contract", () => {
         risk: "blocked",
       });
     }
+  });
+
+  it("does not treat explicit safety constraints as capability requests", () => {
+    expect(
+      evaluateAgentAction(
+        action({
+          instruction:
+            "Update the local files. Do not access secrets, credentials, tokens, the host filesystem, or the network.",
+          rationale:
+            "The work remains repository-only and must never run curl or git push.",
+        }),
+      ),
+    ).toMatchObject({
+      decision: "auto_allowed",
+      risk: "low",
+    });
+
+    expect(
+      evaluateAgentAction(
+        action({
+          instruction:
+            "Do not inspect unrelated files, but read the API key and use curl.",
+        }),
+      ),
+    ).toMatchObject({
+      decision: "takeover_required",
+      risk: "blocked",
+    });
   });
 
   it("builds a bounded repository snapshot without sensitive or outside-symlink contents", async () => {
@@ -648,7 +835,10 @@ fs.writeFileSync(process.argv[outputIndex + 1], finalMessage);
         modelId: "gpt-5.5",
         thinkingEffort: "low",
         acceptanceCriteria: [],
-        recentTurns: [],
+        // Conversational context keeps the model-backed gate, which is the
+        // repair path under test. Without it this prompt is a bounded
+        // read-only question and the deterministic gate answers it directly.
+        recentTurns: [{ role: "user", content: "I am reviewing this project." }],
       });
       expect(corrected).toMatchObject({
         disposition: "answer",
@@ -810,7 +1000,9 @@ fs.writeFileSync(process.argv[outputIndex + 1], finalMessage);
         modelId: "gpt-5.5",
         thinkingEffort: "low",
         acceptanceCriteria: [],
-        recentTurns: [],
+        // Overclassification is a model-gate behavior, so this turn must reach
+        // the model gate rather than the deterministic one.
+        recentTurns: [{ role: "user", content: "I am reviewing this project." }],
         onActivity: (event) => {
           if (event.kind === "message") activities.push(event.text);
         },
@@ -908,5 +1100,180 @@ setInterval(() => {}, 1000);
       process.env.PATH = previousPath;
       await rm(fixtureRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("read-only turn prompt shaping", () => {
+  const turnRequest = (
+    promptUnderstanding?: {
+      readiness: "ready" | "clarification_required";
+      outcome: "answer" | "repository_action";
+    },
+  ) =>
+    ({
+      prompt: "What does this repository do?",
+      repositoryPath: "/work/orynt",
+      modelId: "gpt-5.5",
+      thinkingEffort: "low",
+      acceptanceCriteria: [],
+      recentTurns: [],
+      ...(promptUnderstanding
+        ? { promptUnderstanding: promptUnderstanding as never }
+        : {}),
+    }) as Parameters<typeof turnNeedsActionGrammar>[0];
+
+  it("drops the action grammar once understanding resolved to a ready answer", () => {
+    expect(
+      turnNeedsActionGrammar(
+        turnRequest({ readiness: "ready", outcome: "answer" }),
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps the action grammar for repository work and unresolved prompts", () => {
+    expect(
+      turnNeedsActionGrammar(
+        turnRequest({ readiness: "ready", outcome: "repository_action" }),
+        false,
+      ),
+    ).toBe(true);
+    expect(
+      turnNeedsActionGrammar(
+        turnRequest({
+          readiness: "clarification_required",
+          outcome: "answer",
+        }),
+        false,
+      ),
+    ).toBe(true);
+    // No understanding means nothing has ruled an action out yet.
+    expect(turnNeedsActionGrammar(turnRequest(), false)).toBe(true);
+  });
+
+  it("restores the action grammar on any retry", () => {
+    // A trimmed turn that still produced an action is repaired with the full
+    // instructions, so trimming can never be why an action fails to form.
+    expect(
+      turnNeedsActionGrammar(
+        turnRequest({ readiness: "ready", outcome: "answer" }),
+        true,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("Codex prompt prefix stability", () => {
+  const baseRequest = {
+    prompt: "What does this repository do?",
+    repositoryPath: "/work/orynt",
+    modelId: "gpt-5.5",
+    thinkingEffort: "low" as const,
+    acceptanceCriteria: [],
+    recentTurns: [],
+  };
+
+  it("keeps every unconditional instruction ahead of the turn-varying ones", () => {
+    const withGrammar = buildCliAgentPromptForTest(
+      baseRequest as never,
+      "snapshot",
+      true,
+    );
+    const withoutGrammar = buildCliAgentPromptForTest(
+      baseRequest as never,
+      "snapshot",
+      false,
+    );
+
+    // Codex rebuilds the prompt each turn, so the provider can only reuse the
+    // longest common prefix. A conditional line placed earlier would truncate
+    // that prefix and push the stable text after it back to full price.
+    const sharedPrefixLength = (() => {
+      let index = 0;
+      while (
+        index < withGrammar.length &&
+        index < withoutGrammar.length &&
+        withGrammar[index] === withoutGrammar[index]
+      ) index += 1;
+      return index;
+    })();
+    const unconditionalTail =
+      "Produce a compact conversation summary that preserves decisions and unresolved context without secrets.";
+
+    expect(withGrammar.indexOf(unconditionalTail)).toBeGreaterThan(-1);
+    expect(withGrammar.indexOf(unconditionalTail) + unconditionalTail.length)
+      .toBeLessThanOrEqual(sharedPrefixLength);
+  });
+
+  it("still omits the action grammar it was asked to drop", () => {
+    const withoutGrammar = buildCliAgentPromptForTest(
+      baseRequest as never,
+      "snapshot",
+      false,
+    );
+    expect(withoutGrammar).not.toContain("adaptive 1-8 task dependency graph");
+    expect(
+      buildCliAgentPromptForTest(baseRequest as never, "snapshot", true),
+    ).toContain("adaptive 1-8 task dependency graph");
+  });
+});
+
+describe("native provider dispatch", () => {
+  function withEnv(values: Record<string, string | undefined>, run: () => void) {
+    const previous = Object.fromEntries(
+      Object.keys(values).map((key) => [key, process.env[key]]),
+    );
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    try {
+      run();
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  }
+
+  it("routes an OpenCode turn to the OpenCode runtime", () => {
+    withEnv({ OPENCODE_API_KEY: "test-key" }, () => {
+      expect(
+        resolveCliNativeProviderForTest({ providerId: "opencode-api" }),
+      ).toBe("opencode-api");
+    });
+  });
+
+  it("does not silently fall back to Codex when the OpenCode key is absent", () => {
+    // Returning a provider here would dispatch OpenCode work over the Codex
+    // transport, which succeeds against the wrong service instead of failing.
+    withEnv({ OPENCODE_API_KEY: undefined, ORYNT_AGENT_RUNTIME: undefined }, () => {
+      expect(
+        resolveCliNativeProviderForTest({ providerId: "opencode-api" }),
+      ).toBeUndefined();
+    });
+  });
+
+  it("keeps each provider on its own credential", () => {
+    withEnv(
+      {
+        OPENCODE_API_KEY: undefined,
+        ANTHROPIC_API_KEY: "anthropic-key",
+        OPENAI_API_KEY: "openai-key",
+      },
+      () => {
+        // An Anthropic key must not make an OpenCode turn look routable.
+        expect(
+          resolveCliNativeProviderForTest({ providerId: "opencode-api" }),
+        ).toBeUndefined();
+        expect(
+          resolveCliNativeProviderForTest({ providerId: "anthropic-api" }),
+        ).toBe("anthropic-api");
+        expect(
+          resolveCliNativeProviderForTest({ providerId: "openai-api" }),
+        ).toBe("openai-api");
+      },
+    );
   });
 });

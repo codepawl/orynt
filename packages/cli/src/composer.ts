@@ -66,6 +66,7 @@ const EXIT_CONFIRMATION_SECONDS = 3;
 const ACTIVITY_DELAY_MS = 120;
 const ACTIVITY_FRAME_MS = 100;
 const STATIC_ACTIVITY_TICK_MS = 1_000;
+const INLINE_RESIZE_SETTLE_MS = 80;
 const ACTIVITY_FRAMES = [
   "♚",
   "♛",
@@ -85,6 +86,45 @@ export type ComposerChoice = {
   description?: string;
   details?: readonly string[];
 };
+
+export type ClarificationOption = {
+  id: string;
+  label: string;
+  description: string;
+  recommended: boolean;
+  recommendationReason?: string | null;
+  conflictsWith?: readonly string[];
+};
+
+export type ClarificationQuestion = {
+  id: string;
+  prompt: string;
+  rationale: string;
+  group: string;
+  selectionMode: "single" | "multiple";
+  options: readonly ClarificationOption[];
+};
+
+export type ClarificationRequest = {
+  title: string;
+  questions: readonly ClarificationQuestion[];
+  timeoutMs?: number;
+};
+
+export type ClarificationAnswer = {
+  questionId: string;
+  selectedOptionIds: string[];
+  note?: string;
+  optionNotes?: Array<{ optionId: string; note: string }>;
+  autoFilled: boolean;
+};
+
+export type ClarificationResult =
+  | {
+      status: "submitted" | "auto_submitted";
+      answers: ClarificationAnswer[];
+    }
+  | { status: "cancelled"; answers: ClarificationAnswer[] };
 
 type ComposerInput = NodeJS.ReadableStream & {
   isRaw?: boolean;
@@ -307,7 +347,7 @@ export type LiveComposerHandle = {
 };
 
 type ActiveRead = {
-  mode: "ask" | "compose" | "select" | "live";
+  mode: "ask" | "compose" | "select" | "live" | "clarify";
   prompt: string;
   originalPrompt: string;
   buffer: string;
@@ -337,7 +377,30 @@ type ActiveRead = {
   onLiveSubmission?: (
     submission: LiveComposerSubmission,
   ) => LiveComposerSubmissionResult | void;
+  clarification?: ActiveClarification;
   resolve: (value: string) => void;
+};
+
+type TerminalGeometry = {
+  columns: number;
+  rows: number;
+  revision: number;
+};
+
+type ActiveClarification = {
+  request: ClarificationRequest;
+  questionIndex: number;
+  optionIndexes: number[];
+  selections: Map<string, Set<string>>;
+  questionNotes: Map<string, string>;
+  optionNotes: Map<string, string>;
+  autoFilledQuestionIds: Set<string>;
+  phase: "questions" | "summary" | "note";
+  noteTarget?: { questionId: string; optionId?: string };
+  deadlineMs: number;
+  timer?: NodeJS.Timeout;
+  status?: string;
+  resolve: (result: ClarificationResult) => void;
 };
 
 type EditKind = "insert" | "delete" | "command";
@@ -382,11 +445,24 @@ type ComposerNotice = {
 };
 
 type MouseSelectionDrag = {
+  anchorRow: number;
+  anchorColumn: number;
   row: number;
   column: number;
+  started: boolean;
   direction?: -1 | 1;
   timer?: NodeJS.Timeout;
 };
+
+type MouseClickSequence = {
+  row: number;
+  column: number;
+  count: number;
+  releasedAt: number;
+};
+
+const MOUSE_MULTI_CLICK_INTERVAL_MS = 400;
+const MOUSE_MULTI_CLICK_COLUMN_TOLERANCE = 1;
 
 type RenderFrame = {
   lines: string[];
@@ -423,6 +499,7 @@ type ActiveActivity = {
   shimmerFrame: number;
   ready: boolean;
   visible: boolean;
+  delayMs: number;
   timer?: NodeJS.Timeout;
 };
 
@@ -858,6 +935,21 @@ function terminalRows(output: ComposerOutput): number {
   return rows > 0 ? rows : 24;
 }
 
+function terminalGeometry(
+  output: ComposerOutput,
+  revision = 0,
+): TerminalGeometry {
+  return {
+    columns: terminalColumns(output),
+    rows: terminalRows(output),
+    revision,
+  };
+}
+
+function renderedLineWidth(value: string): number {
+  return displayWidth(value.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, ""));
+}
+
 function shouldCompactPrompt(prompt: string, columns: number): boolean {
   return displayWidth(prompt) + 1 > Math.max(1, columns - 1);
 }
@@ -886,6 +978,8 @@ export class TtyComposer {
   private closed = false;
   private suspended = false;
   private resizePending = false;
+  private resizeTimer?: NodeJS.Timeout;
+  private geometry: TerminalGeometry;
   private shellSummary = "";
   private pendingPaste?: string;
   private pendingMouseInput?: string;
@@ -895,10 +989,12 @@ export class TtyComposer {
   private actionConfirmation?: ActionConfirmation;
   private notice?: ComposerNotice;
   private mouseSelectionDrag?: MouseSelectionDrag;
+  private mouseClickSequence?: MouseClickSequence;
 
   constructor(options: TtyComposerOptions) {
     this.input = options.input;
     this.output = options.output;
+    this.geometry = terminalGeometry(this.output);
     this.screen = options.viewportMode === "fullscreen"
       ? new TerminalScreen(options.output)
       : undefined;
@@ -939,6 +1035,42 @@ export class TtyComposer {
     choices: ComposerChoice[],
     currentValue?: string,
   ): Promise<string> => this.read(prompt, "select", { choices, currentValue });
+
+  clarify = (request: ClarificationRequest): Promise<ClarificationResult> => {
+    if (this.closed || request.questions.length === 0) {
+      return Promise.resolve({ status: "cancelled", answers: [] });
+    }
+    if (this.active) {
+      return Promise.reject(new Error("Orynt terminal input is already active"));
+    }
+    this.output.write("\u001b[?2004h");
+    return new Promise((resolve) => {
+      const active = this.createActiveRead(
+        "",
+        "clarify",
+        {},
+        "",
+        () => undefined,
+      );
+      active.clarification = {
+        request,
+        questionIndex: 0,
+        optionIndexes: request.questions.map(() => 0),
+        selections: new Map(
+          request.questions.map((question) => [question.id, new Set<string>()]),
+        ),
+        questionNotes: new Map(),
+        optionNotes: new Map(),
+        autoFilledQuestionIds: new Set(),
+        phase: "questions",
+        deadlineMs: Date.now() + Math.max(1, request.timeoutMs ?? 120_000),
+        resolve,
+      };
+      this.active = active;
+      this.scheduleClarificationTick(active);
+      this.render();
+    });
+  };
 
   remember = (value: string): void => {
     if (!value.trim()) return;
@@ -1046,6 +1178,14 @@ export class TtyComposer {
     this.disarmActionConfirmation();
     this.stopMouseSelectionDrag();
     this.pendingMouseInput = undefined;
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = undefined;
+    }
+    this.geometry = terminalGeometry(
+      this.output,
+      this.geometry.revision + 1,
+    );
     this.output.write("\u001b[?2004l");
     this.input.off("keypress", this.handleKeypress);
     this.output.off("resize", this.handleResize);
@@ -1064,6 +1204,10 @@ export class TtyComposer {
       this.output.on("resize", this.handleResize);
       this.input.setRawMode?.(true);
       this.input.resume();
+      this.geometry = terminalGeometry(
+        this.output,
+        this.geometry.revision + 1,
+      );
       this.screen?.resume();
       this.renderFullscreen();
     };
@@ -1091,7 +1235,7 @@ export class TtyComposer {
             ? this.motion
               ? ACTIVITY_FRAME_MS
               : STATIC_ACTIVITY_TICK_MS
-            : ACTIVITY_DELAY_MS,
+            : activity.delayMs,
         );
         activity.timer.unref?.();
       }
@@ -1309,8 +1453,11 @@ export class TtyComposer {
     this.writeOutput(variants[0] ?? "", variants);
   };
 
-  beginActivity = (label: string): InlineActivityHandle =>
-    this.startActivity(label, "inline");
+  beginActivity = (
+    label: string,
+    options: { immediate?: boolean } = {},
+  ): InlineActivityHandle =>
+    this.startActivity(label, "inline", options);
 
   beginStartupActivity = (label: string): InlineActivityHandle =>
     this.startActivity(label, "startup");
@@ -1318,6 +1465,7 @@ export class TtyComposer {
   private startActivity(
     label: string,
     layout: ActiveActivity["layout"],
+    options: { immediate?: boolean } = {},
   ): InlineActivityHandle {
     this.finishMessageStream();
     this.stopActivity();
@@ -1330,13 +1478,18 @@ export class TtyComposer {
       shimmerFrame: 0,
       ready: false,
       visible: false,
+      delayMs: options.immediate ? 0 : ACTIVITY_DELAY_MS,
     };
     this.activity = activity;
-    activity.timer = setTimeout(
-      () => this.tickActivity(activity),
-      ACTIVITY_DELAY_MS,
-    );
-    activity.timer.unref?.();
+    if (options.immediate) {
+      this.tickActivity(activity);
+    } else {
+      activity.timer = setTimeout(
+        () => this.tickActivity(activity),
+        activity.delayMs,
+      );
+    }
+    activity.timer?.unref?.();
     const finish = (
       marker: "✓" | "✕" | undefined,
       nextLabel?: string,
@@ -1738,7 +1891,264 @@ export class TtyComposer {
     );
   }
 
+  private clarificationAnswers(
+    clarification: ActiveClarification,
+  ): ClarificationAnswer[] {
+    return clarification.request.questions.map((question) => {
+      const selectedOptionIds = [
+        ...(clarification.selections.get(question.id) ?? new Set<string>()),
+      ];
+      const note = clarification.questionNotes.get(question.id)?.trim();
+      const optionNotes = selectedOptionIds.flatMap((optionId) => {
+        const value = clarification.optionNotes
+          .get(`${question.id}:${optionId}`)
+          ?.trim();
+        return value ? [{ optionId, note: value }] : [];
+      });
+      return {
+        questionId: question.id,
+        selectedOptionIds,
+        ...(note ? { note } : {}),
+        ...(optionNotes.length > 0 ? { optionNotes } : {}),
+        autoFilled: clarification.autoFilledQuestionIds.has(question.id),
+      };
+    });
+  }
+
+  private finishClarification(
+    active: ActiveRead,
+    status: "submitted" | "auto_submitted" | "cancelled",
+  ): void {
+    const clarification = active.clarification;
+    if (!clarification || this.active !== active) return;
+    if (clarification.timer) clearTimeout(clarification.timer);
+    this.clearRender();
+    this.active = undefined;
+    if (this.screen) this.renderFullscreen();
+    clarification.resolve({
+      status,
+      answers: this.clarificationAnswers(clarification),
+    });
+  }
+
+  private scheduleClarificationTick(active: ActiveRead): void {
+    const clarification = active.clarification;
+    if (!clarification || this.active !== active) return;
+    const remainingMs = clarification.deadlineMs - Date.now();
+    if (remainingMs <= 0) {
+      for (const question of clarification.request.questions) {
+        const selected =
+          clarification.selections.get(question.id) ?? new Set<string>();
+        if (selected.size > 0) continue;
+        for (const option of question.options) {
+          if (option.recommended) selected.add(option.id);
+        }
+        clarification.selections.set(question.id, selected);
+        clarification.autoFilledQuestionIds.add(question.id);
+      }
+      clarification.phase = "summary";
+      this.render();
+      this.finishClarification(active, "auto_submitted");
+      return;
+    }
+    clarification.timer = setTimeout(
+      () => {
+        clarification.timer = undefined;
+        if (this.active !== active) return;
+        this.render();
+        this.scheduleClarificationTick(active);
+      },
+      Math.min(1_000, remainingMs),
+    );
+    clarification.timer.unref?.();
+  }
+
+  private currentClarificationQuestion(
+    clarification: ActiveClarification,
+  ): ClarificationQuestion {
+    return clarification.request.questions[
+      Math.min(
+        clarification.questionIndex,
+        clarification.request.questions.length - 1,
+      )
+    ]!;
+  }
+
+  private clarificationOptionSelected(
+    clarification: ActiveClarification,
+    question: ClarificationQuestion,
+    optionId: string,
+  ): boolean {
+    return clarification.selections.get(question.id)?.has(optionId) ?? false;
+  }
+
+  private createClarificationFrame(active: ActiveRead): RenderFrame {
+    const clarification = active.clarification!;
+    const width = Math.max(1, terminalColumns(this.output) - 1);
+    const height = Math.max(2, terminalRows(this.output));
+    const remainingSeconds = Math.max(
+      0,
+      Math.ceil((clarification.deadlineMs - Date.now()) / 1_000),
+    );
+    const timer = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+    const title = terminalSafeText(clarification.request.title);
+    const headingGap = Math.max(
+      1,
+      width - displayWidth(title) - displayWidth(timer),
+    );
+    const lines = [
+      `${this.designSystem.theme.strong(title)}${" ".repeat(headingGap)}${this.designSystem.theme.paint("duration", timer)}`,
+    ];
+    let cursorRow = 0;
+    let cursorColumn = 0;
+    if (clarification.phase === "summary") {
+      lines.push(this.designSystem.theme.paint("attention", "Summary"));
+      for (const [index, question] of clarification.request.questions.entries()) {
+        const selected = clarification.selections.get(question.id) ?? new Set();
+        const labels = question.options
+          .filter((option) => selected.has(option.id))
+          .map((option) => option.label);
+        const auto = clarification.autoFilledQuestionIds.has(question.id)
+          ? " · auto-filled"
+          : "";
+        lines.push(
+          truncate(
+            `  ${index + 1}. ${question.prompt} — ${labels.join(", ") || "Not answered"}${auto}`,
+            width,
+          ),
+        );
+        const note = clarification.questionNotes.get(question.id);
+        if (note) lines.push(truncate(`     Note · ${note}`, width));
+        for (const option of question.options) {
+          const optionNote = clarification.optionNotes.get(
+            `${question.id}:${option.id}`,
+          );
+          if (optionNote && selected.has(option.id)) {
+            lines.push(truncate(`     ${option.label} · ${optionNote}`, width));
+          }
+        }
+      }
+      const complete = clarification.request.questions.every(
+        (question) =>
+          (clarification.selections.get(question.id)?.size ?? 0) > 0,
+      );
+      if (!complete) {
+        lines.push(
+          this.designSystem.theme.paint(
+            "danger",
+            "  Complete every question before submitting.",
+          ),
+        );
+      }
+      lines.push(
+        this.designSystem.theme.paint(
+          "muted",
+          "  Enter confirm · ← back · Esc cancel",
+        ),
+      );
+      cursorRow = lines.length - 1;
+      return {
+        lines: lines.slice(0, height),
+        cursorRow: Math.min(cursorRow, height - 1),
+        cursorColumn,
+      };
+    }
+    const question = this.currentClarificationQuestion(clarification);
+    const questionNumber = clarification.questionIndex + 1;
+    lines.push(
+      this.designSystem.theme.paint(
+        "attention",
+        `Question ${questionNumber}/${clarification.request.questions.length} · ${terminalSafeText(question.group)}`,
+      ),
+      truncate(terminalSafeText(question.prompt), width),
+      this.designSystem.theme.paint(
+        "muted",
+        truncate(`Why · ${terminalSafeText(question.rationale)}`, width),
+      ),
+    );
+    const selected = clarification.selections.get(question.id) ?? new Set();
+    const highlightedIndex =
+      clarification.optionIndexes[clarification.questionIndex] ?? 0;
+    for (const [index, option] of question.options.entries()) {
+      const highlighted = index === highlightedIndex;
+      const checked = selected.has(option.id);
+      const control = question.selectionMode === "multiple"
+        ? checked ? "☑" : "☐"
+        : checked ? "◉" : "○";
+      const marker = highlighted ? "›" : " ";
+      const recommendation = option.recommended ? " · Recommended" : "";
+      const row = truncate(
+        `  ${marker} ${control} ${index + 1}. ${terminalSafeText(option.label)}${recommendation}`,
+        width,
+      );
+      lines.push(
+        highlighted
+          ? this.designSystem.theme.paint("focus", row)
+          : row,
+      );
+      if (highlighted) {
+        lines.push(
+          this.designSystem.theme.paint(
+            "muted",
+            truncate(`      ${terminalSafeText(option.description)}`, width),
+          ),
+        );
+        if (option.recommended && option.recommendationReason) {
+          lines.push(
+            this.designSystem.theme.paint(
+              "muted",
+              truncate(
+                `      Why recommended · ${terminalSafeText(option.recommendationReason)}`,
+                width,
+              ),
+            ),
+          );
+        }
+      }
+    }
+    if (clarification.phase === "note") {
+      lines.push(truncate(`  Note › ${terminalSafeText(active.buffer)}`, width));
+      lines.push(
+        this.designSystem.theme.paint(
+          "muted",
+          "  Enter save · Esc discard",
+        ),
+      );
+      cursorRow = lines.length - 2;
+      cursorColumn = Math.min(
+        width,
+        displayWidth("  Note › ") + displayWidth(active.buffer),
+      );
+    } else {
+      if (clarification.status) {
+        lines.push(
+          this.designSystem.theme.paint(
+            "danger",
+            truncate(`  ${clarification.status}`, width),
+          ),
+        );
+      }
+      lines.push(
+        this.designSystem.theme.paint(
+          "muted",
+          "  ↑↓ options · Enter select · ←→ questions · Tab note · Ctrl+Enter review · Esc cancel",
+        ),
+      );
+      cursorRow = Math.min(lines.length - 1, 3 + highlightedIndex);
+    }
+    return {
+      lines: lines.slice(0, height),
+      cursorRow: Math.min(cursorRow, height - 1),
+      cursorColumn,
+    };
+  }
+
   private clearRender(): void {
+    if (!this.screen && this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = undefined;
+      this.flushResize();
+    }
     const active = this.active;
     if (!active || active.renderedAreaRows === 0) return;
     if (this.screen) {
@@ -1843,6 +2253,9 @@ export class TtyComposer {
   }
 
   private createFrame(active: ActiveRead): RenderFrame {
+    if (active.mode === "clarify" && active.clarification) {
+      return this.createClarificationFrame(active);
+    }
     const columns = terminalColumns(this.output);
     const contentWidth = Math.max(0, columns - 1);
     const suggestions = active.mode === "select"
@@ -2380,6 +2793,7 @@ export class TtyComposer {
   private render(): void {
     const active = this.active;
     if (!active) return;
+    if (!this.screen && this.resizeTimer) return;
     if (this.screen) {
       this.renderFullscreen();
       return;
@@ -3142,6 +3556,7 @@ export class TtyComposer {
 
   private handleKeypress = (value: string, key: Key): void => {
     if (this.consumeMouseKeypress(value, key)) return;
+    this.mouseClickSequence = undefined;
     const keyValue = value ?? "";
     if (key.name === "paste-start") {
       this.pendingPaste = "";
@@ -3182,6 +3597,10 @@ export class TtyComposer {
     const active = this.active;
     if (!active) {
       if (key.ctrl && key.name === "c") this.onInterrupt();
+      return;
+    }
+    if (active.mode === "clarify" && active.clarification) {
+      this.handleClarificationKeypress(active, value, key);
       return;
     }
     const pendingCount =
@@ -3708,6 +4127,228 @@ export class TtyComposer {
     if (dismissedExitConfirmation) this.render();
   };
 
+  private selectClarificationOption(
+    clarification: ActiveClarification,
+    question: ClarificationQuestion,
+    option: ClarificationOption,
+  ): boolean {
+    const selected =
+      clarification.selections.get(question.id) ?? new Set<string>();
+    clarification.status = undefined;
+    if (question.selectionMode === "single") {
+      selected.clear();
+      selected.add(option.id);
+      clarification.selections.set(question.id, selected);
+      return true;
+    }
+    if (selected.has(option.id)) {
+      selected.delete(option.id);
+      return true;
+    }
+    const conflict = option.conflictsWith?.find((optionId) =>
+      selected.has(optionId)
+    );
+    if (conflict) {
+      const conflictLabel =
+        question.options.find((candidate) => candidate.id === conflict)?.label ??
+        conflict;
+      clarification.status = `Conflicts with ${conflictLabel}; deselect it first.`;
+      return false;
+    }
+    selected.add(option.id);
+    clarification.selections.set(question.id, selected);
+    return true;
+  }
+
+  private openClarificationNote(
+    active: ActiveRead,
+    clarification: ActiveClarification,
+  ): void {
+    const question = this.currentClarificationQuestion(clarification);
+    const optionIndex =
+      clarification.optionIndexes[clarification.questionIndex] ?? 0;
+    const option = question.options[optionIndex];
+    if (!option) return;
+    if (
+      !this.clarificationOptionSelected(
+        clarification,
+        question,
+        option.id,
+      )
+    ) {
+      this.selectClarificationOption(clarification, question, option);
+    }
+    clarification.noteTarget = {
+      questionId: question.id,
+      ...(question.selectionMode === "multiple"
+        ? { optionId: option.id }
+        : {}),
+    };
+    active.buffer =
+      question.selectionMode === "multiple"
+        ? clarification.optionNotes.get(`${question.id}:${option.id}`) ?? ""
+        : clarification.questionNotes.get(question.id) ?? "";
+    active.cursor = active.buffer.length;
+    active.selectionAnchor = undefined;
+    clarification.phase = "note";
+    this.render();
+  }
+
+  private handleClarificationKeypress(
+    active: ActiveRead,
+    value: string,
+    key: Key,
+  ): void {
+    const clarification = active.clarification!;
+    if (key.ctrl && key.name === "c") {
+      this.finishClarification(active, "cancelled");
+      return;
+    }
+    if (clarification.phase === "note") {
+      if (key.name === "escape") {
+        active.buffer = "";
+        active.cursor = 0;
+        clarification.noteTarget = undefined;
+        clarification.phase = "questions";
+        this.render();
+        return;
+      }
+      if (key.name === "return" || key.name === "enter") {
+        const target = clarification.noteTarget;
+        const note = active.buffer.trim().slice(0, 2_000);
+        if (target?.optionId) {
+          const key = `${target.questionId}:${target.optionId}`;
+          if (note) clarification.optionNotes.set(key, note);
+          else clarification.optionNotes.delete(key);
+        } else if (target) {
+          if (note) clarification.questionNotes.set(target.questionId, note);
+          else clarification.questionNotes.delete(target.questionId);
+        }
+        active.buffer = "";
+        active.cursor = 0;
+        clarification.noteTarget = undefined;
+        clarification.phase = "questions";
+        this.render();
+        return;
+      }
+      if (key.name === "backspace") {
+        const start = previousBoundary(active.buffer, active.cursor);
+        active.buffer = `${active.buffer.slice(0, start)}${active.buffer.slice(active.cursor)}`;
+        active.cursor = start;
+        this.render();
+        return;
+      }
+      if (key.name === "left") {
+        active.cursor = previousBoundary(active.buffer, active.cursor);
+        this.render();
+        return;
+      }
+      if (key.name === "right") {
+        active.cursor = nextBoundary(active.buffer, active.cursor);
+        this.render();
+        return;
+      }
+      if (value && !key.ctrl && !key.meta && active.buffer.length < 2_000) {
+        active.buffer = `${active.buffer.slice(0, active.cursor)}${value}${active.buffer.slice(active.cursor)}`.slice(0, 2_000);
+        active.cursor = Math.min(active.buffer.length, active.cursor + value.length);
+        this.render();
+      }
+      return;
+    }
+    if (clarification.phase === "summary") {
+      if (key.name === "escape") {
+        this.finishClarification(active, "cancelled");
+        return;
+      }
+      if (key.name === "left") {
+        clarification.phase = "questions";
+        clarification.questionIndex =
+          clarification.request.questions.length - 1;
+        this.render();
+        return;
+      }
+      if (key.name === "return" || key.name === "enter") {
+        const complete = clarification.request.questions.every(
+          (question) =>
+            (clarification.selections.get(question.id)?.size ?? 0) > 0,
+        );
+        if (complete) this.finishClarification(active, "submitted");
+        return;
+      }
+      return;
+    }
+    if (key.name === "escape") {
+      this.finishClarification(active, "cancelled");
+      return;
+    }
+    if (
+      (key.ctrl || key.meta) &&
+      (key.name === "return" || key.name === "enter")
+    ) {
+      clarification.phase = "summary";
+      this.render();
+      return;
+    }
+    const question = this.currentClarificationQuestion(clarification);
+    const optionCount = question.options.length;
+    let optionIndex =
+      clarification.optionIndexes[clarification.questionIndex] ?? 0;
+    if (key.name === "up") {
+      optionIndex = (optionIndex - 1 + optionCount) % optionCount;
+      clarification.optionIndexes[clarification.questionIndex] = optionIndex;
+      clarification.status = undefined;
+      this.render();
+      return;
+    }
+    if (key.name === "down") {
+      optionIndex = (optionIndex + 1) % optionCount;
+      clarification.optionIndexes[clarification.questionIndex] = optionIndex;
+      clarification.status = undefined;
+      this.render();
+      return;
+    }
+    if (key.name === "left") {
+      clarification.questionIndex = Math.max(
+        0,
+        clarification.questionIndex - 1,
+      );
+      clarification.status = undefined;
+      this.render();
+      return;
+    }
+    if (key.name === "right") {
+      if (
+        clarification.questionIndex ===
+        clarification.request.questions.length - 1
+      ) {
+        clarification.phase = "summary";
+      } else {
+        clarification.questionIndex += 1;
+      }
+      clarification.status = undefined;
+      this.render();
+      return;
+    }
+    const numeric = /^[1-4]$/u.test(value) ? Number(value) - 1 : undefined;
+    if (numeric !== undefined && numeric < optionCount) {
+      optionIndex = numeric;
+      clarification.optionIndexes[clarification.questionIndex] = optionIndex;
+    }
+    if (
+      key.name === "return" ||
+      key.name === "enter" ||
+      numeric !== undefined
+    ) {
+      const option = question.options[optionIndex];
+      if (option) this.selectClarificationOption(clarification, question, option);
+      this.render();
+      return;
+    }
+    if (key.name === "tab") {
+      this.openClarificationNote(active, clarification);
+    }
+  }
+
   private consumeMouseKeypress(value: string, key: Key): boolean {
     if (!this.screen) return false;
     const fragment = key.sequence ?? value ?? "";
@@ -3746,6 +4387,7 @@ export class TtyComposer {
       return true;
     }
     if ((button & 64) !== 0) {
+      this.mouseClickSequence = undefined;
       const direction = (button & 1) === 0 ? 1 : -1;
       if (this.screen.isComposerRow(row)) {
         const active = this.active;
@@ -3761,36 +4403,89 @@ export class TtyComposer {
     if (event === "m") {
       const drag = this.mouseSelectionDrag;
       if (drag) {
-        const targetRow = this.mouseSelectionRow(row);
-        this.screen.extendSelection(targetRow, column);
+        if (drag.started) {
+          const targetRow = this.mouseSelectionRow(row);
+          this.screen.extendSelection(targetRow, column);
+        } else {
+          this.activateMouseClick(row, column);
+        }
         this.stopMouseSelectionDrag();
-        this.renderFullscreen();
-        if (this.clipboardPreferences.copyOnSelect) {
+        if (drag.started && this.clipboardPreferences.copyOnSelect) {
           void this.copyChatSelection();
         }
+      } else {
+        this.mouseClickSequence = undefined;
       }
       return true;
     }
 
     const isMotion = (button & 32) !== 0;
     const isLeftButton = (button & 3) === 0;
-    if (!isMotion && isLeftButton && !this.screen.isComposerRow(row)) {
+    if (!isMotion && isLeftButton) {
       this.stopMouseSelectionDrag();
-      if (this.screen.beginSelection(row, column)) {
-        this.mouseSelectionDrag = { row, column };
-        this.renderFullscreen();
+      if (this.screen.isComposerRow(row)) {
+        this.mouseClickSequence = undefined;
+        return true;
       }
+      this.mouseSelectionDrag = {
+        anchorRow: row,
+        anchorColumn: column,
+        row,
+        column,
+        started: false,
+      };
       return true;
     }
     if (isMotion && isLeftButton && this.mouseSelectionDrag) {
-      this.mouseSelectionDrag.row = row;
-      this.mouseSelectionDrag.column = column;
+      const drag = this.mouseSelectionDrag;
+      drag.row = row;
+      drag.column = column;
+      if (
+        !drag.started &&
+        (row !== drag.anchorRow || column !== drag.anchorColumn)
+      ) {
+        drag.started = this.screen.beginSelection(
+          drag.anchorRow,
+          drag.anchorColumn,
+        );
+      }
+      if (!drag.started) return true;
+      this.mouseClickSequence = undefined;
       const targetRow = this.mouseSelectionRow(row);
       this.screen.extendSelection(targetRow, column);
       this.updateMouseSelectionScroll(row);
       this.renderFullscreen();
     }
     return true;
+  }
+
+  private activateMouseClick(row: number, column: number): void {
+    const now = Date.now();
+    const previous = this.mouseClickSequence;
+    const continuesSequence = Boolean(
+      previous &&
+        now - previous.releasedAt <= MOUSE_MULTI_CLICK_INTERVAL_MS &&
+        previous.row === row &&
+        Math.abs(previous.column - column) <=
+          MOUSE_MULTI_CLICK_COLUMN_TOLERANCE,
+    );
+    const count = continuesSequence ? Math.min(3, previous!.count + 1) : 1;
+    this.mouseClickSequence = count < 3
+      ? { row, column, count, releasedAt: now }
+      : undefined;
+
+    if (count === 1) {
+      if (this.screen?.clearSelection()) this.renderFullscreen();
+      return;
+    }
+    const selected = count === 2
+      ? this.screen?.selectWord(row, column)
+      : this.screen?.selectRow(row);
+    if (!selected) return;
+    this.renderFullscreen();
+    if (this.clipboardPreferences.copyOnSelect) {
+      void this.copyChatSelection();
+    }
   }
 
   private mouseSelectionRow(row: number): number {
@@ -3887,16 +4582,40 @@ export class TtyComposer {
   }
 
   private handleResize = (): void => {
+    if (!this.screen) {
+      if (this.resizeTimer) clearTimeout(this.resizeTimer);
+      this.resizeTimer = setTimeout(() => {
+        this.resizeTimer = undefined;
+        this.flushResize();
+      }, INLINE_RESIZE_SETTLE_MS);
+      this.resizeTimer.unref?.();
+      return;
+    }
     if (this.resizePending) return;
     this.resizePending = true;
     queueMicrotask(() => {
       this.resizePending = false;
-      if (this.closed || this.suspended) return;
-      this.commitResize();
+      this.flushResize();
     });
   };
 
-  private commitResize(): void {
+  private flushResize(): void {
+    if (this.closed || this.suspended) return;
+    const nextGeometry = terminalGeometry(
+      this.output,
+      this.geometry.revision + 1,
+    );
+    if (
+      nextGeometry.columns === this.geometry.columns &&
+      nextGeometry.rows === this.geometry.rows
+    ) {
+      return;
+    }
+    this.geometry = nextGeometry;
+    this.commitResize(nextGeometry);
+  }
+
+  private commitResize(geometry: TerminalGeometry): void {
     const active = this.active;
     if (!active) {
       if (this.screen) {
@@ -3919,14 +4638,20 @@ export class TtyComposer {
     const compactAsk =
       active.mode === "ask" &&
       active.prompt === active.originalPrompt &&
-      shouldCompactPrompt(active.originalPrompt, terminalColumns(this.output));
-    active.pendingRenderPrefix = "\r\u001b[0J\r\n";
+      shouldCompactPrompt(active.originalPrompt, geometry.columns);
+    const exactInlineAnchor = active.renderedLines.every(
+      (line) => renderedLineWidth(line) < geometry.columns,
+    );
+    active.pendingRenderPrefix = exactInlineAnchor
+      ? `\r${verticalMove(-active.renderedCursorRow)}\u001b[0J`
+      : "\r\u001b[0J\r\n";
     if (compactAsk) {
       active.pendingRenderPrefix += `${active.originalPrompt.trimEnd()}\n`;
       active.prompt = "› ";
     }
     active.renderedLines = [];
     active.renderedAreaRows = 0;
+    active.renderedCursorRow = 0;
     active.renderedCursorColumn = 0;
     active.renderedColumns = 0;
     this.render();
@@ -3934,6 +4659,11 @@ export class TtyComposer {
 
   close(): void {
     if (this.closed) return;
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = undefined;
+      this.flushResize();
+    }
     this.closed = true;
     this.resizePending = false;
     this.finishMessageStream();
@@ -3943,10 +4673,20 @@ export class TtyComposer {
     this.pendingMouseInput = undefined;
     const active = this.active;
     if (active) {
+      if (active.clarification?.timer) {
+        clearTimeout(active.clarification.timer);
+      }
       this.clearRender();
       if (!this.screen) this.output.write("\n");
       this.active = undefined;
-      active.resolve(active.mode === "compose" ? "/exit" : "");
+      if (active.clarification) {
+        active.clarification.resolve({
+          status: "cancelled",
+          answers: this.clarificationAnswers(active.clarification),
+        });
+      } else {
+        active.resolve(active.mode === "compose" ? "/exit" : "");
+      }
     }
     this.input.off("keypress", this.handleKeypress);
     this.output.off("resize", this.handleResize);

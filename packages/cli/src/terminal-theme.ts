@@ -100,7 +100,13 @@ export type TerminalAppearanceResolution = Omit<
   motionOverride?: "non-tty" | "--plain";
   richTextOverride?: "non-tty" | "--plain";
   screenMode: EffectiveTerminalScreenMode;
-  screenOverride?: "--screen" | "--plain" | "non-tty" | "TERM=dumb" | "auto";
+  screenOverride?:
+    | "--screen"
+    | "--plain"
+    | "non-tty"
+    | "TERM=dumb"
+    | "TERM_PROGRAM=Orca"
+    | "auto";
 };
 
 const QUIET_STUDIO_STYLES: Readonly<Record<TerminalRole, string>> = {
@@ -132,7 +138,7 @@ const QUIET_STUDIO_STYLES: Readonly<Record<TerminalRole, string>> = {
   diffAdded: "7;38;2;120;201;155",
   diffRemoved: "7;38;2;223;114;114",
   helpHeading: "1;38;2;28;31;38;48;2;198;167;216",
-  userMessage: "38;2;235;239;246;48;2;32;43;57",
+  userMessage: "38;2;52;64;84;48;2;238;241;245",
   diffHunk: "2;3;38;2;143;182;232",
   path: "4;38;2;143;182;232",
   inlineCode: "38;2;198;196;191",
@@ -172,7 +178,7 @@ const MONOCHROME_STYLES: Readonly<Record<TerminalRole, string>> = {
   diffAdded: "7;38;2;120;201;155",
   diffRemoved: "7;38;2;223;114;114",
   helpHeading: "1;7",
-  userMessage: "38;5;255;48;5;236",
+  userMessage: "38;5;238;48;5;255",
   diffHunk: "2;3",
   path: "4",
   inlineCode: "0",
@@ -418,12 +424,18 @@ export function resolveTerminalAppearance(options: {
   const savedScreenMode = options.saved.screenMode ?? "auto";
   const selectedScreenMode = requestedScreenMode ?? savedScreenMode;
   const dumbTerminal = environment.TERM === "dumb";
+  const orcaTerminal =
+    environment.TERM_PROGRAM?.toLocaleLowerCase() === "orca";
   const screenMode: EffectiveTerminalScreenMode =
     !options.isTTY || plain || dumbTerminal
       ? "inline"
       : selectedScreenMode === "inline"
         ? "inline"
-        : "fullscreen";
+        : selectedScreenMode === "fullscreen"
+          ? "fullscreen"
+          : orcaTerminal
+            ? "inline"
+            : "fullscreen";
   const screenOverride = !options.isTTY
     ? "non-tty"
     : plain
@@ -432,6 +444,8 @@ export function resolveTerminalAppearance(options: {
         ? "TERM=dumb"
         : requestedScreenMode
           ? "--screen"
+          : selectedScreenMode === "auto" && orcaTerminal
+            ? "TERM_PROGRAM=Orca"
           : selectedScreenMode === "auto"
             ? "auto"
             : undefined;

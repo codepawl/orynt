@@ -248,8 +248,19 @@ if (contract.includes("Create a complete runnable implementation")) {
   return binDir;
 }
 
-async function createFakeFullstackCodexBinary() {
-  const binDir = path.join(tempRoot, "fullstack-bin");
+async function createFakeFullstackCodexBinary(options: {
+  unreadableSource?: boolean;
+  generatedMinifiedSource?: boolean;
+  requiredContractText?: string[];
+} = {}) {
+  const binDir = path.join(
+    tempRoot,
+    options.unreadableSource
+      ? "fullstack-unreadable-bin"
+      : options.generatedMinifiedSource
+        ? "fullstack-generated-bin"
+        : "fullstack-bin",
+  );
   const fakeCodex = path.join(binDir, "codex");
   await mkdir(binDir, { recursive: true });
   await writeFile(
@@ -258,6 +269,13 @@ async function createFakeFullstackCodexBinary() {
 const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
+const contract = fs.readFileSync(0, "utf8");
+for (const requiredText of ${JSON.stringify(options.requiredContractText ?? [])}) {
+  if (!contract.includes(requiredText)) {
+    console.error("missing required work-contract text: " + requiredText);
+    process.exit(3);
+  }
+}
 if (!fs.existsSync(path.join(cwd, ".codex", "orynt-beta-verify.mjs"))) {
   console.error("missing verifier script before execution");
   process.exit(2);
@@ -267,6 +285,12 @@ fs.mkdirSync(path.join(cwd, "server"), { recursive: true });
 fs.writeFileSync(path.join(cwd, "package.json"), JSON.stringify({ scripts: { start: "node server/index.js", test: "node .codex/orynt-beta-verify.mjs" } }, null, 2));
 fs.writeFileSync(path.join(cwd, "index.html"), "<div id=app>Orynt fullstack app</div>\\n<script type=module src=/src/main.js></script>\\n");
 fs.writeFileSync(path.join(cwd, "src", "main.js"), "document.querySelector('#app').textContent = 'Orynt fullstack dashboard';\\n");
+${options.unreadableSource
+  ? `fs.writeFileSync(path.join(cwd, "src", "styles.css"), ".board{" + "x".repeat(500) + "}\\\\n");`
+  : ""}
+${options.generatedMinifiedSource
+  ? `fs.writeFileSync(path.join(cwd, "src", "vendor.min.js"), "x".repeat(1_500));`
+  : ""}
 fs.writeFileSync(path.join(cwd, "server", "index.js"), "import http from 'node:http';\\nhttp.createServer((req,res)=>res.end(JSON.stringify({ok:true}))).listen(3000);\\n");
 const outputIndex = process.argv.indexOf("--output-last-message");
 if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], "Fake fullstack Codex completed\\n");
@@ -313,15 +337,22 @@ const outputIndex = process.argv.indexOf("--output-last-message");
 const artifactRoot = path.dirname(process.argv[outputIndex + 1]);
 const verifierPath = path.join(cwd, ".codex", "orynt-beta-verify.mjs");
 const markerPath = path.join(artifactRoot, "codex-result-import.json");
+// The watcher is detached and unref'd so it outlives this fake Codex process,
+// which is what makes the tampering "delayed". It therefore also outlives the
+// test runner, so it must bound its own life: this run is expected to be
+// blocked, meaning the marker it waits for may never appear. Without the
+// deadline every execution of this suite left a process polling forever.
 const attack =
   "const fs=require('node:fs');" +
   "const verifierPath=" + JSON.stringify(verifierPath) + ";" +
   "const markerPath=" + JSON.stringify(markerPath) + ";" +
+  "const deadline=Date.now()+30000;" +
   "const timer=setInterval(()=>{" +
-  "if(!fs.existsSync(markerPath))return;" +
+  "if(fs.existsSync(markerPath)){" +
   "fs.writeFileSync(verifierPath,\\"console.log('ATTACKER VERIFIER RAN'); process.exit(0);\\\\n\\");" +
+  "}else if(Date.now()<deadline)return;" +
   "clearInterval(timer);" +
-  "},1);";
+  "},25);";
 spawn(process.execPath, ["-e", attack], {
   detached: true,
   stdio: "ignore",
@@ -948,7 +979,13 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
 
   it("can complete a fullstack web app task through the selected Codex CLI path", async () => {
     const repositoryPath = await createFixtureRepository("desktop-fullstack-repo");
-    const codexPathEnv = await createFakeFullstackCodexBinary();
+    const codexPathEnv = await createFakeFullstackCodexBinary({
+      requiredContractText: [
+        "Use the selected Agent Skill snapshots already included in Context as the complete task-specific skill guidance.",
+        "Do not discover, read, load, or apply another skill package",
+        "Start new product workflows with empty user data.",
+      ],
+    });
     const previousPath = process.env.PATH;
     process.env.PATH = `${codexPathEnv}${path.delimiter}${previousPath ?? ""}`;
     try {
@@ -960,6 +997,20 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
         sandboxRoot: path.join(tempRoot, "desktop-fullstack-sandboxes"),
         artifactRoot: path.join(tempRoot, "desktop-fullstack-artifacts"),
         memoryRoot: path.join(tempRoot, "desktop-fullstack-memory"),
+        skillContext: {
+          schemaVersion: 1,
+          runId: "headless-fullstack-skill",
+          createdAt: "2026-08-07T00:00:00.000Z",
+          digest: "a".repeat(64),
+          skills: [
+            {
+              skillId: "orynt-builtin:product-ui-design",
+              digest: "b".repeat(64),
+              source: "runtime",
+              instructions: "Build honest product UI.",
+            },
+          ],
+        },
         modelConnection: {
           providerId: "codex-cli",
           providerLabel: "Codex CLI",
@@ -971,12 +1022,238 @@ describe("LocalCodingApprenticeDemoOrchestrator", () => {
       });
       const manifest = JSON.parse(await readFile(result.artifactManifestPath, "utf8")) as {
         eventTypes: string[];
-        artifacts: { redactedLog: { path: string } | null };
+        artifacts: {
+          redactedLog: { path: string } | null;
+          verificationResult: { path: string };
+        };
       };
+      const verification = JSON.parse(
+        await readFile(manifest.artifacts.verificationResult.path, "utf8"),
+      ) as { evidence: Array<{ kind: string; stdout?: string }> };
+      const commandEvidence = verification.evidence.find(
+        ({ kind }) => kind === "command",
+      );
 
       expect(result.status).toBe("pass");
       expect(manifest.eventTypes).toContain("verification_passed");
       expect(manifest.artifacts.redactedLog?.path).toContain("codex-execution-last-message.redacted.md");
+      expect(commandEvidence?.stdout).toContain("\"sourceReadability\"");
+      expect(commandEvidence?.stdout).toContain("\"src/main.js\"");
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
+  it("runs source readability preflight without Git and ignores unchanged legacy source", async () => {
+    const repositoryPath = await createFixtureRepository(
+      "desktop-readability-preflight-repo",
+    );
+    await mkdir(path.join(repositoryPath, "src"), { recursive: true });
+    await writeFile(
+      path.join(repositoryPath, "src", "legacy.css"),
+      `.legacy{${"x".repeat(500)}}\n`,
+    );
+    await git(["add", "src/legacy.css"], repositoryPath);
+    await git(["commit", "-m", "add legacy source"], repositoryPath);
+    const codexPathEnv = await createFakeFullstackCodexBinary();
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${codexPathEnv}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const result = await runDesktopRepositoryBeta({
+        goal: "Create a complex fullstack web app and preflight readable source",
+        taskId: "task-desktop-readability-preflight",
+        workspaceId: "workspace-desktop",
+        repositoryPath,
+        sandboxRoot: path.join(tempRoot, "desktop-readability-preflight-sandboxes"),
+        artifactRoot: path.join(tempRoot, "desktop-readability-preflight-artifacts"),
+        memoryRoot: path.join(tempRoot, "desktop-readability-preflight-memory"),
+        authorization: {
+          source: "headless",
+          reason: "The fixture allows the complete generated frontend source directory.",
+          expectedPaths: ["package.json", "index.html", "src", "server/index.js"],
+        },
+        modelConnection: {
+          providerId: "codex-cli",
+          providerLabel: "Codex CLI",
+          modelId: "gpt-5.5",
+          modelLabel: "GPT-5.5",
+          authMethod: "codexCliSession",
+        },
+        thinkingEffort: "high",
+      });
+      const manifest = JSON.parse(
+        await readFile(result.artifactManifestPath, "utf8"),
+      ) as {
+        sandboxWorktreePath: string;
+        artifactRoot: string;
+      };
+      const verifierPath = path.join(
+        manifest.sandboxWorktreePath,
+        ".codex",
+        "orynt-beta-verify.mjs",
+      );
+      const trustedReportPath = path.join(
+        manifest.artifactRoot,
+        "trusted-verifier-report.json",
+      );
+      const trustedReportBefore = await readFile(trustedReportPath, "utf8");
+      const preflight = await execFileAsync(
+        process.execPath,
+        [verifierPath, "--source-readability-only"],
+        {
+          cwd: manifest.sandboxWorktreePath,
+          encoding: "utf8",
+          env: { ...process.env, PATH: "" },
+        },
+      );
+
+      expect(result.status).toBe("pass");
+      expect(preflight.stdout).toContain("src/main.js");
+      expect(preflight.stdout).not.toContain("src/legacy.css");
+      expect(
+        await readFile(trustedReportPath, "utf8"),
+      ).toBe(trustedReportBefore);
+
+      await writeFile(
+        path.join(manifest.sandboxWorktreePath, "src", "styles.css"),
+        `.board{${"x".repeat(500)}}\n`,
+      );
+      await expect(
+        execFileAsync(
+          process.execPath,
+          [verifierPath, "--source-readability-only"],
+          {
+            cwd: manifest.sandboxWorktreePath,
+            encoding: "utf8",
+            env: { ...process.env, PATH: "" },
+          },
+        ),
+      ).rejects.toMatchObject({
+        stderr: expect.stringContaining(
+          "src/styles.css contains an authored line longer than 400 characters",
+        ),
+      });
+
+      await writeFile(
+        path.join(manifest.sandboxWorktreePath, "src", "styles.css"),
+        ".board {\n  display: grid;\n}\n",
+      );
+      await writeFile(
+        path.join(manifest.sandboxWorktreePath, "src", "app.js"),
+        "x".repeat(1_500),
+      );
+      await expect(
+        execFileAsync(
+          process.execPath,
+          [verifierPath, "--source-readability-only"],
+          {
+            cwd: manifest.sandboxWorktreePath,
+            encoding: "utf8",
+            env: { ...process.env, PATH: "" },
+          },
+        ),
+      ).rejects.toMatchObject({
+        stderr: expect.stringContaining(
+          "src/app.js appears manually minified",
+        ),
+      });
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
+  it("fails managed verification for unreadable authored frontend source", async () => {
+    const repositoryPath = await createFixtureRepository(
+      "desktop-unreadable-source-repo",
+    );
+    const codexPathEnv = await createFakeFullstackCodexBinary({
+      unreadableSource: true,
+    });
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${codexPathEnv}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const result = await runDesktopRepositoryBeta({
+          goal: "Create a complex fullstack web app with readable authored source",
+          taskId: "task-desktop-unreadable-source",
+          workspaceId: "workspace-desktop",
+          repositoryPath,
+          sandboxRoot: path.join(tempRoot, "desktop-unreadable-sandboxes"),
+          artifactRoot: path.join(tempRoot, "desktop-unreadable-artifacts"),
+          memoryRoot: path.join(tempRoot, "desktop-unreadable-memory"),
+          authorization: {
+            source: "headless",
+            reason: "The fixture allows the complete generated frontend source directory.",
+            expectedPaths: ["package.json", "index.html", "src", "server/index.js"],
+          },
+          modelConnection: {
+            providerId: "codex-cli",
+            providerLabel: "Codex CLI",
+            modelId: "gpt-5.5",
+            modelLabel: "GPT-5.5",
+            authMethod: "codexCliSession",
+          },
+          thinkingEffort: "high",
+        });
+      const manifest = JSON.parse(
+        await readFile(result.artifactManifestPath, "utf8"),
+      ) as {
+        artifacts: {
+          verificationResult: { path: string };
+        };
+      };
+      const verification = JSON.parse(
+        await readFile(manifest.artifacts.verificationResult.path, "utf8"),
+      ) as {
+        evidence: Array<{ kind: string; stderr?: string }>;
+      };
+
+      expect(result.status).toBe("fail");
+      expect(result.outcome).toMatchObject({
+        classification: "verification",
+        verifierFailureClass: "command_failed",
+      });
+      expect(
+        verification.evidence.find(({ kind }) => kind === "command")?.stderr,
+      ).toContain("authored line longer than 400 characters");
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
+  it("does not treat an explicitly minified generated filename as authored source", async () => {
+    const repositoryPath = await createFixtureRepository(
+      "desktop-generated-source-repo",
+    );
+    const codexPathEnv = await createFakeFullstackCodexBinary({
+      generatedMinifiedSource: true,
+    });
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${codexPathEnv}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      const result = await runDesktopRepositoryBeta({
+        goal: "Create a complex fullstack web app with a generated minified asset",
+        taskId: "task-desktop-generated-source",
+        workspaceId: "workspace-desktop",
+        repositoryPath,
+        sandboxRoot: path.join(tempRoot, "desktop-generated-sandboxes"),
+        artifactRoot: path.join(tempRoot, "desktop-generated-artifacts"),
+        memoryRoot: path.join(tempRoot, "desktop-generated-memory"),
+        authorization: {
+          source: "headless",
+          reason: "The fixture allows the complete generated frontend source directory.",
+          expectedPaths: ["package.json", "index.html", "src", "server/index.js"],
+        },
+        modelConnection: {
+          providerId: "codex-cli",
+          providerLabel: "Codex CLI",
+          modelId: "gpt-5.5",
+          modelLabel: "GPT-5.5",
+          authMethod: "codexCliSession",
+        },
+        thinkingEffort: "high",
+      });
+
+      expect(result.status).toBe("pass");
     } finally {
       process.env.PATH = previousPath;
     }

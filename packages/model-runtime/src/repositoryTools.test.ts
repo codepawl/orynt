@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "bun:test";
 
 import { RepositoryAgentToolExecutor } from "./repositoryTools.js";
+import { CompositeAgentToolExecutor } from "./index.js";
 
 const execFileAsync = promisify(execFile);
 const roots: string[] = [];
@@ -28,6 +29,75 @@ afterEach(async () => {
 });
 
 describe("RepositoryAgentToolExecutor", () => {
+  it("describes repository activity without exposing patch bodies", async () => {
+    const root = await fixture();
+    const executor = new RepositoryAgentToolExecutor({
+      repositoryPath: root,
+      mode: "workspace-write",
+      allowedCommands: ["bun test"],
+    });
+    expect(executor.describe({
+      callId: "list",
+      name: "repo_list",
+      arguments: { glob: "packages/**/*.ts" },
+    })).toEqual({
+      action: "list",
+      toolName: "repo_list",
+      detail: "rg --files --hidden -g \"!.git\" -g \"packages/**/*.ts\"",
+    });
+    expect(executor.describe({
+      callId: "read",
+      name: "repo_read",
+      arguments: { path: "README.md" },
+    })).toEqual({
+      action: "read",
+      toolName: "repo_read",
+      detail: "README.md",
+    });
+    expect(executor.describe({
+      callId: "run",
+      name: "repo_exec",
+      arguments: { argv: ["bun", "test"], cwd: "packages/cli" },
+    })).toEqual({
+      action: "run",
+      toolName: "repo_exec",
+      detail: "bun test · in packages/cli",
+    });
+
+    const patch = [
+      "diff --git a/src/index.ts b/src/index.ts",
+      "--- a/src/index.ts",
+      "+++ b/src/index.ts",
+      "@@ -1 +1 @@",
+      "-export const secret = 'do-not-render';",
+      "+export const secret = 'still-hidden';",
+      "",
+    ].join("\n");
+    const edit = executor.describe({
+      callId: "edit",
+      name: "repo_apply_patch",
+      arguments: { patch },
+    });
+    expect(edit).toEqual({
+      action: "edit",
+      toolName: "repo_apply_patch",
+      detail: "src/index.ts",
+    });
+    expect(JSON.stringify(edit)).not.toContain("do-not-render");
+    expect(JSON.stringify(edit)).not.toContain("still-hidden");
+
+    const composite = new CompositeAgentToolExecutor([executor]);
+    expect(composite.describe({
+      callId: "composite-read",
+      name: "repo_read",
+      arguments: { path: "README.md" },
+    })).toEqual({
+      action: "read",
+      toolName: "repo_read",
+      detail: "README.md",
+    });
+  });
+
   it("supports bounded read tools while blocking sensitive files", async () => {
     const root = await fixture();
     const executor = new RepositoryAgentToolExecutor({ repositoryPath: root, mode: "read-only" });

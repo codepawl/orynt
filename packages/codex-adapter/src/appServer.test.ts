@@ -237,6 +237,7 @@ describe("CodexAppServerRuntime", () => {
     });
     try {
       const deltas: string[] = [];
+      const deltaItemIds: string[] = [];
       const contextUpdates: number[] = [];
       const first = await runtime.runTurn({
         sessionKey: "session:coordinator",
@@ -247,7 +248,10 @@ describe("CodexAppServerRuntime", () => {
         outputSchema: { type: "object" },
         timeoutMs: 500,
         onActivity: (activity) => {
-          if (activity.kind === "delta") deltas.push(activity.text);
+          if (activity.kind === "delta") {
+            deltas.push(activity.text);
+            deltaItemIds.push(activity.itemId);
+          }
           if (activity.kind === "context") {
             contextUpdates.push(activity.context.current.totalTokens);
           }
@@ -269,6 +273,7 @@ describe("CodexAppServerRuntime", () => {
       expect(contextUpdates).toEqual([12_500]);
       expect(first.timing.firstDeltaMs).toBeDefined();
       expect(deltas).toEqual(['{"ok":', "true}"]);
+      expect(deltaItemIds).toEqual(["item-1", "item-1"]);
       expect(second.context).toMatchObject({
         capacity: {
           modelId: "gpt-test",
@@ -379,9 +384,11 @@ describe("CodexAppServerRuntime", () => {
 
   it("executes an advertised dynamic tool and returns its result to app-server", async () => {
     const script = await fixture();
+    let now = 100;
     const runtime = new CodexAppServerRuntime({
       executablePath: process.execPath,
       args: [script],
+      now: () => now,
     });
     const calls: unknown[] = [];
     const activities: unknown[] = [];
@@ -405,6 +412,7 @@ describe("CodexAppServerRuntime", () => {
         }],
         executeTool: async (call) => {
           calls.push(call);
+          now = 450;
           return {
             output: JSON.stringify({ tabs: ["tab-1"] }),
             images: [{
@@ -414,6 +422,11 @@ describe("CodexAppServerRuntime", () => {
             }],
           };
         },
+        describeTool: () => ({
+          action: "inspect",
+          toolName: "browser_tabs",
+          detail: "attached browser tabs",
+        }),
         onActivity: (activity) => activities.push(activity),
         timeoutMs: 500,
       });
@@ -434,16 +447,27 @@ describe("CodexAppServerRuntime", () => {
         callId: "call-1",
         toolKind: "other",
         name: "browser_tabs",
-        detail: "browser_tabs",
+        detail: "attached browser tabs",
         status: "requested",
+        descriptor: {
+          action: "inspect",
+          toolName: "browser_tabs",
+          detail: "attached browser tabs",
+        },
       });
       expect(activities).toContainEqual({
         kind: "tool",
         callId: "call-1",
         toolKind: "other",
         name: "browser_tabs",
-        detail: "browser_tabs",
+        detail: "attached browser tabs",
         status: "completed",
+        durationMs: 350,
+        descriptor: {
+          action: "inspect",
+          toolName: "browser_tabs",
+          detail: "attached browser tabs",
+        },
       });
     } finally {
       await runtime.shutdown();

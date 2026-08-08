@@ -151,6 +151,49 @@ describe("prompt understanding contracts", () => {
     }).questions).toHaveLength(1);
   });
 
+  it("accepts compatible multi recommendations and rejects conflicting recommendation sets", () => {
+    const candidate = {
+      schemaVersion: 1,
+      promptId: hashPromptUnderstandingBasis(basis),
+      outcome: "repository_action",
+      readiness: "clarification_required",
+      reply: "Choose validation.",
+      refinedBrief: null,
+      questions: [{
+        id: "validation",
+        prompt: "Which checks?",
+        rationale: "They define completion.",
+        kind: "validation",
+        selectionMode: "multiple",
+        options: [{
+          id: "tests",
+          label: "Tests",
+          description: "Run tests.",
+          recommended: true,
+          conflictsWith: [],
+          recommendationReason: "Fast signal.",
+        }, {
+          id: "build",
+          label: "Build",
+          description: "Run build.",
+          recommended: true,
+          conflictsWith: [],
+          recommendationReason: "Catches type drift.",
+        }],
+      }],
+      assumptions: [],
+    };
+    expect(parsePromptUnderstandingV1(candidate).questions[0]?.selectionMode)
+      .toBe("multiple");
+
+    const conflicting = structuredClone(candidate);
+    conflicting.questions[0]!.options[0]!.conflictsWith = ["build"];
+    conflicting.questions[0]!.options[1]!.conflictsWith = ["tests"];
+    expect(() => parsePromptUnderstandingV1(conflicting)).toThrow(
+      /Recommended prompt options cannot conflict/u,
+    );
+  });
+
   it("rejects invalid lifecycle combinations and oversized batches", () => {
     const readyWithQuestion = {
       schemaVersion: 1,

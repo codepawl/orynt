@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import {
   canonicalRepositoryTaskPlan,
+  MANAGED_REPOSITORY_VALIDATION_COMMAND,
+  normalizeRepositoryValidationCommand,
+  RepositoryTaskPlanValidationError,
   validateRepositoryTaskPlan,
   type RepositoryTaskPlanV1,
 } from "./taskPlanContracts";
@@ -71,6 +74,21 @@ function plan(): RepositoryTaskPlanV1 {
 }
 
 describe("repository task plan contracts", () => {
+  it("canonicalizes only policy-allowed validation commands", () => {
+    expect(normalizeRepositoryValidationCommand(
+      "  node   .codex/orynt-beta-verify.mjs ",
+    )).toBe(MANAGED_REPOSITORY_VALIDATION_COMMAND);
+    expect(normalizeRepositoryValidationCommand(
+      "bun test tests/feature.test.ts",
+    )).toBe("bun test tests/feature.test.ts");
+    expect(normalizeRepositoryValidationCommand(
+      "bun test && git status --short",
+    )).toBeUndefined();
+    expect(normalizeRepositoryValidationCommand(
+      "bun test ../outside.test.ts",
+    )).toBeUndefined();
+  });
+
   it("accepts a requirement-covered single-writer plan", () => {
     expect(() => validateRepositoryTaskPlan(plan())).not.toThrow();
   });
@@ -89,6 +107,28 @@ describe("repository task plan contracts", () => {
     expect(() => validateRepositoryTaskPlan(candidate)).toThrow(
       "leaves a required prompt requirement uncovered",
     );
+  });
+
+  it("rejects non-canonical or policy-incompatible command evidence", () => {
+    for (const command of [
+      "  node   .codex/orynt-beta-verify.mjs ",
+      "bun test && git status --short",
+    ]) {
+      const candidate = plan();
+      candidate.tasks[0]!.evidence = [{
+        id: "validation-command",
+        requirementIds: [
+          "requirement-outcome",
+          "requirement-constraint",
+        ],
+        kind: "command",
+        description: "Run the trusted validation command.",
+        command,
+      }];
+      expect(() => validateRepositoryTaskPlan(candidate)).toThrow(
+        "canonical policy-allowed validation command",
+      );
+    }
   });
 
   it("rejects multiple writer ownership for one path", () => {
@@ -146,5 +186,43 @@ describe("repository task plan contracts", () => {
     expect(() => validateRepositoryTaskPlan(candidate)).toThrow(
       "read-only tasks cannot declare paths or mutating operations",
     );
+  });
+
+  it("reports the exact task field for repairable planner output", () => {
+    const candidate = plan();
+    candidate.tasks[0]!.operations = ["write", "write"];
+
+    try {
+      validateRepositoryTaskPlan(candidate);
+      throw new Error("expected task-plan validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RepositoryTaskPlanValidationError);
+      expect(
+        (error as RepositoryTaskPlanValidationError).violation,
+      ).toEqual({
+        code: "TASK_OPERATIONS_INVALID",
+        path: "tasks[0].operations",
+        taskId: "change-feature",
+        repairable: true,
+      });
+    }
+  });
+
+  it("marks unknown trusted requirement references as non-repairable", () => {
+    const candidate = plan();
+    candidate.tasks[0]!.requirementIds.push("invented-requirement");
+
+    try {
+      validateRepositoryTaskPlan(candidate);
+      throw new Error("expected task-plan validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RepositoryTaskPlanValidationError);
+      expect(
+        (error as RepositoryTaskPlanValidationError).violation,
+      ).toMatchObject({
+        code: "TASK_REQUIREMENT_REFERENCE_UNKNOWN",
+        repairable: false,
+      });
+    }
   });
 });

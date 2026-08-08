@@ -4,6 +4,10 @@ import {
   classifyAutoOrchestrationPreset,
   createLegacySingleModelProfile,
   createOrchestrationPreset,
+  ORCHESTRATION_PROVIDER_IDS,
+  providerBilling,
+  providerFacts,
+  providerReportsCacheTokens,
   resolveOrchestrationProfile,
   validateOrchestrationRecoveryTask,
   validateOrchestrationPlan,
@@ -273,5 +277,44 @@ describe("multi-model orchestration contracts", () => {
         profile,
       )
     ).toThrow("cannot expand approved paths");
+  });
+});
+
+describe("provider traits", () => {
+  it("classifies every registered provider", () => {
+    // The point of this test is coverage, not the individual values: a new
+    // provider id must not reach production without someone deciding how it
+    // bills and whether it reports cache tokens.
+    for (const providerId of ORCHESTRATION_PROVIDER_IDS) {
+      const facts = providerFacts(providerId);
+      expect(facts).toBeDefined();
+      expect(["per_token", "subscription"]).toContain(facts!.billing);
+      expect(typeof facts!.reportsCacheTokens).toBe("boolean");
+    }
+  });
+
+  it("separates subscription plans from per-token APIs", () => {
+    expect(providerBilling("codex-cli")).toBe("subscription");
+    expect(providerBilling("opencode-api")).toBe("subscription");
+    expect(providerBilling("anthropic-api")).toBe("per_token");
+    expect(providerBilling("openai-api")).toBe("per_token");
+  });
+
+  it("records that OpenCode reports no prompt-cache counts", () => {
+    expect(providerReportsCacheTokens("anthropic-api")).toBe(true);
+    expect(providerReportsCacheTokens("opencode-api")).toBe(false);
+  });
+
+  it("withholds both judgements for an unrecognized provider", () => {
+    // Unknown must fail toward saying nothing, never toward inventing a price.
+    expect(providerFacts("mystery-api")).toBeUndefined();
+    expect(providerBilling("mystery-api")).toBe("subscription");
+    expect(providerReportsCacheTokens("mystery-api")).toBe(false);
+  });
+
+  it("does not hand back a mutable copy of the trait table", () => {
+    const facts = providerFacts("opencode-api")!;
+    facts.billing = "per_token";
+    expect(providerBilling("opencode-api")).toBe("subscription");
   });
 });

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "056-v2-small-root-style-orynt_full-r2",
+  "taskId": "v2-small-root-style",
+  "methodId": "orynt_full",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:41:47.808Z",
+  "completedAt": "2026-08-05T08:41:47.955Z",
+  "totalWallMs": 147,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/056-v2-small-root-style-orynt_full-r2/repo"
+}

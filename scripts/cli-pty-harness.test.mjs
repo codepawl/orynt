@@ -171,6 +171,64 @@ composer.close();
   assert.match(result.raw, /\u001b\[\?1049l/u);
 });
 
+test("inline composer reflows only its active frame across PTY resize", {
+  skip: process.platform !== "linux" ? "Linux util-linux PTY gate" : false,
+}, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "orynt-pty-inline-resize-"));
+  fixtureRoots.push(root);
+  const fixture = path.join(root, "inline-resize-fixture.mjs");
+  const composerUrl = new URL(
+    "../packages/cli/dist/composer.js",
+    import.meta.url,
+  ).href;
+  await writeFile(
+    fixture,
+    `#!/usr/bin/env bun
+import { TtyComposer } from ${JSON.stringify(composerUrl)};
+Object.defineProperty(process.stdout, "columns", { value: 80, writable: true, configurable: true });
+Object.defineProperty(process.stdout, "rows", { value: 12, writable: true, configurable: true });
+const composer = new TtyComposer({
+  input: process.stdin,
+  output: process.stdout,
+  color: false,
+  motion: false,
+  viewportMode: "inline",
+  onInterrupt: () => {},
+});
+composer.compose("You › ", "a deliberately long inline draft that must survive every resize");
+for (const [columns, rows, marker] of [[42, 8, "INLINE42"], [20, 5, "INLINE20"], [72, 12, "INLINE72"]]) {
+  process.stdout.columns = columns;
+  process.stdout.rows = rows;
+  process.stdout.emit("resize");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  composer.notify(marker);
+}
+composer.close();
+`,
+    { mode: 0o755 },
+  );
+  await chmod(fixture, 0o755);
+
+  const result = await runOrderedPty({
+    wrapperPath: fixture,
+    transcriptPath: path.join(root, "inline-resize.typescript"),
+    cwd: root,
+    env: { ...process.env, TERM: "xterm-256color" },
+    timeoutMs: 5_000,
+    steps: [
+      { id: "narrow", waitFor: /INLINE42/u },
+      { id: "tiny", waitFor: /INLINE20/u },
+      { id: "wide", waitFor: /INLINE72/u },
+    ],
+  });
+
+  assert.equal(result.code, 0, result.visible);
+  assert.match(result.visible, /inline draft that must survive/u);
+  assert.doesNotMatch(result.raw, /\u001bc/u);
+  assert.match(result.raw, /\u001b\[0J/u);
+  assert.doesNotMatch(result.raw, /\u001b\[\?1049[hl]/u);
+});
+
 test("full-screen composer routes wheel input by visible region", {
   skip: process.platform !== "linux" ? "Linux util-linux PTY gate" : false,
 }, async () => {

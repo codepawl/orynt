@@ -44,6 +44,7 @@ import {
   type ContextVmContextPackId,
   type ContextVmContextPackManifestV1,
   type ContextVmContextPackV1,
+  type ContextVmProviderTransportV1,
   type ContextVmCheckpointId,
   type ContextVmConsolidationCandidateV1,
   type ContextVmConsolidationReportV1,
@@ -2244,11 +2245,7 @@ export class LocalSqliteContextVmStore implements ContextVmEventStoreV1, Context
   async recordProviderDispatch(input: {
     invocationId: string;
     attempt: number;
-    transport:
-      | "codex-cli"
-      | "codex-app-server"
-      | "openai-responses"
-      | "scripted";
+    transport: ContextVmProviderTransportV1;
     modelId: string;
     status: "prepared" | "dispatched" | "completed" | "failed" | "in_doubt";
     contextPackId?: ContextVmContextPackId;
@@ -2292,11 +2289,7 @@ export class LocalSqliteContextVmStore implements ContextVmEventStoreV1, Context
     invocationId: string;
     phase: "readiness" | "inference";
     attempt: number;
-    transport:
-      | "codex-cli"
-      | "codex-app-server"
-      | "openai-responses"
-      | "scripted";
+    transport: ContextVmProviderTransportV1;
     modelId: string;
     thinkingEffort: string;
     status: "prepared" | "dispatched" | "completed" | "failed" | "in_doubt";

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "044-v2-real-cli-transfer-orynt_no_context-r1",
+  "taskId": "v2-real-cli-transfer",
+  "methodId": "orynt_no_context",
+  "repetition": 0,
+  "startedAt": "2026-08-05T07:44:33.329Z",
+  "completedAt": "2026-08-05T07:45:05.776Z",
+  "totalWallMs": 32447,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "unknown",
+    "message": "Could not complete prompt understanding: Ready prompt understanding cannot retain blocking questions."
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/044-v2-real-cli-transfer-orynt_no_context-r1/repo"
+}

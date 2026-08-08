@@ -116,6 +116,21 @@ function selectableModels() {
   ];
 }
 
+function readyClaude() {
+  return {
+    status: {
+      provider: "anthropic" as const,
+      transport: "http" as const,
+      ready: true,
+      authenticated: true,
+      code: "CLAUDE_READY" as const,
+      detail: "ready",
+      nextAction: "none" as const,
+    },
+    stages: [],
+  };
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryRoots.splice(0).map((root) =>
@@ -455,5 +470,242 @@ describe("Orynt doctor", () => {
     expect(output).not.toContain("\r");
     expect(output).not.toContain("\u202e");
     expect(output).toContain("\\u001b]52;c;owned");
+  });
+  it("probes Anthropic when a tier binds it, keeping Codex ids stable", async () => {
+    const current = await fixture();
+    const tiers = createDefaultModelTierConfiguration();
+    const mixed = {
+      ...tiers,
+      tiers: {
+        ...tiers.tiers,
+        light: {
+          ...tiers.tiers.light,
+          providerId: "anthropic-api" as const,
+          modelId: "claude-haiku-4-5",
+        },
+      },
+    };
+    const report = await collectDoctorReport(
+      {
+        repositoryPath: current.repositoryPath,
+        stateRoot: current.stateRoot,
+        isTTY: false,
+        color: false,
+        modelTierConfiguration: mixed,
+      },
+      {
+        probeCodexEnvironment: async () => readyCodex(),
+        probeClaudeEnvironment: async () => readyClaude(),
+        listModels: async () => [
+          ...selectableModels(),
+          {
+            id: "claude-haiku-4-5",
+            providerId: "anthropic-api" as const,
+            label: "Claude Haiku 4.5",
+            supportedThinkingEfforts: ["medium" as const],
+          },
+        ],
+      },
+    );
+    const ids = report.checks.map((entry) => entry.id);
+    expect(ids).toContain("provider.probe.anthropic");
+    // Existing Codex stage ids are consumed by JSON output and release gates.
+    expect(ids).toContain("provider.cli");
+    expect(ids).toContain("provider.app_server");
+    expect(ids).toContain("provider.authentication");
+    expect(ids).toContain("provider.catalog");
+    expect(
+      report.checks.find((entry) => entry.id === "provider.probe.anthropic")
+        ?.status,
+    ).toBe("pass");
+    expect(
+      report.checks.find((entry) => entry.id === "provider.tier.light")?.status,
+    ).toBe("pass");
+  });
+
+  it("does not fail on Codex when no tier binds it", async () => {
+    const current = await fixture();
+    const tiers = createDefaultModelTierConfiguration();
+    const anthropicOnly = {
+      ...tiers,
+      tiers: {
+        light: {
+          ...tiers.tiers.light,
+          providerId: "anthropic-api" as const,
+          modelId: "claude-haiku-4-5",
+        },
+        medium: {
+          ...tiers.tiers.medium,
+          providerId: "anthropic-api" as const,
+          modelId: "claude-sonnet-5",
+        },
+        heavy: {
+          ...tiers.tiers.heavy,
+          providerId: "anthropic-api" as const,
+          modelId: "claude-opus-5",
+        },
+      },
+    };
+    const report = await collectDoctorReport(
+      {
+        repositoryPath: current.repositoryPath,
+        stateRoot: current.stateRoot,
+        isTTY: false,
+        color: false,
+        modelTierConfiguration: anthropicOnly,
+      },
+      {
+        probeCodexEnvironment: async () => {
+          throw new Error("codex is not installed");
+        },
+        probeClaudeEnvironment: async () => readyClaude(),
+        listModels: async () => [
+          {
+            id: "claude-haiku-4-5",
+            providerId: "anthropic-api" as const,
+            label: "Haiku",
+            supportedThinkingEfforts: ["medium" as const],
+          },
+          {
+            id: "claude-sonnet-5",
+            providerId: "anthropic-api" as const,
+            label: "Sonnet",
+            supportedThinkingEfforts: ["medium" as const],
+          },
+          {
+            id: "claude-opus-5",
+            providerId: "anthropic-api" as const,
+            label: "Opus",
+            supportedThinkingEfforts: ["high" as const],
+          },
+        ],
+      },
+    );
+    // A host that never intends to use Codex must not report a hard failure.
+    expect(
+      report.checks.find((entry) => entry.id === "provider.probe")?.status,
+    ).toBe("skip");
+    expect(
+      report.checks.find((entry) => entry.id === "provider.probe.anthropic")
+        ?.status,
+    ).toBe("pass");
+    expect(
+      report.checks.find((entry) => entry.id === "provider.tier.heavy")?.status,
+    ).toBe("pass");
+  });
+});
+
+describe("OpenCode doctor checks", () => {
+  it("probes OpenCode only when a tier binds it", async () => {
+    const current = await fixture();
+    const tiers = createDefaultModelTierConfiguration();
+    const probeOpencodeEnvironment = vi.fn(async () => ({
+      ready: true as const,
+      provider: "opencode" as const,
+      transport: "http" as const,
+      code: "OPENCODE_READY" as const,
+      detail: "OpenCode accepted the credential.",
+      nextAction: "none" as const,
+    }));
+
+    const codexOnly = await collectDoctorReport(
+      {
+        repositoryPath: current.repositoryPath,
+        stateRoot: current.stateRoot,
+        isTTY: false,
+        color: false,
+        modelTierConfiguration: tiers,
+      },
+      {
+        probeCodexEnvironment: async () => readyCodex(),
+        probeOpencodeEnvironment,
+        listModels: async () => selectableModels(),
+      },
+    );
+    expect(codexOnly.checks.map((entry) => entry.id)).not.toContain(
+      "provider.probe.opencode",
+    );
+    expect(probeOpencodeEnvironment).not.toHaveBeenCalled();
+
+    const withOpencode = await collectDoctorReport(
+      {
+        repositoryPath: current.repositoryPath,
+        stateRoot: current.stateRoot,
+        isTTY: false,
+        color: false,
+        modelTierConfiguration: {
+          ...tiers,
+          tiers: {
+            ...tiers.tiers,
+            light: {
+              ...tiers.tiers.light,
+              providerId: "opencode-api" as const,
+              modelId: "deepseek-v4-flash",
+            },
+          },
+        },
+      },
+      {
+        probeCodexEnvironment: async () => readyCodex(),
+        probeOpencodeEnvironment,
+        listModels: async () => [
+          ...selectableModels(),
+          {
+            id: "deepseek-v4-flash",
+            providerId: "opencode-api" as const,
+            label: "deepseek-v4-flash",
+            supportedThinkingEfforts: ["medium" as const],
+          },
+        ],
+      },
+    );
+    expect(
+      withOpencode.checks.find((entry) => entry.id === "provider.probe.opencode")
+        ?.status,
+    ).toBe("pass");
+  });
+
+  it("points a failed OpenCode probe at its own setup command", async () => {
+    const current = await fixture();
+    const tiers = createDefaultModelTierConfiguration();
+    const report = await collectDoctorReport(
+      {
+        repositoryPath: current.repositoryPath,
+        stateRoot: current.stateRoot,
+        isTTY: false,
+        color: false,
+        modelTierConfiguration: {
+          ...tiers,
+          tiers: {
+            ...tiers.tiers,
+            light: {
+              ...tiers.tiers.light,
+              providerId: "opencode-api" as const,
+              modelId: "deepseek-v4-flash",
+            },
+          },
+        },
+      },
+      {
+        probeCodexEnvironment: async () => readyCodex(),
+        probeOpencodeEnvironment: async () => ({
+          ready: false as const,
+          provider: "opencode" as const,
+          transport: "http" as const,
+          code: "OPENCODE_AUTH_REQUIRED" as const,
+          detail: "OPENCODE_API_KEY is not set.",
+          nextAction: "configure" as const,
+        }),
+        listModels: async () => selectableModels(),
+      },
+    );
+    const probe = report.checks.find(
+      (entry) => entry.id === "provider.probe.opencode",
+    );
+    expect(probe?.status).toBe("fail");
+    // A failing OpenCode tier must not send the operator to Anthropic setup.
+    expect(probe?.remediation?.command).toBe(
+      "orynt setup --provider opencode --check",
+    );
   });
 });

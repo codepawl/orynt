@@ -2,7 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
 import {
+  createClaudeModelTierConfiguration,
   createLegacySingleModelProfile,
+  createOpencodeGoModelTierConfiguration,
+  estimateInvocationCostUsd,
   migrateOrchestrationProfileToModelTiers,
   modelTierConfigurationToOrchestrationProfile,
   redactSensitivePayload,
@@ -10,6 +13,7 @@ import {
   validateOrchestrationPlan,
   type ModelInvocationRecord,
   type ModelTierConfigurationV1,
+  type ContextLifecycleSnapshotV1,
   type OrchestrationChildTask,
   type OrchestrationPlan,
   type OrchestrationProfile,
@@ -34,6 +38,17 @@ import {
   codexSetupStatusJson,
   type CodexSetupResult,
 } from "./codexSetup.js";
+import {
+  opencodeSetupStatusJson,
+  probeOpencodeEnvironment,
+  runOpencodeSetup,
+} from "./opencodeSetup.js";
+import {
+  claudeSetupHelp,
+  claudeSetupStatusJson,
+  probeClaudeEnvironment,
+  runClaudeSetup,
+} from "./claudeSetup.js";
 import {
   doctorExitCode,
   doctorHelp,
@@ -209,12 +224,59 @@ export type CliApplicationDependencies = {
   releaseRunSignal?: (signal: AbortSignal) => void;
 };
 
-function failureClassification(message: string): "permission" | "environment" | "transient" | "model" | "unknown" {
+const PRODUCT_UI_SKILL_ID = "orynt-builtin:product-ui-design";
+
+function shouldAttachProductUiSkill(
+  prompt: string,
+  pathEnvelope: readonly string[],
+  operations: readonly string[],
+): boolean {
+  if (!operations.some((operation) => operation !== "read")) return false;
+  const normalized = prompt.toLowerCase();
+  if (
+    /\b(landing page|marketing site|portfolio|blog|editorial|campaign page)\b/u.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+  const hasProductUiIntent =
+    /\b(board|dashboard|admin|workflow|form|calculator|support desk|ticket|frontend|user interface|responsive|aria|data-testid)\b/u.test(
+      normalized,
+    );
+  const hasFrontendPath = pathEnvelope.some((candidate) =>
+    /(^|\/)(index\.html|styles?\.css|[^/]+\.(?:css|html|jsx|tsx|vue|svelte))$/iu.test(
+      candidate,
+    )
+  );
+  return hasProductUiIntent && hasFrontendPath;
+}
+
+function failureClassification(
+  message: string,
+): "planning" | "permission" | "environment" | "transient" | "model" | "unknown" {
+  if (
+    /\[TASK_PLAN_INVALID\]|task plan|repository task|planning blocked/iu.test(
+      message,
+    )
+  ) {
+    return "planning";
+  }
   if (/permission|approval|denied|unauthorized/i.test(message)) return "permission";
   if (/not found|enoent|repository|git |workspace/i.test(message)) return "environment";
   if (/timeout|timed out|temporary|transient/i.test(message)) return "transient";
   if (/codex|model|401|429/i.test(message)) return "model";
   return "unknown";
+}
+
+function failureCode(message: string): string | undefined {
+  if (/\[TASK_PLAN_INVALID\]|task plan|repository task/iu.test(message)) {
+    return "TASK_PLAN_INVALID";
+  }
+  if (/\[HEADLESS_SKILL_CONTEXT_UNAVAILABLE\]/u.test(message)) {
+    return "HEADLESS_SKILL_CONTEXT_UNAVAILABLE";
+  }
+  return undefined;
 }
 
 type RepositoryRunFailureDetails = {
@@ -334,10 +396,23 @@ async function resolvedProfileForTask(
   instruction: string,
   dependencies: CliApplicationDependencies,
   requestedMinimumTier?: import("@codepawl/shared").ModelTier,
+  task?: {
+    operations: string[];
+    estimatedChangedFiles: number;
+  },
 ) {
   const { profile } = modelTierConfigurationToOrchestrationProfile(
     tierConfiguration,
-    { instruction, requestedMinimumTier },
+    {
+      instruction,
+      requestedMinimumTier,
+      ...(task
+        ? {
+            operations: task.operations,
+            estimatedChangedFiles: task.estimatedChangedFiles,
+          }
+        : {}),
+    },
   );
   const models = dependencies.listModels
     ? await dependencies.listModels()
@@ -348,6 +423,31 @@ async function resolvedProfileForTask(
       }));
   return resolveOrchestrationProfile(profile, models, { instruction });
 }
+
+/**
+ * Telemetry stages that consume a model invocation before repository work
+ * begins. Skill routing is included because it can start its own model turn;
+ * omitting it hid that invocation's latency and tokens from every artifact.
+ */
+type PlanningInvocationStage =
+  | "prompt_understanding"
+  | "skill_routing"
+  | "coordinator_inference";
+
+const PLANNING_STAGE_TASK_IDS: Record<PlanningInvocationStage, string> = {
+  prompt_understanding: "headless-prompt-understanding",
+  skill_routing: "headless-skill-routing",
+  coordinator_inference: "headless-coordinator",
+};
+
+const PLANNING_STAGE_PHASES: Record<
+  PlanningInvocationStage,
+  NonNullable<ModelInvocationRecord["phase"]>
+> = {
+  prompt_understanding: "prompt_understanding",
+  skill_routing: "skill_routing",
+  coordinator_inference: "coordination",
+};
 
 export async function runCliApplication(argv: string[], dependencies: CliApplicationDependencies): Promise<number> {
   let args;
@@ -363,7 +463,9 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
   if (args.help) {
     dependencies.write(
       args.command === "setup"
-        ? codexSetupHelp()
+        ? args.provider === "anthropic"
+          ? claudeSetupHelp()
+          : codexSetupHelp()
         : args.command === "usage"
           ? providerUsageHelp()
         : args.command === "doctor"
@@ -496,6 +598,104 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
     }
   }
 
+  if (args.command === "setup" && args.provider === "opencode") {
+    const probed = await probeOpencodeEnvironment();
+    if (args.check) {
+      dependencies.write(
+        args.json
+          ? opencodeSetupStatusJson(probed)
+          : [
+              `OpenCode: ${probed.ready ? "ready" : "not ready"} · ${terminalSafeText(probed.detail)}`,
+              `Code: ${probed.code}`,
+              `Next action: ${probed.nextAction}`,
+            ].join("\n"),
+      );
+      return probed.ready ? 0 : 1;
+    }
+    const result = await runOpencodeSetup({
+      isTTY: dependencies.isTTY,
+      write: (value) => dependencies.write(value),
+      probe: async () => probed,
+    });
+    if (result.outcome !== "ready") {
+      dependencies.write(
+        `OpenCode setup remains incomplete: ${terminalSafeText(result.status.detail)}`,
+      );
+      return 1;
+    }
+    // Readiness alone changes nothing: the tier configuration is what routes a
+    // turn to a provider, so setup writes it once the credential works.
+    const tiers = createOpencodeGoModelTierConfiguration();
+    if (!dependencies.persistWorkingConfig) {
+      dependencies.write(
+        `OpenCode is ready: ${terminalSafeText(result.status.detail)}\nThis host cannot persist model tiers; select OpenCode models in /settings agent.`,
+      );
+      return 0;
+    }
+    const existing = await dependencies.loadPreferences?.();
+    await dependencies.persistWorkingConfig({
+      ...(existing?.workingConfig ?? {}),
+      modelTierConfiguration: tiers,
+      orchestrationProfile: modelTierConfigurationToOrchestrationProfile(tiers, {
+        instruction: "",
+      }).profile,
+    });
+    dependencies.write(
+      `OpenCode is ready: ${terminalSafeText(result.status.detail)}\nModel tiers now use ${tiers.tiers.light.modelId} / ${tiers.tiers.medium.modelId} / ${tiers.tiers.heavy.modelId}.`,
+    );
+    return 0;
+  }
+
+  if (args.command === "setup" && args.provider === "anthropic") {
+    const probe = await probeClaudeEnvironment();
+    if (args.check) {
+      dependencies.write(
+        args.json
+          ? claudeSetupStatusJson(probe.status)
+          : [
+              `Anthropic API: ${probe.status.ready ? "ready" : "not ready"} · ${terminalSafeText(probe.status.detail)}`,
+              `Code: ${probe.status.code}`,
+              `Next action: ${probe.status.nextAction}`,
+            ].join("\n"),
+      );
+      return probe.status.ready ? 0 : 1;
+    }
+    // Anthropic setup has nothing to launch: Orynt only reads an environment
+    // variable it must never receive. The flow prints guidance and rechecks.
+    const result = await runClaudeSetup({
+      isTTY: dependencies.isTTY,
+      write: (value) => dependencies.write(value),
+    });
+    if (result.outcome !== "ready") {
+      dependencies.write(
+        `Anthropic setup remains incomplete: ${terminalSafeText(result.status.detail)}`,
+      );
+      return 1;
+    }
+    // Readiness alone changes nothing: the tier configuration is what routes a
+    // turn to a provider, so setup writes it once the credential works.
+    const tiers = createClaudeModelTierConfiguration();
+    if (dependencies.persistWorkingConfig) {
+      const existing = await dependencies.loadPreferences?.();
+      await dependencies.persistWorkingConfig({
+        ...(existing?.workingConfig ?? {}),
+        modelTierConfiguration: tiers,
+        orchestrationProfile: modelTierConfigurationToOrchestrationProfile(
+          tiers,
+          { instruction: "" },
+        ).profile,
+      });
+      dependencies.write(
+        `Anthropic is ready: ${terminalSafeText(result.status.detail)}\nModel tiers now use ${tiers.tiers.light.modelId} / ${tiers.tiers.medium.modelId} / ${tiers.tiers.heavy.modelId}.`,
+      );
+      return 0;
+    }
+    dependencies.write(
+      `Anthropic is ready: ${terminalSafeText(result.status.detail)}\nThis host cannot persist model tiers; select Anthropic models in /settings agent.`,
+    );
+    return 0;
+  }
+
   if (args.command === "setup") {
     if (args.check) {
       const status = await dependencies.probeProvider();
@@ -613,17 +813,16 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
         args.activityDetails ?? savedPreferences.activityDetails,
     });
     try {
-      const baseResolvedProfile = await resolvedProfileForTask(
+      const basePlanningProfile = await resolvedProfileForTask(
         workingConfig.modelTierConfiguration,
         args.initialPrompt ?? "",
         dependencies,
         args.minimumTier,
       );
-      const resolvedProfile =
+      const planningProfile =
         process.env.ORYNT_REPOOPS_DISABLE_RECOVERY === "1"
-          ? { ...baseResolvedProfile, maxRecoveryAttempts: 0 }
-          : baseResolvedProfile;
-      const implementer = resolvedProfile.roles.implementer;
+          ? { ...basePlanningProfile, maxRecoveryAttempts: 0 }
+          : basePlanningProfile;
       if (!dependencies.turn) {
         dependencies.write(
           args.jsonl
@@ -637,14 +836,101 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
         );
         return 2;
       }
-      const coordinator = resolvedProfile.roles.coordinator;
+      const coordinator = planningProfile.roles.coordinator;
+      const planningInvocations: ModelInvocationRecord[] = [];
+      let latestPlanningContext: ContextLifecycleSnapshotV1 | undefined;
       const plannedTurn = await dependencies.turn({
         prompt: args.initialPrompt ?? "",
         repositoryPath: workingConfig.repositoryPath,
         modelId: coordinator.modelId,
+        providerId: coordinator.providerId,
         thinkingEffort: coordinator.thinkingEffort,
         acceptanceCriteria: [],
         recentTurns: [],
+        requireActionForReadyRepositoryUnderstanding: true,
+        onContext: (context) => {
+          latestPlanningContext = structuredClone(context);
+        },
+        onTelemetry: (event) => {
+          if (
+            event.kind !== "stage" ||
+            (event.name !== "prompt_understanding" &&
+              event.name !== "skill_routing" &&
+              event.name !== "coordinator_inference")
+          ) {
+            return;
+          }
+          const completedAtMs = Date.now();
+          // A deterministic stage consumed no provider usage. Attributing the
+          // previous stage's context snapshot to it would invent tokens that
+          // were never spent.
+          const usage = event.deterministic
+            ? undefined
+            : latestPlanningContext?.usage.current;
+          planningInvocations.push({
+            schemaVersion: 1,
+            id: `invocation-${randomUUID()}`,
+            runId: "pending-controlled-run",
+            taskId: PLANNING_STAGE_TASK_IDS[event.name],
+            role: "coordinator",
+            executionKind: event.deterministic ? "deterministic" : "model",
+            providerId: coordinator.providerId,
+            modelId: coordinator.modelId,
+            thinkingEffort: coordinator.thinkingEffort,
+            requestedModelId:
+              coordinator.requestedModelId ?? coordinator.modelId,
+            requestedThinkingEffort:
+              coordinator.requestedThinkingEffort ??
+              coordinator.thinkingEffort,
+            phase: PLANNING_STAGE_PHASES[event.name],
+            contextHash: createHash("sha256")
+              .update(
+                `${event.name}:${args.initialPrompt ?? ""}`,
+              )
+              .digest("hex"),
+            status: "completed",
+            inputTokens: event.deterministic ? 0 : usage?.inputTokens ?? null,
+            cachedInputTokens: event.deterministic
+              ? 0
+              : usage?.cachedInputTokens ?? null,
+            outputTokens: event.deterministic ? 0 : usage?.outputTokens ?? null,
+            reasoningOutputTokens: event.deterministic
+              ? 0
+              : usage?.reasoningOutputTokens ?? null,
+            estimatedCostUsd: event.deterministic
+              ? 0
+              : estimateInvocationCostUsd({
+                providerId: coordinator.providerId,
+                modelId: coordinator.modelId,
+                inputTokens: usage?.inputTokens ?? null,
+                cachedInputTokens: usage?.cachedInputTokens ?? null,
+                outputTokens: usage?.outputTokens ?? null,
+              }),
+            startedAt: new Date(
+              completedAtMs - event.durationMs,
+            ).toISOString(),
+            completedAt: new Date(completedAtMs).toISOString(),
+            durationMs: Math.max(0, Math.round(event.durationMs)),
+            // No provider reported these counts, so no precision claim applies;
+            // `executionKind` is what explains the zeroes.
+            usagePrecision: event.deterministic
+              ? "unknown"
+              : latestPlanningContext?.usage.precision ?? "unknown",
+            retryIndex: 0,
+            artifactRefs: [],
+            ...(coordinator.modelTier
+              ? { modelTier: coordinator.modelTier }
+              : {}),
+            ...(coordinator.routingReasonCodes
+              ? {
+                  routingReasonCodes: [
+                    ...coordinator.routingReasonCodes,
+                  ],
+                }
+              : {}),
+          });
+          latestPlanningContext = undefined;
+        },
       });
       if (
         plannedTurn.promptUnderstanding?.outcome === "repository_action" &&
@@ -704,6 +990,31 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
         );
         return 2;
       }
+      const proposedOperations = [
+        ...new Set(
+          plannedTurn.action.taskPlan.tasks.flatMap(
+            (task) => task.operations,
+          ),
+        ),
+      ];
+      const baseResolvedProfile = await resolvedProfileForTask(
+        workingConfig.modelTierConfiguration,
+        args.initialPrompt ?? "",
+        dependencies,
+        args.minimumTier,
+        {
+          operations: proposedOperations,
+          estimatedChangedFiles:
+            plannedTurn.action.taskPlan.tasks.flatMap(
+              (task) => task.expectedPaths,
+            ).length,
+        },
+      );
+      const resolvedProfile =
+        process.env.ORYNT_REPOOPS_DISABLE_RECOVERY === "1"
+          ? { ...baseResolvedProfile, maxRecoveryAttempts: 0 }
+          : baseResolvedProfile;
+      const implementer = resolvedProfile.roles.implementer;
       const taskPlan = buildBoundRepositoryTaskPlan({
         action: plannedTurn.action,
         prompt: args.initialPrompt ?? "",
@@ -724,6 +1035,42 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
       const planOperations = [
         ...new Set(taskPlan.tasks.flatMap((task) => task.operations)),
       ];
+      let headlessSkillContext:
+        | Awaited<ReturnType<NonNullable<CliApplicationDependencies["snapshotSkills"]>>>
+        | undefined;
+      if (
+        shouldAttachProductUiSkill(
+          args.initialPrompt ?? "",
+          taskPlan.pathEnvelope,
+          planOperations,
+        )
+      ) {
+        if (!dependencies.snapshotSkills) {
+          throw new Error(
+            "[HEADLESS_SKILL_CONTEXT_UNAVAILABLE] Product UI guidance was selected, but the packaged skill snapshot service is unavailable.",
+          );
+        }
+        try {
+          headlessSkillContext = await dependencies.snapshotSkills({
+            repositoryPath: workingConfig.repositoryPath,
+            runId: `headless-${randomUUID()}`,
+            skillIds: [PRODUCT_UI_SKILL_ID],
+          });
+        } catch (error) {
+          throw new Error(
+            `[HEADLESS_SKILL_CONTEXT_UNAVAILABLE] Could not snapshot ${PRODUCT_UI_SKILL_ID}.`,
+            { cause: error },
+          );
+        }
+        if (
+          headlessSkillContext.skills.length !== 1 ||
+          headlessSkillContext.skills[0]?.skillId !== PRODUCT_UI_SKILL_ID
+        ) {
+          throw new Error(
+            `[HEADLESS_SKILL_CONTEXT_UNAVAILABLE] Snapshot did not contain ${PRODUCT_UI_SKILL_ID}.`,
+          );
+        }
+      }
       const authorizationAction: ProposedRepositoryAction = {
         ...plannedTurn.action,
         operations: planOperations,
@@ -744,6 +1091,22 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
         );
         return 2;
       }
+      const conditionalReviewRequired =
+        planOperations.some((operation) =>
+          ["delete", "rename", "dependency", "migration", "unknown"].includes(
+            operation,
+          ),
+        ) ||
+        (resolvedProfile.roles.implementer.routingReasonCodes ?? []).some(
+          (reason) =>
+            [
+              "high_risk_domain",
+              "sensitive_operation",
+              "cross_package_change",
+              "broad_change",
+              "recovery_attempt",
+            ].includes(reason),
+        );
       const implementerTaskId = `implement-${randomUUID()}`;
       const headlessPlan: OrchestrationPlan = {
         schemaVersion: 1,
@@ -796,9 +1159,11 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
               if (context.signal?.aborted) return undefined;
               const shouldReview =
                 resolvedProfile.reviewerPolicy === "always" ||
-                resolvedProfile.reviewerPolicy === "conditional" ||
                 (resolvedProfile.reviewerPolicy === "failure_only" &&
-                  context.status !== "pass");
+                  context.status !== "pass") ||
+                (resolvedProfile.reviewerPolicy === "conditional" &&
+                  (context.status !== "pass" ||
+                    conditionalReviewRequired));
               if (!shouldReview) return undefined;
               const reviewer = resolvedProfile.roles.reviewer;
               const startedAt = new Date().toISOString();
@@ -807,11 +1172,14 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
                 instruction: `Review headless repository action: ${args.initialPrompt ?? ""}`,
                 repositoryPath: context.sandboxWorktreePath,
                 modelId: reviewer.modelId,
+                providerId: reviewer.providerId,
                 thinkingEffort: reviewer.thinkingEffort,
                 context: `Verifier: ${context.status}. Run: ${context.runId}. Summary: ${context.summary}`,
                 signal: context.signal,
                 timeoutMs: reviewer.maxWallTimeMs,
               });
+              const completedAt = new Date().toISOString();
+              const reviewUsage = rawReview.context?.usage.current;
               const review = redactSensitivePayload(rawReview).payload;
               const invocation: ModelInvocationRecord = {
                 schemaVersion: 1,
@@ -822,15 +1190,37 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
                 providerId: reviewer.providerId,
                 modelId: reviewer.modelId,
                 thinkingEffort: reviewer.thinkingEffort,
+                requestedModelId:
+                  reviewer.requestedModelId ?? reviewer.modelId,
+                requestedThinkingEffort:
+                  reviewer.requestedThinkingEffort ??
+                  reviewer.thinkingEffort,
+                phase: "review",
                 contextHash: createHash("sha256")
                   .update(`${context.status}:${context.summary}`)
                   .digest("hex"),
                 status: "completed",
-                inputTokens: null,
-                outputTokens: null,
-                estimatedCostUsd: null,
+                inputTokens: reviewUsage?.inputTokens ?? null,
+                cachedInputTokens:
+                  reviewUsage?.cachedInputTokens ?? null,
+                outputTokens: reviewUsage?.outputTokens ?? null,
+                reasoningOutputTokens:
+                  reviewUsage?.reasoningOutputTokens ?? null,
+                estimatedCostUsd: estimateInvocationCostUsd({
+                  providerId: reviewer.providerId,
+                  modelId: reviewer.modelId,
+                  inputTokens: reviewUsage?.inputTokens ?? null,
+                  cachedInputTokens: reviewUsage?.cachedInputTokens ?? null,
+                  outputTokens: reviewUsage?.outputTokens ?? null,
+                }),
                 startedAt,
-                completedAt: new Date().toISOString(),
+                completedAt,
+                durationMs: Math.max(
+                  0,
+                  Date.parse(completedAt) - Date.parse(startedAt),
+                ),
+                usagePrecision:
+                  rawReview.context?.usage.precision ?? "unknown",
                 retryIndex: 0,
                 artifactRefs: [],
                 ...(reviewer.modelTier
@@ -878,12 +1268,31 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
         modelId: implementer.modelId,
         thinkingEffort: implementer.thinkingEffort,
         taskPlan,
+        ...(headlessSkillContext
+          ? {
+              skillContext: headlessSkillContext,
+              selectedSkillIds: [PRODUCT_UI_SKILL_ID],
+            }
+          : {}),
         orchestration: {
           profile: resolvedProfile,
           plan: headlessPlan,
-          priorInvocations: [],
+          priorInvocations: planningInvocations,
         },
         ...(postVerificationReview ? { postVerificationReview } : {}),
+        ...(postVerificationReview &&
+        resolvedProfile.reviewerPolicy === "conditional" &&
+        !conditionalReviewRequired
+          ? {
+              postVerificationReviewSkipReason:
+                "conditional_low_risk_verifier_pass",
+            }
+          : resolvedProfile.reviewerPolicy === "failure_only"
+            ? {
+                postVerificationReviewSkipReason:
+                  "failure_only_verifier_pass",
+              }
+            : {}),
         acceptanceCriteria: [],
         authorization: {
           decision: "approval_required",
@@ -937,6 +1346,7 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
       const message = error instanceof Error ? error.message : String(error);
       const failure = repositoryRunFailureDetails(error);
       const classification = failureClassification(message);
+      const code = failureCode(message);
       dependencies.write(
         args.jsonl
           ? jsonLine(
@@ -955,7 +1365,12 @@ export async function runCliApplication(argv: string[], dependencies: CliApplica
                       failure.outcome.code,
                     message,
                   }
-                : { kind: "error", classification, message },
+                : {
+                    kind: "error",
+                    classification,
+                    ...(code ? { code } : {}),
+                    message,
+                  },
             )
           : renderRunCompletion(
               {

@@ -4,6 +4,7 @@ import type {
   AgentGeneratedImage,
   AgentImageInput,
   AgentFunctionTool,
+  AgentToolActivityDescriptor,
   AgentToolCall,
   AgentToolResult,
 } from "@codepawl/model-runtime";
@@ -38,7 +39,13 @@ declare const Bun: {
 };
 
 export type CodexAppServerActivity =
-  | { kind: "delta"; text: string; threadId: string; turnId: string }
+  | {
+      kind: "delta";
+      text: string;
+      threadId: string;
+      turnId: string;
+      itemId: string;
+    }
   | {
       kind: "tool";
       callId: string;
@@ -46,6 +53,8 @@ export type CodexAppServerActivity =
       name: string;
       detail: string;
       status: "requested" | "completed" | "failed";
+      descriptor?: AgentToolActivityDescriptor;
+      durationMs?: number;
     }
   | {
       kind: "context";
@@ -65,6 +74,9 @@ export type CodexAppServerTurnRequest = {
   outputSchema?: Record<string, unknown>;
   tools?: AgentFunctionTool[];
   executeTool?: (call: AgentToolCall) => Promise<AgentToolResult>;
+  describeTool?: (
+    call: AgentToolCall,
+  ) => AgentToolActivityDescriptor | undefined;
   sandbox?: "read-only" | "workspace-write";
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -98,6 +110,7 @@ export type CodexAppServerRuntimeOptions = {
   executablePath?: string;
   args?: string[];
   env?: NodeJS.ProcessEnv;
+  now?: () => number;
 };
 
 const MAX_CACHED_SESSION_THREADS = 2;
@@ -214,6 +227,8 @@ type TurnListener = {
   reject: (error: Error) => void;
   onActivity?: CodexAppServerTurnRequest["onActivity"];
   executeTool?: CodexAppServerTurnRequest["executeTool"];
+  describeTool?: CodexAppServerTurnRequest["describeTool"];
+  toolStartedAt: Map<string, number>;
 };
 
 type CompactionListener = {
@@ -348,6 +363,10 @@ export class CodexAppServerRuntime {
 
   constructor(private readonly options: CodexAppServerRuntimeOptions = {}) {}
 
+  private now(): number {
+    return this.options.now?.() ?? performance.now();
+  }
+
   async start(): Promise<void> {
     if (this.child && this.initializedMs > 0) return;
     this.startPromise ??= this.startProcess();
@@ -460,7 +479,18 @@ export class CodexAppServerRuntime {
         record(params.item),
         message.method === "item/started" ? "requested" : "completed",
       );
-      if (toolActivity) listener.onActivity?.(toolActivity);
+      if (toolActivity) {
+        if (toolActivity.status === "requested") {
+          listener.toolStartedAt.set(toolActivity.callId, this.now());
+        } else {
+          const startedAt = listener.toolStartedAt.get(toolActivity.callId);
+          listener.toolStartedAt.delete(toolActivity.callId);
+          if (startedAt !== undefined) {
+            toolActivity.durationMs = Math.max(0, this.now() - startedAt);
+          }
+        }
+        listener.onActivity?.(toolActivity);
+      }
     }
     if (message.method === "thread/tokenUsage/updated" && listener) {
       const parsed = parseCodexThreadTokenUsage(
@@ -481,7 +511,9 @@ export class CodexAppServerRuntime {
       if (!listener) return;
       const turnId = typeof params.turnId === "string" ? params.turnId : listener.turnId ?? "";
       listener.turnId ??= turnId;
-      const itemId = typeof params.itemId === "string" ? params.itemId : undefined;
+      const itemId = typeof params.itemId === "string"
+        ? params.itemId
+        : listener.agentMessageItemId ?? `${turnId}:agent-message`;
       if (
         itemId &&
         listener.agentMessageItemId &&
@@ -489,10 +521,16 @@ export class CodexAppServerRuntime {
       ) {
         listener.text = "";
       }
-      if (itemId) listener.agentMessageItemId = itemId;
+      listener.agentMessageItemId = itemId;
       listener.firstDeltaMs ??= performance.now();
       listener.text += params.delta;
-      listener.onActivity?.({ kind: "delta", text: params.delta, threadId, turnId });
+      listener.onActivity?.({
+        kind: "delta",
+        text: params.delta,
+        threadId,
+        turnId,
+        itemId,
+      });
     } else if (message.method === "item/completed") {
       const item = record(params.item);
       if (item.type === "contextCompaction") {
@@ -580,13 +618,21 @@ export class CodexAppServerRuntime {
       typeof params.callId === "string"
         ? params.callId
         : `app-server-tool-${String(id)}`;
+    const call: AgentToolCall = {
+      callId,
+      name: tool,
+      arguments: params.arguments,
+    };
+    const descriptor = listener?.describeTool?.(call);
+    const startedAt = this.now();
     listener?.onActivity?.({
       kind: "tool",
       callId,
       toolKind: "other",
-      name: tool || "dynamic_tool",
-      detail: tool || "dynamic tool",
+      name: descriptor?.toolName ?? (tool || "dynamic_tool"),
+      detail: descriptor?.detail ?? (tool || "dynamic tool"),
       status: "requested",
+      ...(descriptor ? { descriptor } : {}),
     });
     if (listener) listener.toolCallsStarted += 1;
     if (!listener?.executeTool || !tool) {
@@ -605,18 +651,16 @@ export class CodexAppServerRuntime {
         kind: "tool",
         callId,
         toolKind: "other",
-        name: tool || "dynamic_tool",
-        detail: tool || "dynamic tool",
+        name: descriptor?.toolName ?? (tool || "dynamic_tool"),
+        detail: descriptor?.detail ?? (tool || "dynamic tool"),
         status: "failed",
+        durationMs: Math.max(0, this.now() - startedAt),
+        ...(descriptor ? { descriptor } : {}),
       });
       return;
     }
     try {
-      const result = await listener.executeTool({
-        callId,
-        name: tool,
-        arguments: params.arguments,
-      });
+      const result = await listener.executeTool(call);
       this.respond(id, {
         contentItems: [
           { type: "inputText", text: result.output },
@@ -631,9 +675,11 @@ export class CodexAppServerRuntime {
         kind: "tool",
         callId,
         toolKind: "other",
-        name: tool,
-        detail: tool,
+        name: descriptor?.toolName ?? tool,
+        detail: descriptor?.detail ?? tool,
         status: result.isError === true ? "failed" : "completed",
+        durationMs: Math.max(0, this.now() - startedAt),
+        ...(descriptor ? { descriptor } : {}),
       });
     } catch (error) {
       this.respond(id, {
@@ -649,9 +695,11 @@ export class CodexAppServerRuntime {
         kind: "tool",
         callId,
         toolKind: "other",
-        name: tool,
-        detail: tool,
+        name: descriptor?.toolName ?? tool,
+        detail: descriptor?.detail ?? tool,
         status: "failed",
+        durationMs: Math.max(0, this.now() - startedAt),
+        ...(descriptor ? { descriptor } : {}),
       });
     }
   }
@@ -792,6 +840,8 @@ export class CodexAppServerRuntime {
         reject,
         onActivity: request.onActivity,
         executeTool: request.executeTool,
+        describeTool: request.describeTool,
+        toolStartedAt: new Map(),
       };
       this.turns.set(threadId, listener as TurnListener);
     });

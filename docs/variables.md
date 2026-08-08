@@ -6,7 +6,12 @@
 | `ORYNT_NO_UPDATE_CHECK` | CLI updater | Local/CI | `1` is a hard network-off override |
 | `ORYNT_UPDATE_MANIFEST_URL` | Updater tests/operators | Local process | Must remain HTTPS or loopback test-only |
 | `ORYNT_AGENT_RUNTIME`, `ORYNT_CODEX_RUNTIME` | Model runtime | Local process | Selects owned runtime path; no authority expansion |
+| `ORYNT_CLAUDE_RUNTIME` | Model runtime | Local process | `cli` drives the local `claude` binary; diagnostic route, default off |
+| `ORYNT_CLAUDE_CLI_ALLOW_REPO_CONFIG` | Claude CLI route | Local process | `1` accepts repository-supplied CLI configuration that runs outside the gateway |
 | `OPENAI_API_KEY` | Opt-in API provider | Secret environment | Never bundle, log, document, or persist |
+| `ANTHROPIC_API_KEY` | Opt-in API provider | Secret environment | Never bundle, log, document, or persist |
+| `ANTHROPIC_AUTH_TOKEN` | Opt-in API provider | Secret environment | Short-lived OAuth token; mutually exclusive with `ANTHROPIC_API_KEY` |
+| `ANTHROPIC_BASE_URL` | Anthropic provider | Local process | Gateway or proxy endpoint; not a secret |
 | `ORYNT_RELEASE_SIGNING_KEY` | Manifest signer | Protected release secret | Ed25519 private key; offline backup and incident rotation |
 | `ORYNT_RELEASE_PUBLIC_KEY(S)` | Packaged updater | Public build input | Public keyring; add new key before signing with it |
 | `ORYNT_RELEASE_KEY_ID` | Packaging/signer | Release variable | Binds manifest signature to a known public key |

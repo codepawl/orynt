@@ -236,6 +236,28 @@ describe("local intelligence runtime", () => {
     runtime.contextVm.close();
   });
 
+  it("bounds advisory retrieval for long requests without truncating trusted context", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "orynt-intelligence-"));
+    const runtime = new LocalIntelligenceRuntime(root);
+    const userRequest = `${"build accessible calculator controls ".repeat(40)}TAIL`;
+    expect(userRequest.length).toBeGreaterThan(1_000);
+    const pack = await runtime.buildContextPack({
+      schemaVersion: 1,
+      namespace: "test|workspace||",
+      sessionId: "long-request" as never,
+      userRequest,
+      constraints: [],
+      requestedEntities: [],
+      riskLevel: "low",
+      hardBudgetTokens: 2_000,
+      retrievalMode: "hybrid",
+    });
+
+    expect(pack.manifest.status).toBe("ready");
+    expect(pack.rendered).toContain("TAIL");
+    runtime.contextVm.close();
+  });
+
   it("keeps authority-only packs isolated from session history", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "orynt-intelligence-"));
     const runtime = new LocalIntelligenceRuntime(root);
@@ -314,7 +336,7 @@ describe("local intelligence runtime", () => {
     runtime.contextVm.close();
   });
 
-  it("resolves readiness without allowing the decision model to answer", async () => {
+  it("resolves a complete implementer pack without allowing a decision model to invent gaps", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "orynt-intelligence-"));
     const runtime = new LocalIntelligenceRuntime(root);
     let decisionCalls = 0;
@@ -331,7 +353,7 @@ describe("local intelligence runtime", () => {
         invocationId: "invocation-ready-v2",
         namespace: "test|workspace||",
         sessionId: contextVmSessionId("invocation-ready-session"),
-        role: "coordinator",
+        role: "implementer",
         providerId: "scripted",
         modelId: "fixture",
         userRequest: "Prepare the model context",
@@ -463,7 +485,7 @@ describe("local intelligence runtime", () => {
           thinkingEffort: "medium",
           userRequest: "Classify this prompt",
           constraints: [],
-          requestedEntities: [],
+          requestedEntities: ["missing-context"],
           riskLevel: "low",
           hardBudgetTokens: 512,
           retrievalMode: "authority_only",

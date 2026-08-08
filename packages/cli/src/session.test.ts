@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "bun:test";
 import {
+  createClaudeModelTierConfiguration,
   createDefaultModelTierConfiguration,
   createOrchestrationPreset,
   hashPromptUnderstandingBasis,
@@ -36,6 +37,7 @@ import {
   type CliRunResult,
 } from "./session";
 import type {
+  CliAgentTurnRequest,
   CliAgentTurnResult,
   ProposedRepositoryAction,
 } from "./agent";
@@ -536,6 +538,64 @@ describe("interactive Orynt session", () => {
       persisted.at(-1)?.promptUnderstandingDraft?.understanding.questions[0]
         ?.options,
     ).toHaveLength(2);
+  });
+
+  it("runs interactive clarification once, persists its summary, and automatically resumes understanding", async () => {
+    const output: string[] = [];
+    const requests: CliAgentTurnRequest[] = [];
+    const turn = vi
+      .fn(async (request: CliAgentTurnRequest) => {
+        requests.push(request);
+        return requests.length === 1
+          ? agentClarification()
+          : agentAnswer("Repository readiness selected.");
+      });
+
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "gpt-5.5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+      },
+      terminal: {
+        ask: scriptedAsk(["review this repository", "/exit"]),
+        clear: vi.fn(),
+        write: (value) => output.push(value),
+        clarify: vi.fn(async () => ({
+          status: "submitted" as const,
+          answers: [{
+            questionId: "focus",
+            selectedOptionIds: ["correctness"],
+            note: "Prioritize regressions",
+            autoFilled: false,
+          }],
+        })),
+        color: false,
+      },
+      persistSession: async (snapshot) => snapshot,
+      turn,
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    expect(turn).toHaveBeenCalledTimes(2);
+    expect(
+      requests[1]?.promptUnderstandingBasis?.clarificationAnswers,
+    ).toEqual([{
+      questionId: "focus",
+      answer: "Correctness",
+      selectedOptionIds: ["correctness"],
+      selectedOptionId: "correctness",
+      note: "Prioritize regressions",
+    }]);
+    const rendered = output.join("\n");
+    expect(rendered).toContain("Clarification summary");
+    expect(rendered).toContain("Prioritize regressions");
+    expect(
+      rendered.match(/Agent › Choose the primary review focus\./gu),
+    ).toHaveLength(1);
   });
 
   it("keeps clarification chat alive across a session-save failure and reports recovery", async () => {
@@ -1098,6 +1158,7 @@ describe("interactive Orynt session", () => {
   it("keeps successful readiness rows only at full activity detail", async () => {
     const runSession = async (activityDetails: "important" | "full") => {
       const output: string[] = [];
+      const activityOptions: Array<{ immediate?: boolean } | undefined> = [];
       await runInteractiveSession({
         state: {
           repositoryPath: "/work/orynt",
@@ -1111,49 +1172,177 @@ describe("interactive Orynt session", () => {
           ask: scriptedAsk(["hello", "/exit"]),
           clear: vi.fn(),
           write: (value) => output.push(value),
-          beginActivity: () => ({
+          beginActivity: (_label, options) => {
+            activityOptions.push(options);
+            return {
             update: vi.fn(),
             settle: (label) => {
               if (label) output.push(`◇ ${label}`);
             },
             fail: vi.fn(),
             stop: vi.fn(),
-          }),
+            };
+          },
           color: false,
         },
         turn: vi.fn(async (request) => {
           request.onActivity?.({
-            kind: "tool",
-            itemId: "tool-1",
-            toolKind: "command",
-            label: "Inspect repository",
-            status: "requested",
+            kind: "message",
+            itemId: "message-before-tools",
+            text: "I’ll inspect the repository guidance.",
+            status: "completed",
           });
           request.onActivity?.({
             kind: "tool",
             itemId: "tool-1",
-            toolKind: "command",
-            label: "Inspect repository",
+            toolKind: "other",
+            toolName: "repo_read",
+            action: "read",
+            label: "AGENTS.md",
+            status: "started",
+          });
+          request.onActivity?.({
+            kind: "tool",
+            itemId: "tool-1",
+            toolKind: "other",
+            toolName: "repo_read",
+            action: "read",
+            label: "AGENTS.md",
+            status: "completed",
+            durationMs: 420,
+          });
+          request.onActivity?.({
+            kind: "tool",
+            itemId: "tool-2",
+            toolKind: "other",
+            toolName: "repo_read",
+            action: "read",
+            label: "missing.json sk-faketoolsecret123 \u001b[31m",
+            status: "started",
+          });
+          request.onActivity?.({
+            kind: "tool",
+            itemId: "tool-2",
+            toolKind: "other",
+            toolName: "repo_read",
+            action: "read",
+            label: "missing.json sk-faketoolsecret123 \u001b[31m",
+            status: "failed",
+            durationMs: 80,
+          });
+          request.onActivity?.({
+            kind: "message",
+            itemId: "message-after-tools",
+            text: "The repository guidance is clear.",
             status: "completed",
           });
-          return agentAnswer();
+          return agentAnswer("The repository guidance is clear.");
         }),
         run: vi.fn(),
         probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
       });
-      return output.join("\n");
+      return {
+        output: output.join("\n"),
+        activityOptions,
+      };
     };
 
-    const normal = await runSession("important");
+    const normalResult = await runSession("important");
+    const normal = normalResult.output;
     expect(normal).not.toContain("Provider ready");
     expect(normal).not.toContain("Orchestration profile ready");
-    expect(normal).not.toContain("Tool shell Inspect repository");
-    const full = await runSession("full");
+    expect(normal).not.toContain("▤ Read");
+    const fullResult = await runSession("full");
+    const full = fullResult.output;
     expect(full).toContain("Provider ready");
     expect(full).toContain("Orchestration profile ready");
-    expect(full).toContain("Tool shell Inspect repository");
-    expect(full.match(/Tool shell Inspect repository/gu)).toHaveLength(1);
-    expect(full).toContain("Activity  1 tool call · 0 skills attached");
+    expect(full).toContain("▤ Read    AGENTS.md · 0.4s");
+    expect(full.match(/▤ Read    AGENTS\.md/gu)).toHaveLength(1);
+    expect(full).toContain("✕ Read");
+    expect(full).toContain("<0.1s · failed");
+    expect(full).toContain("missing.json");
+    expect(full).toContain("[REDACTED]");
+    expect(full).not.toContain("sk-faketoolsecret123");
+    expect(full).not.toContain("\u001b[31m");
+    expect(full.indexOf("Orchestration profile ready")).toBeLessThan(
+      full.indexOf("Agent › I’ll inspect the repository guidance."),
+    );
+    expect(
+      full.indexOf("Agent › I’ll inspect the repository guidance."),
+    ).toBeLessThan(full.indexOf("▤ Read    AGENTS.md"));
+    expect(full.indexOf("✕ Read")).toBeLessThan(
+      full.indexOf("Agent › The repository guidance is clear."),
+    );
+    expect(
+      full.indexOf("Agent › The repository guidance is clear."),
+    ).toBeLessThan(full.indexOf("Activity  2 tool calls"));
+    expect(
+      fullResult.activityOptions.some((options) => options?.immediate === true),
+    ).toBe(true);
+    expect(full).toContain(
+      "Activity  2 tool calls · 1 failed · 0 skills attached",
+    );
+  });
+
+  it("routes skill selection to the Light tier with its own provider", async () => {
+    const routeSkills = vi.fn(async () => ({
+      skillIds: [],
+      reason: "No skill materially improves this turn.",
+    }));
+    await runInteractiveSession({
+      state: {
+        repositoryPath: "/work/orynt",
+        modelId: "claude-sonnet-5",
+        thinkingEffort: "high",
+        providerReady: true,
+        providerDetail: "Authenticated",
+        modelTierConfiguration: createClaudeModelTierConfiguration(),
+      },
+      skillRouting: "auto_trusted",
+      persistSkillRouting: vi.fn(async () => undefined),
+      listModels: async () =>
+        ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"].map((id) => ({
+          id,
+          providerId: "anthropic-api" as const,
+          label: id,
+          supportedThinkingEfforts: ["medium" as const, "high" as const],
+        })),
+      listSkills: async () => [
+        {
+          id: "trusted-skill",
+          name: "Trusted skill",
+          description: "Explains repositories",
+          scope: "builtin",
+          trust: "trusted",
+          eligible: true,
+          health: "ready",
+        },
+      ],
+      routeSkills,
+      snapshotSkills: vi.fn(),
+      terminal: {
+        ask: scriptedAsk(["explain the repository", "/exit"]),
+        clear: vi.fn(),
+        write: vi.fn(),
+        color: false,
+      },
+      turn: vi.fn(async (request) => {
+        await request.resolveSkillContext?.();
+        return agentAnswer();
+      }),
+      run: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+    });
+
+    // The router runs on Light while the coordinator stays on Medium, and the
+    // Light provider travels with the model id. Dropping it would dispatch an
+    // Anthropic model through the Codex transport.
+    expect(routeSkills).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelId: "claude-haiku-4-5",
+        providerId: "anthropic-api",
+      }),
+    );
   });
 
   it("persists Agent Skill auto-selection and routes only trusted eligible skills", async () => {

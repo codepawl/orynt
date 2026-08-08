@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "094-v2-real-runtime-transfer-orynt_no_context-r2",
+  "taskId": "v2-real-runtime-transfer",
+  "methodId": "orynt_no_context",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:47:55.273Z",
+  "completedAt": "2026-08-05T08:47:55.415Z",
+  "totalWallMs": 142,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/094-v2-real-runtime-transfer-orynt_no_context-r2/repo"
+}

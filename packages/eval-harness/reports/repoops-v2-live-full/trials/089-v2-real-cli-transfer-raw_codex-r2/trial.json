@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "089-v2-real-cli-transfer-raw_codex-r2",
+  "taskId": "v2-real-cli-transfer",
+  "methodId": "raw_codex",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:06:13.027Z",
+  "completedAt": "2026-08-05T08:07:44.837Z",
+  "totalWallMs": 91810,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [
+      "ackages/cli/src/composer.test.ts",
+      "packages/cli/src/composer.ts"
+    ],
+    "unexpectedPaths": [
+      "ackages/cli/src/composer.test.ts"
+    ],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 128750,
+      "cached_input_tokens": 106752,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1981,
+      "reasoning_output_tokens": 841
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/089-v2-real-cli-transfer-raw_codex-r2/repo"
+}

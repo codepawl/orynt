@@ -368,6 +368,28 @@ require("node:fs").writeFileSync(${JSON.stringify(marker)}, "spawned\\n");
     expect(contract.metadata.executionMode).toBe("manual_cli");
   });
 
+  it("requires the managed readability preflight without delegating the final verifier", () => {
+    const command =
+      "node .codex/orynt-beta-verify.mjs --source-readability-only";
+    const contract = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+    }).createContract(
+      createRequest({
+        executionMode: "manual_cli",
+        validationCommands: [command],
+      }),
+    );
+
+    expect(contract.markdown).toContain(`- ${command}`);
+    expect(contract.markdown).toContain(
+      "Run every listed Validation Expectation before finishing.",
+    );
+    expect(contract.markdown).toContain(
+      "do not run the final managed verifier without that flag",
+    );
+    expect(contract.metadata.validationCommands).toEqual([command]);
+  });
+
   it("redacts secret-like values from generated markdown and metadata", () => {
     const contract = new LocalCodexContractAdapter({ managedArtifactRoot: path.join(tempRoot, "artifacts") }).createContract(
       createRequest({
@@ -427,6 +449,30 @@ require("node:fs").writeFileSync(${JSON.stringify(marker)}, "spawned\\n");
       taskId: request.taskId,
       executionMode: "contract_only",
     });
+  });
+
+  it("uses repository-relative tool paths in executed contracts while preserving audit metadata", () => {
+    const request = createRequest({ executionMode: "manual_cli" });
+    const adapter = new LocalCodexContractAdapter({
+      managedArtifactRoot: path.join(tempRoot, "artifacts"),
+    });
+
+    const contract = adapter.createContract(request);
+
+    expect(contract.markdown).toContain(
+      "Sandbox path: . (managed provider working directory)",
+    );
+    expect(contract.markdown).toContain(
+      "Use repository-relative paths for every file and shell tool.",
+    );
+    expect(contract.markdown).not.toContain(request.sandbox.worktreePath);
+    expect(contract.markdown).not.toContain(request.repository.gitRoot);
+    expect(contract.metadata.sandbox.worktreePath).toBe(
+      request.sandbox.worktreePath,
+    );
+    expect(contract.metadata.repository.gitRoot).toBe(
+      request.repository.gitRoot,
+    );
   });
 
   it("rejects artifact writes outside the managed artifact root", async () => {

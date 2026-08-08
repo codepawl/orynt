@@ -19,13 +19,14 @@
     }
   },
   "scripts": {
-    "build": "bun run --filter @codepawl/agent-runtime build && bun run --filter @codepawl/gateway build && bun run --filter @codepawl/coding-apprentice build && bun run --filter @codepawl/code-intel-runtime build && bun run --filter @codepawl/intelligence-runtime build && tsc -p tsconfig.json",
+    "build": "bun run --filter @codepawl/claude-adapter build && bun run --filter @codepawl/agent-runtime build && bun run --filter @codepawl/gateway build && bun run --filter @codepawl/coding-apprentice build && bun run --filter @codepawl/code-intel-runtime build && bun run --filter @codepawl/intelligence-runtime build && tsc -p tsconfig.json",
     "test": "bun run --filter @codepawl/agent-runtime build && bun run --filter @codepawl/gateway build && bun run --filter @codepawl/coding-apprentice build && bun run --filter @codepawl/code-intel-runtime build && bun run --filter @codepawl/intelligence-runtime build && bun test src"
   },
   "dependencies": {
     "@codepawl/agent-runtime": "workspace:*",
     "@codepawl/browser-runtime": "workspace:*",
     "@codepawl/capability-runtime": "workspace:*",
+    "@codepawl/claude-adapter": "workspace:*",
     "@codepawl/codex-adapter": "workspace:*",
     "@codepawl/code-intel-runtime": "workspace:*",
     "@codepawl/coding-apprentice": "workspace:*",

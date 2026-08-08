@@ -1,10 +1,17 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { listClaudeModels } from "@codepawl/claude-adapter";
+
+import {
+  OPENCODE_GO_BASE_URL,
+  OPENCODE_THINKING_EFFORTS,
+} from "./provider.js";
 import { runRepositoryAgent } from "@codepawl/coding-apprentice";
 import { LocalIntelligenceRuntime } from "@codepawl/intelligence-runtime";
 import { captureRepositoryEvidenceScope } from "@codepawl/repository-sandbox";
@@ -20,6 +27,7 @@ import {
   type ContextVmInvocationArtifactV1,
   type ContextVmDecisionDriverV2,
   type ContextVmInvocationRoleV1,
+  type ContextVmProviderTransportV1,
   type ModelTier,
   type ModelTierBinding,
   type OrchestrationPreset,
@@ -94,6 +102,8 @@ export type CliArguments = {
   help?: boolean;
   version?: boolean;
   command?: "run" | "doctor" | "setup" | "usage";
+  /** Provider targeted by `orynt setup`. Defaults to the configured tier. */
+  provider?: "codex" | "anthropic" | "opencode";
   jsonl?: boolean;
   json?: boolean;
   check?: boolean;
@@ -176,6 +186,7 @@ export function parseCliArgs(argv: string[], cwd: string): CliArguments {
   let help = false;
   let version = false;
   let command: CliArguments["command"];
+  let provider: CliArguments["provider"];
   let jsonl = false;
   let json = false;
   let check = false;
@@ -209,6 +220,15 @@ export function parseCliArgs(argv: string[], cwd: string): CliArguments {
       )
     ) {
       command = argument;
+      continue;
+    }
+    if (argument === "--provider") {
+      const value = nextValue(argv, index, argument);
+      if (value !== "codex" && value !== "anthropic" && value !== "opencode") {
+        throw new Error("--provider accepts codex, anthropic, or opencode");
+      }
+      provider = value;
+      index += 1;
       continue;
     }
     if (argument === "--repo" || argument === "-C") {
@@ -376,6 +396,9 @@ export function parseCliArgs(argv: string[], cwd: string): CliArguments {
   if (check && command !== "setup") {
     throw new Error("--check is only valid with orynt setup");
   }
+  if (provider && command !== "setup") {
+    throw new Error("--provider is only valid with orynt setup");
+  }
   if (verbose && command !== "doctor" && command !== "usage") {
     throw new Error("--verbose is only valid with orynt doctor or orynt usage");
   }
@@ -412,6 +435,7 @@ export function parseCliArgs(argv: string[], cwd: string): CliArguments {
     ...(help ? { help } : {}),
     ...(version ? { version } : {}),
     ...(command ? { command } : {}),
+    ...(provider ? { provider } : {}),
     ...(jsonl ? { jsonl } : {}),
     ...(json ? { json } : {}),
     ...(check ? { check } : {}),
@@ -598,6 +622,188 @@ export async function listCodexModels(): Promise<CliModelOption[]> {
   }
 }
 
+const CLAUDE_CATALOG_TTL_MS = 24 * 60 * 60 * 1_000;
+
+function claudeCatalogCachePath(): string {
+  return path.join(oryntStateRoot(), "anthropic-models.json");
+}
+
+async function readJsonCatalogCache(
+  cachePath: string,
+  now: number,
+  ttlMs: number,
+): Promise<CliModelOption[] | undefined> {
+  try {
+    const raw = await fs.readFile(cachePath, "utf8");
+    const parsed = JSON.parse(raw) as {
+      fetchedAtMs?: unknown;
+      models?: unknown;
+    };
+    if (
+      typeof parsed.fetchedAtMs !== "number" ||
+      !Array.isArray(parsed.models) ||
+      now - parsed.fetchedAtMs > ttlMs
+    ) {
+      return undefined;
+    }
+    return parsed.models as CliModelOption[];
+  } catch {
+    return undefined;
+  }
+}
+
+async function readClaudeCatalogCache(
+  now: number,
+): Promise<CliModelOption[] | undefined> {
+  return readJsonCatalogCache(
+    claudeCatalogCachePath(),
+    now,
+    CLAUDE_CATALOG_TTL_MS,
+  );
+}
+
+async function writeClaudeCatalogCache(
+  models: CliModelOption[],
+  now: number,
+): Promise<void> {
+  return writeJsonCatalogCache(claudeCatalogCachePath(), models, now);
+}
+
+async function writeJsonCatalogCache(
+  target: string,
+  models: CliModelOption[],
+  now: number,
+): Promise<void> {
+  const temporary = `${target}.${process.pid}.tmp`;
+  try {
+    await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    await fs.writeFile(
+      temporary,
+      JSON.stringify({ fetchedAtMs: now, models }),
+      { mode: 0o600, flag: "wx" },
+    );
+    await fs.rename(temporary, target);
+  } catch {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Live Anthropic catalog with a 24h on-disk cache. `GET /v1/models` needs a
+ * valid credential, and `orynt doctor` must not make a network call on every
+ * invocation. Returns an empty list when no credential is configured.
+ */
+export async function listClaudeModelCatalog(
+  options: { now?: () => number; refresh?: boolean } = {},
+): Promise<CliModelOption[]> {
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+    return [];
+  }
+  const now = options.now?.() ?? Date.now();
+  if (!options.refresh) {
+    const cached = await readClaudeCatalogCache(now);
+    if (cached) return cached;
+  }
+  const fetched = await listClaudeModels();
+  const models: CliModelOption[] = fetched.map((model) => ({
+    id: model.id,
+    providerId: "anthropic-api" as const,
+    label: model.label,
+    supportedThinkingEfforts: model.supportedThinkingEfforts,
+    ...(model.defaultThinkingEffort
+      ? { defaultThinkingEffort: model.defaultThinkingEffort }
+      : {}),
+    ...(model.contextWindowTokens
+      ? { contextWindowTokens: model.contextWindowTokens }
+      : {}),
+    ...(model.effectiveContextWindowTokens
+      ? {
+          effectiveContextWindowTokens: model.effectiveContextWindowTokens,
+          providerAutoCompactAtTokens: model.providerAutoCompactAtTokens,
+        }
+      : {}),
+  }));
+  if (models.length > 0) await writeClaudeCatalogCache(models, now);
+  return models;
+}
+
+const OPENCODE_CATALOG_TTL_MS = 24 * 60 * 60 * 1_000;
+
+function opencodeCatalogCachePath(): string {
+  return path.join(oryntStateRoot(), "opencode-models.json");
+}
+
+/**
+ * Live OpenCode catalog with a 24h on-disk cache, cached separately from the
+ * Anthropic one so the two providers never serve each other's models.
+ *
+ * OpenCode speaks the Anthropic catalog route, so the fetch is reused; the
+ * effort ladder is then stated explicitly rather than inherited from the
+ * parser's absent-capability fallback, because for this provider it is a known
+ * property and not a guess.
+ */
+export async function listOpencodeModelCatalog(
+  options: { now?: () => number; refresh?: boolean } = {},
+): Promise<CliModelOption[]> {
+  const apiKey = process.env.OPENCODE_API_KEY;
+  if (!apiKey) return [];
+  const now = options.now?.() ?? Date.now();
+  if (!options.refresh) {
+    const cached = await readJsonCatalogCache(
+      opencodeCatalogCachePath(),
+      now,
+      OPENCODE_CATALOG_TTL_MS,
+    );
+    if (cached) return cached;
+  }
+  const fetched = await listClaudeModels({
+    apiKey,
+    baseUrl: OPENCODE_GO_BASE_URL,
+  });
+  const models: CliModelOption[] = fetched.map((model) => ({
+    id: model.id,
+    providerId: "opencode-api" as const,
+    label: model.label,
+    supportedThinkingEfforts: [...OPENCODE_THINKING_EFFORTS],
+  }));
+  if (models.length > 0) {
+    await writeJsonCatalogCache(opencodeCatalogCachePath(), models, now);
+  }
+  return models;
+}
+
+/**
+ * Catalog used by tier resolution and the model picker. Tiers may mix
+ * providers, so a single-provider catalog would make the other provider's
+ * bindings resolve as unavailable.
+ */
+export async function listCliModels(): Promise<CliModelOption[]> {
+  const [codex, claude, opencode] = await Promise.all([
+    listCodexModels().catch((error: unknown) => {
+      // A configuration that only uses Anthropic must not fail because the
+      // Codex CLI is absent, and vice versa.
+      codexCatalogFailure = error;
+      return [] as CliModelOption[];
+    }),
+    listClaudeModelCatalog().catch(() => [] as CliModelOption[]),
+    listOpencodeModelCatalog().catch(() => [] as CliModelOption[]),
+  ]);
+  if (
+    codex.length === 0 &&
+    claude.length === 0 &&
+    opencode.length === 0 &&
+    codexCatalogFailure
+  ) {
+    const failure = codexCatalogFailure;
+    codexCatalogFailure = undefined;
+    throw failure;
+  }
+  codexCatalogFailure = undefined;
+  return [...codex, ...claude, ...opencode];
+}
+
+let codexCatalogFailure: unknown;
+
 export { probeCodexCli };
 
 export function oryntStateRoot(): string {
@@ -627,11 +833,7 @@ export type CliContextInvocationInput = {
   sessionId: string;
   invocationId: string;
   role: ContextVmInvocationRoleV1;
-  providerId:
-    | "codex-cli"
-    | "codex-app-server"
-    | "openai-responses"
-    | "scripted";
+  providerId: ContextVmProviderTransportV1;
   modelId: string;
   thinkingEffort: ThinkingEffort;
   taskId?: string;
@@ -938,11 +1140,7 @@ export async function prepareCliContextRecovery(input: {
   conversationSummary?: string;
   recentTurns?: CliContextInvocationInput["recentTurns"];
   acceptanceCriteria: string[];
-  providerId?:
-    | "codex-cli"
-    | "codex-app-server"
-    | "openai-responses"
-    | "scripted";
+  providerId?: ContextVmProviderTransportV1;
   modelId?: string;
   thinkingEffort?: ThinkingEffort;
   taskId?: string;
@@ -1307,6 +1505,12 @@ export async function runCliRepositoryTask(
     ...(request.postVerificationReview
       ? { postVerificationReview: request.postVerificationReview }
       : {}),
+    ...(request.postVerificationReviewSkipReason
+      ? {
+          postVerificationReviewSkipReason:
+            request.postVerificationReviewSkipReason,
+        }
+      : {}),
     onRunEvent: request.onEvent,
     signal: request.signal,
   }, { memoryStore: intelligence.memoryStore });
@@ -1390,13 +1594,13 @@ export async function diagnoseModelTiersLive(): Promise<string[]> {
 
 export function cliHelp(): string {
   return [
-    `Orynt ${ORYNT_VERSION} — supervised repository agent`,
+    `Orynt ${ORYNT_VERSION} — a CodePawl product for supervised repository work`,
     "",
     "Usage: orynt [options] [prompt]",
     "       orynt run --approve-once [--jsonl] [options] <goal>",
     "       orynt doctor [--verbose] [--json] [--live --confirm-live] [options]",
     "       orynt usage [--verbose] [--json] [--plain]",
-    "       orynt setup [--check [--json]]",
+    "       orynt setup [--provider codex|anthropic|opencode] [--check [--json]]",
     "       orynt browser <doctor|start|attach|tabs|status|close>",
     "       orynt improve <status|list|show|history|hygiene|approve|reject|rollback>",
     "       orynt intelligence <init|status|verify|inspect|search|checkpoint|recover|consolidate|backups|cleanup>",

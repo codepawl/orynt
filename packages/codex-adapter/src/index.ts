@@ -692,10 +692,29 @@ export class LocalCodexContractAdapter implements CodexAdapter {
     const allowedPaths = request.policy.sandbox.repository.allowedPaths;
     const protectedPaths = request.policy.sandbox.repository.protectedPaths;
     const blockedCommands = request.policy.sandbox.commandPolicy.blockedCommands;
+    const executedContract = executionMode !== "contract_only";
+    const modelSandboxPath = executedContract
+      ? ". (managed provider working directory)"
+      : request.sandbox.worktreePath;
+    const modelRepositoryPath = executedContract
+      ? "source checkout (context only; do not address directly)"
+      : request.repository.gitRoot;
+    const hasManagedReadabilityPreflight = validationCommands.values.some(
+      (command) =>
+        command ===
+        "node .codex/orynt-beta-verify.mjs --source-readability-only",
+    );
 
     const safetyConstraints = [
-      `Work only inside sandbox path: ${request.sandbox.worktreePath}`,
-      `Repository source path is context only: ${request.repository.gitRoot}`,
+      executedContract
+        ? "Work only in the current managed provider working directory."
+        : `Work only inside sandbox path: ${request.sandbox.worktreePath}`,
+      executedContract
+        ? "Use repository-relative paths for every file and shell tool. Never use an absolute sandbox or source-checkout path."
+        : `Repository source path is context only: ${request.repository.gitRoot}`,
+      ...(executedContract
+        ? ["The repository source checkout is context only. Do not address or modify it directly."]
+        : []),
       "Do not access secrets, credentials, tokens, passwords, cookies, OTPs, or raw sensitive values.",
       "Do not run network, dependency installation, git push/merge, destructive, privileged, or non-allowlisted commands without Orynt approval.",
       "Do not claim success; the Orynt verifier will decide success after deterministic validation.",
@@ -738,9 +757,9 @@ export class LocalCodexContractAdapter implements CodexAdapter {
         ...(selectedModelId ? [`Selected model: ${request.modelLabel ?? selectedModelId} (${selectedModelId})`] : []),
         ...(request.modelRole ? [`Orchestration role: ${request.modelRole}`] : []),
         ...(request.thinkingEffort ? [`Thinking effort: ${request.thinkingEffort}`] : []),
-        `Sandbox path: ${request.sandbox.worktreePath}`,
+        `Sandbox path: ${modelSandboxPath}`,
         `Sandbox branch: ${request.sandbox.branchName}`,
-        `Repository root: ${request.repository.gitRoot}`,
+        `Repository root: ${modelRepositoryPath}`,
         `Current commit: ${request.repository.currentCommit}`,
         `Current branch: ${request.repository.currentBranch ?? "detached"}`,
         `Dirty working tree before sandbox: ${request.repository.isDirty ? "yes" : "no"}`,
@@ -780,6 +799,9 @@ export class LocalCodexContractAdapter implements CodexAdapter {
             "Implement the requested repository task directly in the sandbox.",
             "Prefer a complete, runnable vertical slice over placeholders. For fullstack web tasks, include a frontend entry, backend/API code, package.json scripts, and README run instructions.",
             "Do not stop after planning or scaffolding. Write the files needed for the app to run locally and for the Orynt verifier command to pass.",
+            hasManagedReadabilityPreflight
+              ? "Run every listed Validation Expectation before finishing. The --source-readability-only command is an Orynt-owned preflight; do not run the final managed verifier without that flag."
+              : "Run only bounded project-local checks that help implementation. Do not invoke the Orynt-managed verifier; Orynt runs it after importing the result.",
           ].join("\n"),
       "",
     ].join("\n");

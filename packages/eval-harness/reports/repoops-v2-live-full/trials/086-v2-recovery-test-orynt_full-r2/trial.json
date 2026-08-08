@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "id": "086-v2-recovery-test-orynt_full-r2",
+  "taskId": "v2-recovery-test",
+  "methodId": "orynt_full",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:05:15.971Z",
+  "completedAt": "2026-08-05T08:05:35.753Z",
+  "totalWallMs": 19782,
+  "processExitCode": 2,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "planning",
+    "code": "PROMPT_CLARIFICATION_REQUIRED",
+    "message": "Headless execution requires clarification before a repository plan can be created.",
+    "promptUnderstanding": {
+      "schemaVersion": 1,
+      "promptId": "84c9f7391d1c2748fbfffe9d786b8aaa84c9f7391d1c2748fbfffe9d786b8aaa",
+      "inputId": "6700a26129b0bba82b8bfce1f6258a366700a26129b0bba82b8bfce1f6258a36",
+      "outcome": "repository_action",
+      "readiness": "clarification_required",
+      "reply": "I need the intended percentage behavior and the failing verifier evidence before a bounded repository fix can be defined.",
+      "conversationSummary": "The user requests a bounded implementation limited to src/calculator.ts and test/calculator.test.ts, with .env, .git/**, and bun.lock protected. The requested percentage behavior and referenced failing verifier evidence have not been provided. If execution becomes appropriate, run bun test.",
+      "refinedBrief": {
+        "goal": "Implement the confirmed percentage behavior using the provided failing verifier evidence.",
+        "deliverables": [
+          "A bounded implementation change in src/calculator.ts, if required.",
+          "A focused regression test in test/calculator.test.ts, if required.",
+          "bun test results when execution is appropriate."
+        ],
+        "constraints": [
+          "Modify only src/calculator.ts and test/calculator.test.ts.",
+          "Do not modify .env, .git/**, bun.lock, or any other file.",
+          "Use the supplied verifier evidence to constrain the fix.",
+          "Retry only the confirmed bounded fix."
+        ],
+        "acceptanceCriteria": [
+          "The confirmed percentage behavior is implemented.",
+          "The provided failing verifier case is addressed.",
+          "bun test passes when execution is appropriate."
+        ],
+        "nonGoals": [
+          "Do not change files outside the two allowed writer paths.",
+          "Do not infer or broaden percentage semantics without confirmation.",
+          "Do not make unrelated refactors."
+        ]
+      },
+      "questions": [
+        {
+          "id": "percentage_behavior_definition",
+          "prompt": "What exact percentage behavior should be implemented?",
+          "rationale": "Percentage semantics can differ materially, such as converting a number to a fraction, applying a percentage to another value, or preserving calculator-specific chaining behavior.",
+          "kind": "outcome",
+          "options": [
+            {
+              "id": "percent_to_fraction",
+              "label": "Convert to fraction",
+              "description": "For example, 25% evaluates to 0.25.",
+              "recommended": true
+            },
+            {
+              "id": "apply_to_previous_value",
+              "label": "Apply to prior value",
+              "description": "For example, 200 + 10% uses 10% of 200.",
+              "recommended": false
+            },
+            {
+              "id": "other_calculator_semantics",
+              "label": "Other semantics",
+              "description": "Provide the expected inputs and outputs or calculator rules.",
+              "recommended": false
+            }
+          ]
+        },
+        {
+          "id": "failing_verifier_evidence",
+          "prompt": "Please provide the failing verifier output or the exact failing case to use as evidence.",
+          "rationale": "The requested bounded retry must be based on the referenced evidence, which is not present in the supplied context.",
+          "kind": "validation",
+          "options": [
+            {
+              "id": "paste_failure",
+              "label": "Paste failure",
+              "description": "Provide the verifier output, assertion failure, or stack trace.",
+              "recommended": true
+            },
+            {
+              "id": "provide_case",
+              "label": "Provide test case",
+              "description": "Provide the input expression and expected result.",
+              "recommended": false
+            }
+          ]
+        }
+      ],
+      "assumptions": []
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/086-v2-recovery-test-orynt_full-r2/repo"
+}

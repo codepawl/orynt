@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "052-v2-inspect-architecture-orynt_no_context-r2",
+  "taskId": "v2-inspect-architecture",
+  "methodId": "orynt_no_context",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:41:04.462Z",
+  "completedAt": "2026-08-05T08:41:04.609Z",
+  "totalWallMs": 147,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/052-v2-inspect-architecture-orynt_no_context-r2/repo"
+}

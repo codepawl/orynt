@@ -20,6 +20,10 @@ import {
   ORYNT_ENGLISH_OUTPUT_INSTRUCTION,
   promptRequirementsFromUnderstanding,
 } from "@codepawl/shared";
+import {
+  MANAGED_REPOSITORY_VALIDATION_COMMAND,
+  normalizeRepositoryValidationCommand,
+} from "./repositoryValidationCommands.js";
 
 /**
  * The model only proposes the task graph. Requirement identities, plan identity,
@@ -496,9 +500,24 @@ function parsePlannerCandidate(
         ) {
           failOutput(`Planner task ${id} evidence kind is invalid.`);
         }
-        const command = entry.command === null
+        const proposedCommand = entry.command === null
           ? undefined
-          : cleanText(entry.command, `Planner task ${id} evidence command`, 500);
+          : typeof entry.command === "string" &&
+              entry.command.length > 0 &&
+              entry.command.length <= 500
+            ? entry.command
+            : failOutput(
+                `Planner task ${id} evidence command must be a non-empty string.`,
+              );
+        const command =
+          entry.kind === "command" && proposedCommand !== undefined
+            ? normalizeRepositoryValidationCommand(proposedCommand)
+            : proposedCommand;
+        if (entry.kind === "command" && command === undefined) {
+          failOutput(
+            `Planner task ${id} command evidence must use an approved validation command.`,
+          );
+        }
         const evidencePath = entry.path === null
           ? undefined
           : cleanText(entry.path, `Planner task ${id} evidence path`, 300);
@@ -570,6 +589,8 @@ function plannerPrompt(input: {
     "The server owns requirements, plan identity, digest, budget, and authorization. Use exactly the supplied requirement ids; every requirement must be assigned to at least one task and evidence item.",
     "Use one to eight adaptive tasks. A change task must be single_writer with exact repository-relative paths and at least one mutating operation. A validation task must be read_only with operations [\"read\"], no expected paths, and an explicit exact readPaths scope. A mutable path may belong to only one task.",
     "Evidence of kind diff, path_scope, or file must include one exact repository-relative path inside that task's expectedPaths or readPaths. Command evidence must include the exact command. Semantic_review and operator_review may use null for path and command.",
+    `For command evidence, prefer ${MANAGED_REPOSITORY_VALIDATION_COMMAND}; it is always available and policy-allowed. The only other accepted forms are bun test with optional safe path arguments, bun run test, and npm test.`,
+    "Never use placeholders, prose, shell control syntax, Git inspection commands, or an anticipated command that does not exist. Represent status or final-diff inspection with path_scope or semantic_review evidence.",
     "Never use absolute paths, parent paths, host/root/network/secret work, undocumented operations, or a fallback task.",
     "Goal JSON:",
     JSON.stringify({ goal: input.goal }),
@@ -735,6 +756,16 @@ export async function planDesktopRepositoryTask(
 }
 
 export const desktopRepositoryTaskPlanSchema = DESKTOP_TASK_PLAN_SCHEMA;
+
+export function authoritativeRequirementsForTask(
+  plan: Pick<RepositoryTaskPlanV1, "requirements">,
+  task: Pick<RepositorySemanticTaskV1, "requirementIds">,
+): string[] {
+  const taskRequirementIds = new Set(task.requirementIds);
+  return plan.requirements
+    .filter(({ id }) => taskRequirementIds.has(id))
+    .map(({ id, text }) => `${id}: ${text}`);
+}
 
 export type RepositoryTaskPlanningInput = DesktopRepositoryTaskPlanningInput;
 export type RepositoryTaskPlannerDependencies =

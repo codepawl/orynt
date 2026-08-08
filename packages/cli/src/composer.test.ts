@@ -25,6 +25,9 @@ function stripColor(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/gu, "");
 }
 
+const waitForInlineResize = () =>
+  new Promise((resolve) => setTimeout(resolve, 100));
+
 function terminalScreen(transcript: string): string {
   const lines = [""];
   let row = 0;
@@ -390,6 +393,82 @@ describe("TTY command composer", () => {
     harness.composer.close();
   });
 
+  it("requires drag or repeated clicks before activating chat selection", async () => {
+    const clipboard: CliClipboardReader = {
+      read: vi.fn(async () => ({ kind: "text", text: "" })),
+      writeText: vi.fn(async () => undefined),
+      resolveDroppedPaths: vi.fn(async () => undefined),
+    };
+    const harness = createHarness(
+      40,
+      8,
+      false,
+      false,
+      true,
+      clipboard,
+      { copyOnSelect: true },
+    );
+    const result = harness.composer.compose(COMPOSER_PROMPT);
+    harness.composer.write("alpha beta\ngamma delta\nthird line");
+    const click = (row: number, column: number) => {
+      harness.input.write(`\u001b[<0;${column};${row}M`);
+      harness.input.write(`\u001b[<0;${column};${row}m`);
+    };
+
+    click(1, 2);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+
+    click(1, 2);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(clipboard.writeText).toHaveBeenLastCalledWith("alpha");
+
+    click(1, 2);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(clipboard.writeText).toHaveBeenLastCalledWith("alpha beta");
+
+    harness.input.write("\r");
+    await expect(result).resolves.toBe("");
+    harness.composer.close();
+  });
+
+  it("resets repeated-click selection after time or position changes", async () => {
+    const clipboard: CliClipboardReader = {
+      read: vi.fn(async () => ({ kind: "text", text: "" })),
+      writeText: vi.fn(async () => undefined),
+      resolveDroppedPaths: vi.fn(async () => undefined),
+    };
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const harness = createHarness(
+      40,
+      8,
+      false,
+      false,
+      true,
+      clipboard,
+      { copyOnSelect: true },
+    );
+    const result = harness.composer.compose(COMPOSER_PROMPT);
+    harness.composer.write("alpha beta");
+    const click = (column: number) => {
+      harness.input.write(`\u001b[<0;${column};1M`);
+      harness.input.write(`\u001b[<0;${column};1m`);
+    };
+
+    click(2);
+    now.mockReturnValue(1_401);
+    click(2);
+    now.mockReturnValue(1_402);
+    click(5);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+
+    harness.input.write("\r");
+    await expect(result).resolves.toBe("");
+    harness.composer.close();
+    now.mockRestore();
+  });
+
   it("ignores composer-region wheel history while a modal answer is active", async () => {
     const harness = createHarness(40, 8, false, false, true);
     harness.composer.remember("history prompt");
@@ -573,6 +652,26 @@ describe("TTY command composer", () => {
       vi.advanceTimersByTime(120);
       expect(harness.screen()).toContain("Wait again · 0s");
       nextActivity.stop();
+      harness.composer.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders explicit tool activity immediately while retaining live timing", () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness();
+      const activity = harness.composer.beginActivity("Read package.json", {
+        immediate: true,
+      });
+
+      expect(harness.screen()).toContain("♚ Read package.json · 0s");
+      vi.advanceTimersByTime(1_000);
+      expect(harness.screen()).toContain("Read package.json · 1s");
+
+      activity.stop();
+      expect(harness.screen()).not.toContain("Read package.json");
       harness.composer.close();
     } finally {
       vi.useRealTimers();
@@ -769,13 +868,13 @@ describe("TTY command composer", () => {
       "First line\nSecond line",
     );
 
-    expect(harness.rendered()).not.toContain("\u001b[48;2;32;43;57m");
+    expect(harness.rendered()).not.toContain("\u001b[48;2;238;241;245m");
     harness.input.write("\r");
     await expect(result).resolves.toBe("First line\nSecond line");
 
     const rendered = harness.rendered();
     expect(rendered).toContain(
-      "\u001b[38;2;235;239;246;48;2;32;43;57m",
+      "\u001b[38;2;52;64;84;48;2;238;241;245m",
     );
     expect(stripColor(rendered)).toContain("You › First line");
     expect(stripColor(rendered)).toContain("      Second line");
@@ -793,7 +892,7 @@ describe("TTY command composer", () => {
     await expect(result).resolves.toBe("A user message that wraps");
     expect(stripColor(harness.chunks().at(-1)!)).toContain("You › A user");
     expect(harness.chunks().at(-1)).toContain(
-      "\u001b[38;2;235;239;246;48;2;32;43;57m",
+      "\u001b[38;2;52;64;84;48;2;238;241;245m",
     );
 
     harness.output.columns = 12;
@@ -2186,7 +2285,7 @@ describe("TTY command composer", () => {
     harness.output.columns = 18;
     harness.output.rows = 3;
     harness.output.emit("resize");
-    await Promise.resolve();
+    await waitForInlineResize();
 
     const resizeWrites = harness.chunks().slice(beforeResize);
     expect(resizeWrites).toHaveLength(1);
@@ -2203,6 +2302,119 @@ describe("TTY command composer", () => {
     harness.input.write("\t\r");
     await expect(result).resolves.toBe("/status");
     harness.composer.close();
+  });
+
+  it("coalesces inline resize bursts and preserves the active draft across reflow", async () => {
+    const harness = createHarness(72, 10);
+    const result = harness.composer.compose(
+      COMPOSER_PROMPT,
+      "a deliberately long draft that must survive narrow terminal reflow",
+    );
+    const beforeResize = harness.chunks().length;
+
+    for (const [columns, rows] of [[46, 8], [28, 5], [20, 4]]) {
+      harness.output.columns = columns;
+      harness.output.rows = rows;
+      harness.output.emit("resize");
+    }
+    await waitForInlineResize();
+
+    const resizeWrites = harness.chunks().slice(beforeResize);
+    expect(resizeWrites).toHaveLength(1);
+    expect(resizeWrites[0]).toContain("\u001b[0J");
+    expect(resizeWrites[0]).not.toContain("\u001bc");
+    expect(resizeWrites[0]).not.toContain("\u001b[?1049");
+    expect(harness.screen()).toContain("terminal reflow");
+
+    const afterReflow = harness.chunks().length;
+    harness.output.emit("resize");
+    await waitForInlineResize();
+    expect(harness.chunks()).toHaveLength(afterReflow);
+
+    harness.input.write("\r");
+    await expect(result).resolves.toBe(
+      "a deliberately long draft that must survive narrow terminal reflow",
+    );
+    harness.composer.close();
+  });
+
+  it("waits for a sustained inline resize drag to settle before repainting", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness(72, 10);
+      const result = harness.composer.compose(COMPOSER_PROMPT, "stable draft");
+      const beforeResize = harness.chunks().length;
+
+      for (const columns of [64, 56, 48, 40]) {
+        harness.output.columns = columns;
+        harness.output.emit("resize");
+        vi.advanceTimersByTime(40);
+        expect(harness.chunks()).toHaveLength(beforeResize);
+      }
+
+      vi.advanceTimersByTime(80);
+      const resizeWrites = harness.chunks().slice(beforeResize);
+      expect(resizeWrites).toHaveLength(1);
+      expect(resizeWrites[0]).toContain("\u001b[0J");
+      expect(harness.screen()).toContain("stable draft");
+
+      harness.input.write("\r");
+      await expect(result).resolves.toBe("stable draft");
+      harness.composer.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reuses an exact inline anchor when widening without leaving stale separators", async () => {
+    const harness = createHarness(28, 8);
+    const result = harness.composer.compose(COMPOSER_PROMPT, "stable");
+
+    harness.output.columns = 72;
+    harness.output.rows = 10;
+    harness.output.emit("resize");
+    await waitForInlineResize();
+
+    const separatorRows = harness.screen()
+      .split("\n")
+      .filter((line) => /^─+$/u.test(line));
+    expect(separatorRows).toHaveLength(2);
+    expect(separatorRows.every((line) => displayWidth(line) === 71)).toBe(true);
+    expect(harness.screen()).toContain("❯ stable");
+
+    harness.input.write("\r");
+    await expect(result).resolves.toBe("stable");
+    harness.composer.close();
+  });
+
+  it("flushes pending inline geometry before writing live output", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness(72, 10);
+      const live = harness.composer.beginLiveInput(
+        {
+          phase: "executing",
+          pendingCount: 0,
+          paused: false,
+        },
+        vi.fn(),
+        "stable draft",
+      );
+      harness.output.columns = 40;
+      harness.output.emit("resize");
+
+      harness.composer.write("Verifier finished");
+      const afterOutput = harness.chunks().length;
+      expect(harness.screen()).toContain("Verifier finished");
+      expect(harness.screen()).toContain("stable draft");
+
+      vi.advanceTimersByTime(100);
+      expect(harness.chunks()).toHaveLength(afterOutput);
+      expect(live.close()).toMatchObject({ value: "stable draft" });
+      harness.composer.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps colorized selection changes in one differential write", async () => {
@@ -2341,7 +2553,7 @@ describe("TTY command composer", () => {
 
     harness.output.columns = 32;
     harness.output.emit("resize");
-    await Promise.resolve();
+    await waitForInlineResize();
 
     expect(harness.rendered()).not.toContain("\u001bc");
     expect(harness.rendered().split(question.trim()).length - 1).toBeGreaterThanOrEqual(2);
@@ -2469,6 +2681,7 @@ describe("TTY command composer", () => {
 
     harness.output.columns = 34;
     harness.output.emit("resize");
+    await waitForInlineResize();
     expect(harness.screen()).toContain("Impact · strongest review");
     expect(harness.screen()).not.toContain("\u001bc");
 
@@ -2621,6 +2834,250 @@ describe("TTY command composer", () => {
 
     await expect(selected).resolves.toBe("gpt-5.6-terra");
     harness.composer.close();
+  });
+
+  it("navigates clarification questions, records multi-select notes, and confirms a summary", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness(100, 24);
+      const resultPromise = harness.composer.clarify({
+        title: "Task clarification · round 1/3",
+        timeoutMs: 120_000,
+        questions: [{
+          id: "scope",
+          prompt: "Which scope?",
+          rationale: "It changes the work.",
+          group: "Outcome",
+          selectionMode: "single",
+          options: [{
+            id: "repo",
+            label: "Repository",
+            description: "Review the whole repository.",
+            recommended: true,
+            recommendationReason: "Best default.",
+          }, {
+            id: "package",
+            label: "Package",
+            description: "Review one package.",
+            recommended: false,
+          }],
+        }, {
+          id: "checks",
+          prompt: "Which checks?",
+          rationale: "They define completion.",
+          group: "Validation",
+          selectionMode: "multiple",
+          options: [{
+            id: "tests",
+            label: "Tests",
+            description: "Run focused tests.",
+            recommended: true,
+            recommendationReason: "Fast signal.",
+            conflictsWith: ["manual"],
+          }, {
+            id: "types",
+            label: "Types",
+            description: "Run the build.",
+            recommended: true,
+            recommendationReason: "Catches contract drift.",
+          }, {
+            id: "manual",
+            label: "Manual only",
+            description: "Skip automation.",
+            recommended: false,
+            conflictsWith: ["tests"],
+          }],
+        }],
+      });
+
+      expect(harness.screen()).toContain("Question 1/2 · Outcome");
+      harness.input.emit("keypress", "\r", {
+        name: "return",
+        sequence: "\r",
+      });
+      harness.input.emit("keypress", "", {
+        name: "right",
+        sequence: "\u001b[C",
+      });
+      harness.input.emit("keypress", "\r", {
+        name: "return",
+        sequence: "\r",
+      });
+      harness.input.emit("keypress", "", {
+        name: "down",
+        sequence: "\u001b[B",
+      });
+      harness.input.emit("keypress", "\r", {
+        name: "return",
+        sequence: "\r",
+      });
+      harness.input.emit("keypress", "\t", {
+        name: "tab",
+        sequence: "\t",
+      });
+      for (const character of "keep strict") {
+        harness.input.emit("keypress", character, {
+          name: character,
+          sequence: character,
+        });
+      }
+      harness.input.emit("keypress", "\r", {
+        name: "return",
+        sequence: "\r",
+      });
+      harness.input.emit("keypress", "", {
+        name: "right",
+        sequence: "\u001b[C",
+      });
+      expect(harness.screen()).toContain("Summary");
+      harness.input.emit("keypress", "\r", {
+        name: "return",
+        sequence: "\r",
+      });
+
+      await expect(resultPromise).resolves.toEqual({
+        status: "submitted",
+        answers: [{
+          questionId: "scope",
+          selectedOptionIds: ["repo"],
+          autoFilled: false,
+        }, {
+          questionId: "checks",
+          selectedOptionIds: ["tests", "types"],
+          optionNotes: [{ optionId: "types", note: "keep strict" }],
+          autoFilled: false,
+        }],
+      });
+      harness.composer.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves clarification selection and note state across inline resize", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness(80, 14);
+      const resultPromise = harness.composer.clarify({
+        title: "Task clarification",
+        timeoutMs: 120_000,
+        questions: [{
+          id: "checks",
+          prompt: "Which validation should run?",
+          rationale: "The answer defines completion.",
+          group: "Validation",
+          selectionMode: "multiple",
+          options: [{
+            id: "tests",
+            label: "Focused tests",
+            description: "Run the relevant package tests.",
+            recommended: true,
+          }, {
+            id: "build",
+            label: "Build",
+            description: "Compile the CLI executable.",
+            recommended: true,
+          }],
+        }],
+      });
+
+      harness.input.write("\r");
+      harness.input.write("\t");
+      harness.input.write("keep this note");
+      const beforeResize = harness.chunks().length;
+      harness.output.columns = 26;
+      harness.output.rows = 8;
+      harness.output.emit("resize");
+      vi.advanceTimersByTime(100);
+
+      const resizeWrites = harness.chunks().slice(beforeResize);
+      expect(resizeWrites).toHaveLength(1);
+      expect(resizeWrites[0]).toContain("\u001b[0J");
+      expect(harness.screen()).toContain("keep this note");
+
+      harness.input.write("\r");
+      harness.input.write("\u001b[C");
+      expect(harness.screen()).toContain("Summary");
+      harness.input.write("\r");
+
+      await expect(resultPromise).resolves.toEqual({
+        status: "submitted",
+        answers: [{
+          questionId: "checks",
+          selectedOptionIds: ["tests"],
+          optionNotes: [{ optionId: "tests", note: "keep this note" }],
+          autoFilled: false,
+        }],
+      });
+      harness.composer.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps partial clarification choices and auto-fills unanswered recommendations at 120s", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness(90, 20);
+      const resultPromise = harness.composer.clarify({
+        title: "Task clarification",
+        timeoutMs: 120_000,
+        questions: [{
+          id: "scope",
+          prompt: "Scope?",
+          rationale: "Material.",
+          group: "Outcome",
+          selectionMode: "single",
+          options: [{
+            id: "repo",
+            label: "Repository",
+            description: "Whole repository.",
+            recommended: true,
+          }, {
+            id: "package",
+            label: "Package",
+            description: "One package.",
+            recommended: false,
+          }],
+        }, {
+          id: "validation",
+          prompt: "Validation?",
+          rationale: "Material.",
+          group: "Validation",
+          selectionMode: "multiple",
+          options: [{
+            id: "tests",
+            label: "Tests",
+            description: "Run tests.",
+            recommended: true,
+          }, {
+            id: "build",
+            label: "Build",
+            description: "Run build.",
+            recommended: true,
+          }],
+        }],
+      });
+
+      harness.input.write("\r");
+      vi.advanceTimersByTime(120_000);
+
+      await expect(resultPromise).resolves.toEqual({
+        status: "auto_submitted",
+        answers: [{
+          questionId: "scope",
+          selectedOptionIds: ["repo"],
+          autoFilled: false,
+        }, {
+          questionId: "validation",
+          selectedOptionIds: ["tests", "build"],
+          autoFilled: true,
+        }],
+      });
+      harness.composer.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("expands ordinary bracketed multiline paste into logical composer rows", async () => {

@@ -1,20 +1,20 @@
 ---
 name: Orynt
 description: CLI-first supervised agent with a frozen desktop compatibility adapter.
-style: Dark Impressionist Minimalism
-creativeNorthStar: The Quiet Operator Studio
+style: Warm Hand-Drawn Operational Minimalism
+creativeNorthStar: The Clear Local Workbench
 scope: Shared foundation and frozen desktop compatibility surfaces.
 colors:
-  ink: ["#050607", "#090b0d", "#111315", "#1b1c1d", "#444542"]
-  mist: ["#f2f0ec", "#dfddd6", "#c6c4bf", "#9b9a96", "#70706d"]
+  ink: ["#241f1a", "#4f463e", "#776d64"]
+  canvas: ["#f7f3ed", "#efe8de", "#e5dbcf"]
   semantic:
     success: "#78c99b"
     warning: "#d4a94f"
     info: "#8fb6e8"
     error: "#df7272"
-  surface: "rgba(28, 28, 28, 0.78)"
-  strokeQuiet: "rgba(242, 240, 236, 0.14)"
-  strokeVisible: "rgba(242, 240, 236, 0.25)"
+  surface: "rgba(36, 31, 26, 0.055)"
+  strokeQuiet: "rgba(36, 31, 26, 0.14)"
+  strokeVisible: "rgba(36, 31, 26, 0.25)"
 typography:
   display: "Lora, Georgia, serif"
   body: "Outfit, ui-sans-serif, system-ui, sans-serif"
@@ -28,7 +28,7 @@ spacing: ["4px", "8px", "10px", "14px", "18px", "24px", "28px", "44px"]
 
 ## Purpose and precedence
 
-Orynt uses **Dark Impressionist Minimalism** under **The Quiet Operator Studio** direction: calm, dark, technical, and evidence-led. Product requirements take precedence over this contract; `AGENTS.md` governs repository placement and dependency policy.
+Orynt uses **Warm Hand-Drawn Operational Minimalism** under **The Clear Local Workbench** direction: approachable, precise, local-first, and evidence-led. Orynt is the product brand; CodePawl is the company brand and appears as a restrained endorsement. Product requirements take precedence over this contract; `AGENTS.md` governs repository placement and dependency policy.
 
 Before changing UI, inspect the relevant application and owned implementation. Implementers MUST reuse or extend the relevant React component and stylesheet before introducing another token namespace, component library, or icon family.
 
@@ -36,11 +36,22 @@ Before changing UI, inspect the relevant application and owned implementation. I
 
 ### Brand character
 
-Painterly light frames the experience; clean geometry carries work. The product is supervised and agentic without implying uncontrolled autonomy. Color is reflected light in a dark studio, not decorative neon.
+The five-ray Orynt bulb is the primary product mark. The CodePawl `>.-` mark identifies the company and must not displace Orynt in product navigation. Warm canvas, ink drawing, and simple geometry make supervised work feel legible without implying uncontrolled autonomy.
 
 ### Color and surfaces
 
-Use the ink and mist palette for hierarchy, warm primary text, quiet strokes, and conservative neutral surfaces. Panels use the documented neutral ink and surface variables. Semantic colors explain state only: success for verified completion, warning for attention or approvals, information blue for inspection and focus, and error for failures or blocked work.
+Use `#241f1a` ink and `#f7f3ed` canvas as the canonical pair. The desktop adapter supports both canvas-first light presentation and an ink-first inverse presentation from the same system. Panels use derived warm neutrals and quiet strokes. Semantic colors explain state only: success for verified completion, warning for attention or approvals, information blue for inspection and focus, and error for failures or blocked work.
+
+### Marketing theme
+
+The public site uses a light warm-editorial hierarchy. Its canvas stack is
+`#f7f3ed`, `#f1e9de`, `#e9ddcf`, and `#ded0c0`; its text stack is `#302821`,
+`#5f5146`, and `#7c6b5d`, anchored by the brand ink `#241f1a`. Ochre `#9d5e2b`
+is the only decorative and interactive accent, with `#824a20` for hover and
+`#e8c9a8` for soft emphasis. Marketing shadows, textures, and gradients must be
+derived from these warm tokens rather than pure white, black, or cool gray.
+Semantic colors remain reserved for actual success, information, warning, and
+error states.
 
 ### Typography
 
@@ -83,6 +94,8 @@ Desktop layouts may adapt to smaller windows by collapsing secondary regions, bu
 
 ## Implementation sources
 
+The canonical brand source is `assets/brand/codepawl-orynt`; generated favicons,
+social images, and application icons are synchronized into consumer surfaces.
 The compatibility UI source is `apps/desktop/src/styles.css`, with shared fonts
 under `assets/fonts`. `lucide-react` is the installed icon family. Extend the
 existing adapter stylesheet and React component rather than creating a parallel

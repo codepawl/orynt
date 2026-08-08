@@ -248,6 +248,7 @@ if (schemaPath.endsWith("readiness.schema.json")) {
           requirementIds: ["fixture-value"],
           authority: "single_writer",
           operations: ["read", "write"],
+          readPaths: ["packages/value.txt"],
           expectedPaths: ["packages/value.txt"],
           doneWhen: ["bun run scripts/pass.mjs passes."],
           evidence: [{

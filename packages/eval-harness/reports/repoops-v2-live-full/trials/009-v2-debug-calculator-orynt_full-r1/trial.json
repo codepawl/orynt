@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "009-v2-debug-calculator-orynt_full-r1",
+  "taskId": "v2-debug-calculator",
+  "methodId": "orynt_full",
+  "repetition": 0,
+  "startedAt": "2026-08-05T07:27:48.936Z",
+  "completedAt": "2026-08-05T07:28:39.800Z",
+  "totalWallMs": 50864,
+  "processExitCode": 2,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "planning",
+    "code": "TASK_PLAN_NOT_ACTIONABLE",
+    "message": "The repository task planner did not return an executable action."
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/009-v2-debug-calculator-orynt_full-r1/repo"
+}

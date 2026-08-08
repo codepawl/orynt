@@ -6,14 +6,45 @@ export * from "./providerUsage.js";
 export type AgentRuntimeProvider =
   | "openai_responses"
   | "codex_app_server"
-  | "legacy_codex_exec";
+  | "legacy_codex_exec"
+  | "anthropic_messages"
+  | "claude_cli";
 
-export type AgentRuntimeTransport = "websocket" | "http" | "app_server";
+export type AgentRuntimeTransport =
+  | "websocket"
+  | "http"
+  | "app_server"
+  | "stdio";
+
+export type AgentToolAction =
+  | "read"
+  | "list"
+  | "search"
+  | "run"
+  | "edit"
+  | "diff"
+  | "web"
+  | "mcp"
+  | "inspect"
+  | "other";
+
+export type AgentToolActivityDescriptor = {
+  action: AgentToolAction;
+  toolName: string;
+  detail: string;
+};
 
 export type AgentRuntimeActivity =
   | { kind: "connection"; status: "connecting" | "ready" | "reconnecting" }
   | { kind: "text_delta"; text: string }
-  | { kind: "tool"; name: string; callId: string; status: "requested" | "completed" | "failed" }
+  | {
+      kind: "tool";
+      name: string;
+      callId: string;
+      status: "requested" | "completed" | "failed";
+      descriptor?: AgentToolActivityDescriptor;
+      durationMs?: number;
+    }
   | {
       kind: "context";
       current: AgentContextTokenBreakdown;
@@ -95,6 +126,9 @@ export type AgentRuntimeSessionConfig = {
   effectiveContextWindowTokens?: number;
   onActivity?: (activity: AgentRuntimeActivity) => void;
   executeTool?: (call: AgentToolCall) => Promise<AgentToolResult>;
+  describeTool?: (
+    call: AgentToolCall,
+  ) => AgentToolActivityDescriptor | undefined;
 };
 
 export type AgentRuntimeTurnInput = {
@@ -139,6 +173,7 @@ export interface AgentRuntime {
 export interface AgentToolExecutor {
   tools(): AgentFunctionTool[];
   execute(call: AgentToolCall): Promise<AgentToolResult>;
+  describe?(call: AgentToolCall): AgentToolActivityDescriptor | undefined;
 }
 
 export class CompositeAgentToolExecutor implements AgentToolExecutor {
@@ -171,5 +206,9 @@ export class CompositeAgentToolExecutor implements AgentToolExecutor {
       };
     }
     return binding.executor.execute(call);
+  }
+
+  describe(call: AgentToolCall): AgentToolActivityDescriptor | undefined {
+    return this.toolsByName.get(call.name)?.executor.describe?.(call);
   }
 }

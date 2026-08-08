@@ -1,2 +1,8 @@
 [install]
 linker = "isolated"
+
+[test]
+pathIgnorePatterns = [
+  "packages/eval-harness/reports/**",
+  "reports/**",
+]

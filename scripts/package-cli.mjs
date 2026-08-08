@@ -13,6 +13,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 import { generateReleaseLegalArtifacts } from "./release-legal.mjs";
+import { verifyCliBuildManifest } from "./cli-build-manifest.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const releaseRoot = path.join(repositoryRoot, "dist", "cli");
@@ -29,6 +30,15 @@ const releasePublicKeys = JSON.stringify({
 });
 const buildNative = process.argv.includes("--native");
 const releaseBuild = process.env.ORYNT_RELEASE_BUILD === "1";
+const cliBuildManifestPath = path.join(
+  repositoryRoot,
+  "dist",
+  "cli-build-manifest.json",
+);
+const cliBuildManifest = JSON.parse(
+  await readFile(cliBuildManifestPath, "utf8"),
+);
+await verifyCliBuildManifest(repositoryRoot, cliBuildManifest);
 const languageServerDependencies = {
   "bash-language-server": "5.6.0",
   pyright: "1.1.411",
@@ -53,6 +63,10 @@ if (
 
 await rm(releaseRoot, { recursive: true, force: true });
 await mkdir(releaseRoot, { recursive: true });
+await writeFile(
+  path.join(releaseRoot, "build-manifest.json"),
+  `${JSON.stringify(cliBuildManifest, null, 2)}\n`,
+);
 await generateReleaseLegalArtifacts(releaseRoot);
 const cliEntry = path.join(repositoryRoot, "packages", "cli", "src", "main.ts");
 const npmBuild = await Bun.build({
@@ -85,6 +99,7 @@ await writeFile(
     files: [
       "orynt.mjs",
       "orynt.mjs.map",
+      "build-manifest.json",
       "LICENSE",
       "README.md",
       "THIRD_PARTY_NOTICES.md",
@@ -121,6 +136,10 @@ await Promise.all([
   copy(
     path.join(releaseRoot, "orynt.spdx.json"),
     path.join(npmRoot, "orynt.spdx.json"),
+  ),
+  copy(
+    path.join(releaseRoot, "build-manifest.json"),
+    path.join(npmRoot, "build-manifest.json"),
   ),
 ]);
 await Promise.all([
