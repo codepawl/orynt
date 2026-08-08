@@ -1,0 +1,8 @@
+{
+  "name": "repoops-v2-calculator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  }
+}
