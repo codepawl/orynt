@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { cliNativeRuntime, readCliProviderUsage } from "./provider";
+import {
+  cliCodexAppServerRuntime,
+  cliNativeRuntime,
+  readCliProviderUsage,
+  shutdownCliProviderRuntime,
+} from "./provider";
 
 describe("cli provider usage routing", () => {
   it("routes anthropic-api to the Anthropic reader", async () => {
@@ -59,5 +64,23 @@ describe("OpenCode provider wiring", () => {
         else process.env[key] = value;
       }
     }
+  });
+});
+
+// Kept last: it latches the process-wide shutdown flag for this module.
+describe("provider work after shutdown", () => {
+  it("refuses to start a Codex app-server once the process has torn down", async () => {
+    await shutdownCliProviderRuntime();
+
+    // A background usage refresh can outlive the interactive session. Before
+    // this guard it lazily started an app-server after shutdown had already
+    // found nothing to stop, and the orphaned child's pipes kept the event
+    // loop alive so the CLI never exited.
+    expect(() => cliCodexAppServerRuntime()).toThrow(
+      "The Codex provider runtime is shut down for this process.",
+    );
+    await expect(readCliProviderUsage("quota", "codex-cli")).rejects.toThrow(
+      "shut down for this process",
+    );
   });
 });

@@ -41,7 +41,23 @@ export function useClaudeCliRuntime(
  */
 const claudeRateLimits = new ClaudeRateLimitRecorder();
 
+/**
+ * Set once the process has torn its provider runtimes down. Provider work
+ * requested after that point cannot be cleaned up, because the only shutdown
+ * this process performs has already run.
+ */
+let providerRuntimeShutdown = false;
+
 export function cliCodexAppServerRuntime(): CodexAppServerRuntime {
+  // A background refresh that outlives the interactive session would otherwise
+  // lazily start an app-server here, after shutdown had already found nothing
+  // to stop. The orphaned child's pipes then keep the event loop alive and the
+  // CLI never exits, even though it has printed its closing line.
+  if (providerRuntimeShutdown) {
+    throw new Error(
+      "The Codex provider runtime is shut down for this process.",
+    );
+  }
   sharedRuntime ??= new CodexAppServerRuntime();
   return sharedRuntime;
 }
@@ -181,6 +197,7 @@ export async function readCliProviderUsage(
 }
 
 export async function shutdownCliProviderRuntime(): Promise<void> {
+  providerRuntimeShutdown = true;
   const runtime = sharedRuntime;
   const responses = sharedResponsesRuntime;
   const claude = sharedClaudeRuntime;
