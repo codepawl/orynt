@@ -113,8 +113,50 @@ test("release check runs the workspace test script instead of Bun test discovery
     "utf8",
   );
   assert.match(source, /scripts\/host-stdio-preflight\.mjs/u);
-  assert.match(source, /\["bun", \["run", "test"\]\]/u);
-  assert.doesNotMatch(source, /\["bun", \["test"\]\]/u);
+  assert.match(source, /\["test", "bun", \["run", "test"\]\]/u);
+  assert.doesNotMatch(source, /"bun", \["test"\]/u);
+});
+
+test("release check refuses a skip list that names a check it does not have", async () => {
+  await assert.rejects(
+    execFileAsync(process.execPath, ["scripts/release-check.mjs"], {
+      cwd: repositoryRoot,
+      env: { ...process.env, ORYNT_RELEASE_CHECK_SKIP: "test:lsp,tset:core" },
+    }),
+    (error) => {
+      assert.match(String(error.stderr), /unknown release check: tset:core/u);
+      return true;
+    },
+  );
+});
+
+test("every release check the quality workflow skips is owned by another job", async () => {
+  const [workflow, source] = await Promise.all([
+    readFile(path.join(repositoryRoot, ".github", "workflows", "quality.yml"), "utf8"),
+    readFile(path.join(repositoryRoot, "scripts", "release-check.mjs"), "utf8"),
+  ]);
+  const skipped = (workflow.match(/ORYNT_RELEASE_CHECK_SKIP: (.+)/u)?.[1] ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  assert.ok(skipped.length > 0);
+  for (const id of skipped) {
+    // The check has to exist, or the skip silently covers nothing.
+    assert.match(source, new RegExp(`\\["${id.replace(/[:]/gu, ":")}", `, "u"));
+    // And another job has to run it, or the skip drops the check entirely.
+    assert.match(workflow, new RegExp(`run: bun run ${id}$`, "mu"));
+  }
+});
+
+test("the CLI build reuses a verified manifest instead of rebuilding", async () => {
+  const source = await readFile(
+    path.join(repositoryRoot, "scripts", "build-cli.mjs"),
+    "utf8",
+  );
+  assert.match(source, /verifyCliBuildManifest/u);
+  assert.match(source, /ORYNT_BUILD_CLI_FORCE/u);
+  assert.match(source, /"--filter", "@codepawl\/cli", "build"/u);
+  assert.match(source, /scripts\/cli-build-manifest\.mjs/u);
 });
 
 test("release automation keeps host and artifact gates fail-closed", async () => {

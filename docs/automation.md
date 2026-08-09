@@ -42,6 +42,14 @@ trust, approval policy, repository scope, packages, or promotion gates.
 CodeQL has one weekly scheduled scan. There are no custom webhooks, email
 automation, autonomous background agents, spending flows, or deployment jobs.
 
+`bun release:check` runs every deterministic check in one sequence, which is
+what a local run should do. The Quality workflow splits the LSP suites into
+their own job and names them in `ORYNT_RELEASE_CHECK_SKIP` so the same suites do
+not run twice in one pipeline; a test fails the build if a skipped name has no
+job that owns it. `build:cli` reuses an existing build whose manifest still
+matches the current sources, so the three commands that need the CLI in one job
+build it once. `ORYNT_BUILD_CLI_FORCE=1` rebuilds regardless.
+
 Browser screenshots and visual crops are not ambient permissions. Orynt binds
 browser vision to an in-memory trust digest covering the repository realpath,
 selected provider/model, and exact allowed origins. The grant is shown once per

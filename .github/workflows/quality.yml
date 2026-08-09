@@ -42,3 +42,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run gate:contextvm:production
       - run: bun run release:check
+        env:
+          # The lsp job runs both suites already, and against Rust as well, so
+          # repeating them here adds time without adding coverage.
+          ORYNT_RELEASE_CHECK_SKIP: test:lsp,bench:lsp
