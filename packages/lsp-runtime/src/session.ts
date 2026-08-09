@@ -137,6 +137,15 @@ export type LspSessionOptions = {
 
 type LspChildProcess = ReturnType<typeof Bun.spawn>;
 
+/** JSON-RPC error code the LSP specification reserves for a stale result. */
+const CONTENT_MODIFIED_CODE = -32801;
+
+function isContentModified(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === CONTENT_MODIFIED_CODE;
+}
+
 export class LspSession {
   private state: LspSessionState = "stopped";
   private epoch = 0;
@@ -405,6 +414,17 @@ export class LspSession {
         throw new LspRuntimeError(
           "REQUEST_CANCELLED",
           "Language-server request was cancelled.",
+          true,
+        );
+      }
+      // `ContentModified` (-32801) means the document changed while the server
+      // was answering. The protocol defines it as a retry signal, not a
+      // failure, so it is surfaced as a retryable runtime error instead of
+      // leaking a raw JSON-RPC error that callers cannot classify.
+      if (isContentModified(error)) {
+        throw new LspRuntimeError(
+          "SERVER_WARMING",
+          "Language server discarded the result because the document changed.",
           true,
         );
       }

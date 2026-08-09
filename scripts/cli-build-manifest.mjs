@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto";
 import {
+  mkdir,
   readdir,
   readFile,
   stat,
@@ -15,6 +16,9 @@ const manifestPath = path.join(repositoryRoot, "dist", "cli-build-manifest.json"
 
 if (import.meta.main) {
   const manifest = await createCliBuildManifest(repositoryRoot);
+  // `dist` is generated output and absent from a clean checkout, so the
+  // directory has to exist before the manifest can be written into it.
+  await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify({ manifestPath, manifest }, null, 2)}\n`);
 }
