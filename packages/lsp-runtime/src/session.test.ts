@@ -15,9 +15,35 @@ import type {
 } from "vscode-languageserver-protocol";
 
 import { LspManager } from "./manager.js";
+import { LspRuntimeError } from "./types.js";
 import { LspWorkspace } from "./workspace.js";
 
 const roots: string[] = [];
+
+/**
+ * Retries a semantic request that the runtime rejected as stale.
+ *
+ * A real language server keeps indexing while these tests run, so a request can
+ * complete against a revision the workspace has already moved past. The runtime
+ * refuses to return that result and marks the error retryable; honouring the
+ * retry is the caller's half of that contract. Without it these assertions fail
+ * on server warmup rather than on behaviour.
+ */
+async function whileIndexing<TResult>(
+  send: () => Promise<{ data: TResult }>,
+): Promise<TResult> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return (await send()).data;
+    } catch (error) {
+      const retryable = error instanceof LspRuntimeError &&
+        error.retryable &&
+        attempt < 20;
+      if (!retryable) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}
 
 async function fixture(): Promise<{ root: string; source: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "orynt-lsp-runtime-"));
@@ -149,16 +175,29 @@ describe("persistent TypeScript LSP session", () => {
       expect((await workspace.request<Hover | null>(
         "textDocument/hover", { textDocument, position }
       )).data).not.toBeNull();
-      expect((await workspace.request<Location | Location[] | LocationLink[] | null>(
-        "textDocument/definition", { textDocument, position }
-      )).data).not.toBeNull();
-      expect((await workspace.request<Location[] | null>(
-        "textDocument/references",
-        { textDocument, position, context: { includeDeclaration: true } },
-      )).data?.length).toBeGreaterThan(0);
-      expect((await workspace.request<WorkspaceEdit | null>(
-        "textDocument/rename", { textDocument, position, newName: "welcome" }
-      )).data).not.toBeNull();
+      expect(
+        await whileIndexing<Location | Location[] | LocationLink[] | null>(() =>
+          workspace.request("textDocument/definition", { textDocument, position })
+        ),
+      ).not.toBeNull();
+      expect(
+        (await whileIndexing<Location[] | null>(() =>
+          workspace.request("textDocument/references", {
+            textDocument,
+            position,
+            context: { includeDeclaration: true },
+          })
+        ))?.length,
+      ).toBeGreaterThan(0);
+      expect(
+        await whileIndexing<WorkspaceEdit | null>(() =>
+          workspace.request("textDocument/rename", {
+            textDocument,
+            position,
+            newName: "welcome",
+          })
+        ),
+      ).not.toBeNull();
     } finally {
       await workspace.close();
     }
@@ -234,16 +273,29 @@ describe("Tier A language sessions", () => {
         if (!hover) await new Promise((resolve) => setTimeout(resolve, 100));
       }
       expect(hover).not.toBeNull();
-      expect((await workspace.request<Location | Location[] | LocationLink[] | null>(
-        "textDocument/definition", { textDocument, position }
-      )).data).not.toBeNull();
-      expect((await workspace.request<Location[] | null>(
-        "textDocument/references",
-        { textDocument, position, context: { includeDeclaration: true } },
-      )).data?.length).toBeGreaterThan(0);
-      expect((await workspace.request<WorkspaceEdit | null>(
-        "textDocument/rename", { textDocument, position, newName: "welcome" }
-      )).data).not.toBeNull();
+      expect(
+        await whileIndexing<Location | Location[] | LocationLink[] | null>(() =>
+          workspace.request("textDocument/definition", { textDocument, position })
+        ),
+      ).not.toBeNull();
+      expect(
+        (await whileIndexing<Location[] | null>(() =>
+          workspace.request("textDocument/references", {
+            textDocument,
+            position,
+            context: { includeDeclaration: true },
+          })
+        ))?.length,
+      ).toBeGreaterThan(0);
+      expect(
+        await whileIndexing<WorkspaceEdit | null>(() =>
+          workspace.request("textDocument/rename", {
+            textDocument,
+            position,
+            newName: "welcome",
+          })
+        ),
+      ).not.toBeNull();
       if (manager.snapshots()[0]!.normalizedCapabilities.codeAction === "native") {
         const actions = await workspace.request<Array<CodeAction | Command> | null>(
           "textDocument/codeAction",
@@ -305,16 +357,29 @@ describe("Tier A language sessions", () => {
         if (!hover) await new Promise((resolve) => setTimeout(resolve, 100));
       }
       expect(hover).not.toBeNull();
-      expect((await workspace.request<Location | Location[] | LocationLink[] | null>(
-        "textDocument/definition", { textDocument, position }
-      )).data).not.toBeNull();
-      expect((await workspace.request<Location[] | null>(
-        "textDocument/references",
-        { textDocument, position, context: { includeDeclaration: true } },
-      )).data?.length).toBeGreaterThan(0);
-      expect((await workspace.request<WorkspaceEdit | null>(
-        "textDocument/rename", { textDocument, position, newName: "welcome" }
-      )).data).not.toBeNull();
+      expect(
+        await whileIndexing<Location | Location[] | LocationLink[] | null>(() =>
+          workspace.request("textDocument/definition", { textDocument, position })
+        ),
+      ).not.toBeNull();
+      expect(
+        (await whileIndexing<Location[] | null>(() =>
+          workspace.request("textDocument/references", {
+            textDocument,
+            position,
+            context: { includeDeclaration: true },
+          })
+        ))?.length,
+      ).toBeGreaterThan(0);
+      expect(
+        await whileIndexing<WorkspaceEdit | null>(() =>
+          workspace.request("textDocument/rename", {
+            textDocument,
+            position,
+            newName: "welcome",
+          })
+        ),
+      ).not.toBeNull();
       if (manager.snapshots()[0]!.normalizedCapabilities.codeAction === "native") {
         const actions = await workspace.request<Array<CodeAction | Command> | null>(
           "textDocument/codeAction",
