@@ -87,8 +87,17 @@ export async function runAdaptiveOrchestration(input: {
   profile: ResolvedOrchestrationProfile;
   callbacks: AdaptiveOrchestrationCallbacks;
   signal?: AbortSignal;
+  maxConcurrency?: number;
 }): Promise<AdaptiveOrchestrationResult> {
   validateOrchestrationPlan(input.plan, input.profile);
+  const maxConcurrency = input.maxConcurrency ?? 4;
+  if (
+    !Number.isInteger(maxConcurrency) ||
+    maxConcurrency < 1 ||
+    maxConcurrency > 4
+  ) {
+    throw new Error("Adaptive orchestration concurrency must be between 1 and 4.");
+  }
   const now = input.callbacks.now ?? (() => new Date().toISOString());
   const invocations: ModelInvocationRecord[] = [];
   const results: OrchestrationTaskResult[] = [];
@@ -165,21 +174,28 @@ export async function runAdaptiveOrchestration(input: {
           "Read-only helper dependencies cannot be satisfied before implementation.",
         );
       }
-      await Promise.all(ready.map((task) => invoke(task)));
-      for (const task of ready) pendingHelpers.delete(task.id);
+      const wave = ready.slice(0, maxConcurrency);
+      await Promise.all(wave.map((task) => invoke(task)));
+      for (const task of wave) pendingHelpers.delete(task.id);
     }
     assertNotCancelled(input.signal);
-    for (const task of implementers) {
-      const unresolved = task.dependencies.filter(
-        (dependency) =>
-          !results.some((result) => result.taskId === dependency),
+    const pendingImplementers = new Map(
+      implementers.map((task) => [task.id, task]),
+    );
+    while (pendingImplementers.size > 0) {
+      const ready = [...pendingImplementers.values()].filter((task) =>
+        task.dependencies.every((dependency) =>
+          results.some((result) => result.taskId === dependency),
+        ),
       );
-      if (unresolved.length > 0) {
+      if (ready.length === 0) {
         throw new Error(
-          `Implementer task ${task.id} has unresolved dependencies: ${unresolved.join(", ")}`,
+          "Implementer dependencies cannot be satisfied by completed tasks.",
         );
       }
-      await invoke(task);
+      const wave = ready.slice(0, maxConcurrency);
+      await Promise.all(wave.map((task) => invoke(task)));
+      for (const task of wave) pendingImplementers.delete(task.id);
     }
     assertNotCancelled(input.signal);
     let verification = await input.callbacks.verify({

@@ -1,0 +1,1 @@
+{"schemaVersion":1,"kind":"error","classification":"environment","message":"Could not complete prompt understanding: Only repository actions may request clarification or assumption confirmation."}

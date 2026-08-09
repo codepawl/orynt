@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { createConservativeCodingApprenticePolicy } from "@codepawl/shared";
 
 import {
@@ -84,7 +84,7 @@ describe("AuditableGateway", () => {
           id: "policy-action-install",
           kind: "command",
           summary: "Install dependencies",
-          command: "pnpm install",
+          command: "bun install",
         },
       }),
     );
@@ -108,7 +108,7 @@ describe("AuditableGateway", () => {
           id: "policy-action-install",
           kind: "command",
           summary: "Install dependencies",
-          command: "pnpm install",
+          command: "bun install",
         },
       }),
     );
@@ -143,6 +143,46 @@ describe("AuditableGateway", () => {
     expect(result.status).toBe("takeover_required");
     expect(result.permission).toMatchObject({ tier: "sensitive", decision: "takeover_required" });
     expect(result.evidence).toHaveLength(0);
+  });
+
+  it("honors typed blocked and sensitive risk hints before approval", async () => {
+    let executions = 0;
+    const gateway = new AuditableGateway({
+      policy,
+      adapter: {
+        execute: async (action) => {
+          executions += 1;
+          return {
+            actionId: action.id,
+            status: "executed",
+            observation: "executed",
+            evidence: [],
+          };
+        },
+      },
+      approvalProvider: new StaticApprovalProvider({}),
+      evidenceStore: new InMemoryGatewayEvidenceStore(),
+    });
+
+    const blocked = await gateway.routeAction(request({
+      riskHint: "blocked",
+      riskReasons: ["Outside explicit origin scope."],
+    }));
+    const sensitive = await gateway.routeAction(request({
+      id: "sensitive-hint",
+      riskHint: "sensitive",
+      riskReasons: ["Credential target."],
+    }));
+
+    expect(blocked).toMatchObject({
+      status: "blocked",
+      permission: { decision: "blocked" },
+    });
+    expect(sensitive).toMatchObject({
+      status: "takeover_required",
+      permission: { decision: "takeover_required" },
+    });
+    expect(executions).toBe(0);
   });
 
   it("blocks disallowed destructive actions before adapter execution", async () => {

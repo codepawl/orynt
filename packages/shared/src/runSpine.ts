@@ -5,8 +5,8 @@ import {
   createConservativeCodingApprenticePolicy,
   policyViolationToRunEvent,
   sandboxPlanToArtifacts,
-} from "./corePolicy";
-import { BoundedContextWorkspace, ConservativeResourceGovernor } from "./contextWorkspace";
+} from "./corePolicy.js";
+import { BoundedContextWorkspace, ConservativeResourceGovernor } from "./contextWorkspace.js";
 
 export type RunStatus =
   | "created"
@@ -55,6 +55,8 @@ export const RUN_EVENT_TYPES = [
   "codex_execution_approved",
   "codex_execution_started",
   "codex_reasoning_summary",
+  "codex_tool_activity",
+  "codex_context_usage",
   "codex_agent_message",
   "codex_execution_output_recorded",
   "codex_execution_finished",
@@ -147,6 +149,8 @@ const RUN_EVENT_TASK_PHASES: Record<RunEventType, TaskRunPhase> = {
   codex_execution_approved: "approval",
   codex_execution_started: "act",
   codex_reasoning_summary: "act",
+  codex_tool_activity: "act",
+  codex_context_usage: "act",
   codex_agent_message: "act",
   codex_execution_output_recorded: "act",
   codex_execution_finished: "act",
@@ -241,7 +245,10 @@ export type ArtifactRef = {
     | "candidate_rule"
     | "memory_summary"
     | "skill_definition"
-    | "skill_replay_plan";
+    | "skill_replay_plan"
+    | "repository_task_plan"
+    | "repository_task_execution"
+    | "repository_task_coverage";
   uri: string;
   label: string;
   sha256?: string;
@@ -277,6 +284,9 @@ export type SafetySnapshot = {
 export type RedactionMetadata = {
   applied: boolean;
   redactedPaths: string[];
+  policyVersion?: 2;
+  redactionCount?: number;
+  categories?: string[];
 };
 
 export type TaskState = {
@@ -375,6 +385,7 @@ export type ApprovalDecisionInput = {
   runId: string;
   approvalId: string;
   decision: "approved" | "denied";
+  expectedRevision: number;
 };
 
 export type RunEventDraft<TPayload = unknown> = {
@@ -422,8 +433,34 @@ const VALID_STATUS_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
   cancelled: [],
 };
 
-const SENSITIVE_KEY_PATTERN = /password|secret|api[-_]?key|token|otp|credential|authorization|cookie|raw[-_]?value|form[-_]?value/i;
-const SECRET_LIKE_VALUE_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{12,}|ghp_[A-Za-z0-9_]{12,}|Bearer\s+[A-Za-z0-9._-]{12,})\b/;
+const SAFE_TOKEN_KEYS = new Set([
+  "input_tokens",
+  "max_output_tokens",
+  "max_tokens",
+  "output_tokens",
+  "total_tokens",
+]);
+const PRIVATE_KEY_PATTERN =
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/giu;
+const LABELED_SECRET_PATTERN =
+  /\b(password|secret|api[-_\s]?key|access[-_\s]?token|refresh[-_\s]?token|authorization|cookie|credential|otp)\b\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu;
+const SECRET_VALUE_PATTERN =
+  /\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|glpat-[A-Za-z0-9_-]{12,}|npm_[A-Za-z0-9_-]{12,}|(?:AKIA|ASIA)[A-Z0-9]{16}|Bearer\s+[A-Za-z0-9._~-]{12,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b/gu;
+
+function normalizedSensitiveKey(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/gu, "_")
+    .toLowerCase()
+    .replace(/^_+|_+$/gu, "");
+}
+
+function isSensitiveKey(value: string): boolean {
+  const normalized = normalizedSensitiveKey(value);
+  if (SAFE_TOKEN_KEYS.has(normalized)) return false;
+  return /(^|_)(?:password|secret|api_key|token|otp|credential|authorization|cookie|raw_value|form_value)(?:_|$)/u
+    .test(normalized);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -437,28 +474,94 @@ function clone<T>(value: T): T {
       : JSON.parse(JSON.stringify(value));
 }
 
-function redactValue(value: unknown, path: string, redactedPaths: string[]): unknown {
+function redactText(
+  value: string,
+): { value: string; count: number; categories: string[] } {
+  let count = 0;
+  const categories = new Set<string>();
+  const replace = (
+    pattern: RegExp,
+    category: string,
+    replacement: string | ((match: string, ...groups: string[]) => string),
+  ): void => {
+    value = value.replace(pattern, (...args: [string, ...string[]]) => {
+      count += 1;
+      categories.add(category);
+      return typeof replacement === "string"
+        ? replacement
+        : replacement(args[0], ...args.slice(1));
+    });
+  };
+  replace(PRIVATE_KEY_PATTERN, "private_key", "[REDACTED_PRIVATE_KEY]");
+  replace(
+    LABELED_SECRET_PATTERN,
+    "labeled_secret",
+    (_match, label) => `${label}: [REDACTED]`,
+  );
+  replace(SECRET_VALUE_PATTERN, "credential_value", "[REDACTED]");
+  return { value, count, categories: [...categories] };
+}
+
+export function redactSensitiveText(value: string): {
+  value: string;
+  redaction: RedactionMetadata;
+} {
+  const result = redactText(value);
+  return {
+    value: result.value,
+    redaction: {
+      applied: result.count > 0,
+      redactedPaths: result.count > 0 ? ["payload"] : [],
+      policyVersion: 2,
+      redactionCount: result.count,
+      categories: result.categories,
+    },
+  };
+}
+
+function redactValue(
+  value: unknown,
+  path: string,
+  redactedPaths: string[],
+  categories: Set<string>,
+  count: { value: number },
+): unknown {
   if (Array.isArray(value)) {
-    return value.map((item, index) => redactValue(item, `${path}[${index}]`, redactedPaths));
+    return value.map((item, index) =>
+      redactValue(item, `${path}[${index}]`, redactedPaths, categories, count)
+    );
   }
 
   if (isRecord(value)) {
     const redacted: Record<string, unknown> = {};
     for (const [key, nestedValue] of Object.entries(value)) {
       const nestedPath = path ? `${path}.${key}` : key;
-      if (SENSITIVE_KEY_PATTERN.test(key)) {
+      if (isSensitiveKey(key)) {
         redacted[key] = "[REDACTED]";
         redactedPaths.push(nestedPath);
+        categories.add("sensitive_key");
+        count.value += 1;
         continue;
       }
-      redacted[key] = redactValue(nestedValue, nestedPath, redactedPaths);
+      redacted[key] = redactValue(
+        nestedValue,
+        nestedPath,
+        redactedPaths,
+        categories,
+        count,
+      );
     }
     return redacted;
   }
 
-  if (typeof value === "string" && SECRET_LIKE_VALUE_PATTERN.test(value)) {
-    redactedPaths.push(path || "$");
-    return value.replace(SECRET_LIKE_VALUE_PATTERN, "[REDACTED]");
+  if (typeof value === "string") {
+    const result = redactText(value);
+    if (result.count > 0) {
+      redactedPaths.push(path || "$");
+      result.categories.forEach((category) => categories.add(category));
+      count.value += result.count;
+    }
+    return result.value;
   }
 
   return value;
@@ -466,13 +569,24 @@ function redactValue(value: unknown, path: string, redactedPaths: string[]): unk
 
 export function redactSensitivePayload<TPayload>(payload: TPayload): { payload: TPayload; redaction: RedactionMetadata } {
   const redactedPaths: string[] = [];
-  const redactedPayload = redactValue(clone(payload), "payload", redactedPaths) as TPayload;
+  const categories = new Set<string>();
+  const redactionCount = { value: 0 };
+  const redactedPayload = redactValue(
+    clone(payload),
+    "payload",
+    redactedPaths,
+    categories,
+    redactionCount,
+  ) as TPayload;
 
   return {
     payload: redactedPayload,
     redaction: {
       applied: redactedPaths.length > 0,
       redactedPaths,
+      policyVersion: 2,
+      redactionCount: redactionCount.value,
+      categories: [...categories],
     },
   };
 }
@@ -523,9 +637,14 @@ export class InMemoryRunStore implements RunStore {
   private events = new Map<string, RunEvent[]>();
   private nextRunNumber = 1;
   private readonly runIdPrefix: string;
+  private readonly beforeAppend?: (event: RunEvent) => void;
 
-  constructor(options: { runIdPrefix?: string } = {}) {
+  constructor(options: {
+    runIdPrefix?: string;
+    beforeAppend?: (event: RunEvent) => void;
+  } = {}) {
     this.runIdPrefix = normalizeRunIdPrefix(options.runIdPrefix);
+    this.beforeAppend = options.beforeAppend;
   }
 
 
@@ -586,6 +705,7 @@ export class InMemoryRunStore implements RunStore {
     };
 
     validateRunEvent(nextEvent);
+    this.beforeAppend?.(clone(nextEvent));
     events.push(clone(nextEvent));
     return clone(nextEvent);
   }
@@ -909,7 +1029,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     actor: verifier,
     payload: {
       summary: "Created verifier input from imported Codex result without running verification",
-      commands: ["pnpm test:contracts"],
+      commands: ["bun test:contracts"],
     },
     artifacts: verifierInputArtifacts,
   });
@@ -942,7 +1062,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
       id: "dependency-install",
       kind: "command",
       summary: "Install dependencies",
-      command: "pnpm install",
+      command: "bun install",
     },
     corePolicy,
   );
@@ -998,7 +1118,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     actor: verifier,
     payload: {
       summary: "Planned deterministic repository verification",
-      commands: ["pnpm test:contracts"],
+      commands: ["bun test:contracts"],
     },
   });
   store.appendEvent(run.id, {
@@ -1006,7 +1126,7 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
     actor: verifier,
     payload: {
       summary: "Verified validation commands against CorePolicy allowlist",
-      allowedCommands: ["pnpm test:contracts"],
+      allowedCommands: ["bun test:contracts"],
       blockedCommands: [],
     },
     safety: {
@@ -1026,12 +1146,12 @@ export function createMockRunSequence(store: RunStore = new InMemoryRunStore()) 
   store.appendEvent(run.id, {
     type: "verification_command_started",
     actor: verifier,
-    payload: { summary: "Started verification command: pnpm test:contracts", command: "pnpm test:contracts" },
+    payload: { summary: "Started verification command: bun test:contracts", command: "bun test:contracts" },
   });
   store.appendEvent(run.id, {
     type: "verification_command_finished",
     actor: verifier,
-    payload: { summary: "Finished verification command: pnpm test:contracts", exitCode: 0, durationMs: 180 },
+    payload: { summary: "Finished verification command: bun test:contracts", exitCode: 0, durationMs: 180 },
   });
   store.appendEvent(run.id, {
     type: "verification_diff_checked",

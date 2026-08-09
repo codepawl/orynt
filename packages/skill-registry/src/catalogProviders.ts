@@ -5,7 +5,7 @@ import type {
   SkillSourceDescriptor,
 } from "@codepawl/shared";
 
-import { parseAgentSkillDocument, SkillPackageFailure } from "./packageScanner";
+import { parseAgentSkillDocument, SkillPackageFailure } from "./packageScanner.js";
 
 export type CatalogTransportRequest = {
   url: string;

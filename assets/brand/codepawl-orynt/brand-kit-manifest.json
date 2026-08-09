@@ -1,0 +1,71 @@
+{
+  "brand_family": {
+    "company": "CodePawl",
+    "product": "Orynt"
+  },
+  "style": "hand-drawn illustration authored in tldraw",
+  "colors": {
+    "primary": "#241F1A",
+    "canvas": "#F7F3ED"
+  },
+  "native_source": "codepawl-orynt-brand-kit.tldraw",
+  "outputs": {
+    "codepawl-mark": {
+      "png": "codepawl/codepawl-mark.png",
+      "svg": "codepawl/codepawl-mark.svg",
+      "size": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA"
+    },
+    "codepawl-lockup": {
+      "png": "codepawl/codepawl-lockup.png",
+      "svg": "codepawl/codepawl-lockup.svg",
+      "size": [
+        1800,
+        600
+      ],
+      "mode": "RGBA"
+    },
+    "codepawl-banner": {
+      "png": "codepawl/codepawl-banner.png",
+      "size": [
+        1500,
+        500
+      ],
+      "mode": "RGB"
+    },
+    "orynt-mark": {
+      "png": "orynt/orynt-mark.png",
+      "svg": "orynt/orynt-mark.svg",
+      "size": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA"
+    },
+    "orynt-lockup": {
+      "png": "orynt/orynt-lockup.png",
+      "svg": "orynt/orynt-lockup.svg",
+      "size": [
+        1800,
+        600
+      ],
+      "mode": "RGBA"
+    },
+    "orynt-banner": {
+      "png": "orynt/orynt-banner.png",
+      "size": [
+        1500,
+        500
+      ],
+      "mode": "RGB"
+    }
+  },
+  "previews": [
+    "codepawl-orynt-brand-kit-preview.png",
+    "codepawl-orynt-small-size-check.png",
+    "codepawl-orynt-avatar-circle-check.png"
+  ]
+}

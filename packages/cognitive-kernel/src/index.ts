@@ -1,6 +1,10 @@
+import { randomBytes } from "node:crypto";
 import { ConservativePolicyEngine, type ActionRisk, type ArtifactRef, type CorePolicy, type PolicyAction } from "@codepawl/shared";
+import { assertCognitiveRunCheckpointV1 } from "./checkpointCodec.js";
 
 export * from "./orchestrationScheduler.js";
+export * from "./taskPlanner.js";
+export { assertCognitiveRunCheckpointV1, parseCognitiveRunCheckpointV1 } from "./checkpointCodec.js";
 
 export type KernelPhase = "observe" | "retrieve" | "plan" | "ask" | "gate" | "execute" | "verify" | "recover" | "learn" | "summarize";
 
@@ -311,7 +315,9 @@ export type CognitiveRuntimeStatusV1 =
   | "completed"
   | "blocked"
   | "failed"
-  | "budget_exceeded";
+  | "budget_exceeded"
+  | "cancelled"
+  | "execution_in_doubt";
 
 export type CognitiveRuntimePhaseV1 =
   | "observe"
@@ -332,6 +338,8 @@ export type CognitiveEventTypeV1 =
   | "approval.requested"
   | "approval.approved"
   | "approval.rejected"
+  | "execution.prepared"
+  | "action.dispatched"
   | "usage.recorded"
   | "budget.exceeded"
   | "action.executed"
@@ -339,7 +347,9 @@ export type CognitiveEventTypeV1 =
   | "learning.completed"
   | "run.completed"
   | "run.blocked"
-  | "run.failed";
+  | "run.failed"
+  | "run.cancelled"
+  | "run.execution_in_doubt";
 
 export type UsageDeltaV1 = {
   steps?: number;
@@ -387,7 +397,17 @@ export type CognitiveApprovalCheckpointV1 = {
   actionId: string;
   nonce: string;
   requestedRevision: number;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "cancelled";
+};
+
+export type CognitiveExecutionAttemptV1 = {
+  id: string;
+  actionId: string;
+  idempotencyKey: string;
+  status: "prepared" | "dispatched" | "completed" | "in_doubt";
+  preparedRevision: number;
+  dispatchedRevision?: number;
+  completedRevision?: number;
 };
 
 export type CognitiveRunCheckpointV1 = {
@@ -409,6 +429,7 @@ export type CognitiveRunCheckpointV1 = {
   actionDecisions: KernelActionDecision[];
   pendingAction: KernelActionPlan | null;
   approval: CognitiveApprovalCheckpointV1 | null;
+  executionAttempt: CognitiveExecutionAttemptV1 | null;
   gatewayResults: KernelGatewayResult[];
   verifications: KernelVerification[];
   learningSummary: string | null;
@@ -433,6 +454,19 @@ export type CognitiveRuntimeResumeInputV1 = {
   approvalNonce: string;
   expectedRevision: number;
   decision: "approved" | "rejected";
+};
+
+export type CognitiveRuntimeCancelInputV1 = {
+  runId: string;
+  taskId: string;
+  expectedRevision: number;
+  reason: string;
+};
+
+export type CognitiveRuntimeRecoveryInputV1 = {
+  runId: string;
+  taskId: string;
+  expectedRevision: number;
 };
 
 export type CognitiveRuntimeObservationV1 = {
@@ -487,6 +521,8 @@ export interface CognitiveRuntimeGatewayV1 {
   execute(input: {
     task: CognitiveTaskInput;
     action: KernelActionPlan;
+    attemptId: string;
+    idempotencyKey: string;
   }): Promise<CognitiveRuntimeGatewayResultV1> | CognitiveRuntimeGatewayResultV1;
 }
 
@@ -511,6 +547,14 @@ export interface CognitiveRuntimeEventSinkV1 {
   append(event: CognitiveEventV1): Promise<void> | void;
 }
 
+export interface CognitiveRuntimeCheckpointSinkV1 {
+  create(checkpoint: CognitiveRunCheckpointV1): Promise<void> | void;
+  compareAndSwap(
+    checkpoint: CognitiveRunCheckpointV1,
+    expectedRevision: number,
+  ): Promise<void> | void;
+}
+
 export type CognitiveRuntimeOptionsV1 = {
   policy: CorePolicy;
   observer: CognitiveRuntimeObserverV1;
@@ -520,6 +564,7 @@ export type CognitiveRuntimeOptionsV1 = {
   verifier: CognitiveRuntimeVerifierV1;
   learner?: CognitiveRuntimeLearnerV1;
   eventSink?: CognitiveRuntimeEventSinkV1;
+  checkpointSink?: CognitiveRuntimeCheckpointSinkV1;
   now?: () => string;
   approvalNonceFactory?: (input: { runId: string; actionId: string; revision: number }) => string;
 };
@@ -547,6 +592,7 @@ export class CognitiveRuntimeV1 {
   private readonly verifier: CognitiveRuntimeVerifierV1;
   private readonly learner?: CognitiveRuntimeLearnerV1;
   private readonly eventSink?: CognitiveRuntimeEventSinkV1;
+  private readonly checkpointSink?: CognitiveRuntimeCheckpointSinkV1;
   private readonly now: () => string;
   private readonly approvalNonceFactory: NonNullable<CognitiveRuntimeOptionsV1["approvalNonceFactory"]>;
   private readonly policyEngine = new ConservativePolicyEngine();
@@ -561,10 +607,11 @@ export class CognitiveRuntimeV1 {
     this.verifier = options.verifier;
     this.learner = options.learner;
     this.eventSink = options.eventSink;
+    this.checkpointSink = options.checkpointSink;
     this.now = options.now ?? (() => new Date().toISOString());
     this.approvalNonceFactory =
       options.approvalNonceFactory ??
-      ((input) => `${input.runId}:${input.actionId}:${input.revision}`);
+      (() => randomBytes(32).toString("base64url"));
   }
 
   async start(input: CognitiveRuntimeStartInputV1): Promise<CognitiveRunCheckpointV1> {
@@ -595,6 +642,7 @@ export class CognitiveRuntimeV1 {
       actionDecisions: [],
       pendingAction: null,
       approval: null,
+      executionAttempt: null,
       gatewayResults: [],
       verifications: [],
       learningSummary: null,
@@ -602,6 +650,7 @@ export class CognitiveRuntimeV1 {
       createdAt,
       updatedAt: createdAt,
     };
+    await this.checkpointSink?.create(cloneRuntimeValue(checkpoint));
     await this.emit(checkpoint, "runtime.started", "Cognitive runtime started.");
 
     const observation = await this.observer.observe(input);
@@ -695,6 +744,7 @@ export class CognitiveRuntimeV1 {
     sourceCheckpoint: CognitiveRunCheckpointV1,
     input: CognitiveRuntimeResumeInputV1,
   ): Promise<CognitiveRunCheckpointV1> {
+    assertCognitiveRunCheckpointV1(sourceCheckpoint);
     const checkpoint = cloneRuntimeValue(sourceCheckpoint);
     this.validateResumeInput(checkpoint, input);
     const approval = checkpoint.approval!;
@@ -703,38 +753,104 @@ export class CognitiveRuntimeV1 {
       throw new Error("approval has already been consumed");
     }
     this.consumedApprovals.add(consumptionKey);
+    try {
+      if (input.decision === "rejected") {
+        approval.status = "rejected";
+        checkpoint.status = "blocked";
+        checkpoint.summary = "Execution was rejected by the operator.";
+        await this.emit(
+          checkpoint,
+          "approval.rejected",
+          checkpoint.summary,
+          approval.actionId,
+          approval.id,
+        );
+        await this.emit(
+          checkpoint,
+          "run.blocked",
+          checkpoint.summary,
+          approval.actionId,
+          approval.id,
+        );
+        return cloneRuntimeValue(checkpoint);
+      }
 
-    if (input.decision === "rejected") {
-      approval.status = "rejected";
-      checkpoint.status = "blocked";
-      checkpoint.summary = "Execution was rejected by the operator.";
+      approval.status = "approved";
+      checkpoint.status = "running";
       await this.emit(
         checkpoint,
-        "approval.rejected",
-        checkpoint.summary,
+        "approval.approved",
+        "Execution approved by the operator.",
         approval.actionId,
         approval.id,
       );
-      await this.emit(
-        checkpoint,
-        "run.blocked",
-        checkpoint.summary,
-        approval.actionId,
-        approval.id,
-      );
-      return cloneRuntimeValue(checkpoint);
+      return this.executeAndFinish(checkpoint, checkpoint.pendingAction!);
+    } catch (error) {
+      this.consumedApprovals.delete(consumptionKey);
+      throw error;
     }
+  }
 
-    approval.status = "approved";
-    checkpoint.status = "running";
+  async cancel(
+    sourceCheckpoint: CognitiveRunCheckpointV1,
+    input: CognitiveRuntimeCancelInputV1,
+  ): Promise<CognitiveRunCheckpointV1> {
+    assertCognitiveRunCheckpointV1(sourceCheckpoint);
+    const checkpoint = cloneRuntimeValue(sourceCheckpoint);
+    this.validateCheckpointIdentityAndRevision(checkpoint, input);
+    if (checkpoint.status !== "running" && checkpoint.status !== "waiting_for_approval") {
+      throw new Error("only a running or waiting checkpoint can be cancelled");
+    }
+    if (checkpoint.executionAttempt?.status === "dispatched") {
+      throw new Error("a dispatched execution cannot be cancelled safely");
+    }
+    if (!input.reason.trim()) {
+      throw new Error("cancellation reason is required");
+    }
+    if (checkpoint.approval?.status === "pending") {
+      checkpoint.approval.status = "cancelled";
+    }
+    checkpoint.status = "cancelled";
+    checkpoint.pendingAction = null;
+    checkpoint.summary = `Cancelled by the operator: ${input.reason.trim()}`;
     await this.emit(
       checkpoint,
-      "approval.approved",
-      "Execution approved by the operator.",
-      approval.actionId,
-      approval.id,
+      "run.cancelled",
+      checkpoint.summary,
+      checkpoint.executionAttempt?.actionId,
+      checkpoint.approval?.id,
     );
-    return this.executeAndFinish(checkpoint, checkpoint.pendingAction!);
+    return cloneRuntimeValue(checkpoint);
+  }
+
+  async recover(
+    sourceCheckpoint: CognitiveRunCheckpointV1,
+    input: CognitiveRuntimeRecoveryInputV1,
+  ): Promise<CognitiveRunCheckpointV1> {
+    assertCognitiveRunCheckpointV1(sourceCheckpoint);
+    const checkpoint = cloneRuntimeValue(sourceCheckpoint);
+    this.validateCheckpointIdentityAndRevision(checkpoint, input);
+    if (checkpoint.status === "waiting_for_approval" || checkpoint.status === "execution_in_doubt") {
+      return checkpoint;
+    }
+    if (
+      checkpoint.status === "running" &&
+      checkpoint.phase === "execute" &&
+      checkpoint.pendingAction &&
+      checkpoint.executionAttempt?.status === "prepared"
+    ) {
+      return this.dispatchAndFinish(checkpoint, checkpoint.pendingAction);
+    }
+    if (
+      checkpoint.status === "running" &&
+      checkpoint.executionAttempt?.status === "dispatched"
+    ) {
+      return this.markExecutionInDoubt(
+        checkpoint,
+        "Recovered a checkpoint whose gateway dispatch has no durable result.",
+      );
+    }
+    throw new Error("checkpoint cannot be recovered automatically without risking duplicate execution");
   }
 
   private async executeAndFinish(
@@ -750,9 +866,60 @@ export class CognitiveRuntimeV1 {
     }
 
     checkpoint.phase = "execute";
+    const attemptId = `attempt-${checkpoint.runId}-${action.id}`;
+    checkpoint.executionAttempt = {
+      id: attemptId,
+      actionId: action.id,
+      idempotencyKey: `${checkpoint.runId}:${action.id}:${attemptId}`,
+      status: "prepared",
+      preparedRevision: checkpoint.revision + 1,
+    };
+    await this.emit(
+      checkpoint,
+      "execution.prepared",
+      "Execution attempt durably prepared.",
+      action.id,
+      checkpoint.approval?.id,
+    );
+    return this.dispatchAndFinish(checkpoint, action);
+  }
+
+  private async dispatchAndFinish(
+    checkpoint: CognitiveRunCheckpointV1,
+    action: KernelActionPlan,
+  ): Promise<CognitiveRunCheckpointV1> {
+    const attempt = checkpoint.executionAttempt;
+    if (!attempt || attempt.actionId !== action.id || attempt.status !== "prepared") {
+      throw new Error("execution attempt is not safely prepared for dispatch");
+    }
+    attempt.status = "dispatched";
+    attempt.dispatchedRevision = checkpoint.revision + 1;
+    await this.emit(
+      checkpoint,
+      "action.dispatched",
+      "Execution attempt dispatched to the gateway.",
+      action.id,
+      checkpoint.approval?.id,
+    );
+
     const task = this.toTask(checkpoint);
-    const gateway = await this.gateway.execute({ task, action });
+    let gateway: CognitiveRuntimeGatewayResultV1;
+    try {
+      gateway = await this.gateway.execute({
+        task,
+        action,
+        attemptId: attempt.id,
+        idempotencyKey: attempt.idempotencyKey,
+      });
+    } catch {
+      return this.markExecutionInDoubt(
+        checkpoint,
+        "Gateway dispatch did not produce a durable execution result.",
+      );
+    }
     checkpoint.gatewayResults.push(cloneRuntimeValue(gateway.result));
+    attempt.status = "completed";
+    attempt.completedRevision = checkpoint.revision + 1;
     await this.emit(
       checkpoint,
       "action.executed",
@@ -817,6 +984,25 @@ export class CognitiveRuntimeV1 {
     checkpoint.pendingAction = null;
     checkpoint.summary = "Cognitive runtime completed with verified evidence.";
     await this.emit(checkpoint, "run.completed", checkpoint.summary, action.id);
+    return cloneRuntimeValue(checkpoint);
+  }
+
+  private async markExecutionInDoubt(
+    checkpoint: CognitiveRunCheckpointV1,
+    summary: string,
+  ): Promise<CognitiveRunCheckpointV1> {
+    if (checkpoint.executionAttempt) {
+      checkpoint.executionAttempt.status = "in_doubt";
+    }
+    checkpoint.status = "execution_in_doubt";
+    checkpoint.summary = summary;
+    await this.emit(
+      checkpoint,
+      "run.execution_in_doubt",
+      summary,
+      checkpoint.executionAttempt?.actionId,
+      checkpoint.approval?.id,
+    );
     return cloneRuntimeValue(checkpoint);
   }
 
@@ -897,7 +1083,8 @@ export class CognitiveRuntimeV1 {
     evidenceRefs: string[] = [],
   ): Promise<void> {
     const timestamp = this.now();
-    const checkpointRevision = checkpoint.revision + 1;
+    const expectedRevision = checkpoint.revision;
+    const checkpointRevision = expectedRevision + 1;
     const event: CognitiveEventV1 = {
       schemaVersion: 1,
       id: `${checkpoint.runId}-cognitive-event-${checkpointRevision}`,
@@ -917,6 +1104,10 @@ export class CognitiveRuntimeV1 {
     checkpoint.revision = checkpointRevision;
     checkpoint.updatedAt = timestamp;
     checkpoint.events.push(event);
+    await this.checkpointSink?.compareAndSwap(
+      cloneRuntimeValue(checkpoint),
+      expectedRevision,
+    );
     await this.eventSink?.append(cloneRuntimeValue(event));
   }
 
@@ -975,6 +1166,25 @@ export class CognitiveRuntimeV1 {
       checkpoint.approval.requestedRevision !== checkpoint.revision
     ) {
       throw new Error("approval checkpoint revision is stale");
+    }
+  }
+
+  private validateCheckpointIdentityAndRevision(
+    checkpoint: CognitiveRunCheckpointV1,
+    input: {
+      runId: string;
+      taskId: string;
+      expectedRevision: number;
+    },
+  ): void {
+    if (checkpoint.schemaVersion !== 1) {
+      throw new Error("unsupported cognitive checkpoint schema");
+    }
+    if (input.runId !== checkpoint.runId || input.taskId !== checkpoint.taskId) {
+      throw new Error("operation does not belong to this run checkpoint");
+    }
+    if (input.expectedRevision !== checkpoint.revision) {
+      throw new Error("checkpoint revision is stale");
     }
   }
 }

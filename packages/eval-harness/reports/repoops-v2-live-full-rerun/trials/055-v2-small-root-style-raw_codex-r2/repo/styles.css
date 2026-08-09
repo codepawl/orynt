@@ -1,0 +1,40 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  display: grid;
+  place-items: center;
+}
+
+.calculator {
+  width: min(100% - 2rem, 24rem);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.display {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 1rem;
+  font-size: 2rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.key {
+  min-width: 0;
+  padding: 1rem;
+}
+
+.key--wide {
+  grid-column: span 2;
+}

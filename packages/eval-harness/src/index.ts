@@ -11,6 +11,11 @@ import {
   type SkillInvocationPlan,
 } from "@codepawl/shared";
 
+export * from "./artifactGate.js";
+export * from "./decisionBench.js";
+export * from "./promptUnderstandingBench.js";
+export * from "./browserBench.js";
+
 export type EvalScenarioGroup =
   | "safe_read_only"
   | "low_risk_state_change"
@@ -180,7 +185,7 @@ export function createDefaultEvalSuite(options: CreateDefaultEvalSuiteOptions = 
         id: "cost-ledger-regression-action",
         kind: "command",
         summary: "Run contract validation",
-        command: "pnpm test:contracts",
+        command: "bun test:contracts",
       }, decision("allow", true), { inputTokens: 8000, cachedInputTokens: 1000, outputTokens: 1200, toolCalls: 2 }),
     ],
   };
@@ -519,4 +524,5 @@ function riskForDecision(decision: PolicyDecision): AgentRiskLevel {
   return "review";
 }
 
-export * from "./repoOpsBench";
+export * from "./repoOpsBench.js";
+export * from "./realProjectBattle.js";

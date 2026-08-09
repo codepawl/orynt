@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "058-v2-debug-calculator-orynt_full-r2",
+  "taskId": "v2-debug-calculator",
+  "methodId": "orynt_full",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:42:38.656Z",
+  "completedAt": "2026-08-05T08:42:38.805Z",
+  "totalWallMs": 149,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/058-v2-debug-calculator-orynt_full-r2/repo"
+}

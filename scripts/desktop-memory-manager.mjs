@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import path from "node:path";
 
@@ -46,7 +46,33 @@ function requiredString(input, key) {
   return value.trim();
 }
 
-async function execute(request) {
+function requiredRevision(options) {
+  if (!Number.isSafeInteger(options.expectedRevision) || options.expectedRevision < 0) {
+    throw new Error("expectedRevision is required");
+  }
+  return options;
+}
+
+function auditedMutation(input, field) {
+  const payload = object(input[field]);
+  requiredString(payload, "actor");
+  requiredString(payload, "reason");
+  return {
+    payload,
+    options: requiredRevision(object(input.options)),
+  };
+}
+
+function sameNamespace(value, namespace) {
+  return (
+    (!namespace.capabilityId || value?.capabilityId === namespace.capabilityId) &&
+    (!namespace.workspaceId || value?.workspaceId === namespace.workspaceId) &&
+    (!namespace.repositoryPath || value?.repositoryPath === namespace.repositoryPath) &&
+    (!namespace.projectId || value?.projectId === namespace.projectId)
+  );
+}
+
+export async function executeDesktopMemoryOperation(request) {
   const store = new LocalJsonMemoryStore({
     memoryRoot: path.resolve(request.memoryRoot),
   });
@@ -57,39 +83,85 @@ async function execute(request) {
     case "rule.list":
       return store.listCandidateRules(object(input.query));
     case "rule.status":
+      requiredString(input, "actor");
+      requiredString(input, "reason");
       return store.updateCandidateRuleStatus(
         requiredString(input, "id"),
         requiredString(input, "status"),
-        object(input.options),
+        requiredRevision(object(input.options)),
       );
     case "semantic.list":
       return store.listSemanticMemory(object(input.query));
-    case "semantic.status":
-      return store.updateSemanticMemoryStatus(object(input.decision));
-    case "semantic.edit":
-      return store.editSemanticMemory(object(input.edit));
-    case "semantic.delete":
-      return store.deleteSemanticMemory(object(input.decision));
-    case "semantic.restore":
-      return store.restoreSemanticMemory(object(input.decision));
-    case "semantic.purge":
-      return store.purgeSemanticMemory(object(input.decision));
+    case "semantic.status": {
+      const mutation = auditedMutation(input, "decision");
+      return store.updateSemanticMemoryStatus(
+        mutation.payload,
+        mutation.options,
+      );
+    }
+    case "semantic.edit": {
+      const mutation = auditedMutation(input, "edit");
+      return store.editSemanticMemory(mutation.payload, mutation.options);
+    }
+    case "semantic.delete": {
+      const mutation = auditedMutation(input, "decision");
+      return store.deleteSemanticMemory(
+        mutation.payload,
+        mutation.options,
+      );
+    }
+    case "semantic.restore": {
+      const mutation = auditedMutation(input, "decision");
+      return store.restoreSemanticMemory(
+        mutation.payload,
+        mutation.options,
+      );
+    }
+    case "semantic.purge": {
+      const mutation = auditedMutation(input, "decision");
+      return store.purgeSemanticMemory(
+        mutation.payload,
+        mutation.options,
+      );
+    }
     case "memory.retrieve":
       return store.retrieveMemory(object(input.query));
     case "summary":
       return store.summarizeMemory(object(input.namespace));
+    case "snapshot": {
+      const namespace = object(input.namespace);
+      if (!requiredString(namespace, "repositoryPath")) {
+        throw new Error("repositoryPath is required");
+      }
+      const snapshot = await store.getStoreSnapshot();
+      return {
+        ...snapshot,
+        episodes: snapshot.episodes.filter((item) => sameNamespace(item.namespace, namespace)),
+        candidateRules: snapshot.candidateRules.filter((item) => sameNamespace(item.namespace, namespace)),
+        semanticMemory: snapshot.semanticMemory.filter((item) => sameNamespace(item.namespace, namespace)),
+        tombstones: snapshot.tombstones.filter((item) => sameNamespace(item.namespace, namespace)),
+      };
+    }
     default:
       throw new Error(`unsupported memory manager operation: ${request.operation}`);
   }
 }
 
-try {
+async function main() {
   const request = await readRequest();
-  const result = await execute(request);
+  const result = await executeDesktopMemoryOperation(request);
   process.stdout.write(`${JSON.stringify({ schemaVersion: 1, result })}\n`);
-} catch (error) {
-  process.stderr.write(
-    `${error instanceof Error ? error.message : "memory manager failed"}\n`,
-  );
-  process.exitCode = 1;
+}
+
+const isDirectExecution =
+  typeof process.argv[1] === "string" &&
+  path.basename(process.argv[1]) === "desktop-memory-manager.mjs";
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    process.stderr.write(
+      `${error instanceof Error ? error.message : "memory manager failed"}\n`,
+    );
+    process.exitCode = 1;
+  });
 }

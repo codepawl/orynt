@@ -1,0 +1,26 @@
+{
+  "name": "@codepawl/claude-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run --filter @codepawl/shared build && bun run --filter @codepawl/model-runtime build && tsc -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@codepawl/model-runtime": "workspace:*",
+    "@codepawl/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "typescript": "6.0.3"
+  }
+}

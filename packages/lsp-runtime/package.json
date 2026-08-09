@@ -1,0 +1,32 @@
+{
+  "name": "@codepawl/lsp-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "bash-language-server": "5.6.0",
+    "chokidar": "5.0.0",
+    "pyright": "1.1.411",
+    "typescript": "6.0.3",
+    "typescript-language-server": "5.3.0",
+    "vscode-langservers-extracted": "4.10.0",
+    "vscode-jsonrpc": "9.0.1",
+    "vscode-languageserver-protocol": "3.18.2",
+    "yaml-language-server": "1.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1"
+  }
+}

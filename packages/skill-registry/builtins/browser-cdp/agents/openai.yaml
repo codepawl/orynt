@@ -1,0 +1,6 @@
+interface:
+  display_name: "Browser CDP"
+  short_description: "Use Orynt's bounded, evidence-first local browser."
+  default_prompt: "Use $browser-cdp to operate the explicitly started or attached local browser with typed actions and verified postconditions."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,230 @@
+name: CLI release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.3.14
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Install pinned Rust Analyzer toolchain
+        run: rustup toolchain install 1.97.0 --profile minimal --component rust-analyzer
+      - run: bun run test:lsp
+        env:
+          ORYNT_TEST_RUST_LSP: "1"
+          RUSTUP_TOOLCHAIN: "1.97.0"
+      - run: bun run bench:lsp
+      - name: Run release-bound Tier A soak
+        run: bun run soak:lsp > lsp-soak-release.json
+        env:
+          RUSTUP_TOOLCHAIN: "1.97.0"
+          ORYNT_SOURCE_DIGEST: ${{ github.sha }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: lsp-soak-release
+          path: lsp-soak-release.json
+          if-no-files-found: error
+      - name: Install pinned Gitleaks
+        run: bun run release:tools:install
+      - run: bun run release:check
+      - run: bun run release:audit
+      - run: bun run release:evidence:validate
+      - run: bun run release:verify-tag
+        if: startsWith(github.ref, 'refs/tags/v')
+
+  package-native:
+    needs: verify
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+            executable: orynt
+          - runner: windows-2025
+            platform: win32
+            arch: x64
+            executable: orynt.exe
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+            executable: orynt
+          - runner: macos-15-intel
+            platform: darwin
+            arch: x64
+            executable: orynt
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Package native release
+        shell: bash
+        env:
+          ORYNT_RELEASE_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+          ORYNT_RELEASE_PUBLIC_KEY: ${{ secrets.ORYNT_RELEASE_PUBLIC_KEY }}
+          ORYNT_RELEASE_KEY_ID: ${{ vars.ORYNT_RELEASE_KEY_ID }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            export ORYNT_VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          bun run package:cli:native
+          test -f "dist/cli/orynt-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz"
+          mkdir "$RUNNER_TEMP/orynt-smoke"
+          tar -xzf "dist/cli/orynt-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" \
+            -C "$RUNNER_TEMP/orynt-smoke"
+          "$RUNNER_TEMP/orynt-smoke/${{ matrix.executable }}" --version
+          bun run scripts/cli-codex-setup-smoke.mjs \
+            "$RUNNER_TEMP/orynt-smoke/${{ matrix.executable }}"
+          bun run scripts/package-cli-smoke.mjs --executable \
+            "$RUNNER_TEMP/orynt-smoke/${{ matrix.executable }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/cli/orynt-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  package-npm:
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Package npm release
+        shell: bash
+        env:
+          ORYNT_RELEASE_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+          ORYNT_RELEASE_PUBLIC_KEY: ${{ secrets.ORYNT_RELEASE_PUBLIC_KEY }}
+          ORYNT_RELEASE_KEY_ID: ${{ vars.ORYNT_RELEASE_KEY_ID }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            export ORYNT_VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          bun run package:cli
+          cd dist/cli/npm
+          bun pm pack
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-package
+          path: |
+            dist/cli/npm/orynt-*.tgz
+            dist/cli/npm/orynt.spdx.json
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package-native, package-npm]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: release-assets
+      - name: Sign exact native release matrix
+        env:
+          ORYNT_RELEASE_SIGNING_KEY: ${{ secrets.ORYNT_RELEASE_SIGNING_KEY }}
+          ORYNT_RELEASE_PUBLIC_KEY: ${{ secrets.ORYNT_RELEASE_PUBLIC_KEY }}
+          ORYNT_RELEASE_KEY_ID: ${{ vars.ORYNT_RELEASE_KEY_ID }}
+        run: bun run scripts/sign-release-manifest.mjs --asset-root release-assets --version "${GITHUB_REF_NAME#v}"
+      - name: Create immutable draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mapfile -d '' files < <(find release-assets -type f \
+            \( -name 'orynt-*.tar.gz' -o -name 'orynt-*.sha256' -o -name 'orynt.spdx.json' \) \
+            -print0)
+          files+=("release-assets/release-manifest.json")
+          files+=("scripts/install.sh" "scripts/install.ps1")
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+            --draft --verify-tag --generate-notes
+
+  publish-npm:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: draft-release
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: npm-package
+          path: npm-package
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Publish first public npm package with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+        run: npm publish npm-package/orynt-*.tgz --access public --provenance
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish-npm
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Verify registry publication
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for attempt in {1..12}; do
+            if bun info "orynt@$version" version >/dev/null 2>&1; then break; fi
+            if [[ "$attempt" == 12 ]]; then exit 1; fi
+            sleep 10
+          done
+          bun add --global "orynt@$version"
+          orynt --version
+          orynt doctor
+          orynt browser doctor
+          orynt skills list
+      - name: Publish the prepared GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

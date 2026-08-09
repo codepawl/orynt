@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "001-v2-inspect-architecture-raw_codex-r1",
+  "taskId": "v2-inspect-architecture",
+  "methodId": "raw_codex",
+  "repetition": 0,
+  "startedAt": "2026-08-05T07:24:04.268Z",
+  "completedAt": "2026-08-05T07:24:52.536Z",
+  "totalWallMs": 48268,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 124554,
+      "cached_input_tokens": 110080,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1637,
+      "reasoning_output_tokens": 241
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/001-v2-inspect-architecture-raw_codex-r1/repo"
+}

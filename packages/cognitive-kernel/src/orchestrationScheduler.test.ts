@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "bun:test";
 
 import {
   createOrchestrationPreset,
@@ -102,6 +102,68 @@ describe("adaptive orchestration scheduler", () => {
         (invocation) => invocation.role === "implementer",
       ),
     ).toHaveLength(1);
+  });
+
+  it("runs ready disjoint writers concurrently and respects writer dependencies", async () => {
+    const profile = resolveOrchestrationProfile(
+      createOrchestrationPreset("balanced"),
+      catalog,
+    );
+    const active = new Set<string>();
+    let peak = 0;
+    const first = {
+      ...task("writer-a", "implementer", "single_writer"),
+      expectedPaths: ["packages/a"],
+    };
+    const second = {
+      ...task("writer-b", "implementer", "single_writer"),
+      expectedPaths: ["packages/b"],
+    };
+    const dependent = {
+      ...task(
+        "writer-c",
+        "implementer",
+        "single_writer",
+        ["writer-a", "writer-b"],
+      ),
+      expectedPaths: ["packages/c"],
+    };
+
+    const result = await runAdaptiveOrchestration({
+      plan: plan([first, second, dependent]),
+      profile,
+      maxConcurrency: 2,
+      callbacks: {
+        invoke: async ({ task: child }) => {
+          active.add(child.id);
+          peak = Math.max(peak, active.size);
+          await Promise.resolve();
+          expect(
+            child.id !== "writer-c" ||
+              (!active.has("writer-a") && !active.has("writer-b")),
+          ).toBe(true);
+          active.delete(child.id);
+          return {
+            taskId: child.id,
+            summary: child.title,
+            artifactRefs: [],
+          };
+        },
+        verify: async () => ({
+          passed: true,
+          summary: "verified",
+          artifactRefs: [],
+        }),
+      },
+    });
+
+    expect(result.status).toBe("pass");
+    expect(peak).toBe(2);
+    expect(result.results.map((item) => item.taskId)).toEqual([
+      "writer-a",
+      "writer-b",
+      "writer-c",
+    ]);
   });
 
   it("allows one verifier-driven recovery and records its parent reviewer invocation", async () => {

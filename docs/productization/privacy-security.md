@@ -1,6 +1,6 @@
-# Privacy and Security Draft
+# Privacy and Security
 
-Launch status: private beta draft, not legal advice.
+Status: CLI-first local runtime guidance, not legal advice.
 
 ## Data Handling
 
@@ -12,7 +12,9 @@ Launch status: private beta draft, not legal advice.
 ## Permission and Takeover Behavior
 
 - Repository is the only executable P0 surface in the current MVP.
-- Browser, desktop, files, and terminal surfaces remain blocked in the current product contracts unless a future explicit policy enables them.
+- Browser access is opt-in through an explicit loopback CDP session and exact
+  origin allowlist. Read operations return bounded semantic snapshots/deltas;
+  typed mutations require semantic risk inspection and gateway approval.
 - State-changing work is policy gated before execution.
 - Sensitive actions such as credential entry, payments, external sends, destructive shell commands, and secret access require blocking, explicit approval, or user takeover.
 - The agent must not execute payments, financial transfers, credential entry, or production-system changes autonomously.
@@ -23,8 +25,19 @@ Launch status: private beta draft, not legal advice.
 - Approval decisions must record actor, reason, run id, action id, and policy version.
 - Evaluation reports must include success rate, permission coverage, blocked execution count, intervention count, cost, evidence coverage, memory source coverage, and skill approval before use.
 
-## Beta Caveats
+## External connections
+
+- Model calls go to the provider selected in local model-tier settings.
+- A startup update request goes to the signed GitHub release endpoint only
+  after stored consent. Manual `orynt update --check` is always explicit.
+- Browser connections begin only after `orynt browser start` or `attach`;
+  attachment is loopback-only, exact-origin scoped, and does not grant cookie
+  or credential tools.
+- Orynt does not send telemetry, email, scheduled jobs, analytics events, or
+  repository contents to an Orynt-hosted backend.
+
+## Public beta caveats
 
 - No hosted multi-tenant backend is implemented in this checkout.
-- No production billing, subscription, Paddle webhook, or payment-processing path is implemented.
-- Private beta users should treat Orynt as supervised software and review diffs, artifacts, and approvals before trusting outputs.
+- Operators should treat Orynt as supervised software and review diffs,
+  artifacts, browser approvals, and verifier results before trusting outputs.

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "id": "008-v2-small-root-style-orynt_no_recovery-r1",
+  "taskId": "v2-small-root-style",
+  "methodId": "orynt_no_recovery",
+  "repetition": 0,
+  "startedAt": "2026-08-05T08:18:45.482Z",
+  "completedAt": "2026-08-05T08:19:02.291Z",
+  "totalWallMs": 16809,
+  "processExitCode": 2,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "planning",
+    "code": "PROMPT_CLARIFICATION_REQUIRED",
+    "message": "Headless execution requires clarification before a repository plan can be created.",
+    "promptUnderstanding": {
+      "schemaVersion": 1,
+      "promptId": "650dac1ce74fbdecc600bde600bb0ff8650dac1ce74fbdecc600bde600bb0ff8",
+      "inputId": "afbadd5490fa5e24470d769260b82c14afbadd5490fa5e24470d769260b82c14",
+      "outcome": "repository_action",
+      "readiness": "clarification_required",
+      "reply": "I need the intended calculator layout or a description of the defect before repository work can be scoped safely.",
+      "conversationSummary": "The request permits changes only to styles.css, requires package metadata to remain unchanged, protects .env, .git/**, and bun.lock, and suggests running bun test when appropriate. The intended calculator layout is not specified.",
+      "refinedBrief": {
+        "goal": "Correct the calculator layout by editing only styles.css.",
+        "deliverables": [
+          "A focused styles.css update that implements the confirmed layout correction.",
+          "Validation results for an appropriate test command, if applicable."
+        ],
+        "constraints": [
+          "Only styles.css may be modified.",
+          "Do not modify package metadata, .env, .git/**, bun.lock, or any other file.",
+          "Run bun test only when appropriate to the confirmed change."
+        ],
+        "acceptanceCriteria": [
+          "The confirmed calculator layout issue is resolved.",
+          "No files outside styles.css are changed.",
+          "Package metadata remains unchanged."
+        ],
+        "nonGoals": [
+          "Changing calculator behavior or logic.",
+          "Changing package metadata or dependencies.",
+          "Modifying protected paths or any file other than styles.css."
+        ]
+      },
+      "questions": [
+        {
+          "id": "calculator_layout_target",
+          "prompt": "What should the calculator layout look like, and what is currently wrong?",
+          "rationale": "The requested visual correction is not defined, so the required CSS change and its acceptance criteria cannot be determined safely.",
+          "kind": "outcome",
+          "options": [
+            {
+              "id": "provide_reference",
+              "label": "Provide a reference (Recommended)",
+              "description": "Share a screenshot, mockup, or precise description of the desired and current layout.",
+              "recommended": true
+            },
+            {
+              "id": "describe_issue",
+              "label": "Describe the issue",
+              "description": "State the affected viewport and the observed layout problem, such as overlap, sizing, alignment, or responsiveness.",
+              "recommended": false
+            }
+          ]
+        }
+      ],
+      "assumptions": []
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/008-v2-small-root-style-orynt_no_recovery-r1/repo"
+}

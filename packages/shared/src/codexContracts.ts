@@ -1,18 +1,29 @@
-import type { ArtifactRef, RunBudget } from "./runSpine";
-import type { CorePolicy, PolicyDecision, RepositoryInspection, RepositorySandbox } from "./corePolicy";
-import type { CodexResultImportRequest } from "./codexResultImportContracts";
-import type { VerificationPlan } from "./verifierContracts";
+import type { ArtifactRef, RunBudget } from "./runSpine.js";
+import type { CorePolicy, PolicyDecision, RepositoryInspection, RepositorySandbox } from "./corePolicy.js";
+import type { CodexResultImportRequest } from "./codexResultImportContracts.js";
+import type { VerificationPlan } from "./verifierContracts.js";
 import type {
   OrchestrationRole,
   OrchestrationThinkingEffort,
-} from "./orchestrationContracts";
+} from "./orchestrationContracts.js";
+import type { RepositoryTaskOperation } from "./taskPlanContracts.js";
 
-export type CodexExecutionMode = "contract_only" | "manual_cli" | "app_server" | "sdk";
+export type CodexExecutionMode =
+  | "contract_only"
+  | "manual_cli"
+  | "app_server"
+  | "responses_api"
+  | "sdk";
 
 export type CodexProvider = {
   id: string;
   name: string;
-  kind: "codex_cli" | "codex_app_server" | "codex_sdk" | "contract_generator";
+  kind:
+    | "codex_cli"
+    | "codex_app_server"
+    | "openai_responses"
+    | "codex_sdk"
+    | "contract_generator";
   version?: string;
 };
 
@@ -25,6 +36,102 @@ export type CodexAdapterStatus = {
   detectedAt: string;
   reasons: string[];
 };
+
+/**
+ * Immutable identity for one execution attempt of a semantic repository task.
+ *
+ * The outer repository-task plan is approved once. Every provider-specific
+ * contract and approval derived from it carries this tuple so a provider cannot
+ * accidentally execute a different task, retry, path set, or operation set.
+ */
+export type CodexTaskAttemptBinding = {
+  planId: string;
+  revision: number;
+  digest: string;
+  semanticTaskId: string;
+  attemptId: string;
+  retryIndex: number;
+  expectedPaths: string[];
+  operations: RepositoryTaskOperation[];
+};
+
+const CODEX_TASK_OPERATIONS = new Set<RepositoryTaskOperation>([
+  "read",
+  "write",
+  "delete",
+  "rename",
+  "dependency",
+  "migration",
+]);
+
+function cleanTaskBindingString(value: string): boolean {
+  return value.length > 0 && value === value.trim();
+}
+
+function isExactRepositoryPath(value: string): boolean {
+  if (!cleanTaskBindingString(value) || value.startsWith("/") || value.startsWith("\\")) {
+    return false;
+  }
+  if (/^[a-z]:[\\/]/iu.test(value) || value.includes("\\") || /[*?\[\]]/u.test(value)) {
+    return false;
+  }
+  return !value.split("/").some(
+    (part) => part.length === 0 || part === "." || part === "..",
+  );
+}
+
+/** Validate a task-attempt identity before it becomes approval material. */
+export function validateCodexTaskAttemptBinding(
+  binding: CodexTaskAttemptBinding,
+): void {
+  if (
+    !cleanTaskBindingString(binding.planId) ||
+    !Number.isSafeInteger(binding.revision) ||
+    binding.revision < 0 ||
+    !/^[a-f0-9]{64}$/u.test(binding.digest) ||
+    !cleanTaskBindingString(binding.semanticTaskId) ||
+    !cleanTaskBindingString(binding.attemptId) ||
+    !Number.isSafeInteger(binding.retryIndex) ||
+    binding.retryIndex < 0 ||
+    new Set(binding.expectedPaths).size !== binding.expectedPaths.length ||
+    binding.expectedPaths.some((item) => !isExactRepositoryPath(item)) ||
+    binding.operations.length === 0 ||
+    new Set(binding.operations).size !== binding.operations.length ||
+    binding.operations.some((operation) => !CODEX_TASK_OPERATIONS.has(operation))
+  ) {
+    throw new Error("Codex task-attempt binding is invalid.");
+  }
+}
+
+/** Compare every approval-relevant field without accepting partial matches. */
+export function codexTaskAttemptBindingsEqual(
+  left: CodexTaskAttemptBinding | undefined,
+  right: CodexTaskAttemptBinding | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return (
+    left.planId === right.planId &&
+    left.revision === right.revision &&
+    left.digest === right.digest &&
+    left.semanticTaskId === right.semanticTaskId &&
+    left.attemptId === right.attemptId &&
+    left.retryIndex === right.retryIndex &&
+    left.expectedPaths.length === right.expectedPaths.length &&
+    left.expectedPaths.every((value, index) => value === right.expectedPaths[index]) &&
+    left.operations.length === right.operations.length &&
+    left.operations.every((value, index) => value === right.operations[index])
+  );
+}
+
+export function cloneCodexTaskAttemptBinding(
+  binding: CodexTaskAttemptBinding,
+): CodexTaskAttemptBinding {
+  return {
+    ...binding,
+    expectedPaths: [...binding.expectedPaths],
+    operations: [...binding.operations],
+  };
+}
 
 export type CodexContractRequest = {
   runId: string;
@@ -40,6 +147,9 @@ export type CodexContractRequest = {
   validationCommands: string[];
   artifactRoot: string;
   executionMode?: CodexExecutionMode;
+  taskMode?: "read_only" | "mutation";
+  /** Required for production semantic task attempts; absent for legacy contracts. */
+  taskBinding?: CodexTaskAttemptBinding;
   modelId?: string;
   modelLabel?: string;
   modelRole?: OrchestrationRole;
@@ -55,6 +165,7 @@ export type CodexContract = {
   executionMode: CodexExecutionMode;
   goal: string;
   markdown: string;
+  taskBinding?: CodexTaskAttemptBinding;
   metadata: {
     id: string;
     runId: string;
@@ -72,6 +183,8 @@ export type CodexContract = {
     modelRole?: OrchestrationRole;
     thinkingEffort?: OrchestrationThinkingEffort;
     parentInvocationId?: string;
+    taskMode?: "read_only" | "mutation";
+    taskBinding?: CodexTaskAttemptBinding;
     budget: RunBudget;
     redactionApplied: boolean;
     createdAt: string;
@@ -87,6 +200,7 @@ export type CodexContractArtifact = {
   metadataPath: string;
   markdownSha256: string;
   metadataSha256: string;
+  taskBinding?: CodexTaskAttemptBinding;
   artifacts: ArtifactRef[];
 };
 
@@ -96,8 +210,11 @@ export type CodexExecutionFailureReason =
   | "approval_missing"
   | "approval_denied"
   | "approval_mismatch"
+  | "task_binding_invalid"
   | "codex_missing"
   | "codex_auth_missing"
+  | "api_key_missing"
+  | "provider_failed"
   | "policy_blocked"
   | "budget_exceeded"
   | "sandbox_missing"
@@ -127,6 +244,9 @@ export type CodexExecutionRequest = {
   artifactRoot: string;
   verifierPlan?: VerificationPlan;
   executionPolicy?: Partial<CodexExecutionPolicy>;
+  images?: CodexAttachedImage[];
+  /** Must exactly match a bound contract when either side carries a binding. */
+  taskBinding?: CodexTaskAttemptBinding;
 };
 
 export type CodexExecutionApproval = {
@@ -138,6 +258,18 @@ export type CodexExecutionApproval = {
   reason: string;
   approvedAt?: string;
   authorizationSource?: "automatic_policy" | "operator" | "headless";
+  /** Provider-internal derivation of the outer task-plan approval. */
+  taskBinding?: CodexTaskAttemptBinding;
+};
+
+export type CodexAttachedImage = {
+  kind: "local_file";
+  path: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  sha256: string;
+  byteLength: number;
+  detail: "low" | "high" | "original";
+  source: "browser_crop" | "repository_asset" | "user_attachment";
 };
 
 export type CodexProcessRef = {
@@ -146,6 +278,7 @@ export type CodexProcessRef = {
   planId: string;
   pid?: number;
   status: CodexExecutionStatus;
+  taskBinding?: CodexTaskAttemptBinding;
   startedAt?: string;
   finishedAt?: string;
 };
@@ -158,6 +291,7 @@ export type CodexExecutionPlan = {
   provider: CodexProvider;
   executablePath?: string;
   argv: string[];
+  images?: CodexAttachedImage[];
   cwd: string;
   contractPath: string;
   artifactRoot: string;
@@ -175,6 +309,8 @@ export type CodexExecutionPlan = {
   modelRole?: OrchestrationRole;
   thinkingEffort?: OrchestrationThinkingEffort;
   parentInvocationId?: string;
+  taskMode?: "read_only" | "mutation";
+  taskBinding?: CodexTaskAttemptBinding;
   approvalRequired: boolean;
   failureReasons: CodexExecutionFailureReason[];
   artifacts: ArtifactRef[];
@@ -186,6 +322,7 @@ export type CodexExecutionResult = {
   planId: string;
   runId: string;
   taskId: string;
+  taskBinding?: CodexTaskAttemptBinding;
   status: CodexExecutionStatus;
   provider: CodexProvider;
   process: CodexProcessRef;
@@ -202,6 +339,12 @@ export type CodexExecutionResult = {
   exitCode: number | null;
   timedOut: boolean;
   failureReasons: CodexExecutionFailureReason[];
+  streamStats?: {
+    parsedLineCount: number;
+    emittedEventCount: number;
+    duplicateEventCount: number;
+    malformedLineCount: number;
+  };
   redaction: {
     applied: boolean;
     redactedPaths: string[];

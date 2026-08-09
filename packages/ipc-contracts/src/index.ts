@@ -48,6 +48,134 @@ export type RpcEvent<TPayload = unknown> = {
   payload: TPayload;
 };
 
+/**
+ * Commands accepted by the desktop runtime sidecar. The Tauri host and Bun
+ * sidecar both reject names outside this list.
+ */
+export const DESKTOP_COMMANDS = [
+  "prompt_understand",
+  "run_create",
+  "run_list",
+  "run_open",
+  "artifact_list",
+  "artifact_read",
+  "run_cancel",
+  "run_status",
+  "run_recover",
+  "run_mark_failed",
+  "approval_respond",
+  "memory_list_episodes",
+  "memory_list_candidate_rules",
+  "memory_update_candidate_rule_status",
+  "memory_list_semantic",
+  "memory_update_semantic_status",
+  "memory_edit_semantic",
+  "memory_delete_semantic",
+  "memory_restore_semantic",
+  "memory_purge_semantic",
+  "memory_retrieve",
+  "memory_summary",
+  "memory_snapshot",
+  "skill_list",
+  "skill_snapshot",
+  "skill_create_candidate",
+  "skill_promote_manual",
+  "skill_reject",
+  "skill_supersede",
+  "skill_archive",
+  "skill_create_replay_plan",
+  "skill_inventory_scan",
+  "skill_inventory_list",
+  "skill_inventory_get",
+  "skill_hub_list_sources",
+  "skill_hub_refresh",
+  "skill_hub_search",
+  "skill_hub_get",
+  "skill_mutation_plan",
+  "skill_mutation_approve",
+  "skill_mutation_execute",
+  "skill_mutation_history",
+  "skill_mutation_recover",
+  "skill_context_snapshot",
+  "codex_execution_approve",
+  "codex_execution_blocked_preview",
+  "settings_get",
+  "settings_update",
+  "repository_detect_current_path",
+  "model_connection_save",
+  "model_provider_preflight",
+  "model_connection_list_models",
+  "model_connection_preflight",
+  "model_connection_delete",
+  "codex_connection_save",
+  "codex_connection_preflight",
+  "codex_connection_login",
+  "codex_connection_delete",
+  "trace_export",
+] as const;
+
+export type DesktopCommand = (typeof DESKTOP_COMMANDS)[number];
+export type DesktopCommandArguments = Readonly<Record<string, unknown>>;
+
+const DESKTOP_COMMAND_SET: ReadonlySet<string> = new Set(DESKTOP_COMMANDS);
+
+export function isDesktopCommand(value: unknown): value is DesktopCommand {
+  return typeof value === "string" && DESKTOP_COMMAND_SET.has(value);
+}
+
+export const DESKTOP_MENU_ACTIONS = [
+  "new-run",
+  "open-repository",
+  "settings",
+  "about",
+] as const;
+export type DesktopMenuAction = (typeof DESKTOP_MENU_ACTIONS)[number];
+
+export type DesktopSidecarRequestV1 = {
+  version: 1;
+  type: "request";
+  id: string;
+  command: DesktopCommand;
+  args: DesktopCommandArguments;
+};
+
+export type DesktopSidecarResponseV1 =
+  | {
+      version: 1;
+      type: "response";
+      id: string;
+      ok: true;
+      result: unknown;
+    }
+  | {
+      version: 1;
+      type: "response";
+      id: string;
+      ok: false;
+      error: {
+        code: string;
+        message: string;
+      };
+    };
+
+export type DesktopSidecarEventV1 = {
+  version: 1;
+  type: "event";
+  event: "run-event";
+  payload: unknown;
+};
+
+export type DesktopSidecarShutdownV1 = {
+  version: 1;
+  type: "shutdown";
+};
+
+export type DesktopSidecarMessageV1 =
+  | DesktopSidecarRequestV1
+  | DesktopSidecarResponseV1
+  | DesktopSidecarEventV1
+  | DesktopSidecarShutdownV1;
+
 export const MEMORY_IPC_METHODS = [
   "memory.listEpisodes",
   "memory.listCandidateRules",

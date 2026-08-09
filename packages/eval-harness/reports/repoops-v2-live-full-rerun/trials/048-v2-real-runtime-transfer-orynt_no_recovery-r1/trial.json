@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "048-v2-real-runtime-transfer-orynt_no_recovery-r1",
+  "taskId": "v2-real-runtime-transfer",
+  "methodId": "orynt_no_recovery",
+  "repetition": 0,
+  "startedAt": "2026-08-05T08:40:08.231Z",
+  "completedAt": "2026-08-05T08:40:08.395Z",
+  "totalWallMs": 163,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/048-v2-real-runtime-transfer-orynt_no_recovery-r1/repo"
+}

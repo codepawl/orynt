@@ -1,0 +1,6 @@
+interface:
+  display_name: "Product UI Design"
+  short_description: "Build purposeful, honest product interfaces without AI slop."
+  default_prompt: "Use $product-ui-design to create a coherent, accessible product interface with functional chrome and maintainable source."
+policy:
+  allow_implicit_invocation: true

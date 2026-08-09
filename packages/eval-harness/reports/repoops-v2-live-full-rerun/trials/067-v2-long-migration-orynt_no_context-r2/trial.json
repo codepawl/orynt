@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "067-v2-long-migration-orynt_no_context-r2",
+  "taskId": "v2-long-migration",
+  "methodId": "orynt_no_context",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:44:54.485Z",
+  "completedAt": "2026-08-05T08:44:54.631Z",
+  "totalWallMs": 146,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/067-v2-long-migration-orynt_no_context-r2/repo"
+}

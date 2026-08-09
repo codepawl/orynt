@@ -1,0 +1,27 @@
+{
+  "name": "@codepawl/code-intel-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run --filter @codepawl/lsp-runtime build && bun run --filter @codepawl/model-runtime build && tsc -p tsconfig.json",
+    "test": "bun run --filter @codepawl/lsp-runtime build && bun run --filter @codepawl/model-runtime build && bun test src"
+  },
+  "dependencies": {
+    "@codepawl/lsp-runtime": "workspace:*",
+    "@codepawl/model-runtime": "workspace:*",
+    "vscode-languageserver-protocol": "3.18.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "typescript": "6.0.3"
+  }
+}

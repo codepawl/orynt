@@ -1,0 +1,57 @@
+name: Bug report
+description: Tell us what broke
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not post secrets, cookies, private code, browser screenshots, or full model replies. Use private reporting for security problems.
+  - type: input
+    id: version
+    attributes:
+      label: Orynt version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Your system
+      description: Add your operating system, Bun version, and Codex CLI version.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see the bug
+      description: Use the smallest safe example you can.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Safe logs
+      description: Add short logs only after removing private details.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I removed secrets and private data.
+          required: true
+        - label: This is not a security report.
+          required: true

@@ -1,8 +1,8 @@
-import type { ArtifactRef } from "./runSpine";
-import type { CodexContract } from "./codexContracts";
-import type { ActionRisk, CorePolicy, PolicyDecisionKind, RepositorySandbox } from "./corePolicy";
-import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryRedactionResult } from "./memoryContracts";
-import type { VerificationResult, VerifierConfig } from "./verifierContracts";
+import type { ArtifactRef } from "./runSpine.js";
+import type { CodexContract } from "./codexContracts.js";
+import type { ActionRisk, CorePolicy, PolicyDecisionKind, RepositorySandbox } from "./corePolicy.js";
+import type { CandidateRule, EpisodicMemoryItem, MemoryNamespace, MemoryRedactionResult } from "./memoryContracts.js";
+import type { VerificationResult, VerifierConfig } from "./verifierContracts.js";
 
 export type SkillStatus = "candidate" | "active" | "rejected" | "superseded" | "archived";
 
@@ -98,6 +98,49 @@ export type SkillRegistrySnapshot = {
   namespace: MemoryNamespace;
   skills: SkillDefinition[];
   summary: SkillSummary;
+};
+
+export type LearnedSkillAuditOperation =
+  | "candidate.created"
+  | "status.decided"
+  | "replay.persisted";
+
+export type LearnedSkillAuditEntryV1 = {
+  id: string;
+  operation: LearnedSkillAuditOperation;
+  skillId: string;
+  namespace: MemoryNamespace;
+  actor: string;
+  reason: string;
+  runId?: string;
+  committedRevision: number;
+  occurredAt: string;
+};
+
+export type LearnedSkillSnapshotV1 = {
+  schemaVersion: 2;
+  revision: number;
+  updatedAt: string;
+  skills: SkillDefinition[];
+  replayPlans: SkillReplayPlan[];
+  auditLog: LearnedSkillAuditEntryV1[];
+};
+
+export type LearnedSkillCandidateInputV1 = {
+  candidate: SkillExtractionCandidate;
+  expectedRevision: number;
+  actor: string;
+  reason: string;
+};
+
+export type LearnedSkillDecisionInputV1 = {
+  decision: SkillPromotionDecision;
+  expectedRevision: number;
+};
+
+export type LearnedSkillMutationResultV1<T> = {
+  value: T;
+  committedRevision: number;
 };
 
 export type SkillReplayMode = "active_dry_run" | "candidate_preview";

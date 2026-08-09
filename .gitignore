@@ -1,11 +1,19 @@
 node_modules/
 dist/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/binaries/
+apps/desktop/release/
 target/
 .codex/hooks.json
 .hermes/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+
+# Python bytecode and local caches
+__pycache__/
+*.py[cod]
 
 # Playwright
 /test-results/

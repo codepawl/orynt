@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "092-v2-real-cli-transfer-orynt_no_recovery-r2",
+  "taskId": "v2-real-cli-transfer",
+  "methodId": "orynt_no_recovery",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:47:54.977Z",
+  "completedAt": "2026-08-05T08:47:55.122Z",
+  "totalWallMs": 145,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": null,
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/092-v2-real-cli-transfer-orynt_no_recovery-r2/repo"
+}

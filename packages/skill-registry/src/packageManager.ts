@@ -25,7 +25,7 @@ import {
   SkillPackageFailure,
   type SkillScanOptions,
   type SkillScanRoot,
-} from "./packageScanner";
+} from "./packageScanner.js";
 
 type ManagerState = {
   schemaVersion: 1;

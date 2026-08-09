@@ -1,0 +1,52 @@
+name: Feature request
+description: Tell us what would help
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+    validations:
+      required: true
+  - type: textarea
+    id: problem_now
+    attributes:
+      label: What gets in the way
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What should Orynt do
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Part of Orynt
+      options:
+        - CLI
+        - Code work
+        - Browser
+        - Models
+        - Skills and memory
+        - Checks and results
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: approval
+    attributes:
+      label: What should need approval
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: This does not ask Orynt to hide access or bypass a site rule.
+          required: true

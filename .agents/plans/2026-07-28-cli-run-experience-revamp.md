@@ -37,10 +37,10 @@ Make supervised CLI runs understandable without weakening repository boundaries:
 
 ## Validation
 
-- `pnpm test:cli`
-- `pnpm build:cli`
-- `pnpm --filter @codepawl/verifier test`
-- `pnpm --filter @codepawl/coding-apprentice test`
-- `pnpm --filter @codepawl/codex-adapter test`
+- `bun run test:cli`
+- `bun run build:cli`
+- `bun run --filter @codepawl/verifier test`
+- `bun run --filter @codepawl/coding-apprentice test`
+- `bun run --filter @codepawl/codex-adapter test`
 - `ORYNT_CLI_ARGS_JSON='["doctor"]' make cli`
 - `git diff --check`

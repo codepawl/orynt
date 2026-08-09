@@ -12,15 +12,15 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/shared build && tsc -p tsconfig.json",
-    "test": "vitest run"
+    "build": "bun run --filter @codepawl/shared build && bun run --filter @codepawl/model-runtime build && tsc -p tsconfig.json",
+    "test": "bun test src"
   },
   "dependencies": {
+    "@codepawl/model-runtime": "workspace:*",
     "@codepawl/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
-    "typescript": "6.0.3",
-    "vitest": "4.1.9"
+    "typescript": "6.0.3"
   }
 }

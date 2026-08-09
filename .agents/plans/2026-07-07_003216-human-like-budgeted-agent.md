@@ -6,7 +6,7 @@ Goal: Upgrade Orynt's existing cognitive kernel and desktop repository run path 
 
 Architecture: Extend the existing @codepawl/cognitive-kernel deterministic loop instead of creating a separate service. Keep raw evidence in existing artifacts and add compact structured state to the kernel result. Wire that trace into Coding Apprentice manifests so desktop beta runs are immediately testable.
 
-Tech stack: TypeScript pnpm monorepo, Vitest, existing @codepawl/shared policy/budget types, @codepawl/cognitive-kernel, @codepawl/coding-apprentice, Tauri sidecar manifest.
+Tech stack: TypeScript bun monorepo, Bun test, existing @codepawl/shared policy/budget types, @codepawl/cognitive-kernel, @codepawl/coding-apprentice, Tauri sidecar manifest.
 
 ## Current context
 
@@ -84,13 +84,13 @@ Behavior:
 ### Task 5: Verify
 
 Commands:
-- pnpm --filter @codepawl/cognitive-kernel test
-- pnpm --filter @codepawl/coding-apprentice test -- index.test.ts
-- pnpm test:contracts
-- pnpm test:desktop
-- pnpm test:tauri
-- pnpm run build:desktop
-- pnpm package:desktop:internal
+- bun --filter @codepawl/cognitive-kernel test
+- bun --filter @codepawl/coding-apprentice test -- index.test.ts
+- bun test:contracts
+- bun test:desktop
+- bun test:tauri
+- bun run build:desktop
+- bun package:desktop:internal
 
 ## Risks and tradeoffs
 

@@ -1,10 +1,11 @@
-import type { ArtifactRef, RunBudget } from "./runSpine";
-import type { CorePolicy, PolicyDecision, RepositorySandbox } from "./corePolicy";
+import type { ArtifactRef, RunBudget } from "./runSpine.js";
+import type { CorePolicy, PolicyDecision, RepositorySandbox } from "./corePolicy.js";
 
 export type VerificationStatus = "pass" | "partial" | "fail" | "inconclusive";
 
 export type VerificationFailureClass =
   | "policy_blocked"
+  | "trusted_evidence_invalid"
   | "command_failed"
   | "command_timeout"
   | "protected_path_touched"
@@ -77,6 +78,9 @@ export type VerificationEvidence = {
   stderr?: string;
   diffScope?: DiffScopeResult;
   policyDecision?: PolicyDecision;
+  source?: "process_stdio" | "trusted_report";
+  artifactRefs?: ArtifactRef[];
+  trustedEvidenceValid?: boolean;
 };
 
 export type VerificationVerdict = {

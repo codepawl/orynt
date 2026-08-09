@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "076-v2-contradictory-rounding-orynt_no_context-r2",
+  "taskId": "v2-contradictory-rounding",
+  "methodId": "orynt_no_context",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:01:47.983Z",
+  "completedAt": "2026-08-05T08:01:58.793Z",
+  "totalWallMs": 10810,
+  "processExitCode": 2,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "planning",
+    "code": "TASK_PLAN_NOT_ACTIONABLE",
+    "message": "The repository task planner did not return an executable action."
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/076-v2-contradictory-rounding-orynt_no_context-r2/repo"
+}

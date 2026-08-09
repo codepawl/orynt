@@ -1,6 +1,6 @@
-import type { ArtifactRef, Run, RunEvent } from "./runSpine";
-import type { CodexResultBundle } from "./codexResultImportContracts";
-import type { VerificationResult } from "./verifierContracts";
+import type { ArtifactRef, Run, RunEvent } from "./runSpine.js";
+import type { CodexResultBundle } from "./codexResultImportContracts.js";
+import type { VerificationResult } from "./verifierContracts.js";
 
 export type MemoryNamespace = {
   capabilityId: string;
@@ -47,12 +47,40 @@ export type MemoryRedactionResult = {
   redactionCount: number;
 };
 
-export const MEMORY_STORE_SCHEMA_VERSION = 2 as const;
+export const MEMORY_STORE_SCHEMA_VERSION = 3 as const;
 
 export type MemoryStoreRevision = number;
 
 export type MemoryMutationOptions = {
   expectedRevision?: MemoryStoreRevision;
+  actor?: string;
+  reason?: string;
+  runId?: string;
+};
+
+export type MemoryAuditOperation =
+  | "episode.created"
+  | "candidate_rule.created"
+  | "candidate_rule.reviewed"
+  | "semantic_memory.created"
+  | "semantic_memory.edited"
+  | "semantic_memory.reviewed"
+  | "semantic_memory.trashed"
+  | "semantic_memory.restored"
+  | "semantic_memory.purged";
+
+/** Metadata-only mutation evidence. Memory summaries and content never belong here. */
+export type MemoryAuditEntry = {
+  id: string;
+  operation: MemoryAuditOperation;
+  entityId: string;
+  entityKind: "episode" | "candidate_rule" | "semantic_memory";
+  namespace: MemoryNamespace;
+  actor: string;
+  reason: string;
+  runId?: string;
+  committedRevision: MemoryStoreRevision;
+  occurredAt: string;
 };
 
 export type MemoryReviewDecision = {
@@ -122,7 +150,7 @@ export type SemanticMemoryStatus = "candidate" | "approved" | "rejected" | "dele
 export type SemanticMemorySensitivity = "public" | "internal" | "sensitive";
 
 export type SemanticMemoryReviewDecision = {
-  status: Exclude<SemanticMemoryStatus, "candidate">;
+  status: SemanticMemoryStatus;
   actor: string;
   reason: string;
   runId?: string;
@@ -168,7 +196,7 @@ export type MemoryTombstone = {
   reason: string;
 };
 
-export type MemoryStoreEnvelopeV2 = {
+export type MemoryStoreEnvelopeV3 = {
   schemaVersion: typeof MEMORY_STORE_SCHEMA_VERSION;
   revision: MemoryStoreRevision;
   updatedAt: string;
@@ -176,7 +204,11 @@ export type MemoryStoreEnvelopeV2 = {
   candidateRules: CandidateRule[];
   semanticMemory: SemanticMemoryItem[];
   tombstones: MemoryTombstone[];
+  auditLog: MemoryAuditEntry[];
 };
+
+/** @deprecated Name retained for source compatibility; the envelope is schema v3. */
+export type MemoryStoreEnvelopeV2 = MemoryStoreEnvelopeV3;
 
 export type MemoryExtractionResult = {
   id: string;
@@ -246,6 +278,11 @@ export type MemoryLifecycleResult = {
   tombstone?: MemoryTombstone;
 };
 
+export type MemoryMutationResult<T> = {
+  value: T;
+  committedRevision: MemoryStoreRevision;
+};
+
 export type SemanticMemoryWriteInput = Omit<
   SemanticMemoryItem,
   "id" | "redaction" | "reviewDecisions" | "createdAt" | "updatedAt" | "deletedAt" | "purgeAfter" | "purgedAt" | "statusBeforeTrash"
@@ -287,8 +324,12 @@ export type CandidateRuleStatusUpdateOptions = MemoryMutationOptions & {
 export type CandidateRuleStatusUpdateInput = {
   id: string;
   status: Exclude<CandidateRuleStatus, "candidate">;
+  actor: string;
+  reason: string;
+  expectedRevision: MemoryStoreRevision;
   runId?: string;
   supersededBy?: string;
+  decidedAt?: string;
 };
 
 export type MemoryReviewSnapshot = {
@@ -315,10 +356,16 @@ export type CandidateRuleWriteInput = Omit<CandidateRule, "id" | "status" | "red
 };
 
 export type MemorySummary = {
+  revision?: number;
   episodeCount: number;
   candidateRuleCount: number;
   candidateRuleStatusCounts: Record<CandidateRuleStatus, number>;
   namespaceCount: number;
+  semanticMemoryCount?: number;
+  semanticMemoryStatusCounts?: Record<SemanticMemoryStatus, number>;
+  trashCount?: number;
+  tombstoneCount?: number;
+  nextPurgeAt?: string;
 };
 
 export interface MemoryStore {

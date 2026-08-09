@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "096-v2-real-runtime-transfer-raw_codex-r2",
+  "taskId": "v2-real-runtime-transfer",
+  "methodId": "raw_codex",
+  "repetition": 1,
+  "startedAt": "2026-08-05T08:12:15.561Z",
+  "completedAt": "2026-08-05T08:13:04.175Z",
+  "totalWallMs": 48614,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [
+      "ackages/coding-apprentice/src/index.test.ts",
+      "packages/coding-apprentice/src/index.ts"
+    ],
+    "unexpectedPaths": [
+      "ackages/coding-apprentice/src/index.test.ts"
+    ],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 109042,
+      "cached_input_tokens": 87552,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1680,
+      "reasoning_output_tokens": 356
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/096-v2-real-runtime-transfer-raw_codex-r2/repo"
+}

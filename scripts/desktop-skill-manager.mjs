@@ -1,20 +1,25 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
+  DurableLearnedSkillRegistry,
   LocalSkillPackageManager,
+  LocalSkillReplayPlanner,
+  SkillCandidateBuilder,
   searchSkillCatalog,
 } from "../packages/skill-registry/dist/index.js";
+import {
+  createConservativeCodingApprenticePolicy,
+} from "../packages/shared/dist/index.js";
 
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_CATALOG_BYTES = 4 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_RELEASE_FILES = 200;
 const MAX_RELEASE_BYTES = 8 * 1024 * 1024;
-const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT_DIRECTORY = path.resolve(process.cwd(), "scripts");
 const BUILTIN_SKILL_ROOT = path.resolve(
   SCRIPT_DIRECTORY,
   "..",
@@ -103,6 +108,19 @@ async function readJsonStdin() {
 
 function object(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function requiredString(input, key) {
+  const value = input[key];
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${key} is required`);
+  }
+  return value.trim();
+}
+
+function optionalString(input, key) {
+  const value = input[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function trust(value) {
@@ -411,20 +429,70 @@ async function downloadBundle(item, destination) {
   }
 }
 
-async function dispatch(request) {
+export async function executeDesktopSkillOperation(request) {
   const input = object(request.input);
   const repositoryPath =
     typeof input.repositoryPath === "string" && input.repositoryPath
       ? path.resolve(input.repositoryPath)
       : process.cwd();
   const managerRoot = path.resolve(request.managerRoot);
+  const learnedRegistry = new DurableLearnedSkillRegistry({ rootDir: managerRoot });
+  if (request.operation === "learned.list") {
+    return learnedRegistry.readSnapshot();
+  }
+  if (request.operation === "learned.summary") {
+    return learnedRegistry.summarizeSkills(object(input.namespace));
+  }
+  if (request.operation === "learned.create") {
+    const builder = new SkillCandidateBuilder();
+    const candidate = builder.createCandidateSkill(object(input.builderInput));
+    return learnedRegistry.createCandidateV1({
+      candidate,
+      expectedRevision: input.expectedRevision,
+      actor: requiredString(input, "actor"),
+      reason: requiredString(input, "reason"),
+    });
+  }
+  if (request.operation === "learned.status") {
+    return learnedRegistry.decideSkillV1({
+      decision: object(input.decision),
+      expectedRevision: input.expectedRevision,
+    });
+  }
+  if (request.operation === "learned.replay") {
+    const skill = await learnedRegistry.getSkill(requiredString(input, "skillId"));
+    if (!skill) throw new Error(`learned skill not found: ${input.skillId}`);
+    const planner = new LocalSkillReplayPlanner();
+    const repositoryPath = path.resolve(requiredString(input, "repositoryPath"));
+    const plan = planner.createReplayPlan({
+      skill,
+      runId: requiredString(input, "runId"),
+      taskId: requiredString(input, "taskId"),
+      mode: skill.status === "candidate" ? "candidate_preview" : "active_dry_run",
+      repositoryPath,
+      baseRef: optionalString(input, "baseRef") ?? "HEAD",
+      policy: createConservativeCodingApprenticePolicy(
+        repositoryPath,
+        path.join(managerRoot, "replay-sandboxes"),
+      ),
+    });
+    return learnedRegistry.persistReplayPlan(plan, {
+      expectedRevision: input.expectedRevision,
+      actor: requiredString(input, "actor"),
+      reason: requiredString(input, "reason"),
+      runId: optionalString(input, "runId"),
+    });
+  }
   const manager = new LocalSkillPackageManager({
     repositoryPath,
     userSkillRoot: request.userSkillRoot,
     stateRoot: managerRoot,
     runtimeRoots: [
       {
-        path: BUILTIN_SKILL_ROOT,
+        path:
+          typeof request.runtimeSkillRoot === "string" && request.runtimeSkillRoot
+            ? path.resolve(request.runtimeSkillRoot)
+            : BUILTIN_SKILL_ROOT,
         scope: "runtime",
         source: {
           id: BUILTIN_SOURCE.id,
@@ -565,13 +633,19 @@ async function dispatch(request) {
 
 async function main() {
   const request = await readJsonStdin();
-  const result = await dispatch(request);
+  const result = await executeDesktopSkillOperation(request);
   const response = JSON.stringify({ result, events: [] });
   if (Buffer.byteLength(response) > MAX_RESPONSE_BYTES) throw new Error("response exceeds size limit");
   process.stdout.write(`${response}\n`);
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.stack || error.message : String(error)}\n`);
-  process.exit(1);
-});
+const isDirectExecution =
+  typeof process.argv[1] === "string" &&
+  path.basename(process.argv[1]) === "desktop-skill-manager.mjs";
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.stack || error.message : String(error)}\n`);
+    process.exit(1);
+  });
+}

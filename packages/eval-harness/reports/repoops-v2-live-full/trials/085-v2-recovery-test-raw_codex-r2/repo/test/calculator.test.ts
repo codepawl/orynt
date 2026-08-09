@@ -1,0 +1,1 @@
+import{expect,test}from"bun:test";import{calculate}from"../src/calculator";test("calculator",()=>{expect(calculate(2,"+",3)).toBe(5);expect(calculate(8,"/",0)).toBe("Error");expect(calculate(10,"%",3)).toBe(1)});

@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Main Orynt app window. Native folder picking is limited to explicit local directory selection.",
-  "windows": ["main"],
-  "permissions": ["core:default", "core:event:default", "core:app:default", "dialog:allow-open"]
+  "description": "Minimal capability set for the Orynt main window",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open"
+  ]
 }

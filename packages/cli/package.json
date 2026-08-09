@@ -2,6 +2,10 @@
   "name": "@codepawl/cli",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
+  "engines": {
+    "bun": ">=1.3.14"
+  },
   "type": "module",
   "bin": {
     "orynt": "./dist/main.js"
@@ -15,16 +19,29 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/coding-apprentice build && tsc -p tsconfig.json",
-    "test": "pnpm --filter @codepawl/shared build && vitest run"
+    "build": "bun run --filter @codepawl/claude-adapter build && bun run --filter @codepawl/agent-runtime build && bun run --filter @codepawl/gateway build && bun run --filter @codepawl/coding-apprentice build && bun run --filter @codepawl/code-intel-runtime build && bun run --filter @codepawl/intelligence-runtime build && tsc -p tsconfig.json",
+    "test": "bun run --filter @codepawl/agent-runtime build && bun run --filter @codepawl/gateway build && bun run --filter @codepawl/coding-apprentice build && bun run --filter @codepawl/code-intel-runtime build && bun run --filter @codepawl/intelligence-runtime build && bun test src"
   },
   "dependencies": {
+    "@codepawl/agent-runtime": "workspace:*",
+    "@codepawl/browser-runtime": "workspace:*",
+    "@codepawl/capability-runtime": "workspace:*",
+    "@codepawl/claude-adapter": "workspace:*",
+    "@codepawl/codex-adapter": "workspace:*",
+    "@codepawl/code-intel-runtime": "workspace:*",
     "@codepawl/coding-apprentice": "workspace:*",
-    "@codepawl/shared": "workspace:*"
+    "@codepawl/gateway": "workspace:*",
+    "@codepawl/intelligence-runtime": "workspace:*",
+    "@codepawl/lsp-runtime": "workspace:*",
+    "@codepawl/local-state": "workspace:*",
+    "@codepawl/model-runtime": "workspace:*",
+    "@codepawl/repository-sandbox": "workspace:*",
+    "@codepawl/shared": "workspace:*",
+    "lowlight": "^3.3.0",
+    "marked": "^18.0.9"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
-    "typescript": "6.0.3",
-    "vitest": "4.1.9"
+    "typescript": "6.0.3"
   }
 }

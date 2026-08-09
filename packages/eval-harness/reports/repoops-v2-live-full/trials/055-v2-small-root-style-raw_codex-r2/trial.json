@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "055-v2-small-root-style-raw_codex-r2",
+  "taskId": "v2-small-root-style",
+  "methodId": "raw_codex",
+  "repetition": 1,
+  "startedAt": "2026-08-05T07:52:00.210Z",
+  "completedAt": "2026-08-05T07:52:41.814Z",
+  "totalWallMs": 41604,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [
+      "tyles.css"
+    ],
+    "unexpectedPaths": [
+      "tyles.css"
+    ],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 108061,
+      "cached_input_tokens": 89600,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1332,
+      "reasoning_output_tokens": 150
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/055-v2-small-root-style-raw_codex-r2/repo"
+}

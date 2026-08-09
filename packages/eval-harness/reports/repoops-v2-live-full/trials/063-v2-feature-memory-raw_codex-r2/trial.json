@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "063-v2-feature-memory-raw_codex-r2",
+  "taskId": "v2-feature-memory",
+  "methodId": "raw_codex",
+  "repetition": 1,
+  "startedAt": "2026-08-05T07:55:56.458Z",
+  "completedAt": "2026-08-05T07:56:54.595Z",
+  "totalWallMs": 58137,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [
+      "rc/calculator.ts",
+      "test/calculator.test.ts"
+    ],
+    "unexpectedPaths": [
+      "rc/calculator.ts"
+    ],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 111071,
+      "cached_input_tokens": 88576,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 2328,
+      "reasoning_output_tokens": 825
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/063-v2-feature-memory-raw_codex-r2/repo"
+}

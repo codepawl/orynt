@@ -28,12 +28,24 @@ import type {
   SkillSummary,
   SkillQuery,
   SkillCandidateBuilderInput,
+  LearnedSkillAuditEntryV1,
+  LearnedSkillCandidateInputV1,
+  LearnedSkillDecisionInputV1,
+  LearnedSkillMutationResultV1,
+  LearnedSkillSnapshotV1,
 } from "@codepawl/shared";
 import { ConservativePolicyEngine } from "@codepawl/shared";
+import {
+  compareAndSwapVersionedJson,
+  loadVersionedJson,
+  LocalStateError,
+  type ExclusiveLockOptions,
+} from "@codepawl/local-state";
+import path from "node:path";
 
-export * from "./catalogProviders";
-export * from "./packageManager";
-export * from "./packageScanner";
+export * from "./catalogProviders.js";
+export * from "./packageManager.js";
+export * from "./packageScanner.js";
 
 export class SkillRegistryFailure extends Error {
   readonly code: "skill_not_found" | "invalid_status_transition" | "invalid_candidate";
@@ -488,6 +500,473 @@ export class LocalSkillRegistry implements SkillRegistry {
       return "skill_superseded";
     }
     return "skill_not_active";
+  }
+}
+
+export const LEARNED_SKILL_STORE_SCHEMA_VERSION = 2 as const;
+export const LEARNED_SKILL_STORE_FILE_NAME = "learned-skill-store.json";
+
+export type LearnedSkillStoreEnvelope = LearnedSkillSnapshotV1;
+
+export type LearnedSkillMutationOptions = {
+  expectedRevision?: number;
+  actor?: string;
+  reason?: string;
+  runId?: string;
+};
+
+export type DurableLearnedSkillRegistryOptions = {
+  rootDir: string;
+  fileName?: string;
+  lock?: ExclusiveLockOptions;
+};
+
+const SKILL_STATUSES = new Set<SkillStatus>(["candidate", "active", "rejected", "superseded", "archived"]);
+const PROMOTION_DECISIONS = new Set(["promote", "reject", "supersede", "archive"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function hasExactKeys(value: Record<string, unknown>, required: string[], optional: string[] = []): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function isArtifactRef(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["id", "kind", "uri", "label"], ["sha256"]) &&
+    typeof value.id === "string" &&
+    typeof value.kind === "string" &&
+    typeof value.uri === "string" &&
+    typeof value.label === "string" &&
+    (value.sha256 === undefined || typeof value.sha256 === "string") &&
+    value.kind.length > 0
+  );
+}
+
+function isNamespace(value: unknown): value is MemoryNamespace {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["capabilityId", "workspaceId"], ["repositoryPath", "projectId"]) &&
+    typeof value.capabilityId === "string" &&
+    typeof value.workspaceId === "string" &&
+    (value.repositoryPath === undefined || typeof value.repositoryPath === "string") &&
+    (value.projectId === undefined || typeof value.projectId === "string")
+  );
+}
+
+function isPromotionDecision(value: unknown): value is SkillPromotionDecision {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["skillId", "decision", "actor", "reason", "decidedAt"], ["runId", "supersededBy"]) &&
+    typeof value.skillId === "string" &&
+    typeof value.decision === "string" &&
+    PROMOTION_DECISIONS.has(value.decision) &&
+    typeof value.actor === "string" &&
+    typeof value.reason === "string" &&
+    isTimestamp(value.decidedAt) &&
+    (value.runId === undefined || typeof value.runId === "string") &&
+    (value.supersededBy === undefined || typeof value.supersededBy === "string")
+  );
+}
+
+function isSkillDefinition(value: unknown): value is SkillDefinition {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(
+      value,
+      [
+        "id", "namespace", "capabilityId", "title", "summary", "status", "confidence",
+        "preconditions", "steps", "validation", "safety", "provenance", "redaction",
+        "promotionDecisions", "createdAt", "updatedAt",
+      ],
+      ["supersededBy"],
+    ) ||
+    typeof value.id !== "string" ||
+    !isNamespace(value.namespace) ||
+    typeof value.capabilityId !== "string" ||
+    typeof value.title !== "string" ||
+    typeof value.summary !== "string" ||
+    typeof value.status !== "string" ||
+    !SKILL_STATUSES.has(value.status as SkillStatus) ||
+    typeof value.confidence !== "number" ||
+    !Number.isFinite(value.confidence) ||
+    value.confidence < 0 ||
+    value.confidence > 1 ||
+    !isTimestamp(value.createdAt) ||
+    !isTimestamp(value.updatedAt) ||
+    (value.supersededBy !== undefined && typeof value.supersededBy !== "string")
+  ) {
+    return false;
+  }
+  const preconditions = value.preconditions;
+  const steps = value.steps;
+  const validation = value.validation;
+  const safety = value.safety;
+  const provenance = value.provenance;
+  const redactionValue = value.redaction;
+  return (
+    Array.isArray(preconditions) &&
+    preconditions.every(
+      (item) =>
+        isRecord(item) &&
+        hasExactKeys(item, ["id", "kind", "summary", "required"]) &&
+        typeof item.id === "string" &&
+        typeof item.kind === "string" &&
+        typeof item.summary === "string" &&
+        typeof item.required === "boolean",
+    ) &&
+    Array.isArray(steps) &&
+    steps.every(
+      (item) =>
+        isRecord(item) &&
+        hasExactKeys(item, ["id", "title", "instruction", "expectedOutcome"], ["evidenceRefs"]) &&
+        typeof item.id === "string" &&
+        typeof item.title === "string" &&
+        typeof item.instruction === "string" &&
+        typeof item.expectedOutcome === "string" &&
+        (item.evidenceRefs === undefined || isStringArray(item.evidenceRefs)),
+    ) &&
+    isRecord(validation) &&
+    hasExactKeys(validation, ["requiresVerifierPass", "requiresDiffWithinScope", "commands", "expectedEvidenceKinds"]) &&
+    typeof validation.requiresVerifierPass === "boolean" &&
+    typeof validation.requiresDiffWithinScope === "boolean" &&
+    isStringArray(validation.commands) &&
+    isStringArray(validation.expectedEvidenceKinds) &&
+    isRecord(safety) &&
+    hasExactKeys(safety, [
+      "allowedPaths", "protectedPaths", "allowedCommands", "blockedActions",
+      "requiresManualApproval", "rollbackNotes", "secretHandling",
+    ]) &&
+    isStringArray(safety.allowedPaths) &&
+    isStringArray(safety.protectedPaths) &&
+    isStringArray(safety.allowedCommands) &&
+    isStringArray(safety.blockedActions) &&
+    typeof safety.requiresManualApproval === "boolean" &&
+    typeof safety.rollbackNotes === "string" &&
+    typeof safety.secretHandling === "string" &&
+    isRecord(provenance) &&
+    hasExactKeys(provenance, [
+      "sourceRunIds", "sourceTaskIds", "candidateRuleIds", "episodeIds",
+      "verificationResultIds", "codexContractIds", "artifactRefs", "sourceEventIds",
+    ]) &&
+    isStringArray(provenance.sourceRunIds) &&
+    isStringArray(provenance.sourceTaskIds) &&
+    isStringArray(provenance.candidateRuleIds) &&
+    isStringArray(provenance.episodeIds) &&
+    isStringArray(provenance.verificationResultIds) &&
+    isStringArray(provenance.codexContractIds) &&
+    Array.isArray(provenance.artifactRefs) &&
+    provenance.artifactRefs.every(isArtifactRef) &&
+    isStringArray(provenance.sourceEventIds) &&
+    isRecord(redactionValue) &&
+    hasExactKeys(redactionValue, ["applied", "redactedPaths", "redactionCount"]) &&
+    typeof redactionValue.applied === "boolean" &&
+    isStringArray(redactionValue.redactedPaths) &&
+    Number.isSafeInteger(redactionValue.redactionCount) &&
+    Number(redactionValue.redactionCount) >= 0 &&
+    Array.isArray(value.promotionDecisions) &&
+    value.promotionDecisions.every(isPromotionDecision)
+  );
+}
+
+function isLearnedSkillStoreEnvelope(value: unknown): value is LearnedSkillStoreEnvelope {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ["schemaVersion", "revision", "updatedAt", "skills", "replayPlans", "auditLog"]) &&
+    value.schemaVersion === LEARNED_SKILL_STORE_SCHEMA_VERSION &&
+    Number.isSafeInteger(value.revision) &&
+    Number(value.revision) >= 0 &&
+    isTimestamp(value.updatedAt) &&
+    Array.isArray(value.skills) &&
+    value.skills.every(isSkillDefinition) &&
+    Array.isArray(value.replayPlans) &&
+    value.replayPlans.every(isReplayPlan) &&
+    Array.isArray(value.auditLog) &&
+    value.auditLog.every(isLearnedAudit)
+  );
+}
+
+function isReplayPlan(value: unknown): value is SkillReplayPlan {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "id", "runId", "taskId", "skillId", "skillTitle", "skillStatus", "mode",
+      "dryRunOnly", "executable", "readiness", "summary", "preconditions", "steps",
+      "risks", "policyChecks", "validationExpectations", "budgetEstimate",
+      "blockedActions", "requiredApprovals", "expectedArtifacts", "stopReasons",
+      "redaction", "createdAt",
+    ]) &&
+    ["id", "runId", "taskId", "skillId", "skillTitle", "summary"].every(
+      (key) => typeof value[key] === "string",
+    ) && isTimestamp(value.createdAt) &&
+    SKILL_STATUSES.has(value.skillStatus as SkillStatus) &&
+    ["active_dry_run", "candidate_preview"].includes(String(value.mode)) &&
+    value.dryRunOnly === true && value.executable === false &&
+    ["ready", "preview_only", "warning", "blocked"].includes(String(value.readiness)) &&
+    ["preconditions", "steps", "risks", "policyChecks", "validationExpectations", "blockedActions", "requiredApprovals", "stopReasons"]
+      .every((key) => Array.isArray(value[key])) &&
+    isStringArray(value.blockedActions) && isStringArray(value.requiredApprovals) &&
+    isStringArray(value.stopReasons) &&
+    Array.isArray(value.expectedArtifacts) && value.expectedArtifacts.every(isArtifactRef) &&
+    isRecord(value.budgetEstimate) && isRecord(value.redaction) && isSkillReplayRedaction(value.redaction)
+  );
+}
+
+function isSkillReplayRedaction(value: Record<string, unknown>): boolean {
+  return hasExactKeys(value, ["applied", "redactedPaths", "redactionCount"]) &&
+    typeof value.applied === "boolean" && isStringArray(value.redactedPaths) &&
+    Number.isSafeInteger(value.redactionCount) && Number(value.redactionCount) >= 0;
+}
+
+function isLearnedAudit(value: unknown): value is LearnedSkillAuditEntryV1 {
+  return isRecord(value) &&
+    hasExactKeys(value, ["id", "operation", "skillId", "namespace", "actor", "reason", "committedRevision", "occurredAt"], ["runId"]) &&
+    typeof value.id === "string" &&
+    ["candidate.created", "status.decided", "replay.persisted"].includes(String(value.operation)) &&
+    typeof value.skillId === "string" && isNamespace(value.namespace) &&
+    typeof value.actor === "string" && typeof value.reason === "string" &&
+    (value.runId === undefined || typeof value.runId === "string") &&
+    Number.isSafeInteger(value.committedRevision) && Number(value.committedRevision) > 0 &&
+    isTimestamp(value.occurredAt);
+}
+
+function sameNamespace(left: MemoryNamespace, right: MemoryNamespace): boolean {
+  return (
+    left.capabilityId === right.capabilityId &&
+    left.workspaceId === right.workspaceId &&
+    left.repositoryPath === right.repositoryPath &&
+    left.projectId === right.projectId
+  );
+}
+
+/**
+ * Persistent registry for verifier-backed learned skills only. Agent Skill packages
+ * are managed by the package registry and never enter this store.
+ */
+export class DurableLearnedSkillRegistry implements SkillRegistry {
+  readonly filePath: string;
+  private readonly lock?: ExclusiveLockOptions;
+
+  constructor(options: DurableLearnedSkillRegistryOptions) {
+    this.filePath = path.join(path.resolve(options.rootDir), options.fileName ?? LEARNED_SKILL_STORE_FILE_NAME);
+    this.lock = options.lock;
+  }
+
+  async readSnapshot(): Promise<LearnedSkillStoreEnvelope> {
+    return loadVersionedJson(this.storeOptions());
+  }
+
+  async createCandidateSkill(
+    input: SkillExtractionCandidate,
+    options: LearnedSkillMutationOptions = {},
+  ): Promise<SkillDefinition> {
+    return this.mutate(options, (state) => {
+      if (!input.acceptedRules.some((rule) => rule.status === "accepted")) {
+        throw new SkillRegistryFailure("invalid_candidate", "accepted candidate rule is required");
+      }
+      if (input.verificationResult.status !== "pass" || input.verificationResult.verdict.status !== "pass") {
+        throw new SkillRegistryFailure("invalid_candidate", "successful verification is required");
+      }
+      const existing = state.skills.find((skill) => skill.id === input.skill.id);
+      if (existing && !sameNamespace(existing.namespace, input.skill.namespace)) {
+        throw new SkillRegistryFailure("invalid_candidate", `skill id belongs to another namespace: ${input.skill.id}`);
+      }
+      const skill = clone(input.skill);
+      skill.status = "candidate";
+      skill.updatedAt = skill.updatedAt || now();
+      state.skills = [skill, ...state.skills.filter((item) => item.id !== skill.id)];
+      this.appendAudit(state, "candidate.created", skill, {
+        ...options,
+        runId: options.runId ?? input.skill.provenance.sourceRunIds[0],
+      }, skill.createdAt);
+      return clone(skill);
+    });
+  }
+
+  async createCandidateV1(
+    input: LearnedSkillCandidateInputV1,
+  ): Promise<LearnedSkillMutationResultV1<SkillDefinition>> {
+    const value = await this.createCandidateSkill(input.candidate, {
+      expectedRevision: input.expectedRevision,
+      actor: input.actor,
+      reason: input.reason,
+    });
+    return { value, committedRevision: (await this.readSnapshot()).revision };
+  }
+
+  async listSkills(query: SkillQuery = {}): Promise<SkillDefinition[]> {
+    return new LocalSkillRegistry((await this.readSnapshot()).skills).listSkills(query);
+  }
+
+  async getSkill(id: string): Promise<SkillDefinition | undefined> {
+    return new LocalSkillRegistry((await this.readSnapshot()).skills).getSkill(id);
+  }
+
+  async planSkillInvocation(input: SkillInvocationPlanInput): Promise<SkillInvocationPlan> {
+    return new LocalSkillRegistry((await this.readSnapshot()).skills).planSkillInvocation(input);
+  }
+
+  async updateSkillStatus(
+    decision: SkillPromotionDecision,
+    options: LearnedSkillMutationOptions = {},
+  ): Promise<SkillDefinition> {
+    return this.mutate(options, (state) => {
+      const skill = state.skills.find((item) => item.id === decision.skillId);
+      if (!skill) {
+        throw new SkillRegistryFailure("skill_not_found", `skill not found: ${decision.skillId}`);
+      }
+      const nextStatus = transitionFor(decision.decision);
+      assertValidTransition(skill.status, nextStatus);
+      const updated: SkillDefinition = {
+        ...skill,
+        status: nextStatus,
+        updatedAt: decision.decidedAt,
+        supersededBy: nextStatus === "superseded" ? decision.supersededBy : skill.supersededBy,
+        promotionDecisions: [...skill.promotionDecisions, clone(decision)],
+      };
+      state.skills = state.skills.map((item) => (item.id === updated.id ? updated : item));
+      this.appendAudit(state, "status.decided", updated, {
+        ...options,
+        actor: decision.actor,
+        reason: decision.reason,
+        runId: decision.runId,
+      }, decision.decidedAt);
+      return clone(updated);
+    });
+  }
+
+  async decideSkillV1(
+    input: LearnedSkillDecisionInputV1,
+  ): Promise<LearnedSkillMutationResultV1<SkillDefinition>> {
+    const value = await this.updateSkillStatus(input.decision, {
+      expectedRevision: input.expectedRevision,
+    });
+    return { value, committedRevision: (await this.readSnapshot()).revision };
+  }
+
+  async rejectSkill(
+    decision: SkillPromotionDecision,
+    options: LearnedSkillMutationOptions = {},
+  ): Promise<SkillDefinition> {
+    return this.updateSkillStatus({ ...decision, decision: "reject" }, options);
+  }
+
+  async promoteSkillManually(
+    decision: SkillPromotionDecision,
+    options: LearnedSkillMutationOptions = {},
+  ): Promise<SkillDefinition> {
+    return this.updateSkillStatus({ ...decision, decision: "promote" }, options);
+  }
+
+  async summarizeSkills(namespace?: Partial<MemoryNamespace>): Promise<SkillSummary> {
+    return new LocalSkillRegistry((await this.readSnapshot()).skills).summarizeSkills(namespace);
+  }
+
+  async listReplayPlans(namespace?: Partial<MemoryNamespace>): Promise<SkillReplayPlan[]> {
+    const snapshot = await this.readSnapshot();
+    const skillIds = new Set(snapshot.skills.filter((skill) => namespaceMatches(skill.namespace, namespace)).map((skill) => skill.id));
+    return snapshot.replayPlans.filter((plan) => skillIds.has(plan.skillId)).map(clone);
+  }
+
+  async persistReplayPlan(
+    plan: SkillReplayPlan,
+    options: LearnedSkillMutationOptions = {},
+  ): Promise<LearnedSkillMutationResultV1<SkillReplayPlan>> {
+    if (!isReplayPlan(plan) || plan.executable !== false || plan.dryRunOnly !== true) {
+      throw new SkillRegistryFailure("invalid_candidate", "only strict non-executable replay plans may be persisted");
+    }
+    const value = await this.mutate(options, (state) => {
+      const skill = state.skills.find((item) => item.id === plan.skillId);
+      if (!skill) throw new SkillRegistryFailure("skill_not_found", `skill not found: ${plan.skillId}`);
+      state.replayPlans = [clone(plan), ...state.replayPlans.filter((item) => item.id !== plan.id)];
+      this.appendAudit(state, "replay.persisted", skill, options, plan.createdAt);
+      return clone(plan);
+    });
+    return { value, committedRevision: (await this.readSnapshot()).revision };
+  }
+
+  private storeOptions() {
+    return {
+      filePath: this.filePath,
+      schemaVersion: LEARNED_SKILL_STORE_SCHEMA_VERSION,
+      validate: isLearnedSkillStoreEnvelope,
+      initialize: (): LearnedSkillStoreEnvelope => ({
+        schemaVersion: LEARNED_SKILL_STORE_SCHEMA_VERSION,
+        revision: 0,
+        updatedAt: new Date(0).toISOString(),
+        skills: [],
+        replayPlans: [],
+        auditLog: [],
+      }),
+      migrate: (value: unknown): LearnedSkillStoreEnvelope => {
+        if (
+          !isRecord(value) ||
+          value.schemaVersion !== 1 ||
+          !hasExactKeys(value, ["schemaVersion", "revision", "updatedAt", "skills"]) ||
+          !Number.isSafeInteger(value.revision) || Number(value.revision) < 0 ||
+          !isTimestamp(value.updatedAt) ||
+          !Array.isArray(value.skills) || !value.skills.every(isSkillDefinition)
+        ) {
+          throw new LocalStateError("invalid_schema", "invalid learned-skill v1 migration source");
+        }
+        return {
+          schemaVersion: LEARNED_SKILL_STORE_SCHEMA_VERSION,
+          revision: Number(value.revision),
+          updatedAt: value.updatedAt,
+          skills: clone(value.skills),
+          replayPlans: [],
+          auditLog: [],
+        };
+      },
+    };
+  }
+
+  private appendAudit(
+    state: LearnedSkillStoreEnvelope,
+    operation: LearnedSkillAuditEntryV1["operation"],
+    skill: SkillDefinition,
+    options: LearnedSkillMutationOptions,
+    occurredAt = now(),
+  ): void {
+    const committedRevision = state.revision + 1;
+    state.auditLog.push({
+      id: `learned-audit-${committedRevision}-${slug(operation)}-${slug(skill.id)}`,
+      operation,
+      skillId: skill.id,
+      namespace: clone(skill.namespace),
+      actor: options.actor ?? "skill-registry",
+      reason: options.reason ?? operation,
+      ...(options.runId ? { runId: options.runId } : {}),
+      committedRevision,
+      occurredAt,
+    });
+  }
+
+  private async mutate<T>(
+    options: LearnedSkillMutationOptions,
+    action: (state: LearnedSkillStoreEnvelope) => T,
+  ): Promise<T> {
+    const mutation = await compareAndSwapVersionedJson({
+      ...this.storeOptions(),
+      expectedRevision: options.expectedRevision,
+      lock: this.lock,
+      mutate: action,
+      updatedAt: (state) => {
+        state.updatedAt = now();
+      },
+    });
+    return mutation.result;
   }
 }
 

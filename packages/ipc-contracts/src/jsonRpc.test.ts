@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import {
   CODEX_EXECUTION_IPC_METHODS,
+  DESKTOP_COMMANDS,
   MEMORY_IPC_METHODS,
   ORYNT_ERROR_CODES,
   RUN_IPC_METHODS,
@@ -16,6 +19,14 @@ import {
 } from "./index";
 
 describe("Orynt IPC contracts", () => {
+  it("keeps the native host command allowlist synchronized", async () => {
+    const manifest = JSON.parse(await readFile(
+      path.resolve(import.meta.dirname, "../desktop-command-allowlist.json"),
+      "utf8",
+    ));
+    expect(manifest).toEqual(DESKTOP_COMMANDS);
+  });
+
   it("validates newline-delimited JSON-RPC request, response, and event envelopes", () => {
     expect(
       isRpcRequest({

@@ -1,63 +1,58 @@
 # Orynt Skills Hub
 
-Orynt quản lý **Agent Skills cài đặt trên máy** như một miền riêng với learned
-skills do cognitive kernel rút ra. Agent Skill là một thư mục có `SKILL.md`;
-learned skill vẫn dùng registry, evidence và promotion lifecycle hiện có.
+Orynt manages **Agent Skills installed on the machine** as a separate domain
+from learned skills extracted by the cognitive kernel. An Agent Skill is a
+directory containing `SKILL.md`; learned skills continue to use the existing
+registry, evidence, and promotion lifecycle.
 
-## Nơi Orynt đọc skill
+## Where Orynt reads skills
 
-Thứ tự ưu tiên khi trùng tên:
+When names collide, precedence is:
 
 1. `<repository>/.agents/skills/`
 2. `~/.agents/skills/`
-3. built-in skills đi kèm Orynt
-4. runtime-native catalogs khác được cấu hình read-only
+3. built-in skills shipped with Orynt
+4. other configured read-only runtime-native catalogs
 
-Shared skill root của OS user là nguồn chung cho Claude Code, Codex, OpenCode
-và các runtime khác. Orynt không tự ý ghi vào `.claude/`, `.codex/`,
-`.opencode/` hoặc `.hermes/`.
+The OS-user shared skill root is the common source for Claude Code, Codex,
+OpenCode, and other runtimes. Orynt does not write to `.claude/`, `.codex/`,
+`.opencode/`, or `.hermes/` without explicit direction.
 
-Scanner:
+The scanner:
 
-- chỉ nhận thư mục thường có `SKILL.md`;
-- không đi theo symlink;
-- giới hạn độ sâu, số file, kích thước manifest và tổng bundle;
-- parse frontmatter theo safe subset, fingerprint canonical bằng SHA-256;
-- báo collision, invalid manifest, local drift và shadowing;
-- project scope thắng user scope, user scope thắng runtime scope.
+- accepts only regular directories containing `SKILL.md`;
+- does not follow symbolic links;
+- limits depth, file count, manifest size, and total bundle size;
+- parses a safe frontmatter subset and creates a canonical SHA-256 fingerprint;
+- reports collisions, invalid manifests, local drift, and shadowing;
+- gives project scope precedence over user scope, and user scope over runtime scope.
 
-Project skills có precedence cao nhưng mặc định là **untrusted** vì nội dung
-repository có thể do người khác cung cấp. User skills dưới root do OS user sở
-hữu được gắn trusted; trust không tự mở rộng tool hay authorization.
+Project skills have higher precedence but are **untrusted** by default because
+repository content may come from another party. User skills under the
+OS-user-owned root are trusted. Trust never expands tool access or
+authorization.
 
-Orynt đi kèm năm built-in skills ở runtime scope:
+Orynt includes five built-in skills at runtime scope:
 
-- `repository-onboarding`: map codebase ở chế độ read-only;
-- `change-planner`: tạo implementation plan dựa trên repository thật;
-- `bug-fixer`: reproduce, sửa root cause và thêm regression test;
-- `code-reviewer`: review diff ở chế độ read-only;
-- `release-readiness`: kiểm tra release gate mà không publish hay deploy.
+- `repository-onboarding`: map a codebase in read-only mode;
+- `change-planner`: create an implementation plan from the real repository;
+- `bug-fixer`: reproduce a bug, fix its root cause, and add a regression test;
+- `code-reviewer`: review a diff in read-only mode;
+- `release-readiness`: inspect release gates without publishing or deploying.
 
-Các skill này có source `orynt-builtin`, được enable sẵn nhưng **không bao giờ
-tự attach**. Operator phải chọn skill cho từng run. Built-in bundle là
-read-only; project hoặc user skill cùng tên có thể override nhờ precedence cao
-hơn. Skill text không cấp thêm tool, network, path hay authorization.
-
-## Desktop
-
-Mở **Account → Skills** để dùng các tab:
-
-- **Installed**: scan, inspect, enable/disable, pin, update, Trash và restore;
-- **Discover**: search catalog đã refresh và tạo install plan;
-- **Updates**: xem update cần review;
-- **Learned**: mở registry learned skills hiện có;
-- **Sources**: xem trust, freshness và trạng thái từng nguồn.
-
-Composer chỉ attach những skill đang `enabled`, `eligible` và không bị shadow.
-Ngay trước khi chạy, Orynt fingerprint lại bundle và tạo immutable context
-snapshot. Manifest của run lưu digest, skill IDs và artifact `skill-context.json`.
+These skills use the `orynt-builtin` source and are enabled by default, but
+they **never attach automatically**. The operator selects skills for each run.
+The built-in bundle is read-only; a project or user skill with the same name
+can override it through higher precedence. Skill text does not grant tools,
+network access, paths, or authorization.
 
 ## CLI
+
+The CLI is the primary Skills management surface. The composer attaches only
+skills that are `enabled`, `eligible`, and not shadowed. Immediately before a
+run, Orynt fingerprints the bundle again and creates an immutable context
+snapshot. The run manifest stores the digest, skill IDs, and the
+`skill-context.json` artifact.
 
 ```text
 orynt skills list --repo /path/to/repository
@@ -72,7 +67,7 @@ orynt skills remove <skill-id> --scope user --approve-once
 orynt skills history --json
 ```
 
-Trong interactive CLI:
+In the interactive CLI:
 
 ```text
 /skills list
@@ -81,69 +76,71 @@ Trong interactive CLI:
 /skills clear
 ```
 
-Attachment được lưu trong session. Mutation headless bắt buộc
-`--approve-once`; `--dry-run` chỉ tạo và in immutable plan.
+Attachments are stored in the session. Headless mutations require
+`--approve-once`; `--dry-run` creates and prints only the immutable plan.
 
-## Catalog và trust
+## Catalog and trust
 
-Các nguồn mặc định:
+Default sources:
 
-- `orynt-builtin`: năm skill read-only đi kèm build; không cần refresh network.
-- `openai-plugins`: catalog plugin hiện tại của OpenAI; chỉ các thư mục thực sự
-  có `SKILL.md` được index.
-- `hermes-official`: `optional-skills/` từ Hermes Agent.
-- `anthropic-official`: chỉ skill folders từ marketplace chính thức; plugin có
-  hooks, MCP, LSP, agents, commands hoặc package dependency không được cài như
-  một Agent Skill.
-- `skills-sh` và `clawhub`: được hiển thị nhưng disabled mặc định cho đến khi
-  có adapter catalog được operator bật.
+- `orynt-builtin`: five read-only skills shipped with the build; no network
+  refresh is required.
+- `openai-plugins`: the current OpenAI plugin catalog; only directories that
+  actually contain `SKILL.md` are indexed.
+- `hermes-official`: `optional-skills/` from Hermes Agent.
+- `anthropic-official`: skill folders from the official marketplace only;
+  plugins containing hooks, MCP, LSP, agents, commands, or package dependencies
+  are not installed as Agent Skills.
+- `skills-sh` and `clawhub`: displayed but disabled by default until the
+  operator enables a catalog adapter.
 
-Refresh là thao tác network rõ ràng. Orynt cache catalog, giới hạn response,
-timeout request, chỉ chấp nhận HTTPS và không redirect ngầm. Catalog không phải
-chứng thực an toàn: community content luôn là untrusted.
+Refresh is an explicit network action. Orynt caches catalogs, bounds response
+size, times out requests, accepts HTTPS only, and does not follow redirects
+implicitly. A catalog is not a safety endorsement: community content is always
+untrusted.
 
-## Transaction và recovery
+## Transactions and recovery
 
-Mọi thay đổi đi qua:
+Every mutation follows:
 
 ```text
-plan → operator approval → execute → rescan
+plan -> operator approval -> execute -> rescan
 ```
 
-Plan có TTL, scope, destination, source fingerprint và trust decision. Install
-copy vào staging, kiểm tra fingerprint rồi mới atomic rename. Receipt ghi danh
-sách file, digest, source, revision và thời gian. Update/remove bị chặn khi local
-files đã drift.
+The plan contains a TTL, scope, destination, source fingerprint, and trust
+decision. Installation copies into staging, verifies the fingerprint, and
+then performs an atomic rename. The receipt records the file list, digest,
+source, revision, and time. Update and removal are blocked when local files
+have drifted.
 
-Remove chuyển receipt-owned bundle vào Trash. Restore kiểm tra digest trước khi
-đưa lại. Purge chỉ xóa đường dẫn Trash thuộc manager root. Transaction bị ngắt
-được ghi failed để operator recovery; Orynt không tự chạy script hoặc cài
-dependency bên trong skill.
+Removal moves the receipt-owned bundle to Trash. Restore checks the digest
+before returning it. Purge deletes only manager-owned Trash paths. Interrupted
+transactions are recorded as failed for operator recovery. Orynt does not run
+scripts or install dependencies contained inside a skill.
 
-State mặc định:
+Default state location:
 
 ```text
 $XDG_STATE_HOME/orynt/skills/
-# hoặc ~/.local/state/orynt/skills/
+# or ~/.local/state/orynt/skills/
 ```
 
-Có thể đổi bằng `ORYNT_STATE_HOME`. Desktop runner có thể được override cho
-development bằng `ORYNT_DESKTOP_SKILL_MANAGER`.
+Override it with `ORYNT_STATE_HOME`.
 
-Security boundary: repository content là untrusted; OS-user account đang chạy
-Orynt là owner tin cậy của control plane. State directories dùng mode `0700`,
-no-follow handles và random transaction IDs. Orynt không cố sandbox một process
-độc hại khác đang chạy cùng UID; process cùng UID đã có quyền sửa skill roots,
-state và executable của Orynt.
+Security boundary: repository content is untrusted; the OS-user account running
+Orynt is the trusted control-plane owner. State directories use mode `0700`,
+no-follow handles, and random transaction IDs. Orynt does not attempt to
+sandbox another malicious process running under the same UID; a process with
+the same UID can already modify skill roots, state, and the Orynt executable.
 
-## Giới hạn hiện tại
+## Current limitations
 
-- `skills.sh` và ClawHub chưa bật remote adapter mặc định.
-- GitHub refresh dùng public API và có thể bị rate-limit.
-- Bản private beta chưa có signing service hay organization policy feed.
-- Project-scope mutation hiện dùng Linux `O_DIRECTORY|O_NOFOLLOW` và pinned
-  directory handle; trên platform chưa có boundary tương đương, Orynt fail
-  closed. User-scope inventory vẫn đọc được.
-- Skill instructions vẫn có thể chứa prompt injection; operator phải review
-  capability và nội dung trước khi enable. Skill text không thể mở rộng
-  repository scope, expected paths, tool access hoặc destructive authorization.
+- `skills.sh` and ClawHub do not have remote adapters enabled by default.
+- GitHub refresh uses the public API and may be rate-limited.
+- There is no signing service or organization policy feed.
+- Project-scope mutation currently uses Linux `O_DIRECTORY|O_NOFOLLOW` and a
+  pinned directory handle. Orynt fails closed on platforms without an
+  equivalent boundary. User-scope inventory remains readable.
+- Skill instructions may contain prompt injection. The operator must review
+  capabilities and content before enabling a skill. Skill text cannot expand
+  repository scope, expected paths, tool access, or destructive authorization.

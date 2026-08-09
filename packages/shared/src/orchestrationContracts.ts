@@ -21,13 +21,94 @@ export type OrchestrationPreset =
 
 export type ReviewerPolicy = "always" | "conditional" | "failure_only";
 
+export type OrchestrationProviderId =
+  | "codex-cli"
+  | "openai-api"
+  | "anthropic-api"
+  | "opencode-api";
+
+export const ORCHESTRATION_PROVIDER_IDS: readonly OrchestrationProviderId[] = [
+  "codex-cli",
+  "openai-api",
+  "anthropic-api",
+  "opencode-api",
+];
+
+/**
+ * How a provider charges. `subscription` providers bill a flat fee outside the
+ * token stream, so a per-token estimate for one would be a confident wrong
+ * number rather than a missing one.
+ */
+export type ProviderBillingModel = "per_token" | "subscription";
+
+export type ProviderFacts = {
+  billing: ProviderBillingModel;
+  /**
+   * Whether the provider reports prompt-cache counts. When false,
+   * `cachedInputTokens` is structurally zero and a cache-hit ratio derived from
+   * it says nothing about caching — it says the provider does not measure it.
+   */
+  reportsCacheTokens: boolean;
+};
+
+/**
+ * Provider traits that subsystems must branch on, stated once.
+ *
+ * Declared as a total `Record` so adding a provider id fails to compile until
+ * its traits are supplied. That is deliberate: the previous pattern of scattered
+ * `providerId === "codex-cli"` checks meant a new provider silently inherited
+ * whichever default each call site happened to use.
+ */
+const PROVIDER_FACTS: Record<OrchestrationProviderId, ProviderFacts> = {
+  "codex-cli": { billing: "subscription", reportsCacheTokens: true },
+  "openai-api": { billing: "per_token", reportsCacheTokens: true },
+  "anthropic-api": { billing: "per_token", reportsCacheTokens: true },
+  // OpenCode Zen and Go proxy many upstream models behind one flat plan and
+  // return only `input_tokens` and `output_tokens`; verified against the live
+  // service on 2026-08-09.
+  "opencode-api": { billing: "subscription", reportsCacheTokens: false },
+};
+
+/** Traits for a known provider, or `undefined` for an unrecognized id. */
+export function providerFacts(value: unknown): ProviderFacts | undefined {
+  return isOrchestrationProviderId(value)
+    ? { ...PROVIDER_FACTS[value] }
+    : undefined;
+}
+
+/**
+ * Billing model for a provider. An unrecognized id is treated as
+ * `subscription` so callers withhold a price they cannot justify instead of
+ * inventing one.
+ */
+export function providerBilling(value: unknown): ProviderBillingModel {
+  return providerFacts(value)?.billing ?? "subscription";
+}
+
+/** Whether the provider reports prompt-cache counts. Unknown ids report none. */
+export function providerReportsCacheTokens(value: unknown): boolean {
+  return providerFacts(value)?.reportsCacheTokens ?? false;
+}
+
+const PROVIDER_IDS = new Set<OrchestrationProviderId>(
+  ORCHESTRATION_PROVIDER_IDS,
+);
+
+export function isOrchestrationProviderId(
+  value: unknown,
+): value is OrchestrationProviderId {
+  return PROVIDER_IDS.has(value as OrchestrationProviderId);
+}
+
 export type OrchestrationRoleBinding = {
-  providerId: "codex-cli";
+  providerId: OrchestrationProviderId;
   modelId: string;
   thinkingEffort: OrchestrationThinkingEffort;
   maxTokens: number;
   maxWallTimeMs: number;
   maxUsd?: number;
+  modelTier?: import("./modelTierContracts.js").ModelTier;
+  routingReasonCodes?: import("./modelTierContracts.js").TaskTierRoutingReason[];
 };
 
 export type OrchestrationProfile = {
@@ -42,6 +123,7 @@ export type OrchestrationProfile = {
 };
 
 export type CodexOrchestrationModelOption = {
+  providerId?: OrchestrationProviderId;
   id: string;
   supportedThinkingEfforts: OrchestrationThinkingEffort[];
   defaultThinkingEffort?: OrchestrationThinkingEffort;
@@ -74,6 +156,8 @@ export type OrchestrationChildTask = {
   expectedPaths: string[];
   expectedArtifacts: string[];
   depth: number;
+  capabilityIds?: string[];
+  toolNamespaces?: string[];
 };
 
 export type OrchestrationPlan = {
@@ -101,18 +185,40 @@ export type ModelInvocationRecord = {
   parentInvocationId?: string;
   taskId: string;
   role: OrchestrationRole;
-  providerId: "codex-cli";
+  providerId: OrchestrationProviderId;
   modelId: string;
   thinkingEffort: OrchestrationThinkingEffort;
   contextHash: string;
   status: ModelInvocationStatus;
   inputTokens: number | null;
+  cachedInputTokens?: number | null;
   outputTokens: number | null;
+  reasoningOutputTokens?: number | null;
   estimatedCostUsd: number | null;
+  requestedModelId?: string;
+  requestedThinkingEffort?: OrchestrationThinkingEffort;
+  /**
+   * How the phase was satisfied. `deterministic` records a phase that ran
+   * without a provider call, so evidence still shows the gate happened rather
+   * than leaving a gap that reads as a skipped step. Absent means `model`.
+   */
+  executionKind?: "model" | "deterministic";
+  phase?:
+    | "prompt_understanding"
+    | "skill_routing"
+    | "coordination"
+    | "implementation"
+    | "validation"
+    | "review"
+    | "recovery";
+  durationMs?: number;
+  usagePrecision?: "provider" | "estimated" | "unknown";
   startedAt?: string;
   completedAt?: string;
   retryIndex: number;
   artifactRefs: string[];
+  modelTier?: import("./modelTierContracts.js").ModelTier;
+  routingReasonCodes?: import("./modelTierContracts.js").TaskTierRoutingReason[];
 };
 
 const ROLE_ORDER: OrchestrationRole[] = [
@@ -198,7 +304,7 @@ export function isOrchestrationProfile(
     ROLE_ORDER.every((role) => {
       const binding = record(roles[role]);
       return (
-        binding.providerId === "codex-cli" &&
+        isOrchestrationProviderId(binding.providerId) &&
         typeof binding.modelId === "string" &&
         binding.modelId === binding.modelId.trim() &&
         binding.modelId.length > 0 &&
@@ -319,9 +425,15 @@ export function resolveOrchestrationProfile(
           ),
         )
       : requested;
-  const byId = new Map(catalog.map((model) => [model.id, model]));
+  const byId = new Map(
+    catalog.map((model) => [
+      `${model.providerId ?? "codex-cli"}\u0000${model.id}`,
+      model,
+    ]),
+  );
   const coordinator = effective.roles.coordinator;
-  if (!byId.has(coordinator.modelId)) {
+  const coordinatorKey = `${coordinator.providerId}\u0000${coordinator.modelId}`;
+  if (!byId.has(coordinatorKey)) {
     throw new Error(
       effective.preset === "custom"
         ? `Custom coordinator model is unavailable: ${coordinator.modelId}`
@@ -332,7 +444,7 @@ export function resolveOrchestrationProfile(
   const roles = {} as Record<OrchestrationRole, ResolvedRoleBinding>;
   for (const role of ROLE_ORDER) {
     const binding = effective.roles[role];
-    let model = byId.get(binding.modelId);
+    let model = byId.get(`${binding.providerId}\u0000${binding.modelId}`);
     let fallbackReason: string | undefined;
     if (!model) {
       if (effective.preset === "custom") {
@@ -342,16 +454,21 @@ export function resolveOrchestrationProfile(
       }
       if (role === "helper") {
         omittedRoles.push(role);
-        model = byId.get(coordinator.modelId);
+        model = byId.get(coordinatorKey);
         fallbackReason = `Optional helper omitted because ${binding.modelId} is unavailable.`;
       } else {
-        model = byId.get(coordinator.modelId);
+        model = byId.get(coordinatorKey);
         fallbackReason = `${role} fell back to coordinator model because ${binding.modelId} is unavailable.`;
       }
     }
     const effortSupported = model?.supportedThinkingEfforts.includes(
       binding.thinkingEffort,
     );
+    if (!effortSupported && effective.preset === "custom") {
+      throw new Error(
+        `Custom ${role} thinking effort is unavailable: ${binding.thinkingEffort}`,
+      );
+    }
     const thinkingEffort = effortSupported
       ? binding.thinkingEffort
       : model?.defaultThinkingEffort ??
@@ -405,21 +522,58 @@ export function validateOrchestrationPlan(
   if (helpers.some((task) => task.authority !== "read_only")) {
     throw new Error("Helpers must remain read-only.");
   }
-  const writers = plan.tasks.filter(
-    (task) => task.authority === "single_writer",
-  );
   const implementers = plan.tasks.filter(
     (task) => task.role === "implementer",
   );
   if (
-    writers.length !== 1 ||
-    implementers.length !== 1 ||
-    implementers[0]?.authority !== "single_writer" ||
-    writers[0]?.id !== implementers[0]?.id
+    implementers.length < 1 ||
+    implementers.some((task) => task.authority !== "single_writer") ||
+    plan.tasks.some(
+      (task) =>
+        task.authority === "single_writer" && task.role !== "implementer",
+    )
   ) {
     throw new Error(
-      "Orchestration plan must have exactly one implementer with the single writer lease.",
+      "Orchestration plan requires one or more implementers with bounded writer leases.",
     );
+  }
+  const normalizeOwnedPath = (value: string): string =>
+    value.replaceAll("\\", "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+  const pathsOverlap = (left: string, right: string): boolean =>
+    left === right ||
+    left.startsWith(`${right}/`) ||
+    right.startsWith(`${left}/`);
+  if (
+    implementers.length > 1 &&
+    implementers.some((task) => task.expectedPaths.length === 0)
+  ) {
+    throw new Error(
+      "Parallel implementers require explicit, disjoint expected paths.",
+    );
+  }
+  for (let leftIndex = 0; leftIndex < implementers.length; leftIndex += 1) {
+    const left = implementers[leftIndex]!;
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < implementers.length;
+      rightIndex += 1
+    ) {
+      const right = implementers[rightIndex]!;
+      if (
+        left.expectedPaths.some((leftPath) =>
+          right.expectedPaths.some((rightPath) =>
+            pathsOverlap(
+              normalizeOwnedPath(leftPath),
+              normalizeOwnedPath(rightPath),
+            ),
+          ),
+        )
+      ) {
+        throw new Error(
+          "Parallel implementers must have disjoint writer paths.",
+        );
+      }
+    }
   }
   if (
     plan.tasks.some(
@@ -444,7 +598,9 @@ export function validateOrchestrationPlan(
       task.dependencies.some((dependency) => {
         const dependencyRole = roleById.get(dependency);
         if (task.role === "helper") return dependencyRole !== "helper";
-        if (task.role === "implementer") return dependencyRole !== "helper";
+        if (task.role === "implementer") {
+          return dependencyRole !== "helper" && dependencyRole !== "implementer";
+        }
         return dependencyRole === "reviewer";
       }),
     )
@@ -476,10 +632,14 @@ export function validateOrchestrationRecoveryTask(
   plan: OrchestrationPlan,
   profile: OrchestrationProfile | ResolvedOrchestrationProfile,
 ): void {
-  const originalWriter = plan.tasks.find(
+  const dependencyWriters = plan.tasks.filter(
     (task) =>
-      task.role === "implementer" && task.authority === "single_writer",
+      recoveryTask.dependencies.includes(task.id) &&
+      task.role === "implementer" &&
+      task.authority === "single_writer",
   );
+  const originalWriter =
+    dependencyWriters.length === 1 ? dependencyWriters[0] : undefined;
   const existingTaskIds = new Set(plan.tasks.map((task) => task.id));
   if (
     !originalWriter ||

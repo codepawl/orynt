@@ -1,12 +1,18 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "bun:test";
 
 import { SkillsManager } from "./SkillsManager";
+
+async function flushSkillsManager(): Promise<void> {
+  await act(async () => {
+    await Bun.sleep(0);
+  });
+}
 
 describe("SkillsManager", () => {
   it("keeps install and enable as separately approved lifecycle changes", async () => {
     const onEligibleSkillsChange = vi.fn();
-    render(
+    const { container } = render(
       <SkillsManager
         learnedSkills={[]}
         onEligibleSkillsChange={onEligibleSkillsChange}
@@ -15,8 +21,10 @@ describe("SkillsManager", () => {
       />,
     );
 
-    expect(await screen.findByRole("tab", { name: "Installed" })).toHaveAttribute("aria-selected", "true");
-    const installedList = await screen.findByRole("list", { name: "Installed skills" });
+    expect(container.querySelector(".probability-loader")).toBeInTheDocument();
+    await flushSkillsManager();
+    expect(screen.getByRole("tab", { name: "Installed" })).toHaveAttribute("aria-selected", "true");
+    const installedList = screen.getByRole("list", { name: "Installed skills" });
     expect(within(installedList).getByText("skill-creator")).toBeInTheDocument();
     fireEvent.click(within(installedList).getByText("code-reviewer").closest("button")!);
     expect(screen.getByText(/Runtime-owned skill/i)).toBeInTheDocument();
@@ -25,25 +33,29 @@ describe("SkillsManager", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Discover" }));
     const search = screen.getByRole("textbox", { name: "Search skill marketplace" });
     fireEvent.change(search, { target: { value: "docs" } });
-    const catalogSkill = within(await screen.findByRole("list", { name: "Marketplace skills" })).getByText("docs-writer").closest("button");
+    const catalogSkill = within(screen.getByRole("list", { name: "Marketplace skills" })).getByText("docs-writer").closest("button");
     expect(catalogSkill).not.toBeNull();
     fireEvent.click(catalogSkill!);
     fireEvent.click(screen.getByRole("button", { name: "Install for project" }));
 
-    const installPlan = await screen.findByRole("alertdialog", { name: /Install docs-writer/i });
+    await flushSkillsManager();
+    const installPlan = screen.getByRole("alertdialog", { name: /Install docs-writer/i });
     expect(within(installPlan).getByText(/without enabling it/i)).toBeInTheDocument();
     fireEvent.click(within(installPlan).getByRole("button", { name: "Approve and apply" }));
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    await flushSkillsManager();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Installed" }));
-    fireEvent.click(within(await screen.findByRole("list", { name: "Installed skills" })).getByText("docs-writer").closest("button")!);
+    fireEvent.click(within(screen.getByRole("list", { name: "Installed skills" })).getByText("docs-writer").closest("button")!);
     expect(screen.getByText("Disabled")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enable" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Enable" }));
-    const enablePlan = await screen.findByRole("alertdialog", { name: /Enable docs-writer/i });
+    await flushSkillsManager();
+    const enablePlan = screen.getByRole("alertdialog", { name: /Enable docs-writer/i });
     fireEvent.click(within(enablePlan).getByRole("button", { name: "Approve and apply" }));
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    await flushSkillsManager();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.getByText("Ready")).toBeInTheDocument();
     expect(onEligibleSkillsChange).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ name: "docs-writer", enabled: true, eligible: true })]));
   });
@@ -57,7 +69,8 @@ describe("SkillsManager", () => {
         repositoryPath="/repo"
       />,
     );
-    await screen.findByRole("list", { name: "Installed skills" });
+    await flushSkillsManager();
+    screen.getByRole("list", { name: "Installed skills" });
 
     fireEvent.click(screen.getByRole("tab", { name: "Learned" }));
     expect(screen.getByText(/not installed Agent Skill packages/i)).toBeInTheDocument();

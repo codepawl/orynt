@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "012-v2-debug-calculator-raw_codex-r1",
+  "taskId": "v2-debug-calculator",
+  "methodId": "raw_codex",
+  "repetition": 0,
+  "startedAt": "2026-08-05T07:31:29.805Z",
+  "completedAt": "2026-08-05T07:32:45.408Z",
+  "totalWallMs": 75603,
+  "processExitCode": 0,
+  "timedOut": false,
+  "oracle": {
+    "passed": false,
+    "changedPaths": [
+      "rc/calculator.ts",
+      "test/calculator.test.ts"
+    ],
+    "unexpectedPaths": [
+      "rc/calculator.ts"
+    ],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": false,
+  "runtimeResult": {
+    "type": "turn.completed",
+    "usage": {
+      "input_tokens": 112008,
+      "cached_input_tokens": 89600,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3127,
+      "reasoning_output_tokens": 1394
+    }
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/012-v2-debug-calculator-raw_codex-r1/repo"
+}

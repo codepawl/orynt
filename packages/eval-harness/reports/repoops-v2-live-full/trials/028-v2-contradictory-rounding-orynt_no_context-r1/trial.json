@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "028-v2-contradictory-rounding-orynt_no_context-r1",
+  "taskId": "v2-contradictory-rounding",
+  "methodId": "orynt_no_context",
+  "repetition": 0,
+  "startedAt": "2026-08-05T07:38:59.514Z",
+  "completedAt": "2026-08-05T07:39:15.576Z",
+  "totalWallMs": 16062,
+  "processExitCode": 1,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "environment",
+    "message": "Could not complete prompt understanding: Only repository actions may request clarification or assumption confirmation."
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full/trials/028-v2-contradictory-rounding-orynt_no_context-r1/repo"
+}

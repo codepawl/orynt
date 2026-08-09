@@ -12,16 +12,16 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @codepawl/coding-apprentice build && tsc -p tsconfig.json",
-    "test": "pnpm --filter @codepawl/coding-apprentice build && vitest run"
+    "build": "bun run --filter @codepawl/coding-apprentice build && tsc -p tsconfig.json",
+    "test": "bun run --filter @codepawl/coding-apprentice build && bun test src"
   },
   "dependencies": {
     "@codepawl/coding-apprentice": "workspace:*",
+    "@codepawl/cognitive-kernel": "workspace:*",
     "@codepawl/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
-    "typescript": "6.0.3",
-    "vitest": "4.1.9"
+    "typescript": "6.0.3"
   }
 }

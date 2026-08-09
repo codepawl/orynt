@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "002-v2-inspect-architecture-orynt_full-r1",
+  "taskId": "v2-inspect-architecture",
+  "methodId": "orynt_full",
+  "repetition": 0,
+  "startedAt": "2026-08-05T08:14:38.301Z",
+  "completedAt": "2026-08-05T08:15:21.481Z",
+  "totalWallMs": 43180,
+  "processExitCode": 2,
+  "timedOut": false,
+  "oracle": {
+    "passed": true,
+    "changedPaths": [],
+    "unexpectedPaths": [],
+    "protectedPaths": [],
+    "testExitCode": 0
+  },
+  "success": true,
+  "runtimeResult": {
+    "schemaVersion": 1,
+    "kind": "error",
+    "classification": "planning",
+    "code": "TASK_PLAN_NOT_ACTIONABLE",
+    "message": "The repository task planner did not return an executable action."
+  },
+  "evaluatedRepository": "/home/an/Code/work/orynt/packages/eval-harness/reports/repoops-v2-live-full-rerun/trials/002-v2-inspect-architecture-orynt_full-r1/repo"
+}

@@ -1,37 +1,58 @@
-import { createMockRunSequence, createMockRunState } from "@codepawl/shared";
+import {
+  createMockRunSequence,
+  createMockRunState,
+} from "@codepawl/shared";
 import type {
   ApprovalDecisionInput,
   CandidateRule,
   CandidateRuleStatus,
   CandidateRuleStatusUpdateInput,
+  CapabilityRuntimeSettingsV1,
   CreateRunInput,
   EpisodicMemoryItem,
+  MemoryMutationOptions,
   MemoryReviewSnapshot,
+  MemoryRetrievalHit,
+  MemoryRetrievalQuery,
+  MemorySummary,
+  MemoryStoreEnvelopeV2,
+  MemoryTombstone,
+  ModelTierConfigurationV1,
   RunEvent,
-  RunId,
+  SemanticMemoryEditInput,
+  SemanticMemoryItem,
+  SemanticMemoryQuery,
+  SemanticMemoryStatusUpdateInput,
   SkillDefinition,
+  LearnedSkillSnapshotV1,
   SkillPromotionDecision,
   SkillRegistrySnapshot,
   SkillReplayMode,
   SkillReplayPlan,
   SkillStatus,
+  PromptUnderstandingAssumptionV1,
+  PromptUnderstandingBasisV1,
+  PromptUnderstandingContextV1,
+  PromptUnderstandingQuestionOptionV1,
+  PromptUnderstandingQuestionV1,
+  PromptUnderstandingV1,
 } from "@codepawl/shared";
 
 type UnlistenFn = () => void;
 
-type TauriCoreApi = {
+type DesktopCoreApi = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
 };
 
-type TauriEventApi = {
+type DesktopEventApi = {
   listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<UnlistenFn>;
 };
 
-type TauriDialogApi = {
+type DesktopDialogApi = {
   open(options?: { directory?: boolean; multiple?: boolean; title?: string; defaultPath?: string }): Promise<string | string[] | null>;
 };
 
-export type BrowseRepositoryPathUnavailableReason = "not-tauri" | "dialog-import-failed" | "dialog-open-failed";
+export type BrowseRepositoryPathUnavailableReason = "not-tauri" | "dialog-open-failed";
 
 export type BrowseRepositoryPathResult =
   | { status: "selected"; path: string }
@@ -98,6 +119,9 @@ export type SettingsSnapshot = {
   defaultRepositoryPath: string;
   welcomeCompleted: boolean;
   modelConnection: ModelConnectionReference | null;
+  modelConnections?: ModelConnectionReference[];
+  modelTierConfiguration?: ModelTierConfigurationV1 | null;
+  capabilityRuntime?: CapabilityRuntimeSettingsV1;
   codexConnection: CodexConnectionReference | null;
   retentionPolicy: RetentionPolicySnapshot;
   operatorProfile: OperatorProfileSnapshot;
@@ -115,6 +139,8 @@ export type SettingsUpdateInput = {
   operatorProfile?: Partial<OperatorProfileSnapshot>;
   uiPreferences?: Partial<UiPreferencesSnapshot>;
   voicePreferences?: Partial<VoicePreferencesSnapshot>;
+  modelTierConfiguration?: ModelTierConfigurationV1;
+  capabilityRuntime?: CapabilityRuntimeSettingsV1;
 };
 
 export type AgentSkillScope = "project" | "user" | "runtime";
@@ -336,6 +362,8 @@ export type PersistedRunSummary = {
   goal: string;
   repositoryPath: string;
   status: string;
+  checkpointRevision?: number | null;
+  runtimeStatus?: DesktopRuntimeStatus | null;
   artifactManifestPath: string;
   eventCount: number;
   artifactCount: number;
@@ -351,6 +379,10 @@ export type PersistedRunRecord = {
   goal: string;
   repositoryPath: string;
   status: string;
+  checkpointRevision?: number | null;
+  runtimeStatus?: DesktopRuntimeStatus | null;
+  approval?: DesktopRuntimeApproval | null;
+  taskPlan?: DesktopRepositoryTaskPlan | null;
   artifactRoot: string;
   artifactManifestPath: string;
   events: RunEvent[];
@@ -363,6 +395,93 @@ export type PersistedRunRecord = {
   codexConnection: CodexConnectionReference | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type DesktopRuntimeStatus =
+  | "waiting_for_approval"
+  | "running"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "cancelled"
+  | "execution_in_doubt";
+
+export type DesktopRuntimeApproval = {
+  id: string;
+  actionId: string;
+  requestedRevision: number;
+  planId?: string;
+  planRevision?: number;
+  planDigest?: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+};
+
+export type DesktopRepositoryTaskPlan = {
+  id: string;
+  revision: number;
+  summary: string;
+  digest: string;
+  tasks: Array<{
+    id: string;
+    title: string;
+    authority: "read_only" | "single_writer";
+    dependencies: string[];
+  }>;
+};
+
+export type DesktopRunSnapshot = {
+  id: string;
+  schemaVersion?: 2;
+  runId?: string;
+  status?: DesktopRuntimeStatus;
+  checkpointRevision?: number;
+  approval?: DesktopRuntimeApproval | null;
+  taskPlan?: DesktopRepositoryTaskPlan | null;
+  executionAttemptStatus?: "prepared" | "dispatched" | "completed" | "in_doubt" | null;
+  terminal?: boolean;
+  summary?: string;
+  artifactRoot?: string | null;
+  artifactManifestPath?: string | null;
+  eventCount?: number;
+  events?: RunEvent[];
+  verificationStatus?: "pass" | "partial" | "fail" | "inconclusive";
+};
+
+/**
+ * A user-controlled basis passed through the read-only prompt-understanding
+ * gate. This is intentionally distinct from a task plan: it contains only
+ * the initial request and explicit operator answers/confirmations.
+ */
+export type PromptUnderstandingBasis = PromptUnderstandingBasisV1;
+export type PromptUnderstandingContext = PromptUnderstandingContextV1;
+export type PromptUnderstandingOption = PromptUnderstandingQuestionOptionV1;
+export type PromptUnderstandingQuestion = PromptUnderstandingQuestionV1;
+export type PromptUnderstandingAssumption = PromptUnderstandingAssumptionV1;
+/** Shared PromptUnderstandingV1 at the desktop boundary. */
+export type PromptUnderstanding = PromptUnderstandingV1;
+
+export type PromptUnderstandingInput = {
+  basis: PromptUnderstandingBasis;
+  context: PromptUnderstandingContext;
+  repositoryPath: string;
+  workspaceId: string;
+  taskId: string;
+  budget?: CreateRunInput["budget"];
+  modelTierConfiguration?: ModelTierConfigurationV1;
+  minimumModelTier?: import("@codepawl/shared").ModelTier;
+};
+
+export type CreateRunWithPromptBasis = Omit<CreateRunInput, "promptBasis" | "advisoryRefinedBrief"> & {
+  promptBasis: PromptUnderstandingBasis;
+  advisoryRefinedBrief?: string;
+  modelTierConfiguration?: ModelTierConfigurationV1;
+  minimumModelTier?: import("@codepawl/shared").ModelTier;
+};
+
+export type RunLifecycleInput = {
+  runId: string;
+  expectedRevision: number;
+  reason?: string;
 };
 
 export type ArtifactEvidenceStatus = "verified" | "unavailable" | "corrupted";
@@ -589,51 +708,47 @@ function mockInventorySnapshot(): SkillInventorySnapshot {
   };
 }
 
-function isTauriRuntime(): boolean {
+function isTauriHost(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-async function loadTauriApi(): Promise<{ core: TauriCoreApi; event: TauriEventApi } | null> {
-  if (!isTauriRuntime()) {
-    return null;
-  }
-
-  try {
-    const [core, event] = await Promise.all([import("@tauri-apps/api/core"), import("@tauri-apps/api/event")]);
-    return {
-      core,
-      event,
-    };
-  } catch {
-    return null;
-  }
+async function loadDesktopApi(): Promise<{ core: DesktopCoreApi; event: DesktopEventApi } | null> {
+  if (!isTauriHost()) return null;
+  const [{ invoke }, { listen }] = await Promise.all([
+    import("@tauri-apps/api/core"),
+    import("@tauri-apps/api/event"),
+  ]);
+  return {
+    core: {
+      invoke: <T>(command: string, args: Record<string, unknown> = {}) =>
+        invoke<T>("desktop_invoke", { command, args }),
+    },
+    event: {
+      listen: <T>(event: string, handler: (event: { payload: T }) => void) =>
+        listen<T>(event, handler),
+    },
+  };
 }
 
-type TauriDialogApiLoadResult =
-  | { status: "ready"; dialog: TauriDialogApi }
-  | { status: "unavailable"; reason: "not-tauri" | "dialog-import-failed"; message: string };
+type DesktopDialogApiLoadResult =
+  | { status: "ready"; dialog: DesktopDialogApi }
+  | { status: "unavailable"; reason: "not-tauri"; message: string };
 
-async function loadTauriDialogApi(): Promise<TauriDialogApiLoadResult> {
-  if (!isTauriRuntime()) {
+async function loadDesktopDialogApi(): Promise<DesktopDialogApiLoadResult> {
+  if (!isTauriHost()) {
     return {
       status: "unavailable",
       reason: "not-tauri",
       message: "Native folder picker is only available in the Orynt desktop app. Open the Tauri window or paste the local path manually.",
     };
   }
-
-  try {
-    return {
-      status: "ready",
-      dialog: await import("@tauri-apps/plugin-dialog"),
-    };
-  } catch {
-    return {
-      status: "unavailable",
-      reason: "dialog-import-failed",
-      message: "Native folder picker could not load. Restart the Orynt desktop app and check Tauri dialog permissions.",
-    };
-  }
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  return {
+    status: "ready",
+    dialog: {
+      open,
+    },
+  };
 }
 
 function emitMockRunEvent(event: RunEvent) {
@@ -879,15 +994,43 @@ function applyMockSkillDecision(input: SkillPromotionDecision): SkillDefinition 
   return structuredClone(updated);
 }
 
+function createMockPromptUnderstanding(input: PromptUnderstandingInput): PromptUnderstanding {
+  const goal = input.basis.activeGoal?.trim() || input.basis.rawPrompt.trim();
+  return {
+    schemaVersion: 1,
+    // This is a prompt identifier, not a run identifier. Understanding never
+    // allocates a run or emits lifecycle events in the browser fixture.
+    promptId: `mock-prompt-${Math.max(1, goal.length)}`,
+    outcome: "repository_action",
+    readiness: "ready",
+    reply: "I understand the repository request and will create a supervised plan next.",
+    conversationSummary: [
+      input.context.conversationSummary,
+      `User: ${input.basis.rawPrompt.trim()}`,
+    ].filter(Boolean).join("\n").slice(-4_000),
+    refinedBrief: goal
+      ? {
+          goal,
+          deliverables: [],
+          constraints: [],
+          acceptanceCriteria: [],
+          nonGoals: [],
+        }
+      : null,
+    questions: [],
+    assumptions: [],
+  };
+}
+
 export const orynt = {
   createCodexExecutionPreview(runId: string): CodexExecutionPreview {
     return createMockCodexExecutionPreview(runId);
   },
 
   async approveCodexExecution(runId: string, planId: string): Promise<CodexExecutionPreview> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<CodexExecutionPreview>("codex_execution_approve", { input: { runId, planId } });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<CodexExecutionPreview>("codex_execution_approve", { input: { runId, planId } });
     }
 
     queueMicrotask(() => {
@@ -954,9 +1097,9 @@ export const orynt = {
   },
 
   async showBlockedCodexExecution(runId: string, planId: string): Promise<CodexExecutionPreview> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<CodexExecutionPreview>("codex_execution_blocked_preview", { input: { runId, planId } });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<CodexExecutionPreview>("codex_execution_blocked_preview", { input: { runId, planId } });
     }
 
     queueMicrotask(() => {
@@ -985,10 +1128,20 @@ export const orynt = {
     });
   },
 
-  async createRun(input: CreateRunInput): Promise<RunId> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<RunId>("run_create", { input });
+  async understandPrompt(input: PromptUnderstandingInput): Promise<PromptUnderstanding> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<PromptUnderstanding>("prompt_understand", { input });
+    }
+
+    return createMockPromptUnderstanding(input);
+  },
+
+  async createRun(input: CreateRunWithPromptBasis): Promise<DesktopRunSnapshot> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await desktop.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_create", { input });
+      return { ...snapshot, id: snapshot.runId };
     }
 
     const mockRun = createMockRunSequence();
@@ -999,31 +1152,50 @@ export const orynt = {
       }
     });
 
-    return { id: runId };
+    return {
+      schemaVersion: 2,
+      id: runId,
+      runId,
+      status: "waiting_for_approval",
+      checkpointRevision: 0,
+      approval: {
+        id: `approval-${runId}`,
+        actionId: `action-${runId}`,
+        requestedRevision: 0,
+        status: "pending",
+      },
+      executionAttemptStatus: null,
+      terminal: false,
+      summary: "Waiting for operator approval.",
+      artifactRoot: null,
+      artifactManifestPath: null,
+      eventCount: mockRun.events.length,
+      events: mockRun.events,
+    };
   },
 
   async listPersistedRuns(): Promise<PersistedRunSummary[]> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<PersistedRunSummary[]>("run_list");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<PersistedRunSummary[]>("run_list");
     }
 
     return [];
   },
 
   async openPersistedRun(runId: string): Promise<PersistedRunRecord> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<PersistedRunRecord>("run_open", { runId });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<PersistedRunRecord>("run_open", { runId });
     }
 
     throw new Error(`persisted run not found: ${runId}`);
   },
 
   async listArtifactEvidence(runId: string): Promise<ArtifactEvidenceSummary[]> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<ArtifactEvidenceSummary[]>("artifact_list", { runId });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<ArtifactEvidenceSummary[]>("artifact_list", { runId });
     }
 
     return [
@@ -1039,9 +1211,9 @@ export const orynt = {
   },
 
   async readArtifactEvidence(runId: string, artifactId: string): Promise<ArtifactEvidenceContent> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<ArtifactEvidenceContent>("artifact_read", { input: { runId, artifactId } });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<ArtifactEvidenceContent>("artifact_read", { input: { runId, artifactId } });
     }
 
     return {
@@ -1056,9 +1228,9 @@ export const orynt = {
   },
 
   async getSettings(): Promise<SettingsSnapshot> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SettingsSnapshot>("settings_get");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SettingsSnapshot>("settings_get");
     }
 
     return {
@@ -1070,6 +1242,22 @@ export const orynt = {
       defaultRepositoryPath: "",
       welcomeCompleted: false,
       modelConnection: null,
+      modelConnections: [],
+      modelTierConfiguration: null,
+      capabilityRuntime: {
+        schemaVersion: 1,
+        routingMode: "auto_read_only",
+        autoImproveMode: "shadow_review",
+        maxNamespaces: 3,
+        maxToolsPerNamespace: 10,
+        memoryTopK: 3,
+        memoryTokenBudget: 1_200,
+        subagents: {
+          mode: "adaptive",
+          maxConcurrency: 4,
+          maxDepth: 1,
+        },
+      },
       codexConnection: null,
       retentionPolicy: {
         runHistoryDays: 30,
@@ -1097,16 +1285,16 @@ export const orynt = {
   },
 
   async detectCurrentRepositoryPath(): Promise<string | null> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<string | null>("repository_detect_current_path");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<string | null>("repository_detect_current_path");
     }
 
     return null;
   },
 
   async browseRepositoryPath(defaultPath?: string): Promise<BrowseRepositoryPathResult> {
-    const dialogResult = await loadTauriDialogApi();
+    const dialogResult = await loadDesktopDialogApi();
     if (dialogResult.status === "unavailable") {
       return dialogResult;
     }
@@ -1129,9 +1317,9 @@ export const orynt = {
   },
 
   async updateSettings(input: SettingsUpdateInput): Promise<SettingsSnapshot> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SettingsSnapshot>("settings_update", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SettingsSnapshot>("settings_update", { input });
     }
 
     const currentSettings = await this.getSettings();
@@ -1163,45 +1351,45 @@ export const orynt = {
   },
 
   async preflightModelProvider(input: ModelProviderPreflightInput): Promise<ModelConnectionPreflightResult> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<ModelConnectionPreflightResult>("model_provider_preflight", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<ModelConnectionPreflightResult>("model_provider_preflight", { input });
     }
 
     return nativeProviderUnavailable();
   },
 
   async listProviderModels(input: ModelCatalogListInput): Promise<ModelCatalogResult> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<ModelCatalogResult>("model_connection_list_models", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<ModelCatalogResult>("model_connection_list_models", { input });
     }
 
     return nativeProviderUnavailable();
   },
 
   async saveModelConnection(input: ModelConnectionSetupInput): Promise<ModelConnectionReference> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<ModelConnectionReference>("model_connection_save", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<ModelConnectionReference>("model_connection_save", { input });
     }
 
     return nativeProviderUnavailable();
   },
 
   async preflightModelConnection(): Promise<ModelConnectionPreflightResult> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<ModelConnectionPreflightResult>("model_connection_preflight");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<ModelConnectionPreflightResult>("model_connection_preflight");
     }
 
     return nativeProviderUnavailable();
   },
 
   async deleteModelConnection(): Promise<void> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      await tauri.core.invoke<void>("model_connection_delete");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      await desktop.core.invoke<void>("model_connection_delete");
       return;
     }
 
@@ -1209,9 +1397,9 @@ export const orynt = {
   },
 
   async saveCodexConnection(): Promise<CodexConnectionReference> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<CodexConnectionReference>("codex_connection_save", {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<CodexConnectionReference>("codex_connection_save", {
         input: { connectionId: "codex-cli", label: "Local Codex CLI" },
       });
     }
@@ -1220,45 +1408,47 @@ export const orynt = {
   },
 
   async preflightCodexConnection(): Promise<CodexConnectionPreflightResult> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<CodexConnectionPreflightResult>("codex_connection_preflight");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<CodexConnectionPreflightResult>("codex_connection_preflight");
     }
 
     return nativeProviderUnavailable();
   },
 
   async launchCodexLogin(input: CodexLoginLaunchInput): Promise<CodexLoginLaunchResult> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<CodexLoginLaunchResult>("codex_connection_login", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<CodexLoginLaunchResult>("codex_connection_login", { input });
     }
 
     return nativeProviderUnavailable();
   },
 
   async deleteCodexConnection(): Promise<void> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      await tauri.core.invoke<void>("codex_connection_delete");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      await desktop.core.invoke<void>("codex_connection_delete");
       return;
     }
 
     nativeProviderUnavailable();
   },
 
-  async cancelRun(runId: string): Promise<void> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      await tauri.core.invoke<void>("run_cancel", { runId });
+  async cancelRun(input: RunLifecycleInput): Promise<DesktopRunSnapshot | undefined> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await desktop.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_cancel", { input });
+      return { ...snapshot, id: snapshot.runId };
     }
+    return undefined;
   },
 
-  async approve(input: ApprovalDecisionInput): Promise<void> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      await tauri.core.invoke<void>("approval_respond", { input });
-      return;
+  async approve(input: ApprovalDecisionInput): Promise<DesktopRunSnapshot | undefined | void> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await desktop.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("approval_respond", { input });
+      return { ...snapshot, id: snapshot.runId };
     }
 
     queueMicrotask(() => {
@@ -1286,30 +1476,58 @@ export const orynt = {
         },
       });
     });
+    return undefined;
+  },
+
+  async statusRun(runId: string): Promise<DesktopRunSnapshot> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await desktop.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_status", { runId });
+      return { ...snapshot, id: snapshot.runId };
+    }
+    throw new Error(`runtime status not found: ${runId}`);
+  },
+
+  async recoverRun(input: RunLifecycleInput): Promise<DesktopRunSnapshot> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await desktop.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_recover", { input });
+      return { ...snapshot, id: snapshot.runId };
+    }
+    throw new Error(`runtime recovery unavailable: ${input.runId}`);
+  },
+
+  async markRunFailed(input: RunLifecycleInput): Promise<DesktopRunSnapshot> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await desktop.core.invoke<Omit<DesktopRunSnapshot, "id"> & { runId: string }>("run_mark_failed", { input });
+      return { ...snapshot, id: snapshot.runId };
+    }
+    throw new Error(`runtime mark-failed unavailable: ${input.runId}`);
   },
 
   async listMemoryEpisodes(): Promise<EpisodicMemoryItem[]> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<EpisodicMemoryItem[]>("memory_list_episodes");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<EpisodicMemoryItem[]>("memory_list_episodes");
     }
 
     return structuredClone(mockMemoryReview.episodes);
   },
 
   async listCandidateRules(): Promise<CandidateRule[]> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<CandidateRule[]>("memory_list_candidate_rules");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<CandidateRule[]>("memory_list_candidate_rules");
     }
 
     return structuredClone(mockMemoryReview.candidateRules);
   },
 
   async updateCandidateRuleStatus(input: CandidateRuleStatusUpdateInput): Promise<CandidateRule> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<CandidateRule>("memory_update_candidate_rule_status", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<CandidateRule>("memory_update_candidate_rule_status", { input });
     }
 
     const rule = mockMemoryReview.candidateRules.find((item) => item.id === input.id);
@@ -1335,26 +1553,143 @@ export const orynt = {
     return structuredClone(updated);
   },
 
+  async listSemanticMemory(
+    query: SemanticMemoryQuery = {},
+  ): Promise<SemanticMemoryItem[]> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SemanticMemoryItem[]>("memory_list_semantic", {
+        input: { query },
+      });
+    }
+    return [];
+  },
+
+  async updateSemanticMemoryStatus(
+    decision: SemanticMemoryStatusUpdateInput,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SemanticMemoryItem>(
+        "memory_update_semantic_status",
+        { input: { decision, options } },
+      );
+    }
+    throw new Error(`semantic memory not found: ${decision.id}`);
+  },
+
+  async editSemanticMemory(
+    edit: SemanticMemoryEditInput,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SemanticMemoryItem>("memory_edit_semantic", {
+        input: { edit, options },
+      });
+    }
+    throw new Error(`semantic memory not found: ${edit.id}`);
+  },
+
+  async deleteSemanticMemory(
+    decision: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SemanticMemoryItem>("memory_delete_semantic", {
+        input: { decision, options },
+      });
+    }
+    throw new Error(`semantic memory not found: ${decision.id}`);
+  },
+
+  async restoreSemanticMemory(
+    decision: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<SemanticMemoryItem> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SemanticMemoryItem>("memory_restore_semantic", {
+        input: { decision, options },
+      });
+    }
+    throw new Error(`semantic memory not found: ${decision.id}`);
+  },
+
+  async purgeSemanticMemory(
+    decision: Omit<SemanticMemoryStatusUpdateInput, "status">,
+    options: MemoryMutationOptions = {},
+  ): Promise<MemoryTombstone> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<MemoryTombstone>("memory_purge_semantic", {
+        input: { decision, options },
+      });
+    }
+    throw new Error(`semantic memory not found: ${decision.id}`);
+  },
+
+  async retrieveMemory(query: MemoryRetrievalQuery): Promise<MemoryRetrievalHit[]> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<MemoryRetrievalHit[]>("memory_retrieve", {
+        input: { query },
+      });
+    }
+    return [];
+  },
+
+  async summarizeMemory(
+    namespace: MemoryRetrievalQuery["namespace"] = {},
+  ): Promise<MemorySummary> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<MemorySummary>("memory_summary", {
+        input: { namespace },
+      });
+    }
+    return structuredClone(mockMemoryReview.summary);
+  },
+
+  async getMemorySnapshot(): Promise<MemoryStoreEnvelopeV2> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<MemoryStoreEnvelopeV2>("memory_snapshot");
+    }
+    return {
+      schemaVersion: 3,
+      revision: 0,
+      updatedAt: new Date().toISOString(),
+      episodes: structuredClone(mockMemoryReview.episodes),
+      candidateRules: structuredClone(mockMemoryReview.candidateRules),
+      semanticMemory: [],
+      tombstones: [],
+      auditLog: [],
+    };
+  },
+
   async scanAgentSkills(repositoryPath?: string): Promise<SkillInventorySnapshot> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillInventorySnapshot>("skill_inventory_scan", { input: { repositoryPath } });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillInventorySnapshot>("skill_inventory_scan", { input: { repositoryPath } });
     }
     return mockInventorySnapshot();
   },
 
   async listInstalledAgentSkills(repositoryPath?: string): Promise<SkillInventorySnapshot> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillInventorySnapshot>("skill_inventory_list", { input: { repositoryPath } });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillInventorySnapshot>("skill_inventory_list", { input: { repositoryPath } });
     }
     return mockInventorySnapshot();
   },
 
   async getInstalledAgentSkill(skillId: string): Promise<InstalledAgentSkill> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<InstalledAgentSkill>("skill_inventory_get", { skillId });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<InstalledAgentSkill>("skill_inventory_get", { skillId });
     }
     const skill = mockInstalledAgentSkills.find((item) => item.id === skillId);
     if (!skill) {
@@ -1364,26 +1699,26 @@ export const orynt = {
   },
 
   async listSkillSources(): Promise<SkillSourceSnapshot[]> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillSourceSnapshot[]>("skill_hub_list_sources");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillSourceSnapshot[]>("skill_hub_list_sources");
     }
     return structuredClone(mockSkillSources);
   },
 
   async refreshSkillHub(): Promise<SkillSourceSnapshot[]> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillSourceSnapshot[]>("skill_hub_refresh");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillSourceSnapshot[]>("skill_hub_refresh");
     }
     mockSkillSources = mockSkillSources.map((source) => ({ ...source, stale: false, lastRefreshedAt: new Date().toISOString(), message: null }));
     return structuredClone(mockSkillSources);
   },
 
   async searchSkillHub(input: SkillHubSearchInput): Promise<SkillCatalogItem[]> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillCatalogItem[]>("skill_hub_search", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillCatalogItem[]>("skill_hub_search", { input });
     }
     const normalizedQuery = input.query?.trim().toLowerCase() ?? "";
     const enabledSourceIds = new Set(mockSkillSources.filter((source) => source.enabled).map((source) => source.id));
@@ -1400,9 +1735,9 @@ export const orynt = {
   },
 
   async getSkillHubItem(skillId: string): Promise<SkillCatalogItem> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillCatalogItem>("skill_hub_get", { skillId });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillCatalogItem>("skill_hub_get", { skillId });
     }
     const item = mockSkillCatalog.find((candidate) => candidate.id === skillId);
     if (!item) {
@@ -1412,9 +1747,9 @@ export const orynt = {
   },
 
   async planSkillMutation(input: SkillMutationPlanInput): Promise<SkillMutationPlan> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillMutationPlan>("skill_mutation_plan", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillMutationPlan>("skill_mutation_plan", { input });
     }
     const installed = mockInstalledAgentSkills.find((skill) => skill.id === input.skillId);
     const catalogItem = input.catalogItem ?? mockSkillCatalog.find((item) => item.id === input.skillId);
@@ -1448,9 +1783,9 @@ export const orynt = {
   },
 
   async approveSkillMutation(input: SkillMutationApprovalInput): Promise<SkillMutationPlan> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillMutationPlan>("skill_mutation_approve", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillMutationPlan>("skill_mutation_approve", { input });
     }
     const plan = mockSkillMutationPlans.get(input.planId);
     if (!plan) {
@@ -1462,9 +1797,9 @@ export const orynt = {
   },
 
   async executeSkillMutation(planId: string, repositoryPath?: string): Promise<SkillMutationExecutionResult> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillMutationExecutionResult>("skill_mutation_execute", { input: { planId, repositoryPath } });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillMutationExecutionResult>("skill_mutation_execute", { input: { planId, repositoryPath } });
     }
     const plan = mockSkillMutationPlans.get(planId);
     if (!plan?.approved) {
@@ -1518,9 +1853,9 @@ export const orynt = {
   },
 
   async createSkillContextSnapshot(skillIds: string[], repositoryPath?: string): Promise<SkillContextSnapshot> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillContextSnapshot>("skill_context_snapshot", { input: { skillIds, repositoryPath } });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillContextSnapshot>("skill_context_snapshot", { input: { skillIds, repositoryPath } });
     }
     const missing = skillIds.filter((id) => !mockInstalledAgentSkills.some((skill) => skill.id === id && skill.enabled && skill.eligible));
     if (missing.length > 0) {
@@ -1535,20 +1870,43 @@ export const orynt = {
   },
 
   async listSkills(): Promise<SkillDefinition[]> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillDefinition[]>("skill_list");
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<SkillDefinition[]>("skill_list");
     }
 
     return structuredClone(mockSkillRegistry.skills);
   },
 
-  async createCandidateSkill(): Promise<SkillDefinition> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_create_candidate");
+  async getLearnedSkillSnapshot(): Promise<LearnedSkillSnapshotV1> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.core.invoke<LearnedSkillSnapshotV1>("skill_snapshot");
     }
+    return {
+      schemaVersion: 2,
+      revision: 0,
+      updatedAt: new Date().toISOString(),
+      skills: structuredClone(mockSkillRegistry.skills),
+      replayPlans: [],
+      auditLog: [],
+    };
+  },
 
+  async createCandidateSkill(candidateRuleId: string, runId: string): Promise<SkillDefinition> {
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return desktop.core.invoke<SkillDefinition>("skill_create_candidate", {
+        input: {
+          candidateRuleId,
+          runId,
+          expectedRevision: snapshot.revision,
+          actor: "operator",
+          reason: "Created from an accepted rule in Memory Manager.",
+        },
+      });
+    }
     const skill = mockSkillRegistry.skills[0];
     queueMicrotask(() => {
       emitMockRunEvent({
@@ -1567,45 +1925,67 @@ export const orynt = {
   },
 
   async promoteSkillManually(input: SkillPromotionDecision): Promise<SkillDefinition> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_promote_manual", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return desktop.core.invoke<SkillDefinition>("skill_promote_manual", {
+        input: { ...input, expectedRevision: snapshot.revision },
+      });
     }
 
     return applyMockSkillDecision({ ...input, decision: "promote" });
   },
 
   async rejectSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_reject", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return desktop.core.invoke<SkillDefinition>("skill_reject", {
+        input: { ...input, expectedRevision: snapshot.revision },
+      });
     }
 
     return applyMockSkillDecision({ ...input, decision: "reject" });
   },
 
   async supersedeSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_supersede", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return desktop.core.invoke<SkillDefinition>("skill_supersede", {
+        input: { ...input, expectedRevision: snapshot.revision },
+      });
     }
 
     return applyMockSkillDecision({ ...input, decision: "supersede" });
   },
 
   async archiveSkill(input: SkillPromotionDecision): Promise<SkillDefinition> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillDefinition>("skill_archive", { input });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return desktop.core.invoke<SkillDefinition>("skill_archive", {
+        input: { ...input, expectedRevision: snapshot.revision },
+      });
     }
 
     return applyMockSkillDecision({ ...input, decision: "archive" });
   },
 
   async createSkillReplayPlan(skillId: string, runId?: string): Promise<SkillReplayPlan> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.core.invoke<SkillReplayPlan>("skill_create_replay_plan", { input: { skillId, runId } });
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      if (!runId) throw new Error("runId is required for learned skill replay");
+      const snapshot = await this.getLearnedSkillSnapshot();
+      return desktop.core.invoke<SkillReplayPlan>("skill_create_replay_plan", {
+        input: {
+          skillId,
+          runId,
+          expectedRevision: snapshot.revision,
+          actor: "operator",
+          reason: "Requested a non-executable learned skill replay preview.",
+        },
+      });
     }
 
     const skill = mockSkillRegistry.skills.find((item) => item.id === skillId);
@@ -1618,9 +1998,9 @@ export const orynt = {
   },
 
   async onRunEvent(handler: (event: RunEvent) => void): Promise<UnlistenFn> {
-    const tauri = await loadTauriApi();
-    if (tauri) {
-      return tauri.event.listen<RunEvent>("run_event", (event) => handler(event.payload));
+    const desktop = await loadDesktopApi();
+    if (desktop) {
+      return desktop.event.listen<RunEvent>("run_event", (event) => handler(event.payload));
     }
 
     mockListeners.add(handler);

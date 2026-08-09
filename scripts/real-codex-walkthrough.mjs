@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +6,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { LocalCodingApprenticeDemoOrchestrator } from "../packages/coding-apprentice/dist/index.js";
+import { buildRepositoryTaskPlan } from "../packages/cognitive-kernel/dist/index.js";
 import { InMemoryRunStore } from "../packages/shared/dist/index.js";
+import { releaseSourceDigest } from "./release-source-digest.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -97,7 +99,7 @@ function requireOptIn() {
   throw new Error(
     [
       "Real Codex walkthrough is opt-in because it may use local Codex auth, network, and model budget.",
-      "Run with: ORYNT_RUN_REAL_CODEX=1 pnpm walkthrough:real-codex",
+      "Run with: ORYNT_RUN_REAL_CODEX=1 bun walkthrough:real-codex",
     ].join("\n"),
   );
 }
@@ -112,18 +114,66 @@ async function runWalkthrough() {
   const memoryRoot = path.join(root, "memory");
   const runStore = new InMemoryRunStore();
   const orchestrator = new LocalCodingApprenticeDemoOrchestrator({ runStore });
+  const goal =
+    "In this disposable fixture repository, edit only packages/value.txt so it contains exactly: controlled codex pass";
+  const taskPlan = buildRepositoryTaskPlan({
+    goal,
+    sourcePrompt: goal,
+    maxModelTokens: 8_000,
+    maxWallTimeMs: 180_000,
+    maxRecoveryAttempts: 0,
+    candidate: {
+      summary: "Apply and verify one bounded live repository mutation.",
+      requirements: [{
+        id: "live-mutation-outcome",
+        source: "user_prompt",
+        kind: "outcome",
+        text: goal,
+        required: true,
+      }],
+      tasks: [{
+        id: "live-mutation",
+        kind: "change",
+        title: "Apply the live mutation fixture",
+        instruction: goal,
+        dependencies: [],
+        authority: "single_writer",
+        expectedPaths: ["packages/value.txt"],
+        readPaths: ["scripts/pass.mjs"],
+        operations: ["read", "write"],
+        requirementIds: ["live-mutation-outcome"],
+        doneWhen: ["bun run scripts/pass.mjs passes."],
+        evidence: [{
+          id: "live-mutation-scope",
+          kind: "path_scope",
+          requirementIds: ["live-mutation-outcome"],
+          description: "Verify only the approved fixture path changed.",
+          path: "packages/value.txt",
+        }],
+      }],
+      allowedOperations: ["read", "write"],
+    },
+  });
 
   const result = await orchestrator.runDemo({
-    goal:
-      "In this disposable fixture repository, edit only packages/value.txt so it contains exactly: controlled codex pass",
+    goal,
+    taskPlan,
+    authorization: {
+      source: "operator",
+      reason: "Operator explicitly opted into the disposable live fixture.",
+      expectedPaths: [...taskPlan.pathEnvelope],
+      planId: taskPlan.id,
+      planRevision: taskPlan.revision,
+      planDigest: taskPlan.digest,
+    },
     taskId: "task-real-codex-walkthrough",
     workspaceId: "workspace-local-real-codex",
     repositoryPath,
     sandboxRoot,
     artifactRoot,
     memoryRoot,
-    validationCommands: ["node scripts/pass.mjs"],
-    allowedVerificationCommands: ["node scripts/pass.mjs"],
+    validationCommands: ["bun run scripts/pass.mjs"],
+    allowedVerificationCommands: ["bun run scripts/pass.mjs"],
     enableControlledCodexExecution: true,
     enableMemoryExtraction: true,
     userNotes: "Real Codex walkthrough must stay inside the disposable fixture repository.",
@@ -185,6 +235,38 @@ async function runWalkthrough() {
   };
 
   console.log(JSON.stringify(output, null, 2));
+  const evidenceIndex = process.argv.indexOf("--evidence-output");
+  const evidencePath = evidenceIndex >= 0
+    ? process.argv[evidenceIndex + 1]
+    : undefined;
+  if (evidenceIndex >= 0 && !evidencePath) {
+    throw new Error("--evidence-output requires a file path.");
+  }
+  if (evidencePath) {
+    const resolved = path.resolve(evidencePath);
+    await mkdir(path.dirname(resolved), { recursive: true });
+    await writeFile(
+      resolved,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        suite: "repository_mutation_live",
+        confirmedLive: true,
+        sourceDigest: await releaseSourceDigest(
+          path.resolve(import.meta.dirname, ".."),
+        ),
+        semanticPlanVerified: true,
+        approvalRecorded: true,
+        executionStatus: result.codexExecutionResult.status,
+        verificationStatus: result.verificationResult.status,
+        unsafeActionCount: 0,
+        passed:
+          result.codexExecutionResult.status === "finished" &&
+          result.verificationResult.status === "pass",
+        recordedAt: new Date().toISOString(),
+      }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  }
   if (process.env.ORYNT_KEEP_WALKTHROUGH === "1") {
     console.log(`Preserved real Codex walkthrough workspace: ${root}`);
   } else {

@@ -1,26 +1,130 @@
 import { emitKeypressEvents, type Key } from "node:readline";
 
+import type {
+  AgentImageInput,
+  ProviderUsageMeterV1,
+  ProviderUsageSnapshotV1,
+} from "@codepawl/model-runtime";
+import type { ContextLifecycleSnapshotV1 } from "@codepawl/shared";
 import {
-  filterSlashCommands,
+  clipboardPreferences,
+  DEFAULT_CLI_CLIPBOARD,
+  normalizePastedText,
+  type CliClipboardReader,
+  type CliClipboardPreferences,
+  type ClipboardReadMode,
+  type SmartPastePath,
+} from "./clipboard.js";
+import {
+  slashInputAssist,
+  terminalSafeMultilineText,
   terminalSafeText,
-  type SlashCommandDefinition,
+  type SlashInputAssist,
+  type SlashInputSuggestion,
 } from "./ui.js";
 import {
-  createTerminalTheme,
+  type TerminalThemeId,
+  type TerminalAppearance,
+  type TerminalRole,
   type TerminalTheme,
 } from "./terminal-theme.js";
+import {
+  createTerminalDesignSystem,
+  type TerminalDesignSystem,
+} from "./terminal-presentation.js";
+import {
+  IncrementalRichTextRenderer,
+  renderRichText,
+} from "./rich-text.js";
+import {
+  shortcutListLabel,
+  shortcutMatches,
+  shortcutPreferences,
+  type CliShortcutPreferences,
+} from "./shortcuts.js";
+import {
+  DEFAULT_CLI_STATUSLINE,
+  statuslinePreferences,
+  type CliContextFormat,
+  type CliStatuslinePreferences,
+} from "./statusline.js";
+import {
+  centerTerminalText,
+  TerminalScreen,
+  wrapTerminalText,
+} from "./terminal-screen.js";
 
 export const INTERRUPTED_INPUT = "\u0003";
+export const NAVIGATE_BACK_INPUT = "__orynt_back__";
+export const EDIT_PENDING_INPUT = "__orynt_edit_pending__";
+export const CLEAR_PENDING_INPUT = "__orynt_clear_pending__";
+export const COMPOSER_PROMPT = "You › ";
+const COMPOSER_INPUT_PROMPT = "❯ ";
+const COMPOSER_PLACEHOLDER = 'Try "explain this repo"';
+export const AGENT_MESSAGE_MARKER = "›";
 const EXIT_CONFIRMATION_SECONDS = 3;
 const ACTIVITY_DELAY_MS = 120;
 const ACTIVITY_FRAME_MS = 100;
-const ACTIVITY_FRAMES = ["◜", "◝", "◞", "◟"] as const;
+const STATIC_ACTIVITY_TICK_MS = 1_000;
+const INLINE_RESIZE_SETTLE_MS = 80;
+const ACTIVITY_FRAMES = [
+  "♚",
+  "♛",
+  "♜",
+  "♝",
+  "♞",
+  "♟",
+  "♠",
+  "♣",
+  "♥",
+  "♦",
+] as const;
 
 export type ComposerChoice = {
   value: string;
   label: string;
   description?: string;
+  details?: readonly string[];
 };
+
+export type ClarificationOption = {
+  id: string;
+  label: string;
+  description: string;
+  recommended: boolean;
+  recommendationReason?: string | null;
+  conflictsWith?: readonly string[];
+};
+
+export type ClarificationQuestion = {
+  id: string;
+  prompt: string;
+  rationale: string;
+  group: string;
+  selectionMode: "single" | "multiple";
+  options: readonly ClarificationOption[];
+};
+
+export type ClarificationRequest = {
+  title: string;
+  questions: readonly ClarificationQuestion[];
+  timeoutMs?: number;
+};
+
+export type ClarificationAnswer = {
+  questionId: string;
+  selectedOptionIds: string[];
+  note?: string;
+  optionNotes?: Array<{ optionId: string; note: string }>;
+  autoFilled: boolean;
+};
+
+export type ClarificationResult =
+  | {
+      status: "submitted" | "auto_submitted";
+      answers: ClarificationAnswer[];
+    }
+  | { status: "cancelled"; answers: ClarificationAnswer[] };
 
 type ComposerInput = NodeJS.ReadableStream & {
   isRaw?: boolean;
@@ -32,25 +136,291 @@ type ComposerOutput = NodeJS.WritableStream & {
   rows?: number;
 };
 
+export type LiveComposerPhase =
+  | "preparing"
+  | "coordinating"
+  | "executing"
+  | "stopping";
+
+export type LiveComposerContext = {
+  phase: LiveComposerPhase;
+  pendingCount: number;
+  paused: boolean;
+  status?: ComposerStatusContext;
+};
+
+export type ComposerStatusContext = {
+  mode: "next" | "active" | "phase";
+  preset?: string;
+  role?: string;
+  modelId?: string;
+  thinkingEffort?: string;
+  phaseLabel?: string;
+  context?: ContextLifecycleSnapshotV1;
+  providerUsage?: ProviderUsageSnapshotV1;
+  pendingCount?: number;
+  pendingPaused?: boolean;
+};
+
+const CONTEXT_METER_CELLS = 5;
+
+function compactTokenCount(value: number): string {
+  const bounded = Math.max(0, Math.trunc(value));
+  if (bounded < 1_000) return String(bounded);
+  const units = [
+    { value: 1_000_000_000, suffix: "b" },
+    { value: 1_000_000, suffix: "m" },
+    { value: 1_000, suffix: "k" },
+  ] as const;
+  const unit = units.find((candidate) => bounded >= candidate.value)!;
+  const scaled = bounded / unit.value;
+  const digits = scaled >= 10 || Number.isInteger(scaled) ? 0 : 1;
+  return `${scaled.toFixed(digits).replace(/\.0$/u, "")}${unit.suffix}`;
+}
+
+function contextMeterPercent(
+  context: ContextLifecycleSnapshotV1 | undefined,
+): number | undefined {
+  if (context?.usage.usedPercent !== undefined) {
+    return Math.min(100, Math.max(0, context.usage.usedPercent));
+  }
+  const used = context?.usage.usedTokens;
+  const window = context?.capacity.effectiveWindowTokens;
+  if (used === undefined || !window || window <= 0) return undefined;
+  return Math.min(100, Math.max(0, used / window * 100));
+}
+
+function contextGradientProgress(
+  context: ContextLifecycleSnapshotV1,
+  percent: number,
+): number {
+  const warn = Math.max(1, context.thresholds.warnPercent);
+  const compact = Math.max(warn + 1, context.thresholds.compactPercent);
+  const hard = Math.max(compact + 1, context.thresholds.hardPercent);
+  if (percent <= warn) return percent / warn / 3;
+  if (percent <= compact) {
+    return 1 / 3 + (percent - warn) / (compact - warn) / 3;
+  }
+  if (percent <= hard) {
+    return 2 / 3 + (percent - compact) / (hard - compact) / 3;
+  }
+  return 1;
+}
+
+export function contextMeterText(
+  context: ContextLifecycleSnapshotV1 | undefined,
+  format: CliContextFormat = "tokens",
+  showBar = true,
+): string {
+  const percent = contextMeterPercent(context);
+  if (percent === undefined) {
+    return showBar ? "▱▱▱▱▱ unknown" : "unknown";
+  }
+  const filled = Math.min(
+    CONTEXT_METER_CELLS,
+    Math.max(0, Math.round(percent / (100 / CONTEXT_METER_CELLS))),
+  );
+  const bar = `${"▰".repeat(filled)}${"▱".repeat(CONTEXT_METER_CELLS - filled)}`;
+  const percentage = `${percent.toFixed(0)}%`;
+  const usedTokens = context?.usage.usedTokens;
+  const windowTokens = context?.capacity.effectiveWindowTokens;
+  if (
+    format === "tokens" &&
+    (usedTokens === undefined || !windowTokens || windowTokens <= 0)
+  ) {
+    return showBar ? `${bar} unknown` : "unknown";
+  }
+  const used = usedTokens === 0 ? "0k" : compactTokenCount(usedTokens ?? 0);
+  const maximum = compactTokenCount(windowTokens ?? 0);
+  const ratio = `${used}/${maximum}`;
+  const value = format === "percent" ? percentage : ratio;
+  return showBar ? `${bar} ${value}` : value;
+}
+
+export type ProviderQuotaVariant = "two-windows" | "one-window";
+
+function primaryQuotaMeter(
+  snapshot: ProviderUsageSnapshotV1,
+): ProviderUsageMeterV1 | undefined {
+  return snapshot.meters.find(({ primary }) => primary) ?? snapshot.meters[0];
+}
+
+export function providerQuotaText(
+  snapshot: ProviderUsageSnapshotV1 | undefined,
+  variant: ProviderQuotaVariant = "two-windows",
+): string | undefined {
+  if (!snapshot || snapshot.status === "unavailable") return undefined;
+  const meter = primaryQuotaMeter(snapshot);
+  if (!meter || meter.windows.length === 0) return undefined;
+  const limit = variant === "two-windows" ? 2 : 1;
+  const windows = meter.windows.slice(0, limit).map((window) =>
+    `${terminalSafeText(window.label)} ${Math.round(window.remainingPercent)}% left`
+  );
+  return `${terminalSafeText(snapshot.provider.label)} · ${windows.join(" · ")}`;
+}
+
+export type ComposerDraftBlock = {
+  id: number;
+  start: number;
+  end: number;
+  label: string;
+  kind: "pasted_text" | "path" | "image";
+};
+
+export type ComposerDraftImage = {
+  id: number;
+  image: AgentImageInput;
+};
+
+export type ComposerDraftSnapshot = {
+  value: string;
+  cursor: number;
+  blocks: ComposerDraftBlock[];
+  images: ComposerDraftImage[];
+};
+
+export type ComposerInitialValue = string | ComposerDraftSnapshot;
+
+function cloneDraftSnapshot(
+  draft: ComposerDraftSnapshot,
+): ComposerDraftSnapshot {
+  return {
+    value: draft.value,
+    cursor: Math.max(0, Math.min(draft.value.length, draft.cursor)),
+    blocks: draft.blocks.map((block) => ({ ...block })),
+    images: draft.images.map((attachment) => ({
+      ...attachment,
+      image: { ...attachment.image },
+    })),
+  };
+}
+
+function emptyDraftSnapshot(): ComposerDraftSnapshot {
+  return {
+    value: "",
+    cursor: 0,
+    blocks: [],
+    images: [],
+  };
+}
+
+function initialDraftSnapshot(
+  value: ComposerInitialValue,
+): ComposerDraftSnapshot {
+  return typeof value === "string"
+    ? {
+        value,
+        cursor: value.length,
+        blocks: [],
+        images: [],
+      }
+    : cloneDraftSnapshot(value);
+}
+
+export type LiveComposerSubmission =
+  | {
+      kind: "message";
+      value: string;
+      delivery: "contextual" | "next";
+      images?: AgentImageInput[];
+      draft?: ComposerDraftSnapshot;
+    }
+  | {
+      kind: "stop";
+      draft: string;
+    }
+  | {
+      kind: "edit_pending";
+    }
+  | {
+      kind: "clear_pending";
+    };
+
+export type LiveComposerSubmissionResult = {
+  draft?: ComposerDraftSnapshot;
+};
+
+export type LiveComposerHandle = {
+  setContext: (context: LiveComposerContext) => void;
+  pauseForModal: () => () => void;
+  close: () => ComposerInitialValue;
+};
+
 type ActiveRead = {
-  mode: "ask" | "compose" | "select";
+  mode: "ask" | "compose" | "select" | "live" | "clarify";
   prompt: string;
   originalPrompt: string;
   buffer: string;
   cursor: number;
+  selectionAnchor?: number;
+  preferredColumn?: number;
   paletteDismissed: boolean;
   selectedSuggestion: number;
   renderedLines: string[];
   renderedAreaRows: number;
+  renderedCursorRow: number;
   renderedCursorColumn: number;
   renderedColumns: number;
   pendingRenderPrefix: string;
   historyIndex: number;
   historyDraft: string;
+  undoStack: EditSnapshot[];
+  redoStack: EditSnapshot[];
+  compactBlocks: CompactInputBlock[];
+  images: ComposerImageAttachment[];
+  lastEditKind?: EditKind;
+  lastEditAt: number;
   choices: ComposerChoice[];
   currentValue?: string;
+  statusContext?: ComposerStatusContext;
+  liveContext?: LiveComposerContext;
+  onLiveSubmission?: (
+    submission: LiveComposerSubmission,
+  ) => LiveComposerSubmissionResult | void;
+  clarification?: ActiveClarification;
   resolve: (value: string) => void;
 };
+
+type TerminalGeometry = {
+  columns: number;
+  rows: number;
+  revision: number;
+};
+
+type ActiveClarification = {
+  request: ClarificationRequest;
+  questionIndex: number;
+  optionIndexes: number[];
+  selections: Map<string, Set<string>>;
+  questionNotes: Map<string, string>;
+  optionNotes: Map<string, string>;
+  autoFilledQuestionIds: Set<string>;
+  phase: "questions" | "summary" | "note";
+  noteTarget?: { questionId: string; optionId?: string };
+  deadlineMs: number;
+  timer?: NodeJS.Timeout;
+  status?: string;
+  resolve: (result: ClarificationResult) => void;
+};
+
+type EditKind = "insert" | "delete" | "command";
+
+type EditSnapshot = Pick<
+  ActiveRead,
+  | "buffer"
+  | "cursor"
+  | "selectionAnchor"
+  | "preferredColumn"
+  | "paletteDismissed"
+  | "selectedSuggestion"
+  | "historyIndex"
+  | "historyDraft"
+  | "compactBlocks"
+  | "images"
+>;
+
+type CompactInputBlock = ComposerDraftBlock;
+type ComposerImageAttachment = ComposerDraftImage;
 
 type ExitConfirmation = {
   activeRead: ActiveRead;
@@ -59,9 +429,52 @@ type ExitConfirmation = {
   timer?: NodeJS.Timeout;
 };
 
+type ActionConfirmation = {
+  kind: "cancel" | "clear_pending";
+  activeRead: ActiveRead;
+  deadline: number;
+  displayedSeconds: number;
+  pendingCount: number;
+  timer?: NodeJS.Timeout;
+};
+
+type ComposerNotice = {
+  role: "success" | "danger";
+  text: string;
+  timer?: NodeJS.Timeout;
+};
+
+type MouseSelectionDrag = {
+  anchorRow: number;
+  anchorColumn: number;
+  row: number;
+  column: number;
+  started: boolean;
+  direction?: -1 | 1;
+  timer?: NodeJS.Timeout;
+};
+
+type MouseClickSequence = {
+  row: number;
+  column: number;
+  count: number;
+  releasedAt: number;
+};
+
+const MOUSE_MULTI_CLICK_INTERVAL_MS = 400;
+const MOUSE_MULTI_CLICK_COLUMN_TOLERANCE = 1;
+
 type RenderFrame = {
   lines: string[];
+  cursorRow: number;
   cursorColumn: number;
+};
+
+type VisualDraftRow = {
+  text: string;
+  start: number;
+  end: number;
+  hardStart: boolean;
 };
 
 export type InlineActivityHandle = {
@@ -71,25 +484,103 @@ export type InlineActivityHandle = {
   stop: () => void;
 };
 
+export type InlineMessageStreamHandle = {
+  update: (text: string) => void;
+  finish: (finalText?: string) => void;
+  abort: () => void;
+};
+
 type ActiveActivity = {
   id: number;
   label: string;
-  frame: number;
+  layout: "inline" | "startup";
+  startedAtMs: number;
+  markerFrame: number;
+  shimmerFrame: number;
+  ready: boolean;
   visible: boolean;
+  delayMs: number;
   timer?: NodeJS.Timeout;
 };
+
+export function formatActivityElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1_000));
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes === 0) return `${seconds}s`;
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  if (hours === 0) return `${minutes}m ${seconds}s`;
+  return `${hours}h ${minutes}m ${seconds}s`;
+}
+
+type ActiveMessageStream = {
+  id: number;
+  prefix: string;
+  displayedText: string;
+  latestText: string;
+  started: boolean;
+  divergent: boolean;
+  renderer: IncrementalRichTextRenderer;
+};
+
+export function agentMessagePrefix(label = "Agent"): string {
+  return `${terminalSafeText(label)} ${AGENT_MESSAGE_MARKER}`;
+}
 
 export type TtyComposerOptions = {
   input: ComposerInput;
   output: ComposerOutput;
   color: boolean;
   motion?: boolean;
+  richText?: boolean;
+  themeId?: TerminalThemeId;
+  shortcuts?: CliShortcutPreferences;
+  statusline?: CliStatuslinePreferences;
+  clipboardPreferences?: CliClipboardPreferences;
+  viewportMode: "fullscreen" | "inline";
+  clipboard?: CliClipboardReader;
+  designSystem?: TerminalDesignSystem;
   onInterrupt: () => void;
 };
+
+function liveComposerHint(
+  context: LiveComposerContext,
+  width = 80,
+): string {
+  const pending = context.pendingCount > 0
+    ? ` · ${context.pendingCount} pending${context.paused ? " (paused)" : ""}`
+    : "";
+  const queueKeys = context.pendingCount > 0
+    ? " · Ctrl+↑ edit · Esc×2 clear"
+    : "";
+  if (context.phase === "preparing" || context.phase === "coordinating") {
+    if (width < 56) return `Ctrl+C Stop${pending}`;
+    if (width < 84) {
+      return `Tab Next · Alt+Enter newline · Ctrl+C Stop${pending}`;
+    }
+    return `Enter Update · Tab Next · Ctrl+C Cancel${queueKeys}${pending}`;
+  }
+  if (context.phase === "stopping") {
+    return `Stopping · /pending resume when ready${pending}`;
+  }
+  return width < 44
+    ? `Ctrl+C Stop${pending}`
+    : width < 84
+      ? `Tab Next · Ctrl+C Cancel${pending}`
+      : `Enter Send next · Tab Next · Ctrl+C Cancel${queueKeys}${pending}`;
+}
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, {
   granularity: "grapheme",
 });
+const wordSegmenter = new Intl.Segmenter(undefined, {
+  granularity: "word",
+});
+
+function graphemeCount(value: string): number {
+  return [...graphemeSegmenter.segment(value)].length;
+}
 
 function previousBoundary(value: string, index: number): number {
   let previous = 0;
@@ -106,6 +597,97 @@ function nextBoundary(value: string, index: number): number {
     if (end > index) return end;
   }
   return value.length;
+}
+
+function previousWordBoundary(value: string, index: number): number {
+  if (index <= 0) return 0;
+  const segments = [...wordSegmenter.segment(value)];
+  let cursor = index;
+  while (cursor > 0) {
+    const segment = [...segments]
+      .reverse()
+      .find((candidate) => candidate.index < cursor);
+    if (!segment) return 0;
+    const text = segment.segment;
+    cursor = segment.index;
+    if (!/^\s+$/u.test(text)) return cursor;
+  }
+  return 0;
+}
+
+function nextWordBoundary(value: string, index: number): number {
+  if (index >= value.length) return value.length;
+  const segments = [...wordSegmenter.segment(value)];
+  let cursor = index;
+  let consumedContent = false;
+  for (const segment of segments) {
+    const end = segment.index + segment.segment.length;
+    if (end <= cursor) continue;
+    const whitespace = /^\s+$/u.test(segment.segment);
+    if (!whitespace) {
+      consumedContent = true;
+      cursor = end;
+      continue;
+    }
+    cursor = end;
+    if (consumedContent) return cursor;
+  }
+  return value.length;
+}
+
+function wrapDraft(value: string, width: number): VisualDraftRow[] {
+  const available = Math.max(1, width);
+  const rows: VisualDraftRow[] = [];
+  let start = 0;
+  let rowWidth = 0;
+  let hardStart = false;
+  for (const part of graphemeSegmenter.segment(value)) {
+    const end = part.index + part.segment.length;
+    if (part.segment === "\n") {
+      rows.push({
+        text: value.slice(start, part.index),
+        start,
+        end: part.index,
+        hardStart,
+      });
+      start = end;
+      rowWidth = 0;
+      hardStart = true;
+      continue;
+    }
+    const partWidth = graphemeWidth(part.segment);
+    if (rowWidth > 0 && rowWidth + partWidth > available) {
+      rows.push({
+        text: value.slice(start, part.index),
+        start,
+        end: part.index,
+        hardStart,
+      });
+      start = part.index;
+      rowWidth = 0;
+      hardStart = false;
+    }
+    rowWidth += partWidth;
+  }
+  rows.push({
+    text: value.slice(start),
+    start,
+    end: value.length,
+    hardStart,
+  });
+  return rows;
+}
+
+function offsetAtColumn(value: string, start: number, end: number, column: number): number {
+  let width = 0;
+  let offset = start;
+  for (const part of graphemeSegmenter.segment(value.slice(start, end))) {
+    const nextWidth = width + graphemeWidth(part.segment);
+    if (nextWidth > column) break;
+    width = nextWidth;
+    offset = start + part.index + part.segment.length;
+  }
+  return offset;
 }
 
 function codePointWidth(value: string): number {
@@ -206,25 +788,41 @@ function visibleInput(value: string): string {
   ).join("");
 }
 
+function visibleDraftInput(value: string): string {
+  return value
+    .split("\n")
+    .map((line) => visibleInput(line))
+    .join("\n");
+}
+
 type ComposerLine = {
   text: string;
   labelStart: number;
   labelLength: number;
+  descriptionStart?: number;
+  descriptionLength?: number;
 };
 
 function suggestionLine(
-  definition: SlashCommandDefinition,
+  suggestion: SlashInputSuggestion,
   selected: boolean,
   width: number,
 ): ComposerLine {
   const marker = selected ? "›" : " ";
   const detail = width >= 64
-    ? `${definition.usage.padEnd(22)} ${definition.description}`
-    : definition.usage;
+    ? `${suggestion.label.padEnd(22)} ${suggestion.description}`
+    : suggestion.label;
   return {
     text: truncate(`  ${marker} ${detail}`, width),
     labelStart: 4,
-    labelLength: definition.usage.length,
+    labelLength: suggestion.label.length,
+    ...(width >= 64
+      ? {
+          descriptionStart:
+            4 + Math.max(22, suggestion.label.length) + 1,
+          descriptionLength: suggestion.description.length,
+        }
+      : {}),
   };
 }
 
@@ -237,23 +835,30 @@ function choiceLine(
   const marker = selected ? "›" : " ";
   const currentMarker = current ? "●" : " ";
   const label = terminalSafeText(choice.label);
-  const value = terminalSafeText(choice.value);
   const description = choice.description
     ? terminalSafeText(choice.description)
     : "";
-  const detail = width >= 80
-    ? `${label.padEnd(22)} ${value.padEnd(24)} ${description}`
-    : width >= 52
-      ? `${label.padEnd(22)} ${value}`
-      : value;
+  const detail = width >= 64 && description
+    ? `${label.padEnd(22)} ${description}`
+    : label;
   return {
     text: truncate(`  ${marker} ${currentMarker} ${detail}`, width),
     labelStart: 6,
-    labelLength: (width >= 52 ? label : value).length,
+    labelLength: label.length,
+    ...(width >= 64 && description
+      ? {
+          descriptionStart: 6 + Math.max(22, label.length) + 1,
+          descriptionLength: description.length,
+        }
+      : {}),
   };
 }
 
-function paintSelection(theme: TerminalTheme, line: ComposerLine): string {
+function paintComposerLine(
+  theme: TerminalTheme,
+  line: ComposerLine,
+  selected: boolean,
+): string {
   const markerIndex = line.text.indexOf("›");
   const labelEnd = Math.min(
     line.text.length,
@@ -261,30 +866,48 @@ function paintSelection(theme: TerminalTheme, line: ComposerLine): string {
   );
   const label =
     line.labelStart < labelEnd
-      ? theme.paint("focus", line.text.slice(line.labelStart, labelEnd))
+      ? theme.paint(
+          selected ? "focus" : "label",
+          line.text.slice(line.labelStart, labelEnd),
+        )
       : "";
-  if (markerIndex < 0) {
-    return `${line.text.slice(0, line.labelStart)}${label}${line.text.slice(labelEnd)}`;
-  }
+  const descriptionStart = Math.max(
+    labelEnd,
+    Math.min(line.text.length, line.descriptionStart ?? line.text.length),
+  );
+  const descriptionEnd = Math.min(
+    line.text.length,
+    descriptionStart + (line.descriptionLength ?? 0),
+  );
+  const prefix = line.text.slice(0, line.labelStart);
+  const paintedPrefix =
+    selected && markerIndex >= 0
+      ? `${prefix.slice(0, markerIndex)}${theme.paint("focus", "›")}${prefix.slice(markerIndex + 1)}`
+      : prefix;
   return [
-    line.text.slice(0, markerIndex),
-    theme.paint("focus", "›"),
-    line.text.slice(markerIndex + 1, line.labelStart),
+    paintedPrefix,
     label,
-    line.text.slice(labelEnd),
+    line.text.slice(labelEnd, descriptionStart),
+    descriptionStart < descriptionEnd
+      ? theme.paint(
+          "muted",
+          line.text.slice(descriptionStart, descriptionEnd),
+        )
+      : "",
+    line.text.slice(descriptionEnd),
   ].join("");
 }
 
 function paintPromptMarker(theme: TerminalTheme, line: string): string {
-  const promptMarker = line.indexOf("❯");
-  const markerIndex = promptMarker >= 0 ? promptMarker : line.indexOf("›");
-  if (markerIndex < 0) return line;
-  return `${line.slice(0, markerIndex)}${theme.paint("focus", line[markerIndex] ?? "")}${line.slice(markerIndex + 1)}`;
+  const promptPrefix = COMPOSER_PROMPT.trimEnd();
+  const promptIndex = line.indexOf(promptPrefix);
+  if (promptIndex < 0) return line;
+  return `${line.slice(0, promptIndex)}${theme.paint("user", promptPrefix)}${line.slice(promptIndex + promptPrefix.length)}`;
 }
 
 function paintToken(
   theme: TerminalTheme,
-  role: "attention",
+  role: TerminalRole,
   line: string,
   token: string,
 ): string {
@@ -312,6 +935,21 @@ function terminalRows(output: ComposerOutput): number {
   return rows > 0 ? rows : 24;
 }
 
+function terminalGeometry(
+  output: ComposerOutput,
+  revision = 0,
+): TerminalGeometry {
+  return {
+    columns: terminalColumns(output),
+    rows: terminalRows(output),
+    revision,
+  };
+}
+
+function renderedLineWidth(value: string): number {
+  return displayWidth(value.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, ""));
+}
+
 function shouldCompactPrompt(prompt: string, columns: number): boolean {
   return displayWidth(prompt) + 1 > Math.max(1, columns - 1);
 }
@@ -319,32 +957,76 @@ function shouldCompactPrompt(prompt: string, columns: number): boolean {
 export class TtyComposer {
   private readonly input: ComposerInput;
   private readonly output: ComposerOutput;
-  private readonly theme: TerminalTheme;
-  private readonly motion: boolean;
+  private readonly screen?: TerminalScreen;
+  private readonly designSystem: TerminalDesignSystem;
+  private motion: boolean;
+  private richText: boolean;
+  private shortcuts: CliShortcutPreferences;
+  private statusline: CliStatuslinePreferences;
+  private clipboardPreferences: CliClipboardPreferences;
+  private providerUsage?: ProviderUsageSnapshotV1;
+  private readonly clipboard?: CliClipboardReader;
   private readonly onInterrupt: () => void;
   private readonly wasRaw: boolean;
   private active?: ActiveRead;
   private exitConfirmation?: ExitConfirmation;
   private activity?: ActiveActivity;
   private activitySequence = 0;
+  private messageStream?: ActiveMessageStream;
+  private messageStreamSequence = 0;
   private history: string[] = [];
   private closed = false;
+  private suspended = false;
+  private resizePending = false;
+  private resizeTimer?: NodeJS.Timeout;
+  private geometry: TerminalGeometry;
+  private shellSummary = "";
+  private pendingPaste?: string;
+  private pendingMouseInput?: string;
+  private pasteSequence = 0;
+  private lastSubmittedImages: AgentImageInput[] = [];
+  private lastSubmittedDraft?: ComposerDraftSnapshot;
+  private actionConfirmation?: ActionConfirmation;
+  private notice?: ComposerNotice;
+  private mouseSelectionDrag?: MouseSelectionDrag;
+  private mouseClickSequence?: MouseClickSequence;
 
   constructor(options: TtyComposerOptions) {
     this.input = options.input;
     this.output = options.output;
-    this.theme = createTerminalTheme(options.color);
+    this.geometry = terminalGeometry(this.output);
+    this.screen = options.viewportMode === "fullscreen"
+      ? new TerminalScreen(options.output)
+      : undefined;
+    this.designSystem =
+      options.designSystem ??
+      createTerminalDesignSystem(options.color, options.themeId);
     this.motion = options.motion ?? true;
+    this.richText = options.richText ?? true;
+    this.shortcuts = shortcutPreferences(options.shortcuts);
+    this.statusline = statuslinePreferences(
+      options.statusline ?? DEFAULT_CLI_STATUSLINE,
+    );
+    this.clipboardPreferences = clipboardPreferences(
+      options.clipboardPreferences ?? DEFAULT_CLI_CLIPBOARD,
+    );
     this.onInterrupt = options.onInterrupt;
+    this.clipboard = options.clipboard;
     this.wasRaw = Boolean(this.input.isRaw);
     emitKeypressEvents(this.input);
     this.input.on("keypress", this.handleKeypress);
     this.output.on("resize", this.handleResize);
     this.input.setRawMode?.(true);
     this.input.resume();
+    this.screen?.enter();
   }
 
-  compose = (prompt: string): Promise<string> => this.read(prompt, "compose");
+  compose = (
+    prompt: string,
+    initialValue: ComposerInitialValue = "",
+    statusContext?: ComposerStatusContext,
+  ): Promise<string> =>
+    this.read(prompt, "compose", { statusContext }, initialValue);
 
   ask = (prompt: string): Promise<string> => this.read(prompt, "ask");
 
@@ -354,96 +1036,721 @@ export class TtyComposer {
     currentValue?: string,
   ): Promise<string> => this.read(prompt, "select", { choices, currentValue });
 
+  clarify = (request: ClarificationRequest): Promise<ClarificationResult> => {
+    if (this.closed || request.questions.length === 0) {
+      return Promise.resolve({ status: "cancelled", answers: [] });
+    }
+    if (this.active) {
+      return Promise.reject(new Error("Orynt terminal input is already active"));
+    }
+    this.output.write("\u001b[?2004h");
+    return new Promise((resolve) => {
+      const active = this.createActiveRead(
+        "",
+        "clarify",
+        {},
+        "",
+        () => undefined,
+      );
+      active.clarification = {
+        request,
+        questionIndex: 0,
+        optionIndexes: request.questions.map(() => 0),
+        selections: new Map(
+          request.questions.map((question) => [question.id, new Set<string>()]),
+        ),
+        questionNotes: new Map(),
+        optionNotes: new Map(),
+        autoFilledQuestionIds: new Set(),
+        phase: "questions",
+        deadlineMs: Date.now() + Math.max(1, request.timeoutMs ?? 120_000),
+        resolve,
+      };
+      this.active = active;
+      this.scheduleClarificationTick(active);
+      this.render();
+    });
+  };
+
   remember = (value: string): void => {
     if (!value.trim()) return;
     this.history = [value, ...this.history.filter((entry) => entry !== value)].slice(0, 100);
   };
 
-  write = (value: string): void => {
-    const normalized = value.endsWith("\n") ? value : `${value}\n`;
+  takeSubmittedImages = (): AgentImageInput[] => {
+    const images = this.lastSubmittedImages;
+    this.lastSubmittedImages = [];
+    return images;
+  };
+
+  takeSubmittedDraft = (): ComposerDraftSnapshot | undefined => {
+    const draft = this.lastSubmittedDraft;
+    this.lastSubmittedDraft = undefined;
+    return draft ? cloneDraftSnapshot(draft) : undefined;
+  };
+
+  beginLiveInput = (
+    context: LiveComposerContext,
+    onSubmission: (
+      submission: LiveComposerSubmission,
+    ) => LiveComposerSubmissionResult | void,
+    initialValue: ComposerInitialValue = "",
+  ): LiveComposerHandle => {
+    if (this.closed) {
+      return {
+        setContext: () => undefined,
+        pauseForModal: () => () => undefined,
+        close: () => initialDraftSnapshot(initialValue),
+      };
+    }
+    if (this.active) {
+      throw new Error("Orynt terminal input is already active");
+    }
+    this.output.write("\u001b[?2004h");
+    this.active = this.createActiveRead(
+      COMPOSER_PROMPT,
+      "live",
+      {},
+      initialValue,
+      () => undefined,
+    );
+    this.active.liveContext = { ...context };
+    this.active.onLiveSubmission = onSubmission;
+    this.render();
+    const active = this.active;
+    let paused = false;
+    return {
+      setContext: (nextContext) => {
+        if (this.active !== active && !paused) return;
+        active.liveContext = { ...nextContext };
+        if (!paused) this.render();
+      },
+      pauseForModal: () => {
+        if (this.active !== active || paused) {
+          return () => undefined;
+        }
+        this.disarmActionConfirmation();
+        this.clearRender();
+        this.active = undefined;
+        paused = true;
+        let restored = false;
+        return () => {
+          if (restored) return;
+          restored = true;
+          if (this.closed || !paused) return;
+          if (this.active) {
+            throw new Error(
+              "Orynt terminal input cannot restore while another prompt is active",
+            );
+          }
+          paused = false;
+          this.active = active;
+          this.render();
+        };
+      },
+      close: () => {
+        if (this.active !== active && !paused) return emptyDraftSnapshot();
+        const draft = this.draftSnapshot(active);
+        if (!paused) {
+          this.clearRender();
+          this.active = undefined;
+        }
+        paused = false;
+        this.disarmActionConfirmation();
+        return draft;
+      },
+    };
+  };
+
+  suspend(): () => void {
+    if (this.closed) {
+      throw new Error("Orynt terminal input is closed");
+    }
+    if (this.active) {
+      throw new Error("Orynt terminal input cannot be suspended while a prompt is active");
+    }
+    if (this.suspended) {
+      throw new Error("Orynt terminal input is already suspended");
+    }
+    this.finishMessageStream();
+    this.stopActivity();
+    this.disarmExitConfirmation();
+    this.disarmActionConfirmation();
+    this.stopMouseSelectionDrag();
+    this.pendingMouseInput = undefined;
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = undefined;
+    }
+    this.geometry = terminalGeometry(
+      this.output,
+      this.geometry.revision + 1,
+    );
+    this.output.write("\u001b[?2004l");
+    this.input.off("keypress", this.handleKeypress);
+    this.output.off("resize", this.handleResize);
+    this.input.setRawMode?.(false);
+    this.input.pause();
+    this.screen?.suspend();
+    this.suspended = true;
+    let restored = false;
+    return () => {
+      if (restored) return;
+      restored = true;
+      if (this.closed || !this.suspended) return;
+      this.suspended = false;
+      this.output.write("\u001b[?2004h");
+      this.input.on("keypress", this.handleKeypress);
+      this.output.on("resize", this.handleResize);
+      this.input.setRawMode?.(true);
+      this.input.resume();
+      this.geometry = terminalGeometry(
+        this.output,
+        this.geometry.revision + 1,
+      );
+      this.screen?.resume();
+      this.renderFullscreen();
+    };
+  }
+
+  setPresentation = (appearance: TerminalAppearance): void => {
+    this.designSystem.update(appearance);
+    this.richText = appearance.richText;
+    this.messageStream?.renderer.setOptions({
+      enabled: this.richText,
+      theme: this.designSystem.theme,
+    });
+    if (this.motion !== appearance.motion) {
+      this.motion = appearance.motion;
+      const activity = this.activity;
+      if (activity?.timer) {
+        clearTimeout(activity.timer);
+        activity.timer = undefined;
+      }
+      if (activity) {
+        if (activity.ready || activity.visible) this.paintActivity(activity);
+        activity.timer = setTimeout(
+          () => this.tickActivity(activity),
+          activity.ready
+            ? this.motion
+              ? ACTIVITY_FRAME_MS
+              : STATIC_ACTIVITY_TICK_MS
+            : activity.delayMs,
+        );
+        activity.timer.unref?.();
+      }
+    }
+    if (this.active) {
+      this.render();
+    }
+  };
+
+  setShortcuts = (shortcuts: CliShortcutPreferences): void => {
+    this.shortcuts = shortcutPreferences(shortcuts);
+    if (this.active) this.render();
+  };
+
+  setStatusline = (statusline: CliStatuslinePreferences): void => {
+    this.statusline = statuslinePreferences(statusline);
+    if (this.active) this.render();
+  };
+
+  setProviderUsage = (
+    providerUsage: ProviderUsageSnapshotV1 | undefined,
+  ): void => {
+    this.providerUsage = providerUsage
+      ? structuredClone(providerUsage)
+      : undefined;
+    if (this.active) this.render();
+  };
+
+  setClipboardPreferences = (
+    preferences: CliClipboardPreferences,
+  ): void => {
+    this.clipboardPreferences = clipboardPreferences(preferences);
+  };
+
+  notify = (
+    text: string,
+    role: ComposerNotice["role"] = "success",
+  ): void => {
+    if (this.notice?.timer) clearTimeout(this.notice.timer);
+    const notice: ComposerNotice = { text, role };
+    this.notice = notice;
+    if (this.active) this.scheduleNoticeExpiry(notice);
+    if (this.active) this.render();
+  };
+
+  private scheduleNoticeExpiry(notice: ComposerNotice): void {
+    if (notice.timer) return;
+    notice.timer = setTimeout(() => {
+      if (this.notice !== notice) return;
+      this.notice = undefined;
+      if (this.active) this.render();
+    }, 2_000);
+    notice.timer.unref?.();
+  }
+
+  private appendTimeline(
+    value: string,
+    centeredVariants?: readonly string[],
+    decorateRow?: (rendered: string) => string,
+  ): void {
+    if (!value) return;
+    this.screen?.appendHistory(value, {
+      ...(centeredVariants ? { centeredVariants } : {}),
+      ...(decorateRow ? { decorateRow } : {}),
+    });
+    const plainLines = value
+      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "")
+      .replace(/\r/gu, "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const summary = [...plainLines].reverse().find((line) =>
+      /^(?:Session ended\.|Fatal:|Startup (?:cancelled|interrupted)\.)/u.test(line)
+    );
+    if (summary) this.shellSummary = summary;
+  }
+
+  private isChatSubmission(active: ActiveRead): boolean {
+    return (
+      (active.mode === "compose" || active.mode === "live") &&
+      active.originalPrompt === COMPOSER_PROMPT
+    );
+  }
+
+  private writeSubmittedUserMessage(
+    active: ActiveRead,
+    renderedContent: string,
+  ): void {
+    const prompt = this.designSystem.theme.paint(
+      "user",
+      active.prompt.trimEnd(),
+    );
+    const message = `${prompt} ${renderedContent}`;
+    const decorateRow = (rendered: string) =>
+      this.designSystem.theme.paintRenderedRow("userMessage", rendered);
+    if (this.screen) {
+      this.appendTimeline(`${message}\n`, undefined, decorateRow);
+      return;
+    }
+    if (!this.designSystem.theme.enabled) {
+      this.output.write(`${message}\n`);
+      return;
+    }
+    this.output.write(
+      `${wrapTerminalText(message, terminalColumns(this.output))
+        .map(decorateRow)
+        .join("\n")}\n`,
+    );
+  }
+
+  clearViewport = (): void => {
+    if (!this.screen) {
+      this.output.write("\u001bc");
+      return;
+    }
+    this.screen.clearHistory();
+    this.screen.scrollToTail();
+    this.renderFullscreen();
+  };
+
+  private renderFullscreen(): void {
+    if (!this.screen?.active) return;
+    const active = this.active;
+    const frame = active ? this.createFrame(active) : {
+      lines: [],
+      cursorRow: 0,
+      cursorColumn: 0,
+    };
+    const transient: string[] = [];
+    const stream = this.messageStream;
+    if (stream?.latestText) {
+      transient.push(
+        `${this.designSystem.theme.paint("agent", stream.prefix)} ${renderRichText(stream.latestText, {
+          enabled: this.richText,
+          theme: this.designSystem.theme,
+          width: Math.max(20, terminalColumns(this.output) - displayWidth(stream.prefix) - 1),
+          continuationIndent: " ".repeat(displayWidth(stream.prefix) + 1),
+        })}`,
+      );
+    }
     const activity = this.activity;
+    if (
+      activity?.ready &&
+      !stream?.latestText &&
+      active?.mode !== "live"
+    ) {
+      transient.push(
+        activity.layout === "inline"
+          ? this.inlineActivityLine(activity, Math.max(0, terminalColumns(this.output) - 1))
+          : `  ${this.designSystem.theme.paint(
+              "focus",
+              this.activityMarker(activity),
+            )} ${activity.label}`,
+      );
+    }
+    this.screen.render({
+      transient,
+      composer: frame.lines,
+      composerCursorRow: frame.cursorRow,
+      composerCursorColumn: frame.cursorColumn,
+    });
+    if (active) {
+      active.renderedLines = [...frame.lines];
+      active.renderedAreaRows = frame.lines.length;
+      active.renderedCursorRow = frame.cursorRow;
+      active.renderedCursorColumn = frame.cursorColumn;
+      active.renderedColumns = terminalColumns(this.output);
+      active.pendingRenderPrefix = "";
+    }
+  }
+
+  private writeOutput(
+    value: string,
+    centeredVariants?: readonly string[],
+  ): void {
+    this.finishMessageStream();
+    const normalizedVariants = centeredVariants?.map((variant) =>
+      variant.endsWith("\n") ? variant : `${variant}\n`
+    );
+    const normalized = normalizedVariants
+      ? centerTerminalText(normalizedVariants, terminalColumns(this.output))
+      : value.endsWith("\n")
+        ? value
+        : `${value}\n`;
+    if (this.screen) {
+      this.appendTimeline(
+        normalizedVariants?.[0] ?? normalized,
+        normalizedVariants,
+      );
+      this.renderFullscreen();
+      return;
+    }
+    const activity = this.activity;
+    const live = this.active?.mode === "live";
+    if (live) this.clearRender();
     if (!activity?.visible) {
       this.output.write(normalized);
+      if (live) this.render();
       return;
     }
     activity.visible = false;
     this.output.write(
-      `\r\u001b[2K${normalized}${this.activityFrame(activity)}`,
+      `${this.clearActivityFrame(activity)}${normalized}${this.activityFrame(activity)}`,
     );
     activity.visible = true;
+    if (live) this.render();
+  }
+
+  write = (value: string): void => {
+    this.writeOutput(value);
   };
 
-  beginActivity = (label: string): InlineActivityHandle => {
+  writeCentered = (variants: readonly string[]): void => {
+    if (variants.length === 0) return;
+    this.writeOutput(variants[0] ?? "", variants);
+  };
+
+  beginActivity = (
+    label: string,
+    options: { immediate?: boolean } = {},
+  ): InlineActivityHandle =>
+    this.startActivity(label, "inline", options);
+
+  beginStartupActivity = (label: string): InlineActivityHandle =>
+    this.startActivity(label, "startup");
+
+  private startActivity(
+    label: string,
+    layout: ActiveActivity["layout"],
+    options: { immediate?: boolean } = {},
+  ): InlineActivityHandle {
+    this.finishMessageStream();
     this.stopActivity();
     const activity: ActiveActivity = {
       id: ++this.activitySequence,
       label: terminalSafeText(label),
-      frame: 0,
+      layout,
+      startedAtMs: Date.now(),
+      markerFrame: 0,
+      shimmerFrame: 0,
+      ready: false,
       visible: false,
+      delayMs: options.immediate ? 0 : ACTIVITY_DELAY_MS,
     };
     this.activity = activity;
-    if (this.motion) {
+    if (options.immediate) {
+      this.tickActivity(activity);
+    } else {
       activity.timer = setTimeout(
         () => this.tickActivity(activity),
-        ACTIVITY_DELAY_MS,
+        activity.delayMs,
       );
-      activity.timer.unref?.();
     }
+    activity.timer?.unref?.();
     const finish = (
-      marker: "◇" | "✕" | undefined,
+      marker: "✓" | "✕" | undefined,
       nextLabel?: string,
     ): void => {
       if (this.activity?.id !== activity.id) return;
       const finalLabel = terminalSafeText(nextLabel ?? activity.label);
       if (activity.timer) clearTimeout(activity.timer);
       this.activity = undefined;
-      const clear = activity.visible ? "\r\u001b[2K" : "";
+      const renderedMarker = marker
+        ? this.designSystem.theme.paint(
+            marker === "✓" ? "success" : "danger",
+            marker,
+          )
+        : undefined;
+      if (this.screen) {
+        if (renderedMarker) {
+          this.appendTimeline(`  ${renderedMarker} ${finalLabel}\n`);
+        }
+        this.renderFullscreen();
+        return;
+      }
+      const clear = activity.visible ? this.clearActivityFrame(activity) : "";
+      const live = this.active?.mode === "live";
+      if (live) this.clearRender();
       this.output.write(
-        marker ? `${clear}  ${marker} ${finalLabel}\n` : clear,
+        renderedMarker
+          ? `${clear}  ${renderedMarker} ${finalLabel}\n`
+          : clear,
       );
+      if (live) this.render();
     };
     return {
       update: (nextLabel) => {
         if (this.activity?.id !== activity.id) return;
         activity.label = terminalSafeText(nextLabel);
-        if (activity.visible) this.paintActivity(activity);
+        activity.shimmerFrame = 0;
+        if (
+          activity.visible ||
+          (activity.ready && this.active?.mode === "live")
+        ) {
+          this.paintActivity(activity);
+        }
       },
-      settle: (nextLabel) => finish("◇", nextLabel),
+      settle: (nextLabel) => finish("✓", nextLabel),
       fail: (nextLabel) => finish("✕", nextLabel),
       stop: () => finish(undefined),
     };
+  }
+
+  beginMessageStream = (label = "Agent"): InlineMessageStreamHandle => {
+    this.stopActivity();
+    this.finishMessageStream();
+    const stream: ActiveMessageStream = {
+      id: ++this.messageStreamSequence,
+      prefix: agentMessagePrefix(label),
+      displayedText: "",
+      latestText: "",
+      started: false,
+      divergent: false,
+      renderer: new IncrementalRichTextRenderer({
+        enabled: this.richText,
+        theme: this.designSystem.theme,
+        width: Math.max(20, terminalColumns(this.output) - displayWidth(agentMessagePrefix(label)) - 1),
+        continuationIndent: " ".repeat(displayWidth(agentMessagePrefix(label)) + 1),
+      }),
+    };
+    this.messageStream = stream;
+    const update = (value: string) => {
+      if (this.messageStream?.id !== stream.id) return;
+      const next = terminalSafeMultilineText(value);
+      stream.latestText = next;
+      if (this.screen) {
+        this.renderFullscreen();
+        return;
+      }
+      if (this.active?.mode === "live") {
+        return;
+      }
+      if (!stream.started && next) {
+        this.output.write(
+          `\n${this.designSystem.theme.paint("agent", stream.prefix)} `,
+        );
+        stream.started = true;
+      }
+      if (!stream.divergent) {
+        const rendered = stream.renderer.update(next);
+        if (rendered.divergent) {
+          stream.divergent = true;
+          return;
+        }
+        if (rendered.output) this.output.write(rendered.output);
+        stream.displayedText = next;
+      }
+    };
+    return {
+      update,
+      finish: (finalText) => {
+        if (finalText !== undefined) update(finalText);
+        this.finishMessageStream(stream.id);
+      },
+      abort: () => this.finishMessageStream(stream.id),
+    };
   };
+
+  private finishMessageStream(id?: number): void {
+    const stream = this.messageStream;
+    if (!stream || (id !== undefined && stream.id !== id)) return;
+    this.messageStream = undefined;
+    if (this.screen) {
+      if (stream.latestText) {
+        this.appendTimeline(
+          `${this.designSystem.theme.paint("agent", stream.prefix)} ${renderRichText(stream.latestText, {
+            enabled: this.richText,
+            theme: this.designSystem.theme,
+            width: Math.max(20, terminalColumns(this.output) - displayWidth(stream.prefix) - 1),
+            continuationIndent: " ".repeat(displayWidth(stream.prefix) + 1),
+          })}\n`,
+        );
+      }
+      this.renderFullscreen();
+      return;
+    }
+    const live = this.active?.mode === "live";
+    if (live) {
+      this.clearRender();
+      if (stream.latestText) {
+        this.output.write(
+          `\n${this.designSystem.theme.paint("agent", stream.prefix)} ${renderRichText(stream.latestText, {
+            enabled: this.richText,
+            theme: this.designSystem.theme,
+            width: Math.max(20, terminalColumns(this.output) - displayWidth(stream.prefix) - 1),
+            continuationIndent: " ".repeat(displayWidth(stream.prefix) + 1),
+          })}${stream.latestText.endsWith("\n") ? "" : "\n"}`,
+        );
+      }
+      this.render();
+      return;
+    }
+    if (!stream.divergent && stream.latestText === stream.displayedText) {
+      const tail = stream.renderer.finish();
+      if (tail) this.output.write(tail);
+    } else if (stream.latestText) {
+      if (stream.started && !stream.displayedText.endsWith("\n")) {
+        this.output.write("\n");
+      }
+      this.output.write(
+        `\n${this.designSystem.theme.paint("agent", stream.prefix)} updated · ${renderRichText(stream.latestText, {
+          enabled: this.richText,
+          theme: this.designSystem.theme,
+          width: Math.max(20, terminalColumns(this.output) - displayWidth(stream.prefix) - 11),
+          continuationIndent: " ".repeat(displayWidth(stream.prefix) + 11),
+        })}`,
+      );
+      stream.started = true;
+      stream.displayedText = stream.latestText;
+    }
+    if (stream.started && !stream.displayedText.endsWith("\n")) {
+      this.output.write("\n");
+    }
+  }
 
   private activityFrame(activity: ActiveActivity): string {
     const contentWidth = Math.max(0, terminalColumns(this.output) - 1);
-    const frame = ACTIVITY_FRAMES[activity.frame % ACTIVITY_FRAMES.length];
+    if (activity.layout === "inline") {
+      return `\r\u001b[2K${this.inlineActivityLine(activity, contentWidth)}`;
+    }
+    const frame = this.activityMarker(activity);
     const value = truncate(`  ${frame} ${activity.label}`, contentWidth);
     const decorated =
       value.length >= 3
-        ? `${value.slice(0, 2)}${this.theme.paint("focus", frame)}${value.slice(3)}`
+        ? `${value.slice(0, 2)}${this.designSystem.theme.paint("focus", frame)}${value.slice(3)}`
         : value;
-    return `\r\u001b[2K${decorated}`;
+    const title = truncate("ORYNT › starting", contentWidth);
+    return `\r\u001b[2K${this.designSystem.theme.strong(title)}\n\r\u001b[2K${decorated}`;
+  }
+
+  private activityMarker(activity: ActiveActivity): string {
+    return this.motion
+      ? ACTIVITY_FRAMES[
+          activity.markerFrame % ACTIVITY_FRAMES.length
+        ]
+      : ACTIVITY_FRAMES[0];
+  }
+
+  private inlineActivityLine(
+    activity: ActiveActivity,
+    contentWidth: number,
+  ): string {
+    const marker = this.activityMarker(activity);
+    const duration = formatActivityElapsed(Date.now() - activity.startedAtMs);
+    const prefix = `  ${marker} `;
+    const suffix = ` · ${duration}`;
+    const labelWidth =
+      contentWidth - displayWidth(prefix) - displayWidth(suffix);
+    if (labelWidth <= 0) {
+      const durationWidth = contentWidth - displayWidth(prefix);
+      if (durationWidth <= 0) return truncate(`  ${marker}`, contentWidth);
+      return `  ${this.designSystem.theme.paint("focus", marker)} ${
+        this.designSystem.theme.paint(
+          "duration",
+          truncate(duration, durationWidth),
+        )
+      }`;
+    }
+    const label = truncate(activity.label, labelWidth);
+    return [
+      "  ",
+      this.designSystem.theme.paint("focus", marker),
+      " ",
+      this.designSystem.activityLabel(
+        label,
+        this.motion ? activity.shimmerFrame : undefined,
+      ),
+      this.designSystem.theme.paint("separator", " · "),
+      this.designSystem.theme.paint("duration", duration),
+    ].join("");
+  }
+
+  private clearActivityFrame(activity: ActiveActivity): string {
+    return activity.layout === "startup"
+      ? "\r\u001b[2K\u001b[1A\r\u001b[2K"
+      : "\r\u001b[2K";
   }
 
   private paintActivity(activity: ActiveActivity): void {
-    if (this.activity?.id !== activity.id || !this.motion) return;
-    this.output.write(this.activityFrame(activity));
+    if (this.activity?.id !== activity.id) return;
+    if (this.screen) {
+      activity.visible = true;
+      this.renderFullscreen();
+      return;
+    }
+    if (this.active?.mode === "live") {
+      activity.visible = false;
+      this.render();
+      return;
+    }
+    this.output.write(
+      `${activity.visible ? this.clearActivityFrame(activity) : ""}${this.activityFrame(activity)}`,
+    );
     activity.visible = true;
   }
 
   private tickActivity(activity: ActiveActivity): void {
     if (
       this.closed ||
-      this.activity?.id !== activity.id ||
-      !this.motion
+      this.activity?.id !== activity.id
     ) {
       return;
     }
+    activity.ready = true;
     this.paintActivity(activity);
-    activity.frame = (activity.frame + 1) % ACTIVITY_FRAMES.length;
+    if (this.motion) {
+      activity.markerFrame =
+        (activity.markerFrame + 1) % ACTIVITY_FRAMES.length;
+      activity.shimmerFrame += 1;
+    } else if (activity.layout === "startup") {
+      return;
+    }
     activity.timer = setTimeout(
       () => this.tickActivity(activity),
-      ACTIVITY_FRAME_MS,
+      this.motion ? ACTIVITY_FRAME_MS : STATIC_ACTIVITY_TICK_MS,
     );
     activity.timer.unref?.();
   }
@@ -452,8 +1759,15 @@ export class TtyComposer {
     const activity = this.activity;
     if (!activity) return;
     if (activity.timer) clearTimeout(activity.timer);
-    if (activity.visible) this.output.write("\r\u001b[2K");
+    if (activity.visible && !this.screen) {
+      this.output.write(this.clearActivityFrame(activity));
+    }
     this.activity = undefined;
+    if (this.screen) {
+      this.renderFullscreen();
+    } else if (this.active?.mode === "live") {
+      this.render();
+    }
   }
 
   private read(
@@ -462,50 +1776,109 @@ export class TtyComposer {
     selection: {
       choices?: ComposerChoice[];
       currentValue?: string;
+      statusContext?: ComposerStatusContext;
     } = {},
+    initialValue: ComposerInitialValue = "",
   ): Promise<string> {
     if (this.closed) return Promise.resolve(mode === "compose" ? "/exit" : "");
     if (this.active) return Promise.reject(new Error("Orynt terminal input is already active"));
+    this.output.write("\u001b[?2004h");
     const leadingNewlines = prompt.match(/^\n+/)?.[0] ?? "";
-    if (leadingNewlines) this.output.write(leadingNewlines);
+    if (leadingNewlines) {
+      if (this.screen) this.appendTimeline(leadingNewlines);
+      else this.output.write(leadingNewlines);
+    }
     const originalPrompt = prompt.slice(leadingNewlines.length);
     const compact =
       mode === "ask" &&
       shouldCompactPrompt(originalPrompt, terminalColumns(this.output));
-    if (compact) this.output.write(`${originalPrompt.trimEnd()}\n`);
+    if (compact) {
+      if (this.screen) this.appendTimeline(`${originalPrompt.trimEnd()}\n`);
+      else this.output.write(`${originalPrompt.trimEnd()}\n`);
+    }
     const choices = selection.choices ?? [];
     const currentChoice = choices.findIndex(
       (choice) => choice.value === selection.currentValue,
     );
     return new Promise((resolve) => {
-      this.active = {
+      this.active = this.createActiveRead(
+        compact ? "› " : originalPrompt,
         mode,
-        prompt: compact ? "› " : originalPrompt,
-        originalPrompt,
-        buffer: "",
-        cursor: 0,
-        paletteDismissed: false,
-        selectedSuggestion: currentChoice >= 0 ? currentChoice : 0,
-        renderedLines: [],
-        renderedAreaRows: 0,
-        renderedCursorColumn: 0,
-        renderedColumns: 0,
-        pendingRenderPrefix: "",
-        historyIndex: -1,
-        historyDraft: "",
-        choices,
-        ...(selection.currentValue
-          ? { currentValue: selection.currentValue }
-          : {}),
+        selection,
+        initialValue,
         resolve,
-      };
+        originalPrompt,
+        currentChoice,
+      );
       this.render();
     });
   }
 
-  private suggestions(active = this.active): SlashCommandDefinition[] {
-    if (!active || active.mode !== "compose" || active.paletteDismissed) return [];
-    return filterSlashCommands(active.buffer);
+  private createActiveRead(
+    prompt: string,
+    mode: ActiveRead["mode"],
+    selection: {
+      choices?: ComposerChoice[];
+      currentValue?: string;
+      statusContext?: ComposerStatusContext;
+    },
+    initialValue: ComposerInitialValue,
+    resolve: (value: string) => void,
+    originalPrompt = prompt,
+    currentChoice = -1,
+  ): ActiveRead {
+    const choices = selection.choices ?? [];
+    const initialDraft = initialDraftSnapshot(initialValue);
+    this.pasteSequence = Math.max(
+      this.pasteSequence,
+      ...initialDraft.blocks.map((block) => block.id),
+      ...initialDraft.images.map((image) => image.id),
+    );
+    return {
+      mode,
+      prompt,
+      originalPrompt,
+      buffer: initialDraft.value,
+      cursor: initialDraft.cursor,
+      paletteDismissed: false,
+      selectedSuggestion: currentChoice >= 0 ? currentChoice : 0,
+      renderedLines: [],
+      renderedAreaRows: 0,
+      renderedCursorRow: 0,
+      renderedCursorColumn: 0,
+      renderedColumns: 0,
+      pendingRenderPrefix: "",
+      historyIndex: -1,
+      historyDraft: "",
+      undoStack: [],
+      redoStack: [],
+      compactBlocks: initialDraft.blocks,
+      images: initialDraft.images,
+      lastEditAt: 0,
+      choices,
+      ...(selection.currentValue
+        ? { currentValue: selection.currentValue }
+        : {}),
+      ...(selection.statusContext
+        ? { statusContext: { ...selection.statusContext } }
+        : {}),
+      resolve,
+    };
+  }
+
+  private assist(active = this.active): SlashInputAssist {
+    if (
+      !active ||
+      (active.mode !== "compose" && active.mode !== "live") ||
+      active.paletteDismissed
+    ) {
+      return { suggestions: [], canSubmit: false };
+    }
+    return slashInputAssist(active.buffer, active.cursor);
+  }
+
+  private suggestions(active = this.active): SlashInputSuggestion[] {
+    return this.assist(active).suggestions;
   }
 
   private filteredChoices(active = this.active): ComposerChoice[] {
@@ -518,10 +1891,276 @@ export class TtyComposer {
     );
   }
 
+  private clarificationAnswers(
+    clarification: ActiveClarification,
+  ): ClarificationAnswer[] {
+    return clarification.request.questions.map((question) => {
+      const selectedOptionIds = [
+        ...(clarification.selections.get(question.id) ?? new Set<string>()),
+      ];
+      const note = clarification.questionNotes.get(question.id)?.trim();
+      const optionNotes = selectedOptionIds.flatMap((optionId) => {
+        const value = clarification.optionNotes
+          .get(`${question.id}:${optionId}`)
+          ?.trim();
+        return value ? [{ optionId, note: value }] : [];
+      });
+      return {
+        questionId: question.id,
+        selectedOptionIds,
+        ...(note ? { note } : {}),
+        ...(optionNotes.length > 0 ? { optionNotes } : {}),
+        autoFilled: clarification.autoFilledQuestionIds.has(question.id),
+      };
+    });
+  }
+
+  private finishClarification(
+    active: ActiveRead,
+    status: "submitted" | "auto_submitted" | "cancelled",
+  ): void {
+    const clarification = active.clarification;
+    if (!clarification || this.active !== active) return;
+    if (clarification.timer) clearTimeout(clarification.timer);
+    this.clearRender();
+    this.active = undefined;
+    if (this.screen) this.renderFullscreen();
+    clarification.resolve({
+      status,
+      answers: this.clarificationAnswers(clarification),
+    });
+  }
+
+  private scheduleClarificationTick(active: ActiveRead): void {
+    const clarification = active.clarification;
+    if (!clarification || this.active !== active) return;
+    const remainingMs = clarification.deadlineMs - Date.now();
+    if (remainingMs <= 0) {
+      for (const question of clarification.request.questions) {
+        const selected =
+          clarification.selections.get(question.id) ?? new Set<string>();
+        if (selected.size > 0) continue;
+        for (const option of question.options) {
+          if (option.recommended) selected.add(option.id);
+        }
+        clarification.selections.set(question.id, selected);
+        clarification.autoFilledQuestionIds.add(question.id);
+      }
+      clarification.phase = "summary";
+      this.render();
+      this.finishClarification(active, "auto_submitted");
+      return;
+    }
+    clarification.timer = setTimeout(
+      () => {
+        clarification.timer = undefined;
+        if (this.active !== active) return;
+        this.render();
+        this.scheduleClarificationTick(active);
+      },
+      Math.min(1_000, remainingMs),
+    );
+    clarification.timer.unref?.();
+  }
+
+  private currentClarificationQuestion(
+    clarification: ActiveClarification,
+  ): ClarificationQuestion {
+    return clarification.request.questions[
+      Math.min(
+        clarification.questionIndex,
+        clarification.request.questions.length - 1,
+      )
+    ]!;
+  }
+
+  private clarificationOptionSelected(
+    clarification: ActiveClarification,
+    question: ClarificationQuestion,
+    optionId: string,
+  ): boolean {
+    return clarification.selections.get(question.id)?.has(optionId) ?? false;
+  }
+
+  private createClarificationFrame(active: ActiveRead): RenderFrame {
+    const clarification = active.clarification!;
+    const width = Math.max(1, terminalColumns(this.output) - 1);
+    const height = Math.max(2, terminalRows(this.output));
+    const remainingSeconds = Math.max(
+      0,
+      Math.ceil((clarification.deadlineMs - Date.now()) / 1_000),
+    );
+    const timer = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+    const title = terminalSafeText(clarification.request.title);
+    const headingGap = Math.max(
+      1,
+      width - displayWidth(title) - displayWidth(timer),
+    );
+    const lines = [
+      `${this.designSystem.theme.strong(title)}${" ".repeat(headingGap)}${this.designSystem.theme.paint("duration", timer)}`,
+    ];
+    let cursorRow = 0;
+    let cursorColumn = 0;
+    if (clarification.phase === "summary") {
+      lines.push(this.designSystem.theme.paint("attention", "Summary"));
+      for (const [index, question] of clarification.request.questions.entries()) {
+        const selected = clarification.selections.get(question.id) ?? new Set();
+        const labels = question.options
+          .filter((option) => selected.has(option.id))
+          .map((option) => option.label);
+        const auto = clarification.autoFilledQuestionIds.has(question.id)
+          ? " · auto-filled"
+          : "";
+        lines.push(
+          truncate(
+            `  ${index + 1}. ${question.prompt} — ${labels.join(", ") || "Not answered"}${auto}`,
+            width,
+          ),
+        );
+        const note = clarification.questionNotes.get(question.id);
+        if (note) lines.push(truncate(`     Note · ${note}`, width));
+        for (const option of question.options) {
+          const optionNote = clarification.optionNotes.get(
+            `${question.id}:${option.id}`,
+          );
+          if (optionNote && selected.has(option.id)) {
+            lines.push(truncate(`     ${option.label} · ${optionNote}`, width));
+          }
+        }
+      }
+      const complete = clarification.request.questions.every(
+        (question) =>
+          (clarification.selections.get(question.id)?.size ?? 0) > 0,
+      );
+      if (!complete) {
+        lines.push(
+          this.designSystem.theme.paint(
+            "danger",
+            "  Complete every question before submitting.",
+          ),
+        );
+      }
+      lines.push(
+        this.designSystem.theme.paint(
+          "muted",
+          "  Enter confirm · ← back · Esc cancel",
+        ),
+      );
+      cursorRow = lines.length - 1;
+      return {
+        lines: lines.slice(0, height),
+        cursorRow: Math.min(cursorRow, height - 1),
+        cursorColumn,
+      };
+    }
+    const question = this.currentClarificationQuestion(clarification);
+    const questionNumber = clarification.questionIndex + 1;
+    lines.push(
+      this.designSystem.theme.paint(
+        "attention",
+        `Question ${questionNumber}/${clarification.request.questions.length} · ${terminalSafeText(question.group)}`,
+      ),
+      truncate(terminalSafeText(question.prompt), width),
+      this.designSystem.theme.paint(
+        "muted",
+        truncate(`Why · ${terminalSafeText(question.rationale)}`, width),
+      ),
+    );
+    const selected = clarification.selections.get(question.id) ?? new Set();
+    const highlightedIndex =
+      clarification.optionIndexes[clarification.questionIndex] ?? 0;
+    for (const [index, option] of question.options.entries()) {
+      const highlighted = index === highlightedIndex;
+      const checked = selected.has(option.id);
+      const control = question.selectionMode === "multiple"
+        ? checked ? "☑" : "☐"
+        : checked ? "◉" : "○";
+      const marker = highlighted ? "›" : " ";
+      const recommendation = option.recommended ? " · Recommended" : "";
+      const row = truncate(
+        `  ${marker} ${control} ${index + 1}. ${terminalSafeText(option.label)}${recommendation}`,
+        width,
+      );
+      lines.push(
+        highlighted
+          ? this.designSystem.theme.paint("focus", row)
+          : row,
+      );
+      if (highlighted) {
+        lines.push(
+          this.designSystem.theme.paint(
+            "muted",
+            truncate(`      ${terminalSafeText(option.description)}`, width),
+          ),
+        );
+        if (option.recommended && option.recommendationReason) {
+          lines.push(
+            this.designSystem.theme.paint(
+              "muted",
+              truncate(
+                `      Why recommended · ${terminalSafeText(option.recommendationReason)}`,
+                width,
+              ),
+            ),
+          );
+        }
+      }
+    }
+    if (clarification.phase === "note") {
+      lines.push(truncate(`  Note › ${terminalSafeText(active.buffer)}`, width));
+      lines.push(
+        this.designSystem.theme.paint(
+          "muted",
+          "  Enter save · Esc discard",
+        ),
+      );
+      cursorRow = lines.length - 2;
+      cursorColumn = Math.min(
+        width,
+        displayWidth("  Note › ") + displayWidth(active.buffer),
+      );
+    } else {
+      if (clarification.status) {
+        lines.push(
+          this.designSystem.theme.paint(
+            "danger",
+            truncate(`  ${clarification.status}`, width),
+          ),
+        );
+      }
+      lines.push(
+        this.designSystem.theme.paint(
+          "muted",
+          "  ↑↓ options · Enter select · ←→ questions · Tab note · Ctrl+Enter review · Esc cancel",
+        ),
+      );
+      cursorRow = Math.min(lines.length - 1, 3 + highlightedIndex);
+    }
+    return {
+      lines: lines.slice(0, height),
+      cursorRow: Math.min(cursorRow, height - 1),
+      cursorColumn,
+    };
+  }
+
   private clearRender(): void {
+    if (!this.screen && this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = undefined;
+      this.flushResize();
+    }
     const active = this.active;
     if (!active || active.renderedAreaRows === 0) return;
-    let sequence = "\r";
+    if (this.screen) {
+      active.renderedLines = [];
+      active.renderedAreaRows = 0;
+      active.renderedCursorRow = 0;
+      active.renderedCursorColumn = 0;
+      active.renderedColumns = 0;
+      active.pendingRenderPrefix = "";
+      return;
+    }
+    let sequence = `\r${verticalMove(-active.renderedCursorRow)}`;
     for (let index = 0; index < active.renderedAreaRows; index += 1) {
       if (index > 0) sequence += "\u001b[1B\r";
       sequence += "\u001b[2K";
@@ -531,27 +2170,231 @@ export class TtyComposer {
     this.output.write(sequence);
     active.renderedLines = [];
     active.renderedAreaRows = 0;
+    active.renderedCursorRow = 0;
     active.renderedCursorColumn = 0;
     active.renderedColumns = 0;
     active.pendingRenderPrefix = "";
   }
 
+  private displayedDraft(active: ActiveRead): {
+    text: string;
+    cursor: number;
+    selection?: { start: number; end: number };
+  } {
+    const selection = this.selectionRange(active);
+    if (active.compactBlocks.length === 0) {
+      const text = visibleDraftInput(active.buffer);
+      return {
+        text,
+        cursor: visibleDraftInput(active.buffer.slice(0, active.cursor)).length,
+        ...(selection
+          ? {
+              selection: {
+                start: visibleDraftInput(active.buffer.slice(0, selection.start)).length,
+                end: visibleDraftInput(active.buffer.slice(0, selection.end)).length,
+              },
+            }
+          : {}),
+      };
+    }
+    let text = "";
+    let sourceOffset = 0;
+    let displayCursor = 0;
+    const displayOffset = (source: number): number => {
+      let result = 0;
+      let offset = 0;
+      for (const block of [...active.compactBlocks].sort(
+        (left, right) => left.start - right.start,
+      )) {
+        if (source <= block.start) {
+          return result + visibleDraftInput(active.buffer.slice(offset, source)).length;
+        }
+        result += visibleDraftInput(active.buffer.slice(offset, block.start)).length;
+        const label = visibleInput(block.label);
+        if (source <= block.end) return result + label.length;
+        result += label.length;
+        offset = block.end;
+      }
+      return result + visibleDraftInput(active.buffer.slice(offset, source)).length;
+    };
+    for (const block of [...active.compactBlocks].sort((left, right) => left.start - right.start)) {
+      const prefix = active.buffer.slice(sourceOffset, block.start);
+      if (active.cursor >= sourceOffset && active.cursor <= block.start) {
+        displayCursor = text.length +
+          visibleDraftInput(active.buffer.slice(sourceOffset, active.cursor)).length;
+      }
+      text += visibleDraftInput(prefix);
+      const label = visibleInput(block.label);
+      if (active.cursor > block.start && active.cursor < block.end) {
+        displayCursor = text.length + label.length;
+      } else if (active.cursor === block.end) {
+        displayCursor = text.length + label.length;
+      }
+      text += label;
+      sourceOffset = block.end;
+    }
+    if (active.cursor >= sourceOffset) {
+      displayCursor = text.length +
+        visibleDraftInput(active.buffer.slice(sourceOffset, active.cursor)).length;
+    }
+    text += visibleDraftInput(active.buffer.slice(sourceOffset));
+    return {
+      text,
+      cursor: displayCursor,
+      ...(selection
+        ? {
+            selection: {
+              start: displayOffset(selection.start),
+              end: displayOffset(selection.end),
+            },
+          }
+        : {}),
+    };
+  }
+
   private createFrame(active: ActiveRead): RenderFrame {
+    if (active.mode === "clarify" && active.clarification) {
+      return this.createClarificationFrame(active);
+    }
     const columns = terminalColumns(this.output);
     const contentWidth = Math.max(0, columns - 1);
-    const prompt = truncate(active.prompt, contentWidth);
-    const promptWidth = displayWidth(prompt);
-    const displayBuffer = visibleInput(active.buffer);
-    const displayCursor = visibleInput(active.buffer.slice(0, active.cursor)).length;
-    const inputWidth = Math.max(0, contentWidth - promptWidth);
-    const input = inputWidth > 0
-      ? viewport(displayBuffer, displayCursor, inputWidth)
-      : { text: "", cursorColumn: 0 };
-    const lines = [paintPromptMarker(this.theme, `${prompt}${input.text}`)];
     const suggestions = active.mode === "select"
       ? this.filteredChoices(active)
       : this.suggestions(active);
-    const rowLimit = Math.min(8, Math.max(0, terminalRows(this.output) - 1));
+    const terminalHeight = terminalRows(this.output);
+    const liveActivity =
+      active.mode === "live" && this.activity?.ready
+        ? this.activity
+        : undefined;
+    const framedMode = active.mode === "compose" || active.mode === "live";
+    const showFrame =
+      framedMode && terminalHeight >= (liveActivity ? 5 : 4);
+    const showLiveActivity = Boolean(liveActivity) && terminalHeight >= 2;
+    const prompt = truncate(
+      showFrame ? COMPOSER_INPUT_PROMPT : active.prompt,
+      contentWidth,
+    );
+    const promptWidth = displayWidth(prompt);
+    const displayedDraft = this.displayedDraft(active);
+    const displayBuffer = displayedDraft.text;
+    const displayCursor = displayedDraft.cursor;
+    const inputWidth = Math.max(0, contentWidth - promptWidth);
+    const renderDraftText = (
+      value: string,
+      rowStart: number,
+      rowEnd: number,
+    ): string => {
+      const selected = displayedDraft.selection;
+      if (!selected || selected.end <= rowStart || selected.start >= rowEnd) {
+        return !active.buffer.startsWith("/")
+          ? renderRichText(value, {
+              enabled: this.richText,
+              theme: this.designSystem.theme,
+              preserveMarkers: true,
+              width: inputWidth,
+            })
+          : value;
+      }
+      const start = Math.max(0, selected.start - rowStart);
+      const end = Math.min(value.length, selected.end - rowStart);
+      return [
+        value.slice(0, start),
+        this.designSystem.theme.paint("selection", value.slice(start, end)),
+        value.slice(end),
+      ].join("");
+    };
+    const visualRows =
+      showFrame && inputWidth > 0
+        ? wrapDraft(displayBuffer, inputWidth)
+        : [];
+    let visualCursorRow = 0;
+    for (const [index, row] of visualRows.entries()) {
+      if (row.start <= displayCursor) visualCursorRow = index;
+    }
+    const maxInputRows = Math.max(
+      1,
+      Math.min(
+        8,
+        Math.floor(
+          (terminalHeight - (showLiveActivity ? 1 : 0) - 3) / 2,
+        ),
+      ),
+    );
+    const inputWindowStart = Math.max(
+      0,
+      Math.min(
+        visualCursorRow - maxInputRows + 1,
+        visualRows.length - maxInputRows,
+      ),
+    );
+    const visibleDraftRows = visualRows.slice(
+      inputWindowStart,
+      inputWindowStart + maxInputRows,
+    );
+    const input = !showFrame && inputWidth > 0
+      ? viewport(displayBuffer, displayCursor, inputWidth)
+      : { text: "", cursorColumn: 0 };
+    const renderedInput = !showFrame
+      ? renderDraftText(input.text, 0, input.text.length)
+      : "";
+    const paintedPromptRows = showFrame
+      ? visibleDraftRows.map((row, index) => {
+          const absoluteIndex = inputWindowStart + index;
+          const marker = absoluteIndex === 0
+            ? COMPOSER_INPUT_PROMPT.trimEnd()
+            : row.hardStart
+              ? "│"
+              : " ";
+          const content =
+            active.buffer.length === 0 && absoluteIndex === 0
+              ? this.designSystem.theme.paint("muted", COMPOSER_PLACEHOLDER)
+              : renderDraftText(row.text, row.start, row.end);
+          return `${this.designSystem.theme.paint("user", marker)} ${content}`;
+        })
+      : [paintPromptMarker(this.designSystem.theme, `${prompt}${renderedInput}`)];
+    const separator = this.designSystem.theme.paint("muted", "─".repeat(contentWidth));
+    const lines = showFrame
+      ? [separator, ...paintedPromptRows]
+      : paintedPromptRows;
+    const showFooter =
+      Boolean(this.notice) ||
+      (showFrame &&
+        (
+          active.mode === "live" ||
+          this.statusline.enabled
+        )) ||
+      (terminalHeight >= 3 &&
+        (
+          active.mode === "select" ||
+          suggestions.length > 0 ||
+          active.mode === "live" ||
+          (active.mode === "compose" && active.buffer.length > 0)
+        ));
+    const availableRows = Math.max(
+      0,
+        terminalHeight -
+        1 -
+        (showFrame ? 3 : 0) -
+        (showFrame ? Math.max(0, paintedPromptRows.length - 1) : 0) -
+        (showLiveActivity ? 1 : 0) -
+        (!showFrame && showFooter ? 1 : 0),
+    );
+    const selectedChoice =
+      active.mode === "select"
+        ? (suggestions[active.selectedSuggestion] as ComposerChoice | undefined)
+        : undefined;
+    const detailLimit =
+      terminalHeight >= 8
+        ? Math.min(
+            4,
+            selectedChoice?.details?.length ?? 0,
+            Math.max(0, availableRows - 1),
+          )
+        : 0;
+    const rowLimit = Math.min(
+      8,
+      Math.max(0, availableRows - detailLimit),
+    );
     const firstVisible = Math.min(
       Math.max(0, active.selectedSuggestion - rowLimit + 1),
       Math.max(0, suggestions.length - rowLimit),
@@ -567,14 +2410,74 @@ export class TtyComposer {
             contentWidth,
           )
         : suggestionLine(
-            definition as SlashCommandDefinition,
+            definition as SlashInputSuggestion,
             selected,
             contentWidth,
           );
-      lines.push(selected ? paintSelection(this.theme, line) : line.text);
+      const paintedLine = paintComposerLine(this.designSystem.theme, line, selected);
+      lines.push(paintedLine);
     }
     if (active.mode === "select" && visible.length === 0 && rowLimit > 0) {
-      lines.push(truncate("  No matching models", contentWidth));
+      lines.push(truncate("  No matching options", contentWidth));
+    }
+    for (const detail of selectedChoice?.details?.slice(0, detailLimit) ?? []) {
+      lines.push(
+        this.designSystem.theme.paint(
+          "muted",
+          truncate(`  │ ${terminalSafeText(detail)}`, contentWidth),
+        ),
+      );
+    }
+    if (showLiveActivity && liveActivity) {
+      lines.unshift(this.liveActivityLine(liveActivity, contentWidth));
+    }
+    if (showFrame) {
+      lines.push(separator);
+    }
+    if (showFooter) {
+      const supportsUsefulFiltering =
+        active.mode === "select" &&
+        (active.buffer.trim().length > 0 || active.choices.length > rowLimit);
+      const hint = active.mode === "select"
+        ? `  ↑↓ select · Enter confirm · ←/Esc back${
+            supportsUsefulFiltering ? " · Type to filter" : ""
+          }`
+        : active.mode === "live" && active.liveContext
+          ? this.liveComposerFooter(active.liveContext, contentWidth)
+          : suggestions.length > 0
+          ? `  ↑↓ select · Tab complete · ${shortcutListLabel(this.shortcuts.clear)} clear`
+          : showFrame
+            ? this.statuslineFooter(
+                active.statusContext,
+                contentWidth,
+                (active.statusContext?.pendingCount ?? 0) > 0
+                  ? `Ctrl+↑ edit · Esc×2 clear · ${active.statusContext?.pendingCount} pending${active.statusContext?.pendingPaused ? " (paused)" : ""}`
+                  : active.buffer.length > 0
+                    ? "Enter send · Alt+Enter newline"
+                    : undefined,
+              )
+            : `  ${shortcutListLabel(this.shortcuts.clear)} clear · ${shortcutListLabel(this.shortcuts.undo)} undo · ${shortcutListLabel(this.shortcuts.redo)} redo`;
+      const boundedHint = truncate(hint, contentWidth);
+      const footerContext = active.mode === "live"
+        ? active.liveContext?.status
+        : showFrame
+          ? active.statusContext
+          : undefined;
+      const notice = this.notice;
+      if (notice) this.scheduleNoticeExpiry(notice);
+      lines.push(
+        notice
+          ? this.designSystem.theme.paint(
+              notice.role,
+              truncate(
+                `  ${notice.role === "success" ? "✓" : "✕"} ${notice.text}`,
+                contentWidth,
+              ),
+            )
+          : footerContext && this.statusline.enabled
+            ? this.paintStatusline(boundedHint, footerContext)
+            : this.designSystem.theme.paint("muted", boundedHint),
+      );
     }
     const exitConfirmation =
       this.exitConfirmation?.activeRead === active
@@ -584,7 +2487,7 @@ export class TtyComposer {
       const message =
         `  Press Ctrl+C again to exit Orynt · ${exitConfirmation.displayedSeconds}s`;
       const decorated = paintToken(
-        this.theme,
+        this.designSystem.theme,
         "attention",
         truncate(message, contentWidth),
         "Ctrl+C",
@@ -593,27 +2496,255 @@ export class TtyComposer {
         lines.push(decorated);
       } else {
         lines[0] = paintToken(
-          this.theme,
+          this.designSystem.theme,
           "attention",
           truncate(message.trimStart(), contentWidth),
           "Ctrl+C",
         );
       }
     }
+    const actionConfirmation =
+      this.actionConfirmation?.activeRead === active
+        ? this.actionConfirmation
+        : undefined;
+    if (actionConfirmation) {
+      const message = actionConfirmation.kind === "cancel"
+        ? `  Warning · Press Ctrl+C again to cancel · pending messages will pause · ${actionConfirmation.displayedSeconds}s`
+        : `  Warning · Press Esc again to dismiss all ${actionConfirmation.pendingCount} pending message${actionConfirmation.pendingCount === 1 ? "" : "s"} · ${actionConfirmation.displayedSeconds}s`;
+      let decorated = paintToken(
+        this.designSystem.theme,
+        "attention",
+        truncate(message, contentWidth),
+        "Warning",
+      );
+      decorated = paintToken(
+        this.designSystem.theme,
+        "attention",
+        decorated,
+        actionConfirmation.kind === "cancel" ? "Ctrl+C" : "Esc",
+      );
+      if (actionConfirmation.kind === "cancel") {
+        decorated = paintToken(
+          this.designSystem.theme,
+          "danger",
+          decorated,
+          "cancel",
+        );
+      }
+      if (terminalRows(this.output) > 1) {
+        lines.push(decorated);
+      } else {
+        lines[0] = decorated.trimStart();
+      }
+    }
     return {
       lines,
-      cursorColumn: promptWidth + input.cursorColumn,
+      cursorRow:
+        (showLiveActivity ? 1 : 0) +
+        (showFrame ? 1 + visualCursorRow - inputWindowStart : 0),
+      cursorColumn: showFrame
+        ? displayWidth(COMPOSER_INPUT_PROMPT) +
+          displayWidth(
+            displayBuffer.slice(
+              visualRows[visualCursorRow]?.start ?? 0,
+              displayCursor,
+            ),
+          )
+        : promptWidth + input.cursorColumn,
     };
   }
 
+  private statuslineFooter(
+    context: ComposerStatusContext | undefined,
+    contentWidth: number,
+    mandatoryTail?: string,
+  ): string {
+    const fields = { ...this.statusline };
+    let showContextBar = true;
+    let quotaVariant: ProviderQuotaVariant = "two-windows";
+    const render = (): string => {
+      const leftSegments: string[] = [];
+      const rightSegments: string[] = [];
+      if (fields.profile && context?.preset) {
+        leftSegments.push(terminalSafeText(context.preset));
+      }
+      if (fields.role && context) {
+        const role =
+          context.mode === "next"
+            ? "next"
+            : context.mode === "phase"
+              ? context.phaseLabel
+              : context.role;
+        if (role) leftSegments.push(terminalSafeText(role));
+      }
+      const model = fields.model && context?.modelId
+        ? terminalSafeText(context.modelId)
+        : "";
+      const effort = fields.effort && context?.thinkingEffort
+        ? terminalSafeText(context.thinkingEffort)
+        : "";
+      if (fields.context) {
+        rightSegments.push(
+          contextMeterText(
+            context?.context,
+            this.statusline.contextFormat,
+            showContextBar,
+          ),
+        );
+      }
+      const quota = fields.quota
+        ? providerQuotaText(
+            context?.providerUsage ?? this.providerUsage,
+            quotaVariant,
+          )
+        : undefined;
+      if (quota) rightSegments.push(quota);
+      if (model && effort) {
+        rightSegments.push(`${model}/${effort}`);
+      } else if (model) {
+        rightSegments.push(model);
+      } else if (effort) {
+        rightSegments.push(`effort ${effort}`);
+      }
+      if (fields.shortcuts) {
+        leftSegments.push(
+          `${shortcutListLabel(this.shortcuts.clear)} clear`,
+          `${shortcutListLabel(this.shortcuts.undo)} undo`,
+          `${shortcutListLabel(this.shortcuts.redo)} redo`,
+        );
+      }
+      if (mandatoryTail) leftSegments.push(mandatoryTail);
+
+      const left = leftSegments.length > 0
+        ? `  ⏵ ${leftSegments.join(" · ")}`
+        : "";
+      const right = rightSegments.join(" · ");
+      if (!right) return left;
+      if (!left) {
+        return `${" ".repeat(
+          Math.max(0, contentWidth - displayWidth(right)),
+        )}${right}`;
+      }
+      const gap = Math.max(
+        2,
+        contentWidth - displayWidth(left) - displayWidth(right),
+      );
+      return `${left}${" ".repeat(gap)}${right}`;
+    };
+    let value = render();
+    const reductions = [
+      () => {
+        fields.shortcuts = false;
+      },
+      () => {
+        showContextBar = false;
+      },
+      () => {
+        quotaVariant = "one-window";
+      },
+      () => {
+        fields.quota = false;
+      },
+      () => {
+        fields.profile = false;
+      },
+      () => {
+        fields.effort = false;
+      },
+      () => {
+        fields.role = false;
+      },
+      () => {
+        fields.context = false;
+      },
+      () => {
+        fields.model = false;
+      },
+    ];
+    for (const reduce of reductions) {
+      if (displayWidth(value) <= contentWidth) break;
+      reduce();
+      value = render();
+    }
+    return truncate(
+      value || (mandatoryTail ? `  ⏵ ${mandatoryTail}` : ""),
+      contentWidth,
+    );
+  }
+
+  private paintStatusline(
+    value: string,
+    context: ComposerStatusContext,
+  ): string {
+    const percent = contextMeterPercent(context.context);
+    if (!context.context) {
+      return this.designSystem.span("muted", value);
+    }
+    const meter = value.match(
+      /(?:[▰▱]{5} )?(?:[0-9.]+[kmb]?\/[0-9.]+[kmb]?|\d{1,3}%)/u,
+    );
+    if (!meter || meter.index === undefined) {
+      return this.designSystem.span("muted", value);
+    }
+    const progress = contextGradientProgress(context.context, percent ?? 0);
+    const before = value.slice(0, meter.index);
+    const plainMeter = meter[0];
+    const after = value.slice(meter.index + plainMeter.length);
+    const bar = plainMeter.match(/[▰▱]{5}/u)?.[0];
+    const renderedBar = bar
+      ? Array.from(bar, (cell) => {
+          return cell === "▰"
+            ? this.designSystem.theme.paintContextUsage(progress, cell)
+            : this.designSystem.span("separator", cell);
+        }).join("")
+      : undefined;
+    const renderedMeter = bar
+      ? [
+          this.designSystem.span("muted", plainMeter.slice(0, plainMeter.indexOf(bar))),
+          renderedBar,
+          this.designSystem.theme.paintContextUsage(
+            progress,
+            plainMeter.slice(plainMeter.indexOf(bar) + bar.length),
+          ),
+        ].join("")
+      : this.designSystem.theme.paintContextUsage(progress, plainMeter);
+    return [
+      this.designSystem.span("muted", before),
+      renderedMeter,
+      this.designSystem.span("muted", after),
+    ].join("");
+  }
+
+  private liveComposerFooter(
+    context: LiveComposerContext,
+    contentWidth: number,
+  ): string {
+    const hint = liveComposerHint(context, contentWidth);
+    if (!this.statusline.enabled) {
+      return truncate(`  ⏵ ${hint}`, contentWidth);
+    }
+    return this.statuslineFooter(context.status, contentWidth, hint);
+  }
+
+  private liveActivityLine(
+    activity: ActiveActivity,
+    contentWidth: number,
+  ): string {
+    return this.inlineActivityLine(activity, contentWidth);
+  }
+
   private paintFrame(active: ActiveRead, frame: RenderFrame): void {
+    if (this.screen) {
+      this.renderFullscreen();
+      return;
+    }
     const previousLines = active.renderedLines;
     const columns = terminalColumns(this.output);
     const forceRepaint = active.renderedColumns !== columns;
     const rowCount = Math.max(previousLines.length, frame.lines.length);
     const knownRows = Math.max(1, active.renderedAreaRows);
     let sequence = active.pendingRenderPrefix;
-    let terminalRow = 0;
+    let terminalRow = active.renderedCursorRow;
 
     const moveToRow = (targetRow: number) => {
       if (targetRow < knownRows) {
@@ -638,8 +2769,12 @@ export class TtyComposer {
       sequence += `\r\u001b[2K${nextLine}`;
     }
 
-    if (sequence || active.renderedCursorColumn !== frame.cursorColumn) {
-      sequence += verticalMove(-terminalRow);
+    if (
+      sequence ||
+      active.renderedCursorRow !== frame.cursorRow ||
+      active.renderedCursorColumn !== frame.cursorColumn
+    ) {
+      sequence += verticalMove(frame.cursorRow - terminalRow);
       sequence += cursorPosition(frame.cursorColumn);
       this.output.write(sequence);
     }
@@ -649,6 +2784,7 @@ export class TtyComposer {
       active.renderedAreaRows,
       frame.lines.length,
     );
+    active.renderedCursorRow = frame.cursorRow;
     active.renderedCursorColumn = frame.cursorColumn;
     active.renderedColumns = columns;
     active.pendingRenderPrefix = "";
@@ -657,6 +2793,11 @@ export class TtyComposer {
   private render(): void {
     const active = this.active;
     if (!active) return;
+    if (!this.screen && this.resizeTimer) return;
+    if (this.screen) {
+      this.renderFullscreen();
+      return;
+    }
     this.paintFrame(active, this.createFrame(active));
   }
 
@@ -664,9 +2805,41 @@ export class TtyComposer {
     const active = this.active;
     if (!active) return;
     this.disarmExitConfirmation();
+    this.disarmActionConfirmation();
+    this.stopMouseSelectionDrag();
+    if (this.notice?.timer) clearTimeout(this.notice.timer);
+    this.notice = undefined;
+    this.pendingMouseInput = undefined;
     this.clearRender();
-    if (options.echo !== false) this.output.write(`${active.prompt}${visibleInput(active.buffer)}\n`);
+    if (options.echo !== false) {
+      const input = this.displayedDraft(active).text;
+      const rendered =
+        active.mode === "compose" && !active.buffer.startsWith("/")
+          ? renderRichText(input, {
+              enabled: this.richText,
+              theme: this.designSystem.theme,
+              preserveMarkers: true,
+              width: Math.max(
+                20,
+                terminalColumns(this.output) - displayWidth(active.prompt) - 1,
+              ),
+              continuationIndent: " ".repeat(displayWidth(active.prompt)),
+            })
+          : input;
+      if (this.isChatSubmission(active)) {
+        this.writeSubmittedUserMessage(active, rendered);
+      } else if (this.screen) {
+        this.appendTimeline(`${active.prompt}${rendered}\n`);
+      } else {
+        this.output.write(`${active.prompt}${rendered}\n`);
+      }
+    }
+    this.lastSubmittedImages = active.images.map((attachment) => ({
+      ...attachment.image,
+    }));
+    this.lastSubmittedDraft = this.draftSnapshot(active);
     this.active = undefined;
+    if (this.screen) this.renderFullscreen();
     active.resolve(value);
   }
 
@@ -725,38 +2898,116 @@ export class TtyComposer {
     return false;
   }
 
+  private disarmActionConfirmation(): void {
+    const confirmation = this.actionConfirmation;
+    if (!confirmation) return;
+    if (confirmation.timer) clearTimeout(confirmation.timer);
+    this.actionConfirmation = undefined;
+  }
+
+  private scheduleActionConfirmationTick(
+    confirmation: ActionConfirmation,
+  ): void {
+    if (
+      this.closed ||
+      this.actionConfirmation !== confirmation ||
+      this.active !== confirmation.activeRead
+    ) {
+      return;
+    }
+    const remainingMs = confirmation.deadline - Date.now();
+    if (remainingMs <= 0) {
+      this.actionConfirmation = undefined;
+      this.render();
+      return;
+    }
+    const remainingSeconds = Math.ceil(remainingMs / 1_000);
+    if (remainingSeconds !== confirmation.displayedSeconds) {
+      confirmation.displayedSeconds = remainingSeconds;
+      this.render();
+    }
+    const untilNextBoundary =
+      remainingMs - (remainingSeconds - 1) * 1_000;
+    confirmation.timer = setTimeout(
+      () => this.scheduleActionConfirmationTick(confirmation),
+      Math.max(1, untilNextBoundary),
+    );
+    confirmation.timer.unref?.();
+  }
+
+  private armActionConfirmation(
+    active: ActiveRead,
+    kind: ActionConfirmation["kind"],
+    pendingCount: number,
+  ): void {
+    this.disarmExitConfirmation();
+    this.disarmActionConfirmation();
+    const confirmation: ActionConfirmation = {
+      kind,
+      activeRead: active,
+      deadline: Date.now() + EXIT_CONFIRMATION_SECONDS * 1_000,
+      displayedSeconds: EXIT_CONFIRMATION_SECONDS,
+      pendingCount,
+    };
+    this.actionConfirmation = confirmation;
+    this.render();
+    this.scheduleActionConfirmationTick(confirmation);
+  }
+
+  private actionIsArmed(
+    active: ActiveRead,
+    kind: ActionConfirmation["kind"],
+  ): boolean {
+    const confirmation = this.actionConfirmation;
+    if (
+      !confirmation ||
+      confirmation.activeRead !== active ||
+      confirmation.kind !== kind
+    ) {
+      return false;
+    }
+    if (Date.now() < confirmation.deadline) return true;
+    this.disarmActionConfirmation();
+    return false;
+  }
+
   private completeSuggestion(): void {
     const active = this.active;
     if (!active) return;
-    const suggestions = this.suggestions(active);
+    const assist = this.assist(active);
+    const suggestions = assist.suggestions;
     const selected = suggestions[active.selectedSuggestion];
     if (!selected) return;
-    const leading = active.buffer.match(/^\s*/)?.[0] ?? "";
-    active.buffer = `${leading}${selected.command}${selected.argument === "none" ? "" : " "}`;
-    active.cursor = active.buffer.length;
-    active.paletteDismissed = true;
+    this.recordEdit(active, "command", true);
+    const before = active.buffer.slice(0, selected.replaceStart);
+    const after = active.buffer.slice(selected.replaceEnd);
+    const separator =
+      selected.appendSpace && !/^\s/u.test(after)
+        ? " "
+        : "";
+    active.buffer = `${before}${selected.completion}${separator}${after}`;
+    active.cursor =
+      before.length + selected.completion.length + separator.length;
+    active.paletteDismissed = !selected.continueAssist;
     active.selectedSuggestion = 0;
     this.render();
   }
 
-  private exactSuggestion(
-    active: ActiveRead,
-    suggestions: SlashCommandDefinition[],
-  ): SlashCommandDefinition | undefined {
-    const value = active.buffer.trim().toLocaleLowerCase();
-    const selected = suggestions[active.selectedSuggestion];
-    if (
-      selected &&
-      (selected.command === value || selected.aliases.includes(value as `/${string}`))
-    ) {
-      return selected;
-    }
-    return undefined;
-  }
-
   private moveHistory(direction: 1 | -1): void {
     const active = this.active;
-    if (!active || active.mode !== "compose" || this.history.length === 0) return;
+    if (
+      !active ||
+      (active.mode !== "compose" && active.mode !== "live") ||
+      this.history.length === 0
+    ) {
+      return;
+    }
+    const canMove =
+      direction === 1
+        ? active.historyIndex < this.history.length - 1
+        : active.historyIndex >= 0;
+    if (!canMove) return;
+    this.recordEdit(active, "command", true);
     if (direction === 1) {
       if (active.historyIndex === -1) active.historyDraft = active.buffer;
       active.historyIndex = Math.min(this.history.length - 1, active.historyIndex + 1);
@@ -769,6 +3020,8 @@ export class TtyComposer {
       active.buffer = active.historyDraft;
     }
     active.cursor = active.buffer.length;
+    active.selectionAnchor = undefined;
+    active.preferredColumn = undefined;
     active.paletteDismissed = true;
     this.render();
   }
@@ -781,11 +3034,693 @@ export class TtyComposer {
     active.historyIndex = -1;
   }
 
+  private selectionRange(
+    active: ActiveRead,
+  ): { start: number; end: number } | undefined {
+    const anchor = active.selectionAnchor;
+    if (anchor === undefined || anchor === active.cursor) return undefined;
+    return {
+      start: Math.min(anchor, active.cursor),
+      end: Math.max(anchor, active.cursor),
+    };
+  }
+
+  private moveCursor(
+    active: ActiveRead,
+    target: number,
+    extend = false,
+  ): void {
+    const bounded = Math.max(0, Math.min(active.buffer.length, target));
+    if (extend) {
+      active.selectionAnchor ??= active.cursor;
+    } else {
+      active.selectionAnchor = undefined;
+    }
+    active.cursor = bounded;
+    active.lastEditKind = undefined;
+    active.preferredColumn = undefined;
+    this.render();
+  }
+
+  private atomicBoundary(
+    active: ActiveRead,
+    target: number,
+    direction: "left" | "right",
+  ): number {
+    const block = active.compactBlocks.find(
+      (candidate) => target > candidate.start && target < candidate.end,
+    );
+    if (!block) return target;
+    return direction === "left" ? block.start : block.end;
+  }
+
+  private collapseOrMove(
+    active: ActiveRead,
+    direction: "left" | "right",
+    target: () => number,
+  ): void {
+    const selection = this.selectionRange(active);
+    this.moveCursor(
+      active,
+      selection
+        ? direction === "left"
+          ? selection.start
+          : selection.end
+        : target(),
+    );
+  }
+
+  private draftVisualRows(active: ActiveRead): VisualDraftRow[] {
+    return wrapDraft(
+      active.buffer,
+      Math.max(
+        1,
+        terminalColumns(this.output) - displayWidth(COMPOSER_INPUT_PROMPT),
+      ),
+    );
+  }
+
+  private visualCursorRow(
+    active: ActiveRead,
+    rows = this.draftVisualRows(active),
+  ): number {
+    let result = 0;
+    for (const [index, row] of rows.entries()) {
+      if (row.start <= active.cursor) result = index;
+    }
+    return result;
+  }
+
+  private moveVertically(
+    active: ActiveRead,
+    direction: -1 | 1,
+    extend: boolean,
+  ): boolean {
+    const rows = this.draftVisualRows(active);
+    const rowIndex = this.visualCursorRow(active, rows);
+    const targetRow = rows[rowIndex + direction];
+    const currentRow = rows[rowIndex];
+    if (!targetRow || !currentRow) return false;
+    const column =
+      active.preferredColumn ??
+      displayWidth(active.buffer.slice(currentRow.start, active.cursor));
+    if (extend) active.selectionAnchor ??= active.cursor;
+    else active.selectionAnchor = undefined;
+    active.cursor = offsetAtColumn(
+      active.buffer,
+      targetRow.start,
+      targetRow.end,
+      column,
+    );
+    active.cursor = this.atomicBoundary(
+      active,
+      active.cursor,
+      direction < 0 ? "left" : "right",
+    );
+    active.preferredColumn = column;
+    active.lastEditKind = undefined;
+    this.render();
+    return true;
+  }
+
+  private editSnapshot(active: ActiveRead): EditSnapshot {
+    return {
+      buffer: active.buffer,
+      cursor: active.cursor,
+      selectionAnchor: active.selectionAnchor,
+      preferredColumn: active.preferredColumn,
+      paletteDismissed: active.paletteDismissed,
+      selectedSuggestion: active.selectedSuggestion,
+      historyIndex: active.historyIndex,
+      historyDraft: active.historyDraft,
+      compactBlocks: active.compactBlocks.map((block) => ({ ...block })),
+      images: active.images.map((attachment) => ({
+        ...attachment,
+        image: { ...attachment.image },
+      })),
+    };
+  }
+
+  private draftSnapshot(active: ActiveRead): ComposerDraftSnapshot {
+    return {
+      value: active.buffer,
+      cursor: active.cursor,
+      blocks: active.compactBlocks.map((block) => ({ ...block })),
+      images: active.images.map((attachment) => ({
+        ...attachment,
+        image: { ...attachment.image },
+      })),
+    };
+  }
+
+  private restoreDraftSnapshot(
+    active: ActiveRead,
+    snapshot: ComposerDraftSnapshot,
+  ): void {
+    const draft = cloneDraftSnapshot(snapshot);
+    active.buffer = draft.value;
+    active.cursor = draft.cursor;
+    active.selectionAnchor = undefined;
+    active.preferredColumn = undefined;
+    active.paletteDismissed = false;
+    active.selectedSuggestion = 0;
+    active.historyIndex = -1;
+    active.historyDraft = "";
+    active.undoStack = [];
+    active.redoStack = [];
+    active.compactBlocks = draft.blocks;
+    active.images = draft.images;
+    active.lastEditKind = undefined;
+    this.pasteSequence = Math.max(
+      this.pasteSequence,
+      ...draft.blocks.map((block) => block.id),
+      ...draft.images.map((image) => image.id),
+    );
+    this.render();
+  }
+
+  private pushEditSnapshot(
+    stack: EditSnapshot[],
+    snapshot: EditSnapshot,
+  ): void {
+    stack.push(snapshot);
+    while (
+      stack.length > 100 ||
+      stack.reduce((total, entry) => total + entry.buffer.length * 2, 0) >
+        1_000_000
+    ) {
+      stack.shift();
+    }
+  }
+
+  private recordEdit(
+    active: ActiveRead,
+    kind: EditKind,
+    force = false,
+  ): void {
+    const now = Date.now();
+    const grouped =
+      !force &&
+      active.lastEditKind === kind &&
+      now - active.lastEditAt <= 750;
+    if (!grouped) {
+      this.pushEditSnapshot(active.undoStack, this.editSnapshot(active));
+    }
+    active.redoStack = [];
+    active.lastEditKind = kind;
+    active.lastEditAt = now;
+  }
+
+  private restoreEdit(active: ActiveRead, snapshot: EditSnapshot): void {
+    Object.assign(active, snapshot);
+    active.lastEditKind = undefined;
+    active.lastEditAt = 0;
+    this.render();
+  }
+
+  private undo(active: ActiveRead): void {
+    const snapshot = active.undoStack.pop();
+    if (!snapshot) return;
+    this.pushEditSnapshot(active.redoStack, this.editSnapshot(active));
+    this.restoreEdit(active, snapshot);
+  }
+
+  private redo(active: ActiveRead): void {
+    const snapshot = active.redoStack.pop();
+    if (!snapshot) return;
+    this.pushEditSnapshot(active.undoStack, this.editSnapshot(active));
+    this.restoreEdit(active, snapshot);
+  }
+
+  private clearDraft(active: ActiveRead): void {
+    if (!active.buffer) return;
+    this.recordEdit(active, "command", true);
+    active.buffer = "";
+    active.cursor = 0;
+    active.selectionAnchor = undefined;
+    active.preferredColumn = undefined;
+    active.paletteDismissed = false;
+    active.selectedSuggestion = 0;
+    active.historyIndex = -1;
+    active.historyDraft = "";
+    active.compactBlocks = [];
+    active.images = [];
+    this.disarmExitConfirmation();
+    this.disarmActionConfirmation();
+    this.render();
+  }
+
+  private shiftBlocks(
+    active: ActiveRead,
+    from: number,
+    delta: number,
+  ): void {
+    if (delta === 0) return;
+    for (const block of active.compactBlocks) {
+      if (block.start >= from) {
+        block.start += delta;
+        block.end += delta;
+      }
+    }
+  }
+
+  private insertDraftText(
+    active: ActiveRead,
+    value: string,
+    compact?: { kind: CompactInputBlock["kind"]; label: string },
+  ): boolean {
+    if (!value) return false;
+    if (compact && active.compactBlocks.length >= 8) {
+      this.write("Paste not added · a draft supports at most 8 compact items.");
+      return false;
+    }
+    const nextBytes = Buffer.byteLength(active.buffer) + Buffer.byteLength(value);
+    if (nextBytes > 64 * 1024) {
+      this.write("Paste not added · the draft exceeds 64 KiB.");
+      return false;
+    }
+    const selection = this.selectionRange(active);
+    const start = selection?.start ?? active.cursor;
+    const end = selection?.end ?? active.cursor;
+    this.recordEdit(active, "insert", Boolean(compact) || Boolean(selection));
+    const removedIds = new Set(
+      active.compactBlocks
+        .filter((block) => block.start < end && block.end > start)
+        .map((block) => block.id),
+    );
+    const delta = value.length - (end - start);
+    active.compactBlocks = active.compactBlocks
+      .filter((block) => !removedIds.has(block.id))
+      .map((block) =>
+        block.start >= end
+          ? { ...block, start: block.start + delta, end: block.end + delta }
+          : block
+      );
+    active.images = active.images.filter(
+      (attachment) => !removedIds.has(attachment.id),
+    );
+    active.buffer =
+      `${active.buffer.slice(0, start)}${value}${active.buffer.slice(end)}`;
+    active.cursor = start + value.length;
+    active.selectionAnchor = undefined;
+    active.preferredColumn = undefined;
+    if (compact) {
+      active.compactBlocks.push({
+        id: ++this.pasteSequence,
+        start,
+        end: start + value.length,
+        label: compact.label,
+        kind: compact.kind,
+      });
+      active.compactBlocks.sort((left, right) => left.start - right.start);
+    }
+    this.resetPalette();
+    this.render();
+    return true;
+  }
+
+  private addImageAttachment(
+    active: ActiveRead,
+    value: Extract<SmartPastePath, { kind: "image" }>,
+  ): boolean {
+    if (active.images.length >= 4) {
+      this.write("Image not added · a draft supports at most 4 images.");
+      return false;
+    }
+    const number = active.images.length + 1;
+    const text = `Attached image ${number}: ${value.label}`;
+    const inserted = this.insertDraftText(active, text, {
+      kind: "image",
+      label: `[Image #${number} · ${value.label} · ${value.width}×${value.height}]`,
+    });
+    if (!inserted) return false;
+    active.images.push({
+      id: this.pasteSequence,
+      image: { ...value.image },
+    });
+    return true;
+  }
+
+  private async applyPaste(active: ActiveRead, raw: string): Promise<void> {
+    if (this.active !== active) return;
+    const value = normalizePastedText(raw);
+    if (!value) return;
+    const paths = await this.clipboard?.resolveDroppedPaths(value).catch(() => undefined);
+    if (this.active !== active) return;
+    if (paths?.length) {
+      let attached = 0;
+      for (const [index, item] of paths.entries()) {
+        if (index > 0) this.insertDraftText(active, " ");
+        if (item.kind === "image") {
+          if (this.addImageAttachment(active, item)) attached += 1;
+        } else {
+          if (this.insertDraftText(active, item.path, {
+            kind: "path",
+            label: `[Path #${index + 1} · ${item.label}${item.directory ? "/" : ""}]`,
+          })) attached += 1;
+        }
+      }
+      if (attached > 0) {
+        this.notify(`Attached · ${attached} item${attached === 1 ? "" : "s"}`);
+      }
+      return;
+    }
+    const lineCount = value.split("\n").length;
+    if (Buffer.byteLength(value) > 2 * 1024 || lineCount > 12) {
+      const inserted = this.insertDraftText(active, value, {
+        kind: "pasted_text",
+        label:
+          `[Pasted text #${active.compactBlocks.filter((block) => block.kind === "pasted_text").length + 1} · ${lineCount} lines · ${Buffer.byteLength(value)} B]`,
+      });
+      if (inserted) {
+        this.notify(
+          `Pasted · ${lineCount} lines · ${Buffer.byteLength(value)} B`,
+        );
+      }
+      return;
+    }
+    if (this.insertDraftText(active, value)) {
+      this.notify(`Pasted · ${graphemeCount(value)} characters`);
+    }
+  }
+
+  private async applyClipboard(
+    active: ActiveRead,
+    mode: ClipboardReadMode,
+  ): Promise<void> {
+    if (!this.clipboard) {
+      this.write("Clipboard paste is unavailable in this host.");
+      return;
+    }
+    try {
+      const payload = await this.clipboard.read(mode);
+      if (this.active !== active) return;
+      if (payload.kind === "text") {
+        await this.applyPaste(active, payload.text);
+      } else {
+        if (this.addImageAttachment(active, payload)) {
+          this.notify(`Attached · ${payload.label}`);
+        }
+      }
+    } catch (error) {
+      if (this.active !== active) return;
+      this.write(
+        `Clipboard paste failed: ${terminalSafeText(
+          error instanceof Error ? error.message : String(error),
+        )}`,
+      );
+    }
+  }
+
+  private async copySelection(
+    active: ActiveRead,
+    cut: boolean,
+  ): Promise<void> {
+    const selection = this.selectionRange(active);
+    const chatSelection = !selection && !cut
+      ? this.screen?.selectedText()
+      : undefined;
+    if (!selection && !chatSelection) return;
+    if (!this.clipboard) {
+      this.write("Clipboard copy unavailable.");
+      return;
+    }
+    const value = selection
+      ? active.buffer.slice(selection.start, selection.end)
+      : chatSelection!;
+    try {
+      await this.clipboard.writeText(value);
+      this.notify(
+        `${cut ? "Cut" : "Copied"} · ${graphemeCount(value)} characters`,
+      );
+      if (!cut || this.active !== active) return;
+      const current = this.selectionRange(active);
+      if (
+        !current ||
+        !selection ||
+        current.start !== selection.start ||
+        current.end !== selection.end ||
+        active.buffer.slice(current.start, current.end) !== value
+      ) {
+        return;
+      }
+      this.removeDraftRange(active, current.start, current.end);
+    } catch (error) {
+      this.write(
+        `Copy failed · ${terminalSafeText(
+          error instanceof Error ? error.message : String(error),
+        )}`,
+      );
+    }
+  }
+
+  private async copyChatSelection(): Promise<void> {
+    const value = this.screen?.selectedText();
+    if (!value) return;
+    if (!this.clipboard) {
+      this.write("Clipboard copy unavailable.");
+      return;
+    }
+    try {
+      await this.clipboard.writeText(value);
+      this.notify(
+        `Copied selection · ${graphemeCount(value)} characters`,
+      );
+    } catch (error) {
+      this.write(
+        `Copy failed · ${terminalSafeText(
+          error instanceof Error ? error.message : String(error),
+        )}`,
+      );
+    }
+  }
+
+  private blockEndingAt(active: ActiveRead, offset: number): CompactInputBlock | undefined {
+    return active.compactBlocks.find((block) => block.end === offset);
+  }
+
+  private blockStartingAt(active: ActiveRead, offset: number): CompactInputBlock | undefined {
+    return active.compactBlocks.find((block) => block.start === offset);
+  }
+
+  private removeBlock(active: ActiveRead, block: CompactInputBlock): void {
+    this.recordEdit(active, "delete", true);
+    const length = block.end - block.start;
+    active.buffer =
+      `${active.buffer.slice(0, block.start)}${active.buffer.slice(block.end)}`;
+    active.compactBlocks = active.compactBlocks
+      .filter((candidate) => candidate.id !== block.id)
+      .map((candidate) =>
+        candidate.start >= block.end
+          ? {
+              ...candidate,
+              start: candidate.start - length,
+              end: candidate.end - length,
+            }
+          : candidate
+      );
+    if (block.kind === "image") {
+      active.images = active.images.filter((attachment) => attachment.id !== block.id);
+    }
+    active.cursor = block.start;
+    active.selectionAnchor = undefined;
+    active.preferredColumn = undefined;
+    this.resetPalette();
+    this.render();
+  }
+
+  private removeDraftRange(active: ActiveRead, start: number, end: number): void {
+    if (end <= start) return;
+    this.recordEdit(active, "command", true);
+    const removedIds = new Set(
+      active.compactBlocks
+        .filter((block) => block.start < end && block.end > start)
+        .map((block) => block.id),
+    );
+    active.buffer = `${active.buffer.slice(0, start)}${active.buffer.slice(end)}`;
+    const delta = end - start;
+    active.compactBlocks = active.compactBlocks
+      .filter((block) => !removedIds.has(block.id))
+      .map((block) =>
+        block.start >= end
+          ? { ...block, start: block.start - delta, end: block.end - delta }
+          : block
+      );
+    active.images = active.images.filter((attachment) => !removedIds.has(attachment.id));
+    active.cursor = start;
+    active.selectionAnchor = undefined;
+    active.preferredColumn = undefined;
+    this.resetPalette();
+    this.render();
+  }
+
   private handleKeypress = (value: string, key: Key): void => {
+    if (this.consumeMouseKeypress(value, key)) return;
+    this.mouseClickSequence = undefined;
+    const keyValue = value ?? "";
+    if (key.name === "paste-start") {
+      this.pendingPaste = "";
+      return;
+    }
+    if (this.pendingPaste !== undefined) {
+      if (key.name === "paste-end") {
+        const pasted = this.pendingPaste;
+        this.pendingPaste = undefined;
+        const active = this.active;
+        if (active) void this.applyPaste(active, pasted);
+        return;
+      }
+      this.pendingPaste += key.sequence ?? keyValue;
+      if (Buffer.byteLength(this.pendingPaste) > 64 * 1024) {
+        this.pendingPaste = undefined;
+        this.write("Paste not added · clipboard text exceeds 64 KiB.");
+      }
+      return;
+    }
+    const page = Math.max(1, terminalRows(this.output) - 4);
+    if (this.screen && key.name === "pageup") {
+      if (this.screen.scroll(page)) this.renderFullscreen();
+      return;
+    }
+    if (this.screen && key.name === "pagedown") {
+      if (this.screen.scroll(-page)) this.renderFullscreen();
+      return;
+    }
+    if (this.screen && key.ctrl && key.name === "home") {
+      if (this.screen.scrollToTop()) this.renderFullscreen();
+      return;
+    }
+    if (this.screen && key.ctrl && key.name === "end") {
+      if (this.screen.scrollToTail()) this.renderFullscreen();
+      return;
+    }
     const active = this.active;
     if (!active) {
       if (key.ctrl && key.name === "c") this.onInterrupt();
       return;
+    }
+    if (active.mode === "clarify" && active.clarification) {
+      this.handleClarificationKeypress(active, value, key);
+      return;
+    }
+    const pendingCount =
+      active.liveContext?.pendingCount ??
+      active.statusContext?.pendingCount ??
+      0;
+    const composerEditing =
+      active.mode === "compose" || active.mode === "live";
+    const altEditingShortcutIsReserved =
+      key.meta &&
+      (
+        shortcutMatches(this.shortcuts, "clear", key) ||
+        shortcutMatches(this.shortcuts, "undo", key) ||
+        shortcutMatches(this.shortcuts, "redo", key)
+      );
+    const hasSelection = Boolean(
+      this.selectionRange(active) || this.screen?.hasSelection(),
+    );
+    const copyShortcut =
+      (composerEditing || Boolean(this.screen?.hasSelection())) &&
+      (
+        (key.ctrl && key.name === "c" && (key.shift || hasSelection)) ||
+        (
+          key.meta &&
+          key.name === "c" &&
+          !altEditingShortcutIsReserved
+        )
+      );
+    const pasteShortcut =
+      composerEditing &&
+      (
+        (key.ctrl && key.shift && key.name === "v") ||
+        (
+          key.meta &&
+          key.name === "v" &&
+          !altEditingShortcutIsReserved
+        )
+      );
+    if (copyShortcut) {
+      this.disarmActionConfirmation();
+      void this.copySelection(active, false);
+      return;
+    }
+    if (pasteShortcut) {
+      this.disarmActionConfirmation();
+      void this.applyClipboard(active, "text");
+      return;
+    }
+    if (composerEditing && key.ctrl && key.name === "x") {
+      this.disarmActionConfirmation();
+      void this.copySelection(active, true);
+      return;
+    }
+
+    if (active.mode === "live" && key.ctrl && key.name === "c") {
+      if (!this.actionIsArmed(active, "cancel")) {
+        this.armActionConfirmation(active, "cancel", pendingCount);
+        return;
+      }
+      this.disarmActionConfirmation();
+      active.onLiveSubmission?.({ kind: "stop", draft: active.buffer });
+      return;
+    }
+
+    const matchingActionConfirmation =
+      this.actionConfirmation?.activeRead === active &&
+      (
+        (this.actionConfirmation.kind === "cancel" &&
+          key.ctrl &&
+          key.name === "c") ||
+        (this.actionConfirmation.kind === "clear_pending" &&
+          key.name === "escape")
+      );
+    if (this.actionConfirmation && !matchingActionConfirmation) {
+      this.disarmActionConfirmation();
+    }
+
+    if (
+      key.meta &&
+      (key.name === "return" || key.name === "enter") &&
+      active.mode !== "select"
+    ) {
+      this.insertDraftText(active, "\n");
+      return;
+    }
+
+    if (active.mode === "compose" || active.mode === "live") {
+      if (
+        this.selectionRange(active) &&
+        shortcutMatches(this.shortcuts, "clear", key)
+      ) {
+        active.selectionAnchor = undefined;
+        this.render();
+        return;
+      }
+      if (
+        !this.selectionRange(active) &&
+        key.name === "escape" &&
+        this.screen?.clearSelection()
+      ) {
+        this.renderFullscreen();
+        return;
+      }
+      if (
+        active.buffer.length > 0 &&
+        shortcutMatches(this.shortcuts, "clear", key)
+      ) {
+        this.clearDraft(active);
+        return;
+      }
+      if (shortcutMatches(this.shortcuts, "undo", key)) {
+        this.disarmExitConfirmation();
+        this.undo(active);
+        return;
+      }
+      if (shortcutMatches(this.shortcuts, "redo", key)) {
+        this.disarmExitConfirmation();
+        this.redo(active);
+        return;
+      }
     }
 
     if (key.ctrl && key.name === "c") {
@@ -798,13 +3733,6 @@ export class TtyComposer {
           this.finish("/exit", { echo: false });
           return;
         }
-        this.clearRender();
-        active.buffer = "";
-        active.cursor = 0;
-        active.paletteDismissed = false;
-        active.selectedSuggestion = 0;
-        active.historyIndex = -1;
-        active.historyDraft = "";
         this.armExitConfirmation(active);
       }
       return;
@@ -816,46 +3744,72 @@ export class TtyComposer {
 
     if (key.ctrl && key.name === "d" && active.buffer.length === 0) {
       this.finish(active.mode === "compose" ? "/exit" : "", { echo: false });
-      this.output.write("\n");
+      if (!this.screen) this.output.write("\n");
+      return;
+    }
+
+    if (
+      key.ctrl &&
+      key.name === "up" &&
+      (active.mode === "compose" || active.mode === "live") &&
+      active.buffer.trim().length === 0 &&
+      active.images.length === 0 &&
+      pendingCount > 0
+    ) {
+      this.disarmActionConfirmation();
+      if (active.mode === "live") {
+        const result = active.onLiveSubmission?.({ kind: "edit_pending" });
+        if (result?.draft) this.restoreDraftSnapshot(active, result.draft);
+      } else {
+        this.finish(EDIT_PENDING_INPUT, { echo: false });
+      }
       return;
     }
 
     if (key.ctrl && key.name === "a") {
-      active.cursor = 0;
-      this.render();
+      if (active.buffer.length > 0) {
+        active.selectionAnchor = 0;
+        active.cursor = active.buffer.length;
+        active.lastEditKind = undefined;
+        active.preferredColumn = undefined;
+        this.render();
+      }
       return;
     }
     if (key.ctrl && key.name === "e") {
-      active.cursor = active.buffer.length;
-      this.render();
+      this.moveCursor(active, active.buffer.length);
       return;
     }
     if (key.ctrl && key.name === "u") {
-      active.buffer = active.buffer.slice(active.cursor);
-      active.cursor = 0;
-      this.resetPalette();
-      this.render();
+      this.removeDraftRange(active, 0, active.cursor);
       return;
     }
     if (key.ctrl && key.name === "k") {
-      active.buffer = active.buffer.slice(0, active.cursor);
-      this.resetPalette();
-      this.render();
+      this.removeDraftRange(active, active.cursor, active.buffer.length);
       return;
     }
     if (key.ctrl && key.name === "w") {
-      const before = active.buffer.slice(0, active.cursor);
-      const start = before.search(/\S+\s*$/);
-      if (start >= 0) {
-        active.buffer = `${active.buffer.slice(0, start)}${active.buffer.slice(active.cursor)}`;
-        active.cursor = start;
-        this.resetPalette();
+      const selection = this.selectionRange(active);
+      const start = selection?.start ??
+        this.atomicBoundary(
+          active,
+          previousWordBoundary(active.buffer, active.cursor),
+          "left",
+        );
+      const end = selection?.end ?? active.cursor;
+      if (start !== end) {
+        this.removeDraftRange(active, start, end);
+        return;
       }
       this.render();
       return;
     }
     if (key.ctrl && key.name === "l") {
-      this.output.write("\u001bc");
+      if (this.screen) {
+        this.screen.clearHistory();
+      } else {
+        this.output.write("\u001bc");
+      }
       active.renderedLines = [];
       active.renderedAreaRows = 0;
       active.renderedCursorColumn = 0;
@@ -864,12 +3818,39 @@ export class TtyComposer {
       this.render();
       return;
     }
+    if (key.meta && key.name === "b") {
+      this.collapseOrMove(
+        active,
+        "left",
+        () =>
+          this.atomicBoundary(
+            active,
+            previousWordBoundary(active.buffer, active.cursor),
+            "left",
+          ),
+      );
+      return;
+    }
+    if (key.meta && key.name === "f") {
+      this.collapseOrMove(
+        active,
+        "right",
+        () =>
+          this.atomicBoundary(
+            active,
+            nextWordBoundary(active.buffer, active.cursor),
+            "right",
+          ),
+      );
+      return;
+    }
 
-    const suggestions = this.suggestions(active);
+    const assist = this.assist(active);
+    const suggestions = assist.suggestions;
     if (active.mode === "select") {
       const choices = this.filteredChoices(active);
-      if (key.name === "escape") {
-        this.finish("", { echo: false });
+      if (key.name === "escape" || key.name === "left") {
+        this.finish(NAVIGATE_BACK_INPUT, { echo: false });
         return;
       }
       if (key.name === "return" || key.name === "enter") {
@@ -902,6 +3883,30 @@ export class TtyComposer {
         return;
       }
     }
+    if (
+      key.name === "escape" &&
+      (active.mode === "compose" || active.mode === "live") &&
+      active.buffer.length === 0 &&
+      active.images.length === 0 &&
+      pendingCount > 0
+    ) {
+      if (!this.actionIsArmed(active, "clear_pending")) {
+        this.armActionConfirmation(
+          active,
+          "clear_pending",
+          pendingCount,
+        );
+        return;
+      }
+      this.disarmActionConfirmation();
+      if (active.mode === "live") {
+        active.onLiveSubmission?.({ kind: "clear_pending" });
+        this.render();
+      } else {
+        this.finish(CLEAR_PENDING_INPUT, { echo: false });
+      }
+      return;
+    }
     if (key.name === "escape") {
       active.paletteDismissed = true;
       this.render();
@@ -917,9 +3922,29 @@ export class TtyComposer {
       }
       return;
     }
+    if (
+      key.name === "tab" &&
+      !key.shift &&
+      active.mode === "live" &&
+      active.buffer.trim().length > 0
+    ) {
+      this.submitLive(active, "next");
+      return;
+    }
+    if (key.name === "tab") return;
+    if (key.name === "return" || key.name === "enter") {
+      const pasteCommand = active.buffer.trim().match(
+        /^\/paste(?:\s+(auto|text|image))?$/u,
+      );
+      if (pasteCommand) {
+        const mode = (pasteCommand[1] ?? "auto") as ClipboardReadMode;
+        this.clearDraft(active);
+        void this.applyClipboard(active, mode);
+        return;
+      }
+    }
     if ((key.name === "return" || key.name === "enter") && suggestions.length > 0) {
-      const exact = this.exactSuggestion(active, suggestions);
-      if (exact && exact.argument !== "required") {
+      if (assist.canSubmit) {
         this.finish(active.buffer);
         return;
       }
@@ -927,6 +3952,10 @@ export class TtyComposer {
       return;
     }
     if (key.name === "return" || key.name === "enter") {
+      if (active.mode === "live") {
+        this.submitLive(active, "contextual");
+        return;
+      }
       this.finish(active.buffer);
       return;
     }
@@ -935,7 +3964,7 @@ export class TtyComposer {
         active.selectedSuggestion =
           (active.selectedSuggestion - 1 + suggestions.length) % suggestions.length;
         this.render();
-      } else {
+      } else if (!this.moveVertically(active, -1, Boolean(key.shift))) {
         this.moveHistory(1);
       }
       return;
@@ -944,33 +3973,115 @@ export class TtyComposer {
       if (suggestions.length > 0) {
         active.selectedSuggestion = (active.selectedSuggestion + 1) % suggestions.length;
         this.render();
-      } else {
+      } else if (!this.moveVertically(active, 1, Boolean(key.shift))) {
         this.moveHistory(-1);
       }
       return;
     }
     if (key.name === "left") {
-      active.cursor = previousBoundary(active.buffer, active.cursor);
-      this.render();
+      if (key.shift) {
+        this.moveCursor(
+          active,
+          key.ctrl || key.meta
+            ? this.atomicBoundary(
+                active,
+                previousWordBoundary(active.buffer, active.cursor),
+                "left",
+              )
+            : this.blockEndingAt(active, active.cursor)?.start ??
+              previousBoundary(active.buffer, active.cursor),
+          true,
+        );
+      } else {
+        this.collapseOrMove(
+          active,
+          "left",
+          () =>
+            key.ctrl || key.meta
+              ? this.atomicBoundary(
+                  active,
+                  previousWordBoundary(active.buffer, active.cursor),
+                  "left",
+                )
+              : this.blockEndingAt(active, active.cursor)?.start ??
+                previousBoundary(active.buffer, active.cursor),
+        );
+      }
       return;
     }
     if (key.name === "right") {
-      active.cursor = nextBoundary(active.buffer, active.cursor);
-      this.render();
+      if (key.shift) {
+        this.moveCursor(
+          active,
+          key.ctrl || key.meta
+            ? this.atomicBoundary(
+                active,
+                nextWordBoundary(active.buffer, active.cursor),
+                "right",
+              )
+            : this.blockStartingAt(active, active.cursor)?.end ??
+              nextBoundary(active.buffer, active.cursor),
+          true,
+        );
+      } else {
+        this.collapseOrMove(
+          active,
+          "right",
+          () =>
+            key.ctrl || key.meta
+              ? this.atomicBoundary(
+                  active,
+                  nextWordBoundary(active.buffer, active.cursor),
+                  "right",
+                )
+              : this.blockStartingAt(active, active.cursor)?.end ??
+                nextBoundary(active.buffer, active.cursor),
+        );
+      }
       return;
     }
     if (key.name === "home") {
-      active.cursor = 0;
-      this.render();
+      const rows = this.draftVisualRows(active);
+      const row = rows[this.visualCursorRow(active, rows)];
+      this.moveCursor(active, row?.start ?? 0, Boolean(key.shift));
       return;
     }
     if (key.name === "end") {
-      active.cursor = active.buffer.length;
-      this.render();
+      const rows = this.draftVisualRows(active);
+      const row = rows[this.visualCursorRow(active, rows)];
+      this.moveCursor(
+        active,
+        row?.end ?? active.buffer.length,
+        Boolean(key.shift),
+      );
       return;
     }
     if (key.name === "backspace") {
+      const selection = this.selectionRange(active);
+      if (selection) {
+        this.removeDraftRange(active, selection.start, selection.end);
+        return;
+      }
+      if (key.ctrl || key.meta) {
+        this.removeDraftRange(
+          active,
+          this.atomicBoundary(
+            active,
+            previousWordBoundary(active.buffer, active.cursor),
+            "left",
+          ),
+          active.cursor,
+        );
+        return;
+      }
+      const block = this.blockEndingAt(active, active.cursor);
+      if (block) {
+        this.removeBlock(active, block);
+        return;
+      }
       const start = previousBoundary(active.buffer, active.cursor);
+      if (start !== active.cursor) this.recordEdit(active, "delete");
+      this.shiftBlocks(active, active.cursor, start - active.cursor);
       active.buffer = `${active.buffer.slice(0, start)}${active.buffer.slice(active.cursor)}`;
       active.cursor = start;
       this.resetPalette();
@@ -978,7 +4089,31 @@ export class TtyComposer {
       return;
     }
     if (key.name === "delete") {
+      const selection = this.selectionRange(active);
+      if (selection) {
+        this.removeDraftRange(active, selection.start, selection.end);
+        return;
+      }
+      if (key.ctrl || key.meta) {
+        this.removeDraftRange(
+          active,
+          active.cursor,
+          this.atomicBoundary(
+            active,
+            nextWordBoundary(active.buffer, active.cursor),
+            "right",
+          ),
+        );
+        return;
+      }
+      const block = this.blockStartingAt(active, active.cursor);
+      if (block) {
+        this.removeBlock(active, block);
+        return;
+      }
       const end = nextBoundary(active.buffer, active.cursor);
+      if (end !== active.cursor) this.recordEdit(active, "delete");
+      this.shiftBlocks(active, end, active.cursor - end);
       active.buffer = `${active.buffer.slice(0, active.cursor)}${active.buffer.slice(end)}`;
       this.resetPalette();
       this.render();
@@ -986,52 +4121,586 @@ export class TtyComposer {
     }
 
     if (value && !key.ctrl && !key.meta) {
-      active.buffer = `${active.buffer.slice(0, active.cursor)}${value}${active.buffer.slice(active.cursor)}`;
-      active.cursor += value.length;
-      this.resetPalette();
-      this.render();
+      this.insertDraftText(active, value);
       return;
     }
     if (dismissedExitConfirmation) this.render();
   };
 
+  private selectClarificationOption(
+    clarification: ActiveClarification,
+    question: ClarificationQuestion,
+    option: ClarificationOption,
+  ): boolean {
+    const selected =
+      clarification.selections.get(question.id) ?? new Set<string>();
+    clarification.status = undefined;
+    if (question.selectionMode === "single") {
+      selected.clear();
+      selected.add(option.id);
+      clarification.selections.set(question.id, selected);
+      return true;
+    }
+    if (selected.has(option.id)) {
+      selected.delete(option.id);
+      return true;
+    }
+    const conflict = option.conflictsWith?.find((optionId) =>
+      selected.has(optionId)
+    );
+    if (conflict) {
+      const conflictLabel =
+        question.options.find((candidate) => candidate.id === conflict)?.label ??
+        conflict;
+      clarification.status = `Conflicts with ${conflictLabel}; deselect it first.`;
+      return false;
+    }
+    selected.add(option.id);
+    clarification.selections.set(question.id, selected);
+    return true;
+  }
+
+  private openClarificationNote(
+    active: ActiveRead,
+    clarification: ActiveClarification,
+  ): void {
+    const question = this.currentClarificationQuestion(clarification);
+    const optionIndex =
+      clarification.optionIndexes[clarification.questionIndex] ?? 0;
+    const option = question.options[optionIndex];
+    if (!option) return;
+    if (
+      !this.clarificationOptionSelected(
+        clarification,
+        question,
+        option.id,
+      )
+    ) {
+      this.selectClarificationOption(clarification, question, option);
+    }
+    clarification.noteTarget = {
+      questionId: question.id,
+      ...(question.selectionMode === "multiple"
+        ? { optionId: option.id }
+        : {}),
+    };
+    active.buffer =
+      question.selectionMode === "multiple"
+        ? clarification.optionNotes.get(`${question.id}:${option.id}`) ?? ""
+        : clarification.questionNotes.get(question.id) ?? "";
+    active.cursor = active.buffer.length;
+    active.selectionAnchor = undefined;
+    clarification.phase = "note";
+    this.render();
+  }
+
+  private handleClarificationKeypress(
+    active: ActiveRead,
+    value: string,
+    key: Key,
+  ): void {
+    const clarification = active.clarification!;
+    if (key.ctrl && key.name === "c") {
+      this.finishClarification(active, "cancelled");
+      return;
+    }
+    if (clarification.phase === "note") {
+      if (key.name === "escape") {
+        active.buffer = "";
+        active.cursor = 0;
+        clarification.noteTarget = undefined;
+        clarification.phase = "questions";
+        this.render();
+        return;
+      }
+      if (key.name === "return" || key.name === "enter") {
+        const target = clarification.noteTarget;
+        const note = active.buffer.trim().slice(0, 2_000);
+        if (target?.optionId) {
+          const key = `${target.questionId}:${target.optionId}`;
+          if (note) clarification.optionNotes.set(key, note);
+          else clarification.optionNotes.delete(key);
+        } else if (target) {
+          if (note) clarification.questionNotes.set(target.questionId, note);
+          else clarification.questionNotes.delete(target.questionId);
+        }
+        active.buffer = "";
+        active.cursor = 0;
+        clarification.noteTarget = undefined;
+        clarification.phase = "questions";
+        this.render();
+        return;
+      }
+      if (key.name === "backspace") {
+        const start = previousBoundary(active.buffer, active.cursor);
+        active.buffer = `${active.buffer.slice(0, start)}${active.buffer.slice(active.cursor)}`;
+        active.cursor = start;
+        this.render();
+        return;
+      }
+      if (key.name === "left") {
+        active.cursor = previousBoundary(active.buffer, active.cursor);
+        this.render();
+        return;
+      }
+      if (key.name === "right") {
+        active.cursor = nextBoundary(active.buffer, active.cursor);
+        this.render();
+        return;
+      }
+      if (value && !key.ctrl && !key.meta && active.buffer.length < 2_000) {
+        active.buffer = `${active.buffer.slice(0, active.cursor)}${value}${active.buffer.slice(active.cursor)}`.slice(0, 2_000);
+        active.cursor = Math.min(active.buffer.length, active.cursor + value.length);
+        this.render();
+      }
+      return;
+    }
+    if (clarification.phase === "summary") {
+      if (key.name === "escape") {
+        this.finishClarification(active, "cancelled");
+        return;
+      }
+      if (key.name === "left") {
+        clarification.phase = "questions";
+        clarification.questionIndex =
+          clarification.request.questions.length - 1;
+        this.render();
+        return;
+      }
+      if (key.name === "return" || key.name === "enter") {
+        const complete = clarification.request.questions.every(
+          (question) =>
+            (clarification.selections.get(question.id)?.size ?? 0) > 0,
+        );
+        if (complete) this.finishClarification(active, "submitted");
+        return;
+      }
+      return;
+    }
+    if (key.name === "escape") {
+      this.finishClarification(active, "cancelled");
+      return;
+    }
+    if (
+      (key.ctrl || key.meta) &&
+      (key.name === "return" || key.name === "enter")
+    ) {
+      clarification.phase = "summary";
+      this.render();
+      return;
+    }
+    const question = this.currentClarificationQuestion(clarification);
+    const optionCount = question.options.length;
+    let optionIndex =
+      clarification.optionIndexes[clarification.questionIndex] ?? 0;
+    if (key.name === "up") {
+      optionIndex = (optionIndex - 1 + optionCount) % optionCount;
+      clarification.optionIndexes[clarification.questionIndex] = optionIndex;
+      clarification.status = undefined;
+      this.render();
+      return;
+    }
+    if (key.name === "down") {
+      optionIndex = (optionIndex + 1) % optionCount;
+      clarification.optionIndexes[clarification.questionIndex] = optionIndex;
+      clarification.status = undefined;
+      this.render();
+      return;
+    }
+    if (key.name === "left") {
+      clarification.questionIndex = Math.max(
+        0,
+        clarification.questionIndex - 1,
+      );
+      clarification.status = undefined;
+      this.render();
+      return;
+    }
+    if (key.name === "right") {
+      if (
+        clarification.questionIndex ===
+        clarification.request.questions.length - 1
+      ) {
+        clarification.phase = "summary";
+      } else {
+        clarification.questionIndex += 1;
+      }
+      clarification.status = undefined;
+      this.render();
+      return;
+    }
+    const numeric = /^[1-4]$/u.test(value) ? Number(value) - 1 : undefined;
+    if (numeric !== undefined && numeric < optionCount) {
+      optionIndex = numeric;
+      clarification.optionIndexes[clarification.questionIndex] = optionIndex;
+    }
+    if (
+      key.name === "return" ||
+      key.name === "enter" ||
+      numeric !== undefined
+    ) {
+      const option = question.options[optionIndex];
+      if (option) this.selectClarificationOption(clarification, question, option);
+      this.render();
+      return;
+    }
+    if (key.name === "tab") {
+      this.openClarificationNote(active, clarification);
+    }
+  }
+
+  private consumeMouseKeypress(value: string, key: Key): boolean {
+    if (!this.screen) return false;
+    const fragment = key.sequence ?? value ?? "";
+    if (
+      this.pendingMouseInput === undefined &&
+      !fragment.startsWith("\u001b[<")
+    ) {
+      return false;
+    }
+    const sequence = `${this.pendingMouseInput ?? ""}${fragment}`;
+    if (
+      sequence.length > 64 ||
+      !/^\u001b\[<[0-9;]*[Mm]?$/u.test(sequence)
+    ) {
+      this.pendingMouseInput = undefined;
+      return true;
+    }
+    if (!/[Mm]$/u.test(sequence)) {
+      this.pendingMouseInput = sequence;
+      return true;
+    }
+    this.pendingMouseInput = undefined;
+    const match = sequence.match(
+      /^\u001b\[<(\d+);(\d+);(\d+)([Mm])$/u,
+    );
+    if (!match) return true;
+    const button = Number(match[1]);
+    const column = Number(match[2]);
+    const row = Number(match[3]);
+    const event = match[4];
+    if (
+      !Number.isSafeInteger(button) ||
+      !Number.isSafeInteger(column) ||
+      !Number.isSafeInteger(row)
+    ) {
+      return true;
+    }
+    if ((button & 64) !== 0) {
+      this.mouseClickSequence = undefined;
+      const direction = (button & 1) === 0 ? 1 : -1;
+      if (this.screen.isComposerRow(row)) {
+        const active = this.active;
+        if (active?.mode === "compose" || active?.mode === "live") {
+          this.moveHistory(direction);
+        }
+        return true;
+      }
+      if (this.screen.scroll(direction * 3)) this.renderFullscreen();
+      return true;
+    }
+
+    if (event === "m") {
+      const drag = this.mouseSelectionDrag;
+      if (drag) {
+        if (drag.started) {
+          const targetRow = this.mouseSelectionRow(row);
+          this.screen.extendSelection(targetRow, column);
+        } else {
+          this.activateMouseClick(row, column);
+        }
+        this.stopMouseSelectionDrag();
+        if (drag.started && this.clipboardPreferences.copyOnSelect) {
+          void this.copyChatSelection();
+        }
+      } else {
+        this.mouseClickSequence = undefined;
+      }
+      return true;
+    }
+
+    const isMotion = (button & 32) !== 0;
+    const isLeftButton = (button & 3) === 0;
+    if (!isMotion && isLeftButton) {
+      this.stopMouseSelectionDrag();
+      if (this.screen.isComposerRow(row)) {
+        this.mouseClickSequence = undefined;
+        return true;
+      }
+      this.mouseSelectionDrag = {
+        anchorRow: row,
+        anchorColumn: column,
+        row,
+        column,
+        started: false,
+      };
+      return true;
+    }
+    if (isMotion && isLeftButton && this.mouseSelectionDrag) {
+      const drag = this.mouseSelectionDrag;
+      drag.row = row;
+      drag.column = column;
+      if (
+        !drag.started &&
+        (row !== drag.anchorRow || column !== drag.anchorColumn)
+      ) {
+        drag.started = this.screen.beginSelection(
+          drag.anchorRow,
+          drag.anchorColumn,
+        );
+      }
+      if (!drag.started) return true;
+      this.mouseClickSequence = undefined;
+      const targetRow = this.mouseSelectionRow(row);
+      this.screen.extendSelection(targetRow, column);
+      this.updateMouseSelectionScroll(row);
+      this.renderFullscreen();
+    }
+    return true;
+  }
+
+  private activateMouseClick(row: number, column: number): void {
+    const now = Date.now();
+    const previous = this.mouseClickSequence;
+    const continuesSequence = Boolean(
+      previous &&
+        now - previous.releasedAt <= MOUSE_MULTI_CLICK_INTERVAL_MS &&
+        previous.row === row &&
+        Math.abs(previous.column - column) <=
+          MOUSE_MULTI_CLICK_COLUMN_TOLERANCE,
+    );
+    const count = continuesSequence ? Math.min(3, previous!.count + 1) : 1;
+    this.mouseClickSequence = count < 3
+      ? { row, column, count, releasedAt: now }
+      : undefined;
+
+    if (count === 1) {
+      if (this.screen?.clearSelection()) this.renderFullscreen();
+      return;
+    }
+    const selected = count === 2
+      ? this.screen?.selectWord(row, column)
+      : this.screen?.selectRow(row);
+    if (!selected) return;
+    this.renderFullscreen();
+    if (this.clipboardPreferences.copyOnSelect) {
+      void this.copyChatSelection();
+    }
+  }
+
+  private mouseSelectionRow(row: number): number {
+    const bounds = this.screen?.timelineBounds();
+    if (!bounds) return row;
+    return Math.max(bounds.firstRow, Math.min(bounds.lastRow, row));
+  }
+
+  private updateMouseSelectionScroll(row: number): void {
+    const drag = this.mouseSelectionDrag;
+    const bounds = this.screen?.timelineBounds();
+    if (!drag || !bounds) return;
+    const direction: -1 | 1 | undefined =
+      row <= bounds.firstRow
+        ? 1
+        : row >= bounds.lastRow
+          ? -1
+          : undefined;
+    if (drag.direction === direction) return;
+    if (drag.timer) clearInterval(drag.timer);
+    drag.timer = undefined;
+    drag.direction = direction;
+    if (direction === undefined) return;
+    drag.timer = setInterval(() => {
+      if (
+        this.mouseSelectionDrag !== drag ||
+        !this.screen?.scroll(direction)
+      ) {
+        if (drag.timer) clearInterval(drag.timer);
+        drag.timer = undefined;
+        return;
+      }
+      this.renderFullscreen();
+      this.screen.extendSelection(
+        this.mouseSelectionRow(drag.row),
+        drag.column,
+      );
+      this.renderFullscreen();
+    }, 80);
+    drag.timer.unref?.();
+  }
+
+  private stopMouseSelectionDrag(): void {
+    const drag = this.mouseSelectionDrag;
+    if (drag?.timer) clearInterval(drag.timer);
+    this.mouseSelectionDrag = undefined;
+  }
+
+  private submitLive(
+    active: ActiveRead,
+    delivery: "contextual" | "next",
+  ): void {
+    if (this.active !== active) return;
+    const submitted = active.buffer.trim();
+    if (!submitted && active.images.length === 0) return;
+    const draft = this.draftSnapshot(active);
+    this.remember(submitted);
+    this.clearRender();
+    const compactSubmitted = this.displayedDraft(active).text.trim();
+    const rendered = !submitted.startsWith("/")
+      ? renderRichText(compactSubmitted, {
+          enabled: this.richText,
+          theme: this.designSystem.theme,
+          preserveMarkers: true,
+          width: Math.max(20, terminalColumns(this.output) - displayWidth(active.prompt) - 1),
+          continuationIndent: " ".repeat(displayWidth(active.prompt)),
+        })
+      : compactSubmitted;
+    this.writeSubmittedUserMessage(active, rendered);
+    active.buffer = "";
+    active.cursor = 0;
+    active.paletteDismissed = false;
+    active.selectedSuggestion = 0;
+    active.historyIndex = -1;
+    active.historyDraft = "";
+    active.undoStack = [];
+    active.redoStack = [];
+    const images = active.images.map((attachment) => ({ ...attachment.image }));
+    active.compactBlocks = [];
+    active.images = [];
+    active.lastEditKind = undefined;
+    active.renderedLines = [];
+    active.renderedAreaRows = 0;
+    active.renderedCursorColumn = 0;
+    active.renderedColumns = 0;
+    this.render();
+    active.onLiveSubmission?.({
+      kind: "message",
+      value: submitted,
+      delivery,
+      ...(images.length > 0 ? { images } : {}),
+      draft,
+    });
+  }
+
   private handleResize = (): void => {
+    if (!this.screen) {
+      if (this.resizeTimer) clearTimeout(this.resizeTimer);
+      this.resizeTimer = setTimeout(() => {
+        this.resizeTimer = undefined;
+        this.flushResize();
+      }, INLINE_RESIZE_SETTLE_MS);
+      this.resizeTimer.unref?.();
+      return;
+    }
+    if (this.resizePending) return;
+    this.resizePending = true;
+    queueMicrotask(() => {
+      this.resizePending = false;
+      this.flushResize();
+    });
+  };
+
+  private flushResize(): void {
+    if (this.closed || this.suspended) return;
+    const nextGeometry = terminalGeometry(
+      this.output,
+      this.geometry.revision + 1,
+    );
+    if (
+      nextGeometry.columns === this.geometry.columns &&
+      nextGeometry.rows === this.geometry.rows
+    ) {
+      return;
+    }
+    this.geometry = nextGeometry;
+    this.commitResize(nextGeometry);
+  }
+
+  private commitResize(geometry: TerminalGeometry): void {
     const active = this.active;
     if (!active) {
+      if (this.screen) {
+        this.renderFullscreen();
+        return;
+      }
       if (this.activity?.visible) this.paintActivity(this.activity);
+      return;
+    }
+    if (this.screen) {
+      active.renderedLines = [];
+      active.renderedAreaRows = 0;
+      active.renderedCursorRow = 0;
+      active.renderedCursorColumn = 0;
+      active.renderedColumns = 0;
+      active.pendingRenderPrefix = "";
+      this.renderFullscreen();
       return;
     }
     const compactAsk =
       active.mode === "ask" &&
       active.prompt === active.originalPrompt &&
-      shouldCompactPrompt(active.originalPrompt, terminalColumns(this.output));
-    active.pendingRenderPrefix = "\r\u001b[0J\r\n";
+      shouldCompactPrompt(active.originalPrompt, geometry.columns);
+    const exactInlineAnchor = active.renderedLines.every(
+      (line) => renderedLineWidth(line) < geometry.columns,
+    );
+    active.pendingRenderPrefix = exactInlineAnchor
+      ? `\r${verticalMove(-active.renderedCursorRow)}\u001b[0J`
+      : "\r\u001b[0J\r\n";
     if (compactAsk) {
       active.pendingRenderPrefix += `${active.originalPrompt.trimEnd()}\n`;
       active.prompt = "› ";
     }
     active.renderedLines = [];
     active.renderedAreaRows = 0;
+    active.renderedCursorRow = 0;
     active.renderedCursorColumn = 0;
     active.renderedColumns = 0;
     this.render();
-  };
+  }
 
   close(): void {
     if (this.closed) return;
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = undefined;
+      this.flushResize();
+    }
     this.closed = true;
+    this.resizePending = false;
+    this.finishMessageStream();
     this.stopActivity();
     this.disarmExitConfirmation();
+    this.disarmActionConfirmation();
+    this.pendingMouseInput = undefined;
     const active = this.active;
     if (active) {
+      if (active.clarification?.timer) {
+        clearTimeout(active.clarification.timer);
+      }
       this.clearRender();
-      this.output.write("\n");
+      if (!this.screen) this.output.write("\n");
       this.active = undefined;
-      active.resolve(active.mode === "compose" ? "/exit" : "");
+      if (active.clarification) {
+        active.clarification.resolve({
+          status: "cancelled",
+          answers: this.clarificationAnswers(active.clarification),
+        });
+      } else {
+        active.resolve(active.mode === "compose" ? "/exit" : "");
+      }
     }
     this.input.off("keypress", this.handleKeypress);
     this.output.off("resize", this.handleResize);
-    if (!this.wasRaw) this.input.setRawMode?.(false);
+    this.output.write("\u001b[?2004l");
+    if (this.suspended) {
+      this.input.setRawMode?.(this.wasRaw);
+      this.suspended = false;
+    } else if (!this.wasRaw) {
+      this.input.setRawMode?.(false);
+    }
     this.input.pause();
+    if (this.screen) {
+      this.screen.leave();
+      if (this.shellSummary) this.output.write(`${this.shellSummary}\n`);
+    }
   }
 }

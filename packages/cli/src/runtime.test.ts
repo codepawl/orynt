@@ -1,9 +1,8 @@
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import {
-  formatDoctorReport,
   parseCliArgs,
   parseCodexModelCatalog,
 } from "./runtime";
@@ -39,6 +38,8 @@ describe("Orynt CLI arguments", () => {
           "--role-effort",
           "implementer=medium",
           "--plain",
+          "--activity-details",
+          "full",
           "fix",
           "the",
           "tests",
@@ -53,6 +54,7 @@ describe("Orynt CLI arguments", () => {
       roleModels: { implementer: "gpt-5.6-luna" },
       roleEfforts: { implementer: "medium" },
       color: false,
+      activityDetails: "full",
       explicitConfig: {
         repository: true,
         model: false,
@@ -61,6 +63,50 @@ describe("Orynt CLI arguments", () => {
       },
       initialPrompt: "fix the tests",
     });
+  });
+
+  it("replaces the old debug flag with explicit activity detail levels", () => {
+    expect(() => parseCliArgs(["--debug"], "/work/orynt")).toThrow(
+      "--debug was replaced by --activity-details <off|important|full>",
+    );
+    expect(() =>
+      parseCliArgs(["--activity-details", "noisy"], "/work/orynt"),
+    ).toThrow("--activity-details must be off, important, or full");
+  });
+
+  it("accepts a validated one-launch terminal theme before the option terminator", () => {
+    expect(
+      parseCliArgs(
+        ["--theme", "monochrome", "explain", "this"],
+        "/work/orynt",
+      ),
+    ).toMatchObject({
+      themeId: "monochrome",
+      initialPrompt: "explain this",
+    });
+    expect(() =>
+      parseCliArgs(["--theme", "unknown"], "/work/orynt"),
+    ).toThrow("Valid themes: quiet-studio, monochrome");
+    expect(() =>
+      parseCliArgs(["--theme"], "/work/orynt"),
+    ).toThrow("--theme requires a value");
+    const literal = parseCliArgs(
+      ["--", "--theme", "monochrome"],
+      "/work/orynt",
+    );
+    expect(literal.initialPrompt).toBe("--theme monochrome");
+    expect(literal.themeId).toBeUndefined();
+  });
+
+  it("accepts and validates a one-launch screen mode", () => {
+    expect(
+      parseCliArgs(["--screen", "fullscreen", "explain"], "/work/orynt"),
+    ).toMatchObject({ initialPrompt: "explain" });
+    expect(() =>
+      parseCliArgs(["--screen", "unknown"], "/work/orynt"),
+    ).toThrow("Valid modes: auto, fullscreen, inline");
+    expect(() => parseCliArgs(["--screen"], "/work/orynt"))
+      .toThrow("--screen requires a value");
   });
 
   it("treats the option terminator and every following token as literal prompt text", () => {
@@ -76,12 +122,19 @@ describe("Orynt CLI arguments", () => {
   });
 
   it("parses explicit headless JSONL execution with one-run approval", () => {
-    expect(parseCliArgs(["run", "--jsonl", "--approve-once", "audit", "the", "repo"], "/work/orynt")).toMatchObject({
+    expect(parseCliArgs(["run", "--jsonl", "--approve-once", "--minimum-tier", "heavy", "audit", "the", "repo"], "/work/orynt")).toMatchObject({
       command: "run",
       jsonl: true,
       approveOnce: true,
+      minimumTier: "heavy",
       initialPrompt: "audit the repo",
     });
+  });
+
+  it("rejects an unknown minimum model tier", () => {
+    expect(() =>
+      parseCliArgs(["--minimum-tier", "tiny", "inspect"], "/work/orynt"),
+    ).toThrow("Unsupported minimum model tier");
   });
 
   it("tracks config flag provenance without treating literal prompt flags as overrides", () => {
@@ -113,31 +166,52 @@ describe("Orynt CLI arguments", () => {
     });
   });
 
-  it("parses doctor and interactive resume without treating them as goals", () => {
+  it("parses doctor, usage, and interactive resume without treating them as goals", () => {
     expect(parseCliArgs(["doctor"], "/work/orynt")).toMatchObject({ command: "doctor" });
+    expect(parseCliArgs(["setup"], "/work/orynt")).toMatchObject({ command: "setup" });
+    expect(parseCliArgs(["setup", "--check", "--json"], "/work/orynt")).toMatchObject({
+      command: "setup",
+      check: true,
+      json: true,
+    });
+    expect(parseCliArgs(
+      ["doctor", "--json", "--verbose"],
+      "/work/orynt",
+    )).toMatchObject({
+      command: "doctor",
+      json: true,
+      verbose: true,
+    });
+    expect(parseCliArgs(
+      ["usage", "--json", "--verbose"],
+      "/work/orynt",
+    )).toMatchObject({
+      command: "usage",
+      json: true,
+      verbose: true,
+    });
     expect(parseCliArgs(["--resume", "latest"], "/work/orynt")).toMatchObject({ resumeSessionId: "latest" });
   });
 
-  it("formats actionable terminal, repository, and provider diagnostics", () => {
-    expect(
-      formatDoctorReport({
-        isTTY: false,
-        color: false,
-        term: "xterm-256color",
-        repositoryPath: "/work/orynt",
-        repositoryReady: true,
-        gitReady: true,
-        provider: { ready: false, detail: "login required" },
-      }),
-    ).toEqual([
-      "Orynt doctor",
-      "  TTY: non-interactive · plain output",
-      "  TERM: xterm-256color",
-      "  Repository: ready · /work/orynt",
-      "  Git: ready",
-      "  Codex CLI: not ready · login required",
-      "  Recovery: run codex login, then orynt doctor",
-    ]);
+  it("keeps setup check flags out of unrelated and interactive commands", () => {
+    expect(() => parseCliArgs(["--check"], "/work/orynt")).toThrow(/setup/);
+    expect(() => parseCliArgs(["setup", "--json"], "/work/orynt")).toThrow(/--check/);
+    expect(() => parseCliArgs(["--verbose"], "/work/orynt")).toThrow(/doctor/);
+    expect(() => parseCliArgs(["setup", "goal"], "/work/orynt")).toThrow(/does not accept a goal/);
+    expect(() => parseCliArgs(["usage", "goal"], "/work/orynt")).toThrow(/does not accept a goal/);
+  });
+
+  it("requires explicit quota confirmation for live doctor probes", () => {
+    expect(() => parseCliArgs(["doctor", "--live"], "/work/orynt"))
+      .toThrow(/requires --confirm-live/);
+    expect(parseCliArgs(
+      ["doctor", "--live", "--confirm-live"],
+      "/work/orynt",
+    )).toMatchObject({
+      command: "doctor",
+      live: true,
+      confirmLive: true,
+    });
   });
 
   it("rejects unknown and migrated single-model options", () => {
@@ -172,6 +246,9 @@ describe("Orynt CLI arguments", () => {
               { effort: "medium" },
               { effort: "ultra" },
             ],
+            context_window: 200000,
+            effective_context_window_percent: 90,
+            auto_compact_token_limit: 170000,
           },
           {
             slug: "gpt-5.6-sol",
@@ -183,6 +260,8 @@ describe("Orynt CLI arguments", () => {
               { effort: "low" },
               { effort: "high" },
             ],
+            context_window: 272000,
+            effective_context_window_percent: 95,
           },
           {
             slug: "gpt-5.6-sol",
@@ -205,6 +284,9 @@ describe("Orynt CLI arguments", () => {
         label: "GPT-5.6-Sol",
         supportedThinkingEfforts: ["low", "high"],
         defaultThinkingEffort: "low",
+        contextWindowTokens: 272000,
+        effectiveContextWindowTokens: 258400,
+        providerAutoCompactAtTokens: 244800,
       },
       {
         id: "gpt-5.6-terra",
@@ -212,6 +294,9 @@ describe("Orynt CLI arguments", () => {
         description: "Balanced agentic coding model.",
         supportedThinkingEfforts: ["low", "medium"],
         defaultThinkingEffort: "medium",
+        contextWindowTokens: 200000,
+        effectiveContextWindowTokens: 180000,
+        providerAutoCompactAtTokens: 170000,
       },
     ]);
   });

@@ -1,20 +1,42 @@
 /// <reference types="node" />
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createMockRunState, type MockRunState, type RunEvent } from "@codepawl/shared";
+import { beforeEach, describe, expect, it, vi } from "bun:test";
+import type { ReactElement } from "react";
+import {
+  createMockRunState,
+  type MockRunState,
+  type RunEvent,
+} from "@codepawl/shared";
 
 import App, { OryntDropdown } from "./App";
-import { getLandingUrl } from "./landingUrl";
 import { orynt } from "./oryntClient";
 import type { CodexConnectionPreflightResult, ModelCatalogResult, ModelConnectionReference, PersistedRunRecord, SettingsSnapshot } from "./oryntClient";
 
-const defaultLandingUrl = "http://127.0.0.1:5173/";
 const privateBetaOnboardingStorageKey = "orynt:private-beta-onboarding:v1";
 const legacyPrivateBetaOnboardingStorageKey = "codepawl:private-beta-onboarding:v1";
 const messageBlockMetaStorageKey = "orynt:message-block-meta-visible:v1";
 const legacyMessageBlockMetaStorageKey = "codepawl:message-block-meta-visible:v1";
 const modelsDevProviderCatalogStoragePrefix = "orynt:models-dev-provider-catalog:v1:";
+
+async function flushApp(): Promise<void> {
+  await act(async () => {
+    for (let pass = 0; pass < 8; pass += 1) {
+      await Bun.sleep(0);
+    }
+  });
+}
+
+async function renderApp(element: ReactElement = <App />) {
+  let result: ReturnType<typeof render> | undefined;
+  await act(async () => {
+    result = render(element);
+    for (let pass = 0; pass < 8; pass += 1) {
+      await Bun.sleep(0);
+    }
+  });
+  return result!;
+}
 
 function withPreferenceSettings(
   settings: Omit<SettingsSnapshot, "thinkingEffort" | "operatorProfile" | "uiPreferences" | "voicePreferences" | "modelConnection"> &
@@ -176,14 +198,8 @@ function createEmptyMockRunState(): MockRunState {
 }
 
 function openSettings() {
-  const accountMenu = openAccountMenu();
-  fireEvent.click(within(accountMenu).getByRole("menuitem", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open local settings" }));
   return screen.getByRole("dialog", { name: "Settings" });
-}
-
-function openAccountMenu() {
-  fireEvent.click(screen.getByRole("button", { name: "Open account menu" }));
-  return screen.getByRole("menu", { name: "Account menu" });
 }
 
 function dismissPrivateBetaOnboarding() {
@@ -259,13 +275,15 @@ function createDeferred<T>() {
 describe("Orynt desktop shell", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.unstubAllEnvs();
     mockMobileViewport(false);
     installLocalStorageMock();
     window.localStorage.clear();
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network disabled in tests.")));
-    Object.assign(navigator, {
-      clipboard: {
+    globalThis.fetch = vi.fn().mockRejectedValue(
+      new Error("Network disabled in tests."),
+    ) as unknown as typeof fetch;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
         writeText: vi.fn().mockResolvedValue(undefined),
       },
     });
@@ -276,8 +294,8 @@ describe("Orynt desktop shell", () => {
     vi.spyOn(orynt, "preflightModelConnection").mockResolvedValue(readyModelSettings().modelConnection!.lastPreflight!);
   });
 
-  it("starts the first supervised task blank with setup in a popup and keeps repository scope as a beta limitation", () => {
-    render(<App />);
+  it("starts the first supervised task blank with setup in a popup and keeps repository scope as a beta limitation", async () => {
+    await renderApp(<App />);
 
     const thread = screen.getByRole("region", { name: "Task conversation" });
     expect(within(thread).getByRole("heading", { name: "New task" })).toBeInTheDocument();
@@ -333,7 +351,7 @@ describe("Orynt desktop shell", () => {
     }));
     const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(updatedSettings);
 
-    render(<App />);
+    await renderApp(<App />);
 
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     expect(within(setupDialog).queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
@@ -369,7 +387,7 @@ describe("Orynt desktop shell", () => {
     }));
     const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(updatedSettings);
 
-    render(<App />);
+    await renderApp(<App />);
 
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     const setupRepositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
@@ -400,7 +418,7 @@ describe("Orynt desktop shell", () => {
     }));
     vi.spyOn(orynt, "updateSettings").mockRejectedValue(new Error("Settings store is unavailable."));
 
-    render(<App />);
+    await renderApp(<App />);
 
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     fireEvent.change(within(setupDialog).getByRole("textbox", { name: "Default local directory" }), {
@@ -451,7 +469,7 @@ describe("Orynt desktop shell", () => {
       }),
     );
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
 
@@ -466,7 +484,12 @@ describe("Orynt desktop shell", () => {
     expect(updateSettingsSpy).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(setupDialog).getByRole("button", { name: "Complete setup" }));
-    expect(updateSettingsSpy).toHaveBeenCalledWith({ defaultRepositoryPath: "/home/operator/browsed-repo" });
+    await waitFor(() =>
+      expect(updateSettingsSpy).toHaveBeenCalledWith({
+        defaultRepositoryPath: "/home/operator/browsed-repo",
+      }),
+    );
+    await flushApp();
   });
 
   it("shows a cancellation message when native directory browsing is cancelled", async () => {
@@ -488,7 +511,7 @@ describe("Orynt desktop shell", () => {
     vi.spyOn(orynt, "browseRepositoryPath").mockResolvedValue({ status: "cancelled" });
     const detectRepositorySpy = vi.spyOn(orynt, "detectCurrentRepositoryPath").mockResolvedValue("/home/operator/detected-repo");
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
 
@@ -522,7 +545,7 @@ describe("Orynt desktop shell", () => {
       message: "Native folder picker is only available in the Orynt desktop app. Open the Tauri window or paste the local path manually.",
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     const repositoryPath = within(setupDialog).getByRole("textbox", { name: "Default local directory" });
 
@@ -544,7 +567,7 @@ describe("Orynt desktop shell", () => {
       path: "/new/path",
     });
 
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath("/current/path");
 
     const composer = screen.getByRole("form", { name: "Task composer" });
@@ -615,13 +638,14 @@ describe("Orynt desktop shell", () => {
       checkedModelId: "gpt-5.5-turbo",
     });
 
-    render(<App />);
+    await renderApp(<App />);
 
     const composer = screen.getByRole("form", { name: "Task composer" });
     const modelButton = within(composer).getByRole("button", { name: /Change model/ });
     const effortButton = within(composer).getByRole("button", { name: /Change thinking effort/ });
-    await waitFor(() => expect(modelButton).toHaveTextContent("GPT-5.5"));
-    await waitFor(() => expect(effortButton).toHaveTextContent("Medium"));
+    await flushApp();
+    expect(modelButton).toHaveTextContent("GPT-5.5");
+    expect(effortButton).toHaveTextContent("Medium");
     expect(modelButton.querySelector("small")).toBeNull();
     expect(effortButton.querySelector("small")).toBeNull();
 
@@ -643,24 +667,24 @@ describe("Orynt desktop shell", () => {
     expect(selectedModelOption.querySelector("strong, small")).toBeNull();
     expect(turboModelOption.querySelector("strong, small")).toBeNull();
     fireEvent.keyDown(document, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("menu", { name: "Choose model" })).not.toBeInTheDocument());
+    await flushApp();
+    expect(screen.queryByRole("menu", { name: "Choose model" })).not.toBeInTheDocument();
     expect(modelButton).toHaveFocus();
     fireEvent.click(modelButton);
     modelMenu = await screen.findByRole("menu", { name: "Choose model" });
     fireEvent.click(within(modelMenu).getByRole("menuitemradio", { name: "GPT-5.5 Turbo" }));
-    await waitFor(() =>
-      expect(saveModelConnectionSpy).toHaveBeenCalledWith({
-        providerId: "codex-cli",
-        modelId: "gpt-5.5-turbo",
-        modelLabel: "GPT-5.5 Turbo",
-        authMethod: "codexCliSession",
-        envKey: null,
-        thinkingEffort: null,
-        supportedThinkingEfforts: null,
-        defaultThinkingEffort: null,
-      }),
-    );
-    await waitFor(() => expect(screen.queryByRole("menu", { name: "Choose model" })).not.toBeInTheDocument());
+    await flushApp();
+    expect(saveModelConnectionSpy).toHaveBeenCalledWith({
+      providerId: "codex-cli",
+      modelId: "gpt-5.5-turbo",
+      modelLabel: "GPT-5.5 Turbo",
+      authMethod: "codexCliSession",
+      envKey: null,
+      thinkingEffort: null,
+      supportedThinkingEfforts: null,
+      defaultThinkingEffort: null,
+    });
+    expect(screen.queryByRole("menu", { name: "Choose model" })).not.toBeInTheDocument();
 
     fireEvent.click(effortButton);
     const effortMenu = await screen.findByRole("menu", { name: "Change thinking effort" });
@@ -680,7 +704,8 @@ describe("Orynt desktop shell", () => {
     fireEvent.click(within(effortMenu).getByRole("menuitemradio", { name: "High" }));
 
     expect(updateSettingsSpy).toHaveBeenCalledWith({ thinkingEffort: "high" });
-    await waitFor(() => expect(screen.queryByRole("menu", { name: "Change thinking effort" })).not.toBeInTheDocument());
+    await flushApp();
+    expect(screen.queryByRole("menu", { name: "Change thinking effort" })).not.toBeInTheDocument();
   });
 
   it("retains the persisted model when a live catalog is empty", async () => {
@@ -696,7 +721,7 @@ describe("Orynt desktop shell", () => {
       models: [],
     });
 
-    render(<App />);
+    await renderApp(<App />);
 
     const composer = screen.getByRole("form", { name: "Task composer" });
     const modelButton = within(composer).getByRole("button", { name: /Change model/ });
@@ -747,7 +772,7 @@ describe("Orynt desktop shell", () => {
       checkedModelId: "gpt-5.5-deep",
     });
 
-    render(<App />);
+    await renderApp(<App />);
 
     const composer = screen.getByRole("form", { name: "Task composer" });
     const effortButton = within(composer).getByRole("button", { name: /Change thinking effort/ });
@@ -785,7 +810,7 @@ describe("Orynt desktop shell", () => {
   });
 
   it("renders dropdown option titles separately from descriptions", async () => {
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     fireEvent.click(within(setupDialog).getByRole("combobox", { name: "Permission mode" }));
@@ -803,7 +828,7 @@ describe("Orynt desktop shell", () => {
     expect(selectedOptionStyles).not.toContain("background: var(--message-bubble-user)");
   });
 
-  it("applies custom dropdown root classes and density", () => {
+  it("applies custom dropdown root classes and density", async () => {
     render(
       <OryntDropdown
         ariaLabel="Custom dropdown"
@@ -824,7 +849,7 @@ describe("Orynt desktop shell", () => {
     );
   });
 
-  it("keeps disabled dropdowns closed without selecting", () => {
+  it("keeps disabled dropdowns closed without selecting", async () => {
     const onChange = vi.fn();
     render(
       <OryntDropdown
@@ -848,7 +873,7 @@ describe("Orynt desktop shell", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("uses index-based option IDs for raw values", () => {
+  it("uses index-based option IDs for raw values", async () => {
     render(
       <OryntDropdown
         ariaLabel="Safe ID dropdown"
@@ -871,7 +896,7 @@ describe("Orynt desktop shell", () => {
     expect(screen.getByRole("option", { name: "Second model" })).toHaveAttribute("id", "safe-id-dropdown-option-1");
   });
 
-  it("closes dropdowns on Escape while retaining trigger focus", () => {
+  it("closes dropdowns on Escape while retaining trigger focus", async () => {
     render(
       <OryntDropdown
         ariaLabel="Escape dropdown"
@@ -891,7 +916,7 @@ describe("Orynt desktop shell", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("does not select from an empty dropdown", () => {
+  it("does not select from an empty dropdown", async () => {
     const onChange = vi.fn();
     render(
       <OryntDropdown
@@ -913,37 +938,53 @@ describe("Orynt desktop shell", () => {
   });
 
   it("places setup dropdowns away from clipped viewport space and updates placement on scroll", async () => {
-    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function dropdownScrollHeight(this: HTMLElement) {
-      return this.classList.contains("orynt-dropdown-menu") ? 180 : 0;
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("orynt-dropdown-menu") ? 180 : 0;
+      },
     });
+    try {
+      await renderApp(<App />);
+      const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
+      const dropdown = within(setupDialog).getByRole("combobox", { name: "Permission mode" });
+      let triggerTop = 710;
+      let triggerBottom = 744;
+      vi.spyOn(dropdown, "getBoundingClientRect").mockImplementation(() => ({
+        x: 0,
+        y: triggerTop,
+        width: 260,
+        height: 34,
+        top: triggerTop,
+        right: 260,
+        bottom: triggerBottom,
+        left: 0,
+        toJSON: () => ({}),
+      }) as DOMRect);
 
-    render(<App />);
-    const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
-    const dropdown = within(setupDialog).getByRole("combobox", { name: "Permission mode" });
-    let triggerTop = 710;
-    let triggerBottom = 744;
-    vi.spyOn(dropdown, "getBoundingClientRect").mockImplementation(() => ({
-      x: 0,
-      y: triggerTop,
-      width: 260,
-      height: 34,
-      top: triggerTop,
-      right: 260,
-      bottom: triggerBottom,
-      left: 0,
-      toJSON: () => ({}),
-    }) as DOMRect);
+      fireEvent.click(dropdown);
+      const listbox = within(setupDialog).getByRole("listbox", { name: "Permission mode options" });
+      await waitFor(() => expect(listbox).toHaveClass("orynt-dropdown-menu-dropup"));
 
-    fireEvent.click(dropdown);
-    const listbox = within(setupDialog).getByRole("listbox", { name: "Permission mode options" });
-    await waitFor(() => expect(listbox).toHaveClass("orynt-dropdown-menu-dropup"));
+      triggerTop = 20;
+      triggerBottom = 54;
+      fireEvent.scroll(window);
 
-    triggerTop = 20;
-    triggerBottom = 54;
-    fireEvent.scroll(window);
-
-    await waitFor(() => expect(listbox).toHaveClass("orynt-dropdown-menu-dropdown"));
-    expect(listbox.style.maxHeight).toBe("180px");
+      await waitFor(() => expect(listbox).toHaveClass("orynt-dropdown-menu-dropdown"));
+      expect(listbox.style.maxHeight).toBe("180px");
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          originalScrollHeight,
+        );
+      }
+    }
   });
 
   it("reports native directory browsing unavailable outside the Tauri runtime", async () => {
@@ -955,7 +996,7 @@ describe("Orynt desktop shell", () => {
   });
 
   it("does not mock provider connections outside the Tauri runtime", async () => {
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
@@ -970,8 +1011,8 @@ describe("Orynt desktop shell", () => {
     expect(within(setupDialog).queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
   });
 
-  it("keeps each setup checklist item next to its related controls in one readable flow", () => {
-    render(<App />);
+  it("keeps each setup checklist item next to its related controls in one readable flow", async () => {
+    await renderApp(<App />);
 
     const setupDialog = screen.getByRole("dialog", { name: "Set up Orynt" });
     const setupFlow = within(setupDialog).getByRole("list", { name: "Setup flow" });
@@ -1047,7 +1088,7 @@ describe("Orynt desktop shell", () => {
       ],
     });
 
-    render(<App />);
+    await renderApp(<App />);
 
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     expect(within(setupDialog).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
@@ -1071,6 +1112,7 @@ describe("Orynt desktop shell", () => {
     expect(updateSettingsSpy).toHaveBeenCalledWith({ thinkingEffort: "xhigh" });
 
     selectSetupDropdownOption(setupDialog, "Model", "Legacy text model");
+    await flushApp();
     expect(within(setupDialog).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
   });
 
@@ -1106,7 +1148,7 @@ describe("Orynt desktop shell", () => {
       }),
     );
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
 
@@ -1170,7 +1212,7 @@ describe("Orynt desktop shell", () => {
       ],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     const providerSelect = within(setupDialog).getByRole("combobox", { name: "Provider" });
@@ -1228,7 +1270,7 @@ describe("Orynt desktop shell", () => {
       models: [{ id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" }],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
 
@@ -1237,13 +1279,13 @@ describe("Orynt desktop shell", () => {
     expect(within(setupDialog).getByRole("button", { name: "Skip auto check" })).toBeInTheDocument();
     expect(within(setupDialog).queryByRole("button", { name: "Open Codex login" })).not.toBeInTheDocument();
     expect(within(setupDialog).queryByRole("button", { name: "Use device code" })).not.toBeInTheDocument();
-    expect(setupDialog.querySelector(".loading-spinner")).toBeInTheDocument();
+    expect(setupDialog.querySelector(".probability-loader")).toBeInTheDocument();
 
     fireEvent.click(within(setupDialog).getByRole("button", { name: "Skip auto check" }));
     expect(within(setupDialog).getByRole("button", { name: "Open Codex login" })).toBeInTheDocument();
     expect(within(setupDialog).getByRole("button", { name: "Use device code" })).toBeInTheDocument();
     expect(setupDialog).toHaveTextContent(/Auto-check skipped/i);
-    expect(setupDialog.querySelector(".loading-spinner")).not.toBeInTheDocument();
+    expect(setupDialog.querySelector(".probability-loader")).not.toBeInTheDocument();
 
     await act(async () => {
       preflight.resolve({
@@ -1323,7 +1365,7 @@ describe("Orynt desktop shell", () => {
       warnings: [],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
@@ -1380,7 +1422,7 @@ describe("Orynt desktop shell", () => {
       models: [{ id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" }],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
 
@@ -1430,7 +1472,7 @@ describe("Orynt desktop shell", () => {
       models: [{ id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" }],
     });
 
-    render(<App />);
+    await renderApp(<App />);
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Set up Orynt" })).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Open setup" }));
@@ -1474,21 +1516,24 @@ describe("Orynt desktop shell", () => {
     const modelCatalog = createDeferred<ModelCatalogResult>();
     vi.spyOn(orynt, "listProviderModels").mockReturnValue(modelCatalog.promise);
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
 
     expect(await within(setupDialog).findByText("Fetching live models from the selected provider.")).toBeInTheDocument();
-    expect(setupDialog.querySelector(".loading-spinner")).not.toBeNull();
+    expect(setupDialog.querySelector(".probability-loader")).not.toBeNull();
     expect(setupDialog.querySelectorAll(".loading-skeleton-row")).toHaveLength(2);
     expect(within(setupDialog).queryByRole("button", { name: "Save provider setup" })).not.toBeInTheDocument();
 
-    modelCatalog.resolve({
-      providerId: "openai-api",
-      fetchedAt: "2026-07-05T00:00:00.000Z",
-      warnings: [],
-      models: [{ id: "gpt-5.5", label: "GPT-5.5", ownedBy: "openai", source: "openai-api" }],
+    await act(async () => {
+      modelCatalog.resolve({
+        providerId: "openai-api",
+        fetchedAt: "2026-07-05T00:00:00.000Z",
+        warnings: [],
+        models: [{ id: "gpt-5.5", label: "GPT-5.5", ownedBy: "openai", source: "openai-api" }],
+      });
+      await modelCatalog.promise;
     });
     expect(await within(setupDialog).findByRole("combobox", { name: "Model" })).toHaveTextContent("Choose model");
     expect(within(setupDialog).queryByRole("button", { name: "Save provider setup" })).not.toBeInTheDocument();
@@ -1528,10 +1573,11 @@ describe("Orynt desktop shell", () => {
       models: [{ id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" }],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     expect(pointerSelectSetupDropdownOption(setupDialog, "Provider", "Codex CLI")).toHaveTextContent("Codex CLI");
+    await flushApp();
     expect(within(setupDialog).queryByRole("listbox", { name: "Provider options" })).not.toBeInTheDocument();
 
     const modelDropdown = await within(setupDialog).findByRole("combobox", { name: "Model" });
@@ -1544,10 +1590,11 @@ describe("Orynt desktop shell", () => {
   it("closes setup dropdowns after pointer-selecting the already selected option", async () => {
     vi.spyOn(orynt, "getSettings").mockResolvedValue(readyModelSettings({ welcomeCompleted: false }));
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     expect(pointerSelectSetupDropdownOption(setupDialog, "Provider", "Codex CLI")).toHaveTextContent("Codex CLI");
+    await flushApp();
     expect(within(setupDialog).queryByRole("listbox", { name: "Provider options" })).not.toBeInTheDocument();
   });
 
@@ -1570,7 +1617,7 @@ describe("Orynt desktop shell", () => {
       models: [{ id: "gpt-5.5", label: "GPT-5.5", source: "codex-cli" }],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     expect(await within(setupDialog).findByRole("combobox", { name: "Provider" })).toHaveTextContent("Codex CLI");
@@ -1618,7 +1665,7 @@ describe("Orynt desktop shell", () => {
       ],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     const providerDropdown = within(setupDialog).getByRole("combobox", { name: "Provider" });
 
@@ -1696,7 +1743,7 @@ describe("Orynt desktop shell", () => {
       warnings: [],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     const providerSelect = await within(setupDialog).findByRole("combobox", { name: "Provider" });
@@ -1774,7 +1821,7 @@ describe("Orynt desktop shell", () => {
       ],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     const providerSelect = within(setupDialog).getByRole("combobox", { name: "Provider" });
@@ -1894,7 +1941,7 @@ describe("Orynt desktop shell", () => {
       models: [{ id: "gpt-5.5", label: "GPT-5.5", ownedBy: "openai", source: "openai-api" }],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
@@ -1960,7 +2007,7 @@ describe("Orynt desktop shell", () => {
       warnings: [],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
     await within(setupDialog).findByRole("combobox", { name: "Model" });
@@ -1972,7 +2019,7 @@ describe("Orynt desktop shell", () => {
     expect(saveButton).toBeDisabled();
     expect(saveButton).toHaveAttribute("aria-busy", "true");
     expect(saveButton).toHaveTextContent("Saving");
-    expect(saveButton.querySelector(".loading-spinner")).not.toBeNull();
+    expect(saveButton.querySelector(".probability-loader")).not.toBeNull();
   });
 
   it("ignores stale live model results after the selected provider changes", async () => {
@@ -2020,7 +2067,7 @@ describe("Orynt desktop shell", () => {
         }),
     );
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
 
     selectSetupDropdownOption(setupDialog, "Provider", "OpenAI API");
@@ -2042,19 +2089,15 @@ describe("Orynt desktop shell", () => {
     });
   });
 
-  it("renders the repository cockpit with sidebar shell actions and core control primitives", () => {
-    render(<App seedDemoThread />);
+  it("renders the repository cockpit with sidebar shell actions and core control primitives", async () => {
+    await renderApp(<App seedDemoThread />);
 
     const sidebar = screen.getByRole("complementary");
     const brandButton = within(sidebar).getByRole("button", { name: "Open Cockpit" });
-    const brandLogo = brandButton.querySelector(".workspace-brand-logo");
-    const wordmark = brandButton.querySelector(".workspace-brand-wordmark");
-    expect(brandLogo?.tagName.toLowerCase()).toBe("img");
-    expect(brandLogo).toHaveAttribute("alt", "");
-    expect(brandLogo).toHaveAttribute("aria-hidden", "true");
-    expect(brandLogo).toHaveAttribute("src", expect.stringContaining("lightbulb-mark-on-dark"));
-    expect(wordmark).toHaveTextContent("Orynt");
-    expect(wordmark?.children).toHaveLength(0);
+    const brandLockup = brandButton.querySelector(".workspace-brand-lockup");
+    expect(brandLockup?.tagName.toLowerCase()).toBe("img");
+    expect(brandLockup).toHaveAttribute("alt", "Orynt");
+    expect(brandLockup).toHaveAttribute("src", expect.stringContaining("orynt-lockup.svg"));
     const collapsePanelButton = within(sidebar).getByRole("button", { name: "Collapse side panel" });
     expect(collapsePanelButton).toHaveAttribute("aria-controls", "workspace-panel");
     expect(collapsePanelButton).toHaveAttribute("aria-expanded", "true");
@@ -2079,26 +2122,11 @@ describe("Orynt desktop shell", () => {
     expect(screen.queryByRole("link", { name: "Permissions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Settings sections" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open dashboard" })).not.toBeInTheDocument();
-    const accountToggle = within(sidebar).getByRole("button", { name: "Open account menu" });
-    expect(accountToggle).toHaveAttribute("title", "Account menu");
-    expect(accountToggle).toHaveAttribute("aria-controls", "account-menu");
-    expect(accountToggle).toHaveAttribute("aria-expanded", "false");
-    expect(within(sidebar).getByText("Operator")).toBeInTheDocument();
-    expect(within(sidebar).getByText("Free plan")).toBeInTheDocument();
+    const settingsButton = within(sidebar).getByRole("button", { name: "Open local settings" });
+    expect(settingsButton).toHaveAttribute("title", "Local settings");
+    expect(settingsButton).toHaveTextContent("Local settings");
     expect(within(sidebar).queryByRole("button", { name: "Open dashboard" })).not.toBeInTheDocument();
-    expect(within(sidebar).queryByRole("button", { name: "Open settings" })).not.toBeInTheDocument();
-    fireEvent.click(accountToggle);
-    expect(accountToggle).toHaveAttribute("aria-expanded", "true");
-    const accountMenu = within(sidebar).getByRole("menu", { name: "Account menu" });
-    expect(within(accountMenu).getByText("operator@orynt.local")).toBeInTheDocument();
-    expect(within(accountMenu).getByRole("menuitem", { name: "Settings" })).toBeInTheDocument();
-    expect(within(accountMenu).getByRole("menuitem", { name: "Language" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(accountMenu).getByRole("menuitem", { name: "Get help" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(accountMenu).getByRole("menuitem", { name: "Upgrade plan" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(accountMenu).getByRole("menuitem", { name: "Get apps and extensions" })).not.toHaveAttribute("aria-disabled");
-    expect(within(accountMenu).getByRole("menuitem", { name: "Gift Orynt" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(accountMenu).getByRole("menuitem", { name: "Learn more" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(accountMenu).getByRole("menuitem", { name: "Log out" })).toHaveAttribute("href", defaultLandingUrl);
+    expect(within(sidebar).queryByRole("menu", { name: /account/i })).not.toBeInTheDocument();
 
     expect(screen.queryByRole("navigation", { name: "Purpose spaces" })).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Channel space" })).not.toBeInTheDocument();
@@ -2226,8 +2254,7 @@ describe("Orynt desktop shell", () => {
     expect(screen.queryByRole("button", { name: "Open run info" })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(accountMenu).getByRole("menuitem", { name: "Settings" }));
-    expect(accountToggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(settingsButton);
     const settingsDialog = screen.getByRole("dialog", { name: "Settings" });
     expect(settingsDialog).toHaveAttribute("aria-modal", "true");
     expect(screen.getByLabelText("Modal backdrop")).toBeInTheDocument();
@@ -2246,21 +2273,18 @@ describe("Orynt desktop shell", () => {
     const settings = screen.getByRole("dialog", { name: "Settings" });
     expect(settings.querySelector(".eyebrow")).toBeNull();
     const settingsSections = within(settings).getByRole("navigation", { name: "Settings sections" });
-    fireEvent.click(within(settingsSections).getByRole("button", { name: "Billing" }));
-    expect(within(settings).getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
-    expect(within(settings).getByRole("table", { name: "Invoices" })).toBeInTheDocument();
-    fireEvent.click(within(settingsSections).getByRole("button", { name: "Account" }));
-    expect(within(settings).getByRole("button", { name: "Log out" })).toBeInTheDocument();
-    expect(within(settings).getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
+    expect(within(settingsSections).queryByRole("button", { name: "Account" })).not.toBeInTheDocument();
+    expect(within(settingsSections).queryByRole("button", { name: "Billing" })).not.toBeInTheDocument();
+    expect(within(settingsSections).queryByRole("button", { name: "Intelligence" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss settings" }));
     expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Modal backdrop")).not.toBeInTheDocument();
   });
 
-  it("uses a closed mobile thread drawer that opens, closes, and yields the viewport to chat", () => {
+  it("uses a closed mobile thread drawer that opens, closes, and yields the viewport to chat", async () => {
     mockMobileViewport();
-    render(<App />);
+    await renderApp(<App />);
 
     const shell = screen.getByRole("main");
     const sidebar = screen.getByRole("complementary");
@@ -2285,8 +2309,8 @@ describe("Orynt desktop shell", () => {
     expect(shell).toHaveClass("app-shell-mobile-workspace-closed");
   });
 
-  it("keeps empty-thread setup content separate from the composer so narrow screens can scroll the guide", () => {
-    render(<App />);
+  it("keeps empty-thread setup content separate from the composer so narrow screens can scroll the guide", async () => {
+    await renderApp(<App />);
     const styles = readFileSync("src/styles.css", "utf8");
 
     const thread = screen.getByRole("region", { name: "Task conversation" });
@@ -2304,17 +2328,20 @@ describe("Orynt desktop shell", () => {
     expect(styles).not.toContain("width: min(100%, 720px);");
   });
 
-  it("defines loading animation and reduced-motion fallbacks", () => {
+  it("defines loading animation and reduced-motion fallbacks", async () => {
     const styles = readFileSync("src/styles.css", "utf8");
 
-    expect(styles).toContain("@keyframes orynt-spin");
-    expect(styles).toContain(".loading-spinner");
+    expect(styles).toContain("@keyframes orynt-probability-loader-frame");
+    expect(styles).toContain(".probability-loader-frame");
+    expect(styles).toContain("1000ms linear infinite");
+    expect(styles).not.toContain(".loading-spinner");
+    expect(styles).not.toContain("@keyframes orynt-spin");
     expect(styles).toContain(".loading-skeleton-row");
-    expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.loading-spinner[\s\S]*?animation: none;/);
+    expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.probability-loader-frame[\s\S]*?animation: none;[\s\S]*?\.probability-loader-frame:first-child[\s\S]*?opacity: 1;/);
   });
 
-  it("renders the cockpit chat surface directly and keeps settings action in the sidebar", () => {
-    render(<App />);
+  it("renders the cockpit chat surface directly and keeps settings action in the sidebar", async () => {
+    await renderApp(<App />);
     const styles = readFileSync("src/styles.css", "utf8");
     const appSource = readFileSync("src/App.tsx", "utf8");
     const packageManifest = readFileSync("package.json", "utf8");
@@ -2404,10 +2431,7 @@ describe("Orynt desktop shell", () => {
     const workspaceFooterStyles = styles.match(/\n\.workspace-footer \{[\s\S]*?\}/)?.[0] ?? "";
     expect(workspaceFooterStyles).not.toContain("margin-top:");
     expect(workspaceFooterStyles).not.toMatch(/padding(?:-bottom)?:/);
-    expect(styles).toContain(".workspace-profile");
-    expect(styles).toContain(".workspace-account");
-    expect(styles).toContain(".workspace-account-trigger");
-    expect(styles).toContain(".account-menu");
+    expect(styles).toContain(".workspace-settings-trigger");
     expect(styles).toContain(".workspace-row:hover");
     expect(styles).toContain(".workspace-row:focus-within");
     expect(styles).toContain(".workspace-row-active");
@@ -2488,29 +2512,19 @@ describe("Orynt desktop shell", () => {
     expect(styles).toContain(".settings-search");
     expect(styles).toContain(".settings-nav-button");
     const settingsNavButtonStyles = styles.match(/\.settings-nav-button \{[\s\S]*?\}/)?.[0] ?? "";
-    const workspaceAccountTriggerStyles = styles.match(/\.workspace-account-trigger \{[\s\S]*?\}/)?.[0] ?? "";
-    const accountMenuStyles = styles.match(/\.account-menu \{[\s\S]*?\}/)?.[0] ?? "";
-    const accountMenuItemStyles = styles.match(/\.account-menu-item \{[\s\S]*?\}/)?.[0] ?? "";
-    const accountMenuDisabledItemStyles = styles.match(/\.account-menu-item\[aria-disabled="true"\] \{[\s\S]*?\}/)?.[0] ?? "";
+    const workspaceSettingsTriggerStyles = styles.match(/\.workspace-settings-trigger \{[\s\S]*?\}/)?.[0] ?? "";
     expect(styles).toContain(".settings-content");
     expect(styles).toContain(".settings-row");
-    expect(workspaceAccountTriggerStyles).toContain("grid-template-columns: 28px minmax(0, 1fr) 18px;");
-    expect(workspaceAccountTriggerStyles).toContain("min-height: 42px;");
-    expect(workspaceAccountTriggerStyles).toContain("background: transparent;");
-    expect(accountMenuStyles).toContain("position: absolute;");
-    expect(accountMenuStyles).toContain("bottom: calc(100% + var(--space-control));");
-    expect(accountMenuStyles).toContain("border-radius: var(--dropdown-panel-radius);");
-    expect(accountMenuItemStyles).toContain("grid-template-columns: 18px minmax(0, 1fr) auto;");
-    expect(accountMenuItemStyles).toContain("min-height: var(--dropdown-item-height);");
+    expect(workspaceSettingsTriggerStyles).toContain("display: flex;");
+    expect(workspaceSettingsTriggerStyles).toContain("min-height: 42px;");
+    expect(workspaceSettingsTriggerStyles).toContain("background: transparent;");
     expect(settingsNavButtonStyles).toContain("padding: 0 10px;");
     expect(styles).not.toContain(".workspace-panel-action");
     expect(styles).not.toContain(".workspace-panel-action-label");
-    expect(accountMenuDisabledItemStyles).not.toContain("pointer-events: none;");
     expect(styles).toContain("--workspace-brand-size: 20px;");
-    expect(styles).toContain(".workspace-brand-wordmark");
-    expect(styles).toContain(".workspace-brand-logo");
-    const brandWordmarkStyles = styles.match(/\.workspace-brand-wordmark \{[\s\S]*?\}/)?.[0] ?? "";
-    expect(brandWordmarkStyles).toContain(`font-family: var(--${"font-title"});`);
+    expect(styles).toContain(".workspace-brand-lockup");
+    const brandLockupStyles = styles.match(/\.workspace-brand-lockup \{[\s\S]*?\}/)?.[0] ?? "";
+    expect(brandLockupStyles).toContain("width: 112px;");
     const indexHtml = readFileSync("index.html", "utf8");
     expect(indexHtml).toContain('href="/favicon.svg"');
     expect(indexHtml).toContain('href="/favicon-light.svg"');
@@ -2676,11 +2690,12 @@ describe("Orynt desktop shell", () => {
     expect(styles).not.toContain(`../../../assets/fonts/${"La"}to/`);
     expect(styles).not.toContain(`../../../assets/fonts/${"Nu"}nito/`);
     expect(styles).toContain("font-synthesis: none;");
-    expect(styles).toContain("--thread-surface: #232323;");
-    expect(styles).toContain("--message-bubble: #2a2a2a;");
-    expect(styles).toContain("--message-bubble-agent: #303030;");
-    expect(styles).toContain("--message-bubble-user: #243044;");
-    expect(styles).toContain("--approval-surface: #303030;");
+    expect(styles).toContain("--thread-surface: #2d2722;");
+    expect(styles).toContain("--message-bubble: #352e28;");
+    expect(styles).toContain("--message-bubble-agent: #3b332c;");
+    expect(styles).toContain("--message-bubble-user: #303947;");
+    expect(styles).toContain("--approval-surface: #3b332c;");
+    expect(styles).toContain('.app-shell[data-appearance="light"]');
     expect(styles).toContain(".thread");
     expect(appSource).toContain("function ChatBubble");
     expect(appSource).toContain("function MessageBlock");
@@ -3155,7 +3170,7 @@ describe("Orynt desktop shell", () => {
     expect(styles).not.toContain("minmax(280px, 360px)");
   });
 
-  it("globalizes the chat composer focus treatment across text inputs", () => {
+  it("globalizes the chat composer focus treatment across text inputs", async () => {
     const styles = readFileSync("src/styles.css", "utf8");
     const appSource = readFileSync("src/App.tsx", "utf8");
 
@@ -3182,8 +3197,8 @@ describe("Orynt desktop shell", () => {
     expect(appSource).toContain('ariaLabel="Permission mode"');
   });
 
-  it("keeps the launch thread unsaved until the operator writes a prompt", () => {
-    render(<App />);
+  it("keeps the launch thread unsaved until the operator writes a prompt", async () => {
+    await renderApp(<App />);
 
     const spaces = screen.getByRole("navigation", { name: "Tasks" });
     expect(within(spaces).getAllByRole("button", { pressed: true })).toHaveLength(1);
@@ -3199,8 +3214,8 @@ describe("Orynt desktop shell", () => {
     expect(window.localStorage.getItem("orynt:thread-state:v1")).toBeNull();
   });
 
-  it("edits the active thread header title and description inline", () => {
-    render(<App />);
+  it("edits the active thread header title and description inline", async () => {
+    await renderApp(<App />);
 
     const thread = screen.getByRole("region", { name: "Task conversation" });
     fireEvent.click(within(thread).getByRole("button", { name: "Edit task name and description" }));
@@ -3248,7 +3263,7 @@ describe("Orynt desktop shell", () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const spaces = screen.getByRole("navigation", { name: "Tasks" });
@@ -3321,7 +3336,7 @@ describe("Orynt desktop shell", () => {
   it("persists real threads after the first prompt and restores them on reload", async () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
-    const firstRender = render(<App />);
+    const firstRender = await renderApp(<App />);
     await fillRepositoryPath();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), { target: { value: "Persist this thread" } });
@@ -3330,7 +3345,7 @@ describe("Orynt desktop shell", () => {
     await waitFor(() => expect(window.localStorage.getItem("orynt:thread-state:v1")).toContain("Persist this thread"));
 
     firstRender.unmount();
-    render(<App />);
+    await renderApp(<App />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Persist this thread" })).toBeInTheDocument();
     expect(screen.getAllByText("Persist this thread").length).toBeGreaterThan(0);
@@ -3342,7 +3357,7 @@ describe("Orynt desktop shell", () => {
     mockReadyModelSettings();
     const createRunSpy = vi.spyOn(orynt, "createRun");
     dismissPrivateBetaOnboarding();
-    render(<App initialRunState={runState} />);
+    await renderApp(<App initialRunState={runState} />);
     await fillRepositoryPath();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
@@ -3370,7 +3385,7 @@ describe("Orynt desktop shell", () => {
       value: scrollIntoViewSpy,
     });
     dismissPrivateBetaOnboarding();
-    render(<App initialRunState={runState} />);
+    await renderApp(<App initialRunState={runState} />);
 
     await fillRepositoryPath("/home/operator/project");
     fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
@@ -3399,12 +3414,11 @@ describe("Orynt desktop shell", () => {
     dismissPrivateBetaOnboarding();
     const createRun = createDeferred<{ id: string }>();
     vi.spyOn(orynt, "createRun").mockReturnValue(createRun.promise);
-    render(<App />);
+    await renderApp(<App />);
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Set up Orynt" })).not.toBeInTheDocument());
     await fillRepositoryPath();
 
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-07T00:00:00.000Z"));
     try {
       const composer = screen.getByRole("form", { name: "Task composer" });
       fireEvent.change(within(composer).getByRole("textbox", { name: "Task for Orynt" }), {
@@ -3419,12 +3433,12 @@ describe("Orynt desktop shell", () => {
 
       expect(send).toBeDisabled();
       expect(send).toHaveAttribute("aria-busy", "true");
-      expect(send.querySelector(".loading-spinner")).not.toBeNull();
+      expect(send.querySelector(".probability-loader")).not.toBeNull();
       expect(screen.getAllByText("Run with loading feedback").length).toBeGreaterThan(0);
       const generating = screen.getByRole("status", { name: "Agent is generating response" });
       expect(generating).toHaveClass("agent-thinking-status");
       expect(generating).toHaveTextContent("Generating response");
-      expect(generating.querySelector(".loading-spinner")).not.toBeNull();
+      expect(generating.querySelector(".probability-loader")).not.toBeNull();
       expect(within(generating).getByText("Checkpoint 0: waiting for run log")).toHaveClass("agent-generating-checkpoint");
       expect(within(generating).getByText("0:00")).toHaveAttribute("aria-label", "Elapsed 0:00");
 
@@ -3463,7 +3477,7 @@ describe("Orynt desktop shell", () => {
       return () => {};
     });
     vi.spyOn(orynt, "createRun").mockReturnValue(createRun.promise);
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     await waitFor(() => expect(runEventHandler).toBeDefined());
@@ -3506,7 +3520,7 @@ describe("Orynt desktop shell", () => {
   });
 
   it("keeps the normal composer compact and auto-growing while full mode remains expanded", async () => {
-    render(<App />);
+    await renderApp(<App />);
     const styles = readFileSync("src/styles.css", "utf8");
     const appSource = readFileSync("src/App.tsx", "utf8");
     const composer = screen.getByRole("form", { name: "Task composer" });
@@ -3557,7 +3571,7 @@ describe("Orynt desktop shell", () => {
       return () => {};
     });
     vi.spyOn(orynt, "createRun").mockReturnValue(createRun.promise);
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     await waitFor(() => expect(runEventHandler).toBeDefined());
@@ -3575,8 +3589,8 @@ describe("Orynt desktop shell", () => {
       timestamp: "2026-07-07T00:00:01.000Z",
       actor: { kind: "verifier", id: "deterministic-verifier", displayName: "Deterministic Verifier" },
       payload: {
-        summary: "Finished verification command: pnpm test -- App.test.tsx",
-        command: "pnpm test -- App.test.tsx",
+        summary: "Finished verification command: bun test -- App.test.tsx",
+        command: "bun test -- App.test.tsx",
         stdoutSummary: "PASS App.test.tsx\nstdout sentinel",
         exitCode: 0,
         durationMs: 1500,
@@ -3696,8 +3710,8 @@ describe("Orynt desktop shell", () => {
     expect(agentDetails.closest(".agent-run-block")).toBe(outcome.closest(".agent-run-block"));
     expect(within(agentDetails).getByText("5 trace events")).toBeInTheDocument();
     expect(within(agentDetails).getByText("Command")).toBeInTheDocument();
-    expect(within(agentDetails).getByText("Verify: verification command finished — Finished verification command: pnpm test -- App.test.tsx")).toBeInTheDocument();
-    expect(within(agentDetails).getByText("Command: pnpm test -- App.test.tsx")).toBeInTheDocument();
+    expect(within(agentDetails).getByText("Verify: verification command finished — Finished verification command: bun test -- App.test.tsx")).toBeInTheDocument();
+    expect(within(agentDetails).getByText("Command: bun test -- App.test.tsx")).toBeInTheDocument();
     expect(within(agentDetails).getAllByText("Exit code: 0")).toHaveLength(2);
     expect(within(agentDetails).getByText(/stdout: PASS App\.test\.tsx\s+stdout sentinel/)).toBeInTheDocument();
     expect(within(agentDetails).getByText("Duration: 1.5s")).toBeInTheDocument();
@@ -3713,8 +3727,8 @@ describe("Orynt desktop shell", () => {
     expect(within(agentDetails).queryByText(/run_event/)).not.toBeInTheDocument();
   });
 
-  it("renders a UXRay preview fixture with a final agent response instead of the blank task state", () => {
-    render(<App seedUxrayAgentResponse />);
+  it("renders a UXRay preview fixture with a final agent response instead of the blank task state", async () => {
+    await renderApp(<App seedUxrayAgentResponse />);
 
     expect(screen.queryByRole("dialog", { name: "Set up Orynt" })).not.toBeInTheDocument();
     const outcome = screen.getByRole("article", { name: "Agent response" });
@@ -3749,7 +3763,7 @@ describe("Orynt desktop shell", () => {
             summary: "Controlled Codex execution output recorded",
             lastMessagePreview:
               "## Done\n\n**Bold result** with `inline code`.\n\n- First item\n- Second item\n\n" +
-              "1. Install workspace dependencies.\n2. Run contract tests:\n   - `pnpm test:contracts`\n   - `pnpm --filter @codepawl/coding-apprentice test`\n4. Run the full local smoke walkthrough.\n\n" +
+              "1. Install workspace dependencies.\n2. Run contract tests:\n   - `bun test:contracts`\n   - `bun --filter @codepawl/coding-apprentice test`\n4. Run the full local smoke walkthrough.\n\n" +
               "[Docs](https://example.com)\n\nLocal file: [`oryntClient.ts`](/home/operator/project/apps/desktop/src/oryntClient.ts)\n\n" +
               "Full final response line. ".repeat(100) +
               "Tail after former truncation sentinel.",
@@ -3768,7 +3782,7 @@ describe("Orynt desktop shell", () => {
       createdAt: "2026-07-07T00:00:00.000Z",
       updatedAt: "2026-07-07T00:00:01.000Z",
     } satisfies PersistedRunRecord);
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const composer = screen.getByRole("form", { name: "Task composer" });
@@ -3801,7 +3815,7 @@ describe("Orynt desktop shell", () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     const createRunSpy = vi.spyOn(orynt, "createRun").mockResolvedValue({ id: "run-should-not-start" });
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const composer = screen.getByRole("form", { name: "Task composer" });
@@ -3833,7 +3847,7 @@ describe("Orynt desktop shell", () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     vi.spyOn(orynt, "createRun").mockResolvedValue({ id: "run-harness-pass" });
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const composer = screen.getByRole("form", { name: "Task composer" });
@@ -3857,7 +3871,7 @@ describe("Orynt desktop shell", () => {
     expect(screen.queryByRole("article", { name: "Agent is generating response" })).not.toBeInTheDocument();
   });
 
-  it("renders legacy persisted repository completion fallbacks as details plus a no-final-answer response", () => {
+  it("renders legacy persisted repository completion fallbacks as details plus a no-final-answer response", async () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     window.localStorage.setItem(
@@ -3882,7 +3896,7 @@ describe("Orynt desktop shell", () => {
       }),
     );
 
-    render(<App />);
+    await renderApp(<App />);
 
     const outcome = screen.getByRole("article", { name: "Agent response" });
     expect(outcome).toHaveTextContent("finished the repository run");
@@ -3954,7 +3968,7 @@ describe("Orynt desktop shell", () => {
       createdAt: "2026-07-07T00:00:00.000Z",
       updatedAt: "2026-07-07T00:00:00.000Z",
     } satisfies PersistedRunRecord);
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const composer = screen.getByRole("form", { name: "Task composer" });
@@ -3980,7 +3994,7 @@ describe("Orynt desktop shell", () => {
     dismissPrivateBetaOnboarding();
     const runnerError = new Error("repository run failed: Error: Controlled Codex execution failed: execution_failed. at LocalCodingApprenticeDemoOrchestrator.runDemo (file:///dist/index.js:512:23)");
     vi.spyOn(orynt, "createRun").mockRejectedValue(runnerError);
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const composer = screen.getByRole("form", { name: "Task composer" });
@@ -3990,7 +4004,8 @@ describe("Orynt desktop shell", () => {
     fireEvent.click(within(composer).getByRole("button", { name: "Send task" }));
 
     const outcome = await screen.findByRole("article", { name: "Agent response" });
-    expect(outcome).toHaveTextContent("Repository harness run failed");
+    expect(outcome).toHaveTextContent("No execution plan was created");
+    expect(outcome).toHaveTextContent("task draft was preserved");
     expect(outcome).toHaveTextContent("Controlled Codex execution failed: execution_failed.");
     expect(outcome).not.toHaveTextContent("LocalCodingApprenticeDemoOrchestrator.runDemo");
     expect(outcome).not.toHaveTextContent("file:///dist/index.js");
@@ -4007,7 +4022,7 @@ describe("Orynt desktop shell", () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     vi.spyOn(orynt, "createRun").mockRejectedValue("repository run failed: Git repository root is outside the allowed repository scope.");
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const composer = screen.getByRole("form", { name: "Task composer" });
@@ -4017,7 +4032,8 @@ describe("Orynt desktop shell", () => {
     fireEvent.click(within(composer).getByRole("button", { name: "Send task" }));
 
     const outcome = await screen.findByRole("article", { name: "Agent response" });
-    expect(outcome).toHaveTextContent("Repository harness run failed");
+    expect(outcome).toHaveTextContent("No execution plan was created");
+    expect(outcome).toHaveTextContent("task draft was preserved");
     expect(outcome).toHaveTextContent("Git repository root is outside the allowed repository scope");
     expect(outcome).not.toHaveTextContent("Unknown repository runner error");
   });
@@ -4100,7 +4116,7 @@ describe("Orynt desktop shell", () => {
       },
     ]);
 
-    render(<App />);
+    await renderApp(<App />);
     const settings = openSettings();
     const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
 
@@ -4188,7 +4204,7 @@ describe("Orynt desktop shell", () => {
       content: "Repository contract\n[REDACTED_SECRET]\n",
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const settings = openSettings();
     const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
 
@@ -4271,7 +4287,7 @@ describe("Orynt desktop shell", () => {
       ],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = screen.getByRole("dialog", { name: "Set up Orynt" });
 
     expect(within(setupDialog).queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
@@ -4288,11 +4304,11 @@ describe("Orynt desktop shell", () => {
     await waitFor(() => expect(listProviderModelsSpy).toHaveBeenCalledWith({ providerId: "codex-cli", envKey: null }));
 
     expect((await within(setupDialog).findAllByText("Codex CLI is installed and authenticated with ChatGPT.")).length).toBeGreaterThan(0);
-    expect(await within(setupDialog).findByRole("combobox", { name: "Model" })).toHaveTextContent("Choose model");
+    expect(await within(setupDialog).findByRole("combobox", { name: "Model" })).toHaveTextContent("GPT-5.5");
     expect(within(setupDialog).getByText("Ready")).toBeInTheDocument();
   });
 
-  it("keeps access-token login out of the default Codex setup UI", () => {
+  it("keeps access-token login out of the default Codex setup UI", async () => {
     vi.spyOn(orynt, "getSettings").mockResolvedValue(withPreferenceSettings({
       workspaceId: "workspace-local-alpha",
       permissionMode: "safe",
@@ -4308,10 +4324,14 @@ describe("Orynt desktop shell", () => {
         summary: "Cleanup is manual for private beta; automatic retention is planned.",
       },
     }));
+    vi.spyOn(orynt, "preflightCodexConnection").mockReturnValue(
+      new Promise(() => {}),
+    );
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = screen.getByRole("dialog", { name: "Set up Orynt" });
     selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
+    await flushApp();
 
     expect(within(setupDialog).queryByLabelText("Codex access token")).not.toBeInTheDocument();
     expect(within(setupDialog).queryByRole("button", { name: "Use access token" })).not.toBeInTheDocument();
@@ -4358,7 +4378,7 @@ describe("Orynt desktop shell", () => {
       loginUrl: null,
     }));
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
 
@@ -4408,7 +4428,7 @@ describe("Orynt desktop shell", () => {
       models: [{ id: "gpt-5.5", label: "GPT-5.5", description: "Live Codex model.", source: "codex-cli" }],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
     expect(within(setupDialog).queryByRole("button", { name: "Connect with ChatGPT" })).not.toBeInTheDocument();
@@ -4449,7 +4469,7 @@ describe("Orynt desktop shell", () => {
       warnings: [],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     const setupDialog = await screen.findByRole("dialog", { name: "Set up Orynt" });
     selectSetupDropdownOption(setupDialog, "Provider", "Codex CLI");
 
@@ -4477,7 +4497,7 @@ describe("Orynt desktop shell", () => {
         summary: "Cleanup is manual for private beta; automatic retention is planned.",
       },
     }));
-    const { unmount } = render(<App />);
+    const { unmount } = await renderApp(<App />);
 
     const onboarding = screen.getByRole("dialog", { name: "Set up Orynt" });
     expect(within(onboarding).queryByRole("heading", { name: "Set up Orynt" })).not.toBeInTheDocument();
@@ -4503,14 +4523,14 @@ describe("Orynt desktop shell", () => {
   it("honors legacy CodePawl onboarding dismissal state", async () => {
     window.localStorage.setItem(legacyPrivateBetaOnboardingStorageKey, "dismissed");
 
-    render(<App />);
+    await renderApp(<App />);
 
     expect(screen.queryByRole("dialog", { name: "Set up Orynt" })).not.toBeInTheDocument();
   });
 
   it("moves unavailable beta surfaces from the composer into settings status", async () => {
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
 
     const thread = screen.getByRole("region", { name: "Task conversation" });
     expect(within(thread).queryByLabelText("Unavailable beta surfaces")).not.toBeInTheDocument();
@@ -4524,30 +4544,16 @@ describe("Orynt desktop shell", () => {
     const betaSurfaces = within(settings).getByRole("region", { name: "Unavailable beta surfaces" });
     expect(within(betaSurfaces).getByText("Repository")).toBeInTheDocument();
     expect(within(betaSurfaces).getByText("Available")).toBeInTheDocument();
-    for (const surface of ["Browser", "Desktop", "Files", "Terminal", "Cloud", "Billing"]) {
+    for (const surface of ["Browser", "Desktop", "Files", "Terminal", "Cloud"]) {
       expect(within(betaSurfaces).getByText(`${surface} unavailable`)).toBeInTheDocument();
     }
     expect(within(settings).queryByRole("button", { name: "Setup" })).not.toBeInTheDocument();
     expect(within(settings).queryByText("Codex connection readiness")).not.toBeInTheDocument();
   });
 
-  it("renders local-beta billing without fake paid invoices", async () => {
-    dismissPrivateBetaOnboarding();
-    render(<App />);
-
-    const settings = openSettings();
-    const settingsNav = within(settings).getByRole("navigation", { name: "Settings sections" });
-    fireEvent.click(within(settingsNav).getByRole("button", { name: "Billing" }));
-
-    expect(within(settings).getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
-    expect(within(settings).getByText("Local beta access")).toBeInTheDocument();
-    expect(within(settings).getByText("No invoices yet.")).toBeInTheDocument();
-    expect(within(settings).queryByText("Paid")).not.toBeInTheDocument();
-  });
-
   it("blocks repository submission until onboarding and directory path are ready", async () => {
     const createRunSpy = vi.spyOn(orynt, "createRun");
-    const { unmount } = render(<App />);
+    const { unmount } = await renderApp(<App />);
     fireEvent.click(screen.getByRole("button", { name: /Dismiss set up Orynt/i }));
 
     await fillRepositoryPath("/home/operator/project");
@@ -4564,7 +4570,7 @@ describe("Orynt desktop shell", () => {
 
     unmount();
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
     fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
       target: { value: "Run without directory path" },
     });
@@ -4580,7 +4586,7 @@ describe("Orynt desktop shell", () => {
     dismissPrivateBetaOnboarding();
     vi.spyOn(orynt, "createRun").mockRejectedValue(new Error("repositoryPath must point to a selected local directory"));
 
-    render(<App />);
+    await renderApp(<App />);
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Set up Orynt" })).not.toBeInTheDocument());
     fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
       target: { value: "Run with a stale repository selection" },
@@ -4612,7 +4618,7 @@ describe("Orynt desktop shell", () => {
       },
     }));
 
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath("/home/operator/project");
     fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
       target: { value: "Run without Codex connection" },
@@ -4640,7 +4646,7 @@ describe("Orynt desktop shell", () => {
       warnings: [],
     });
 
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath("/home/operator/project");
     fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
       target: { value: "read the codebase and tell me what is it for" },
@@ -4648,17 +4654,239 @@ describe("Orynt desktop shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send task" }));
 
     expect(await screen.findAllByText("No authenticated Codex CLI session was detected.")).not.toHaveLength(0);
-    expect(screen.getByRole("textbox", { name: "Task for Orynt" })).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: "Task for Orynt" })).toHaveValue(
+      "read the codebase and tell me what is it for",
+    );
     expect(screen.getByText("read the codebase and tell me what is it for", { selector: ".chat-bubble p" })).toBeInTheDocument();
     expect(screen.getAllByText(/Provider check failed before starting the repository run/i)).not.toHaveLength(0);
     expect(preflightModelConnectionSpy).toHaveBeenCalledTimes(1);
     expect(createRunSpy).not.toHaveBeenCalled();
   });
 
+  it("surfaces one clarification question and binds its selected option to the original goal", async () => {
+    mockReadyModelSettings();
+    dismissPrivateBetaOnboarding();
+    const understandPromptSpy = vi
+      .spyOn(orynt, "understandPrompt")
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        promptId: "prompt-scope",
+        outcome: "repository_action",
+        readiness: "clarification_required",
+        reply: "Choose the first material scope.",
+        conversationSummary: "The operator is selecting the target surface.",
+        refinedBrief: null,
+        questions: [
+          {
+            id: "surface",
+            prompt: "Which surface should change?",
+            rationale: "The target changes file ownership.",
+            kind: "constraint",
+            options: [
+              {
+                id: "desktop",
+                label: "Desktop",
+                description: "Change only the desktop surface.",
+                recommended: true,
+              },
+              {
+                id: "cli",
+                label: "CLI",
+                description: "Change only the terminal surface.",
+                recommended: false,
+              },
+            ],
+          },
+          {
+            id: "validation",
+            prompt: "Which validation should run?",
+            rationale: "The acceptance gate is material.",
+            kind: "validation",
+            options: [],
+          },
+        ],
+        assumptions: [],
+      })
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        promptId: "prompt-ready",
+        outcome: "repository_action",
+        readiness: "ready",
+        reply: "The desktop request is ready.",
+        conversationSummary: "The operator selected the desktop surface.",
+        refinedBrief: {
+          goal: "Harden prompt understanding.",
+          deliverables: [],
+          constraints: ["Desktop only."],
+          acceptanceCriteria: [],
+          nonGoals: [],
+        },
+        questions: [],
+        assumptions: [],
+      });
+    const createRunSpy = vi.spyOn(orynt, "createRun").mockResolvedValue({
+      id: "run-prompt-ready",
+      status: "waiting_for_approval",
+      summary: "Review the bound plan.",
+    });
+    await renderApp(<App />);
+    await fillRepositoryPath();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
+      target: { value: "Harden prompt understanding" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+
+    expect(await screen.findByText("Which surface should change?")).toBeInTheDocument();
+    expect(screen.queryByText("Which validation should run?")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Desktop/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+
+    await waitFor(() => expect(understandPromptSpy).toHaveBeenCalledTimes(2));
+    expect(understandPromptSpy.mock.calls[1]?.[0]).toMatchObject({
+      basis: {
+        rawPrompt: "Harden prompt understanding",
+        clarificationAnswers: [
+          {
+            questionId: "surface",
+            answer: "Desktop",
+            selectedOptionId: "desktop",
+          },
+        ],
+      },
+    });
+    expect(createRunSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        goal: "Harden prompt understanding",
+        promptBasis: expect.objectContaining({
+          rawPrompt: "Harden prompt understanding",
+        }),
+      }),
+    );
+  });
+
+  it("never treats typed text as assumption confirmation and restores the raw prompt on rejection", async () => {
+    mockReadyModelSettings();
+    dismissPrivateBetaOnboarding();
+    const understandPromptSpy = vi.spyOn(orynt, "understandPrompt").mockResolvedValue({
+      schemaVersion: 1,
+      promptId: "prompt-assumption",
+      outcome: "repository_action",
+      readiness: "assumption_confirmation_required",
+      reply: "Confirm the material scope assumption.",
+      conversationSummary: "A desktop default is awaiting confirmation.",
+      refinedBrief: {
+        goal: "Use the selected repository.",
+        deliverables: [],
+        constraints: [],
+        acceptanceCriteria: [],
+        nonGoals: [],
+      },
+      questions: [],
+      assumptions: [
+        { id: "desktop-default", text: "Use desktop defaults.", affectsScope: true },
+      ],
+    });
+    const createRunSpy = vi.spyOn(orynt, "createRun");
+    await renderApp(<App />);
+    await fillRepositoryPath();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
+      target: { value: "Improve the prompt gate" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+
+    expect(await screen.findByText("Use desktop defaults.")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
+      target: { value: "No" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+    expect(understandPromptSpy).toHaveBeenCalledTimes(1);
+    expect(createRunSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject and edit" }));
+    expect(screen.getByRole("textbox", { name: "Task for Orynt" })).toHaveValue(
+      "Improve the prompt gate",
+    );
+    expect(createRunSpy).not.toHaveBeenCalled();
+  });
+
+  it("appends explicitly confirmed assumptions and keeps the original run goal", async () => {
+    mockReadyModelSettings();
+    dismissPrivateBetaOnboarding();
+    const understandPromptSpy = vi
+      .spyOn(orynt, "understandPrompt")
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        promptId: "prompt-assumption",
+        outcome: "repository_action",
+        readiness: "assumption_confirmation_required",
+        reply: "Confirm the scope assumption.",
+        conversationSummary: "One scope assumption is pending.",
+        refinedBrief: {
+          goal: "Improve the prompt gate.",
+          deliverables: [],
+          constraints: [],
+          acceptanceCriteria: [],
+          nonGoals: [],
+        },
+        questions: [],
+        assumptions: [
+          { id: "keep-cli", text: "Keep CLI behavior aligned.", affectsScope: true },
+        ],
+      })
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        promptId: "prompt-ready",
+        outcome: "repository_action",
+        readiness: "ready",
+        reply: "The confirmed request is ready.",
+        conversationSummary: "CLI alignment was explicitly confirmed.",
+        refinedBrief: {
+          goal: "Improve the prompt gate.",
+          deliverables: [],
+          constraints: ["Keep CLI behavior aligned."],
+          acceptanceCriteria: [],
+          nonGoals: [],
+        },
+        questions: [],
+        assumptions: [],
+      });
+    const createRunSpy = vi.spyOn(orynt, "createRun").mockResolvedValue({
+      id: "run-confirmed-assumption",
+      status: "waiting_for_approval",
+      summary: "Review the confirmed plan.",
+    });
+    await renderApp(<App />);
+    await fillRepositoryPath();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task for Orynt" }), {
+      target: { value: "Improve the prompt gate" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm and continue" }));
+
+    await waitFor(() => expect(understandPromptSpy).toHaveBeenCalledTimes(2));
+    expect(understandPromptSpy.mock.calls[1]?.[0]).toMatchObject({
+      basis: {
+        rawPrompt: "Improve the prompt gate",
+        confirmedAssumptions: [
+          {
+            assumptionId: "keep-cli",
+            text: "Keep CLI behavior aligned.",
+          },
+        ],
+      },
+    });
+    expect(createRunSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ goal: "Improve the prompt gate" }),
+    );
+  });
+
   it("does not reuse deleted thread ids or overwrite an existing thread conversation", async () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const spaces = screen.getByRole("navigation", { name: "Tasks" });
@@ -4693,7 +4921,7 @@ describe("Orynt desktop shell", () => {
   it("keeps long user input inside the compact user bubble", async () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const thread = screen.getByRole("region", { name: "Task conversation" });
@@ -4718,9 +4946,9 @@ describe("Orynt desktop shell", () => {
   });
 
   it("copies, rates, shares by clipboard fallback, omits sources, and keeps more actions anchored", async () => {
-    render(<App seedDemoThread />);
+    await renderApp(<App seedDemoThread />);
 
-    const clipboardWrite = vi.mocked(navigator.clipboard.writeText);
+    const clipboardWrite = navigator.clipboard.writeText as ReturnType<typeof vi.fn>;
     const expectedResponseText = "Candidate repository rule from verified correction";
     const thread = screen.getByRole("region", { name: "Task conversation" });
     const agentResponse = within(thread).getByRole("article", { name: "Agent response" });
@@ -4776,9 +5004,9 @@ describe("Orynt desktop shell", () => {
       value: share,
     });
 
-    render(<App seedDemoThread />);
+    await renderApp(<App seedDemoThread />);
 
-    const clipboardWrite = vi.mocked(navigator.clipboard.writeText);
+    const clipboardWrite = navigator.clipboard.writeText as ReturnType<typeof vi.fn>;
     const agentResponse = screen.getByRole("article", { name: "Agent response" });
     const actionRail = within(agentResponse).getByRole("toolbar", { name: "Agent response actions" });
 
@@ -4794,8 +5022,8 @@ describe("Orynt desktop shell", () => {
     expect(within(actionRail).getByRole("button", { name: "Shared response" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("quotes selected agent response text from the floating reply action", () => {
-    render(<App seedDemoThread />);
+  it("quotes selected agent response text from the floating reply action", async () => {
+    await renderApp(<App seedDemoThread />);
 
     const agentResponse = screen.getByRole("article", { name: "Agent response" });
     const responseText = within(agentResponse).getByText("Candidate repository rule from verified correction");
@@ -4821,7 +5049,7 @@ describe("Orynt desktop shell", () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
     const createRunSpy = vi.spyOn(orynt, "createRun").mockResolvedValue({ id: "run-resend-previous-request" });
-    render(<App seedDemoThread />);
+    await renderApp(<App seedDemoThread />);
     await fillRepositoryPath();
 
     let agentResponse = screen.getByRole("article", { name: "Agent response" });
@@ -4855,7 +5083,7 @@ describe("Orynt desktop shell", () => {
   it("centers the empty thread start composer and keeps its controls real", async () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Create new task" }));
 
@@ -4929,8 +5157,8 @@ describe("Orynt desktop shell", () => {
     expect(within(activeThread).getByRole("button", { name: "Send task" })).toBeDisabled();
   });
 
-  it("places the composer permission menu as a dropdown or dropup from viewport space", () => {
-    render(<App />);
+  it("places the composer permission menu as a dropdown or dropup from viewport space", async () => {
+    await renderApp(<App />);
 
     const composer = screen.getByRole("form", { name: "Task composer" });
     const metaButton = within(composer).getByRole("button", { name: "Permission mode" });
@@ -4946,8 +5174,8 @@ describe("Orynt desktop shell", () => {
     expect(within(composer).getByRole("menu", { name: "Permission mode options" })).toHaveClass("composer-meta-menu-dropup");
   });
 
-  it("places the composer attachment menu as a dropdown or dropup from viewport space", () => {
-    render(<App />);
+  it("places the composer attachment menu as a dropdown or dropup from viewport space", async () => {
+    await renderApp(<App />);
 
     const composer = screen.getByRole("form", { name: "Task composer" });
     const addContent = within(composer).getByRole("button", { name: "Add content" });
@@ -4963,8 +5191,8 @@ describe("Orynt desktop shell", () => {
     expect(within(composer).getByRole("menu", { name: "Add content options" })).toHaveClass("composer-attachment-menu-dropup");
   });
 
-  it("closes the composer permission menu from Escape and outside clicks", () => {
-    render(<App />);
+  it("closes the composer permission menu from Escape and outside clicks", async () => {
+    await renderApp(<App />);
 
     const composer = screen.getByRole("form", { name: "Task composer" });
     const metaButton = within(composer).getByRole("button", { name: "Permission mode" });
@@ -4979,8 +5207,8 @@ describe("Orynt desktop shell", () => {
     expect(within(composer).queryByRole("menu", { name: "Permission mode options" })).not.toBeInTheDocument();
   });
 
-  it("closes the composer attachment menu from Escape, outside clicks, and permission menu changes", () => {
-    render(<App />);
+  it("closes the composer attachment menu from Escape, outside clicks, and permission menu changes", async () => {
+    await renderApp(<App />);
 
     const composer = screen.getByRole("form", { name: "Task composer" });
     const addContent = within(composer).getByRole("button", { name: "Add content" });
@@ -5008,7 +5236,7 @@ describe("Orynt desktop shell", () => {
 
   it("opens thread actions for rename, archive restore, and delete confirmation", async () => {
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
 
     const spaces = screen.getByRole("navigation", { name: "Tasks" });
     fireEvent.click(within(spaces).getByRole("button", { name: "Task options for New task" }));
@@ -5073,8 +5301,8 @@ describe("Orynt desktop shell", () => {
     expect(within(screen.getByRole("menu", { name: "Task options for Engineering" })).getByRole("menuitem", { name: "Delete" })).toBeDisabled();
   });
 
-  it("keeps the cockpit mounted while settings only exposes preference tabs", () => {
-    render(<App />);
+  it("keeps the cockpit mounted while settings only exposes preference tabs", async () => {
+    await renderApp(<App />);
 
     expect(screen.queryByRole("navigation", { name: "Primary app navigation" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open dashboard" })).not.toBeInTheDocument();
@@ -5090,8 +5318,9 @@ describe("Orynt desktop shell", () => {
     expect(within(settingsSections).getByRole("button", { name: "General" })).toBeInTheDocument();
     expect(within(settingsSections).getByRole("button", { name: "Model" })).toBeInTheDocument();
     expect(within(settingsSections).getByRole("button", { name: "Status" })).toBeInTheDocument();
-    expect(within(settingsSections).getByRole("button", { name: "Account" })).toBeInTheDocument();
-    expect(within(settingsSections).getByRole("button", { name: "Billing" })).toBeInTheDocument();
+    expect(within(settingsSections).queryByRole("button", { name: "Account" })).not.toBeInTheDocument();
+    expect(within(settingsSections).queryByRole("button", { name: "Billing" })).not.toBeInTheDocument();
+    expect(within(settingsSections).queryByRole("button", { name: "Intelligence" })).not.toBeInTheDocument();
     expect(within(settingsSections).queryByRole("button", { name: "Dashboard" })).not.toBeInTheDocument();
     expect(within(settings).getByRole("heading", { name: "Profile" })).toBeInTheDocument();
     expect(within(settings).queryByRole("dialog", { name: "Dashboard" })).not.toBeInTheDocument();
@@ -5112,14 +5341,10 @@ describe("Orynt desktop shell", () => {
     expect(screen.getByRole("region", { name: "Task conversation" })).toBeInTheDocument();
   });
 
-  it("opens settings from the account menu and closes from the dialog", () => {
-    render(<App />);
+  it("opens local settings directly and closes from the dialog", async () => {
+    await renderApp(<App />);
 
-    const accountToggle = screen.getByRole("button", { name: "Open account menu" });
-    fireEvent.click(accountToggle);
-    expect(accountToggle).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(within(screen.getByRole("menu", { name: "Account menu" })).getByRole("menuitem", { name: "Settings" }));
-    expect(accountToggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Open local settings" }));
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss settings" }));
@@ -5132,30 +5357,8 @@ describe("Orynt desktop shell", () => {
     expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument();
   });
 
-  it("closes the account menu from Escape, outside pointer, and exposes a configurable logout landing link", () => {
-    vi.stubEnv("VITE_ORYNT_LANDING_URL", "http://127.0.0.1:5176/");
-
-    expect(getLandingUrl()).toBe("http://127.0.0.1:5176/");
-
-    render(<App />);
-
-    const accountToggle = screen.getByRole("button", { name: "Open account menu" });
-    fireEvent.click(accountToggle);
-    let accountMenu = screen.getByRole("menu", { name: "Account menu" });
-    expect(within(accountMenu).getByRole("menuitem", { name: "Log out" })).toHaveAttribute("href", "http://127.0.0.1:5176/");
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("menu", { name: "Account menu" })).not.toBeInTheDocument();
-    expect(accountToggle).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(accountToggle);
-    accountMenu = screen.getByRole("menu", { name: "Account menu" });
-    expect(accountMenu).toBeInTheDocument();
-    fireEvent.pointerDown(screen.getByRole("region", { name: "Task conversation" }));
-    expect(screen.queryByRole("menu", { name: "Account menu" })).not.toBeInTheDocument();
-  });
-
-  it("renders settings as preference rows with account and billing tabs", () => {
-    render(<App />);
+  it("renders local preference settings without account or billing surfaces", async () => {
+    await renderApp(<App />);
 
     const settings = openSettings();
     const search = within(settings).getByRole("textbox", { name: "Search settings" });
@@ -5163,8 +5366,9 @@ describe("Orynt desktop shell", () => {
 
     expect(within(sections).getByRole("button", { name: "General" })).toHaveAttribute("aria-current", "page");
     expect(within(sections).getByRole("button", { name: "Model" })).toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "Account" })).toBeInTheDocument();
-    expect(within(sections).getByRole("button", { name: "Billing" })).toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Account" })).not.toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Billing" })).not.toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Intelligence" })).not.toBeInTheDocument();
     expect(within(sections).queryByRole("button", { name: "Setup" })).not.toBeInTheDocument();
     expect(within(sections).queryByRole("button", { name: "Capabilities" })).not.toBeInTheDocument();
     expect(within(sections).queryByRole("button", { name: "Connectors" })).not.toBeInTheDocument();
@@ -5205,22 +5409,6 @@ describe("Orynt desktop shell", () => {
     expect(within(settings).getByRole("heading", { name: "Model" })).toBeInTheDocument();
     expect(within(settings).getByRole("combobox", { name: "Provider" })).toHaveTextContent("Choose provider");
     expect(within(settings).queryByRole("combobox", { name: "Thinking effort" })).not.toBeInTheDocument();
-
-    fireEvent.click(within(sections).getByRole("button", { name: "Account" }));
-    expect(within(settings).getByRole("heading", { name: "Account" })).toBeInTheDocument();
-    expect(within(settings).getByRole("button", { name: "Log out" })).toBeInTheDocument();
-    expect(within(settings).getByRole("button", { name: "Delete account" })).toBeDisabled();
-    expect(within(settings).getByText("workspace-local-alpha")).toBeInTheDocument();
-    expect(within(settings).getByRole("table", { name: "Trusted devices" })).toBeInTheDocument();
-    expect(within(settings).getByText("No trusted devices.")).toBeInTheDocument();
-    expect(within(settings).getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
-    expect(within(settings).getByText("Current")).toBeInTheDocument();
-
-    fireEvent.click(within(sections).getByRole("button", { name: "Billing" }));
-    expect(within(settings).getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
-    expect(within(settings).getByRole("button", { name: "Upgrade plan" })).toBeDisabled();
-    expect(within(settings).getByRole("table", { name: "Invoices" })).toBeInTheDocument();
-    expect(within(settings).getByText("No invoices yet.")).toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: "code" } });
 
@@ -5286,7 +5474,7 @@ describe("Orynt desktop shell", () => {
     });
     const updateSettingsSpy = vi.spyOn(orynt, "updateSettings").mockResolvedValue(updatedSettings);
 
-    render(<App />);
+    await renderApp(<App />);
 
     const settings = openSettings();
     fireEvent.change(await within(settings).findByRole("textbox", { name: "Full name" }), { target: { value: "Xuan An" } });
@@ -5297,6 +5485,7 @@ describe("Orynt desktop shell", () => {
     fireEvent.click(within(settings).getByRole("button", { name: "Use reduced motion" }));
     selectSetupDropdownOption(settings, "Speed", "Slow");
     selectSetupDropdownOption(settings, "Permission mode", "Ask first");
+    await flushApp();
 
     expect(updateSettingsSpy).toHaveBeenCalledWith({ operatorProfile: { fullName: "Xuan An" } });
     expect(updateSettingsSpy).toHaveBeenCalledWith({ operatorProfile: { callSign: "An" } });
@@ -5308,8 +5497,8 @@ describe("Orynt desktop shell", () => {
     expect(updateSettingsSpy).toHaveBeenCalledWith({ permissionMode: "manual" });
   });
 
-  it("keeps message block labels hidden by default and restores them from settings", () => {
-    render(<App seedDemoThread />);
+  it("keeps message block labels hidden by default and restores them from settings", async () => {
+    await renderApp(<App seedDemoThread />);
 
     const thread = screen.getByRole("region", { name: "Task conversation" });
     expect(within(thread).queryByText("Agent response")).not.toBeInTheDocument();
@@ -5320,6 +5509,7 @@ describe("Orynt desktop shell", () => {
     expect(labelSwitch).toHaveAttribute("aria-checked", "false");
 
     fireEvent.click(labelSwitch);
+    await flushApp();
 
     expect(labelSwitch).toHaveAttribute("aria-checked", "true");
     const agentMeta = within(thread).getByText("Agent response");
@@ -5333,10 +5523,10 @@ describe("Orynt desktop shell", () => {
     expect(window.localStorage.getItem(messageBlockMetaStorageKey)).toBe("true");
   });
 
-  it("persists the message block label display preference", () => {
+  it("persists the message block label display preference", async () => {
     window.localStorage.setItem(messageBlockMetaStorageKey, "true");
 
-    render(<App seedDemoThread />);
+    await renderApp(<App seedDemoThread />);
 
     const thread = screen.getByRole("region", { name: "Task conversation" });
     expect(within(thread).getByText("Agent response")).toHaveClass("message-block-meta");
@@ -5345,18 +5535,18 @@ describe("Orynt desktop shell", () => {
     expect(within(settings).getByRole("switch", { name: /Show message labels/ })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("restores legacy message block label preference from the CodePawl beta key", () => {
+  it("restores legacy message block label preference from the CodePawl beta key", async () => {
     window.localStorage.setItem(legacyMessageBlockMetaStorageKey, "true");
 
-    render(<App seedDemoThread />);
+    await renderApp(<App seedDemoThread />);
 
     const thread = screen.getByRole("region", { name: "Task conversation" });
     expect(within(thread).getByText("Agent response")).toHaveClass("message-block-meta");
     expect(within(thread).getByText("Approval request")).toHaveClass("message-block-meta");
   });
 
-  it("navigates the preference-only settings sections", () => {
-    render(<App />);
+  it("navigates the preference-only settings sections", async () => {
+    await renderApp(<App />);
 
     const settings = openSettings();
     const sections = within(settings).getByRole("navigation", { name: "Settings sections" });
@@ -5367,20 +5557,15 @@ describe("Orynt desktop shell", () => {
     expect(within(sections).queryByRole("button", { name: "Orynt Code" })).not.toBeInTheDocument();
     expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveTextContent("Safe");
     expect(within(settings).queryByRole("region", { name: "Allowed surfaces" })).not.toBeInTheDocument();
-
-    fireEvent.click(within(sections).getByRole("button", { name: "Billing" }));
-    expect(within(settings).getByRole("heading", { name: "Free plan" })).toBeInTheDocument();
-    expect(within(settings).getByRole("table", { name: "Invoices" })).toBeInTheDocument();
-
-    fireEvent.click(within(sections).getByRole("button", { name: "Account" }));
-    expect(within(settings).getByRole("heading", { name: "Account" })).toBeInTheDocument();
-    expect(within(settings).getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
+    expect(within(sections).getByRole("button", { name: "Memory" })).toBeInTheDocument();
+    expect(within(sections).getByRole("button", { name: "Status" })).toBeInTheDocument();
+    expect(within(sections).queryByRole("button", { name: "Intelligence" })).not.toBeInTheDocument();
   });
 
   it("renders run lifecycle events streamed through the client", async () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
 
     await fillRepositoryPath("/home/operator/project");
     const input = screen.getByRole("textbox", { name: "Task for Orynt" });
@@ -5398,7 +5583,7 @@ describe("Orynt desktop shell", () => {
   it("sends typed cockpit tasks as unlabeled user chat bubbles", async () => {
     mockReadyModelSettings();
     dismissPrivateBetaOnboarding();
-    render(<App />);
+    await renderApp(<App />);
     await fillRepositoryPath();
 
     const conversation = screen.getByRole("region", { name: "Task conversation" });
@@ -5421,8 +5606,8 @@ describe("Orynt desktop shell", () => {
     expect(within(conversation).queryByText("Operator")).not.toBeInTheDocument();
   });
 
-  it("keeps onboarding and trial cards out of the compact cockpit", () => {
-    render(<App seedDemoThread />);
+  it("keeps onboarding and trial cards out of the compact cockpit", async () => {
+    await renderApp(<App seedDemoThread />);
 
     expect(screen.queryByRole("region", { name: "Product onboarding" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Trial status" })).not.toBeInTheDocument();
@@ -5432,8 +5617,8 @@ describe("Orynt desktop shell", () => {
     expect(screen.queryByText(/Local MVP/i)).not.toBeInTheDocument();
   });
 
-  it("lets the general settings pane change permission mode locally", () => {
-    render(<App />);
+  it("lets the general settings pane change permission mode locally", async () => {
+    await renderApp(<App />);
 
     const settings = openSettings();
     const modeSelector = within(settings).getByRole("combobox", { name: "Permission mode" });
@@ -5441,12 +5626,13 @@ describe("Orynt desktop shell", () => {
     expect(modeSelector).toHaveTextContent("Safe");
 
     selectSetupDropdownOption(settings, "Permission mode", "Ask first");
+    await flushApp();
 
     expect(within(settings).getByRole("combobox", { name: "Permission mode" })).toHaveTextContent("Ask first");
   });
 
-  it("keeps executable surfaces out of user preferences settings", () => {
-    render(<App />);
+  it("keeps executable surfaces out of user preferences settings", async () => {
+    await renderApp(<App />);
 
     const settings = openSettings();
     expect(within(settings).queryByRole("region", { name: "Allowed surfaces" })).not.toBeInTheDocument();
@@ -5455,7 +5641,7 @@ describe("Orynt desktop shell", () => {
   });
 
   it("records approval decisions in the mock cockpit state", async () => {
-    render(<App seedDemoThread />);
+    await renderApp(<App seedDemoThread />);
 
     fireEvent.click(screen.getByRole("button", { name: "Approve step" }));
 
@@ -5465,7 +5651,7 @@ describe("Orynt desktop shell", () => {
   it("shows approval loading feedback and prevents duplicate approval decisions", async () => {
     const approval = createDeferred<void>();
     const approveSpy = vi.spyOn(orynt, "approve").mockReturnValue(approval.promise);
-    render(<App seedDemoThread />);
+    await renderApp(<App seedDemoThread />);
 
     const approveButton = screen.getByRole("button", { name: "Approve step" });
     const denyButton = screen.getByRole("button", { name: "Deny step" });
@@ -5476,12 +5662,12 @@ describe("Orynt desktop shell", () => {
     expect(approveButton).toBeDisabled();
     expect(approveButton).toHaveAttribute("aria-busy", "true");
     expect(approveButton).toHaveTextContent("Approving");
-    expect(approveButton.querySelector(".loading-spinner")).not.toBeNull();
+    expect(approveButton.querySelector(".probability-loader")).not.toBeNull();
     expect(denyButton).toBeDisabled();
   });
 
-  it("keeps run info and execution panels out of the compact thread UI", () => {
-    render(<App />);
+  it("keeps run info and execution panels out of the compact thread UI", async () => {
+    await renderApp(<App />);
 
     expect(screen.queryByRole("button", { name: "Open run info" })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Run info" })).not.toBeInTheDocument();
@@ -5490,8 +5676,8 @@ describe("Orynt desktop shell", () => {
     expect(screen.queryByRole("region", { name: "Verifier evidence" })).not.toBeInTheDocument();
   });
 
-  it("closes compact settings modal from Escape and backdrop interactions", () => {
-    render(<App />);
+  it("closes compact settings modal from Escape and backdrop interactions", async () => {
+    await renderApp(<App />);
 
     const settings = openSettings();
     fireEvent.keyDown(settings, { key: "Escape" });
@@ -5503,8 +5689,8 @@ describe("Orynt desktop shell", () => {
     expect(screen.queryByLabelText("Modal backdrop")).not.toBeInTheDocument();
   });
 
-  it("renders a no-run-selected empty state without showing execution controls", () => {
-    render(<App initialSelectedRunId={null} />);
+  it("renders a no-run-selected empty state without showing execution controls", async () => {
+    await renderApp(<App initialSelectedRunId={null} />);
 
     const emptyRun = screen.getByRole("region", { name: "No run selected" });
     expect(within(emptyRun).getByText(/Select a local repository task or start the fake Codex walkthrough/)).toBeInTheDocument();
@@ -5512,8 +5698,8 @@ describe("Orynt desktop shell", () => {
     expect(screen.queryByRole("button", { name: "Approve Codex execution" })).not.toBeInTheDocument();
   });
 
-  it("keeps queue summaries out of preferences settings", () => {
-    render(<App initialRunState={createEmptyMockRunState()} />);
+  it("keeps queue summaries out of preferences settings", async () => {
+    await renderApp(<App initialRunState={createEmptyMockRunState()} />);
     const settings = openSettings();
 
     expect(screen.queryByRole("navigation", { name: "Cockpit sections" })).not.toBeInTheDocument();
@@ -5532,7 +5718,7 @@ describe("Orynt desktop shell", () => {
       ...runState.skillRegistry.skills[0],
       status: "active",
     });
-    render(<App initialRunState={runState} />);
+    await renderApp(<App initialRunState={runState} />);
 
     const settings = openSettings();
     expect(within(settings).queryByRole("button", { name: "Skills" })).not.toBeInTheDocument();
@@ -5542,22 +5728,8 @@ describe("Orynt desktop shell", () => {
     expect(promoteSkillSpy).not.toHaveBeenCalled();
   });
 
-  it("opens the same dedicated Skills Manager from account extensions", async () => {
-    render(<App initialRunState={createEmptyMockRunState()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Open account menu" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Get apps and extensions" }));
-
-    const manager = screen.getByRole("dialog", { name: "Skills Manager" });
-    expect(within(manager).getByRole("tab", { name: "Installed" })).toHaveAttribute("aria-selected", "true");
-    expect(within(manager).getByRole("tab", { name: "Discover" })).toBeInTheDocument();
-    expect(within(manager).getByRole("tab", { name: "Learned" })).toBeInTheDocument();
-    expect(within(manager).getByRole("tab", { name: "Sources & policy" })).toBeInTheDocument();
-    expect(within(manager).queryByText("Preferences")).not.toBeInTheDocument();
-    expect(await within(manager).findByRole("list", { name: "Installed skills" })).toBeInTheDocument();
-  });
-
   it("opens Skills Manager from the composer skills submenu and attaches only eligible skills", async () => {
-    render(<App />);
+    await renderApp(<App />);
     const composer = screen.getByRole("form", { name: "Task composer" });
     fireEvent.click(within(composer).getByRole("button", { name: "Add content" }));
     fireEvent.click(within(composer).getByRole("menuitem", { name: "Skills" }));
@@ -5569,6 +5741,22 @@ describe("Orynt desktop shell", () => {
     expect(within(composer).getByRole("button", { name: "Remove skill-creator skill" })).toBeInTheDocument();
 
     fireEvent.click(within(composer).getByRole("menuitem", { name: "Manage skills…" }));
+    await flushApp();
     expect(screen.getByRole("dialog", { name: "Skills Manager" })).toBeInTheDocument();
+  });
+
+  it("lets the operator raise the next-request model-tier minimum", async () => {
+    await renderApp(<App />);
+    const composer = screen.getByRole("form", { name: "Task composer" });
+    const tierButton = within(composer).getByRole("button", {
+      name: /minimum model tier: auto/i,
+    });
+
+    fireEvent.click(tierButton);
+    expect(
+      within(composer).getByRole("button", {
+        name: /minimum model tier: light/i,
+      }),
+    ).toHaveTextContent("Tier Light");
   });
 });

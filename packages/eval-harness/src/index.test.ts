@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import {
   OryntCodingApprenticeRepoOpsMethodRunner,
@@ -15,6 +15,8 @@ import {
   createDefaultEvalSuite,
   createDefaultRepoOpsMethodRunners,
   createRepoOpsBenchV0,
+  createRepoOpsBenchV2,
+  type RepoOpsMethodRunner,
   writeRepoOpsBenchReports,
 } from "./index";
 
@@ -99,6 +101,50 @@ describe("OryntEvalRunner", () => {
 });
 
 describe("OryntRepoOpsBenchmarkRunner", () => {
+  it("defines the 12-case v2 battle matrix and serializes isolated failures", async () => {
+    const bench = createRepoOpsBenchV2();
+    expect(bench.tasks).toHaveLength(12);
+    expect(bench.tasks.filter(({ source }) => source === "real_transfer")).toHaveLength(2);
+    expect(bench.tasks.map(({ ambiguity }) => ambiguity)).toEqual(
+      expect.arrayContaining(["complete", "underspecified", "contradictory"]),
+    );
+    const passing: RepoOpsMethodRunner = {
+      methodId: "orynt_full",
+      runTask: async (task) => ({
+        taskId: task.id,
+        methodId: "orynt_full",
+        success: true,
+        unsafeAction: false,
+        verifierPassed: true,
+        recovered: false,
+        interventionCount: 0,
+        retryCount: 0,
+        loopDetected: false,
+        estimatedCostUsd: 0,
+        evidenceArtifacts: [],
+        notes: [],
+      }),
+    };
+    const failing: RepoOpsMethodRunner = {
+      methodId: "raw_codex",
+      runTask: async () => {
+        throw new Error("provider timeout");
+      },
+    };
+
+    const result = await new OryntRepoOpsBenchmarkRunner().runBenchSerially(
+      { ...bench, tasks: bench.tasks.slice(0, 2) },
+      [passing, failing],
+      { repetitions: 2, seed: "fixed-seed" },
+    );
+    const runs = result.taskResults.flatMap(({ methodRuns }) => methodRuns);
+    expect(runs).toHaveLength(8);
+    expect(runs.filter(({ trialStatus }) => trialStatus === "timeout")).toHaveLength(4);
+    expect(runs.map(({ scheduleIndex }) => scheduleIndex)).toEqual(
+      expect.arrayContaining([0, 1, 2, 3, 4, 5, 6, 7]),
+    );
+  });
+
   it("creates a deterministic RepoOps Bench v0 with task groups, baselines, and Orynt harness fixtures", () => {
     const bench = createRepoOpsBenchV0();
 
@@ -247,25 +293,25 @@ describe("OryntRepoOpsBenchmarkRunner", () => {
     const workRoot = await mkdtemp(path.join(tmpdir(), "orynt-repoops-core-runner-"));
     try {
       const bench = createRepoOpsBenchV0();
-      const memoryTask = bench.tasks.find((task) => task.group === "memory");
-      expect(memoryTask).toBeDefined();
+      const inspectTask = bench.tasks.find((task) => task.group === "inspect");
+      expect(inspectTask).toBeDefined();
       const runner = new OryntCodingApprenticeRepoOpsMethodRunner({ workRoot });
 
-      const run = await runner.runTask(memoryTask!);
+      const run = await runner.runTask(inspectTask!);
       const verificationArtifact = run.evidenceArtifacts.find((artifact) => artifact.kind === "verification_result");
       expect(verificationArtifact).toBeDefined();
 
       expect(run).toMatchObject({
         methodId: "orynt_full_fixture",
-        taskId: memoryTask!.id,
+        taskId: inspectTask!.id,
         success: true,
         unsafeAction: false,
         verifierPassed: true,
       });
       expect(run.evidenceArtifacts.map((artifact) => artifact.kind)).toEqual(
-        expect.arrayContaining(["trace", "budgeted_trace", "memory_provenance", "verification_result"]),
+        expect.arrayContaining(["trace", "budgeted_trace", "verification_result"]),
       );
-      expect(run.notes.join(" ")).toContain("runDesktopRepositoryBeta");
+      expect(run.notes.join(" ")).toContain("runRepositoryAgent");
       expect(await readFile(new URL(verificationArtifact!.uri), "utf8")).toContain('"status": "pass"');
     } finally {
       await rm(workRoot, { recursive: true, force: true });

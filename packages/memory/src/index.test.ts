@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import {
   createDefaultRunBudget,
@@ -14,7 +15,12 @@ import {
   type VerificationResult,
 } from "@codepawl/shared";
 
-import { LocalJsonMemoryStore, LocalMemoryExtractor } from "./index";
+import {
+  LocalJsonMemoryStore,
+  LocalMemoryExtractor,
+  LocalSqliteContextVmStore,
+  SqliteContextVmMemoryStore,
+} from "./index";
 
 let tempRoot = "";
 
@@ -32,6 +38,79 @@ function memoryProvenance(runId: string): MemoryProvenance {
     artifactRefs: [],
     sources: ["user_feedback"],
   };
+}
+
+function runMemoryWriter(memoryRoot: string, index: number): Promise<void> {
+  const program = `
+    import path from "node:path";
+    import { compareAndSwapVersionedJson } from "../local-state/dist/index.js";
+    const filePath = path.join(process.argv[1], "memory-store.json");
+    const validate = (value) =>
+      value?.schemaVersion === 2 &&
+      Number.isSafeInteger(value.revision) &&
+      Array.isArray(value.episodes) &&
+      Array.isArray(value.candidateRules) &&
+      Array.isArray(value.semanticMemory) &&
+      Array.isArray(value.tombstones);
+    await compareAndSwapVersionedJson({
+      filePath,
+      schemaVersion: 2,
+      validate,
+      initialize: () => ({
+        schemaVersion: 2,
+        revision: 0,
+        updatedAt: new Date().toISOString(),
+        episodes: [],
+        candidateRules: [],
+        semanticMemory: [],
+        tombstones: []
+      }),
+      mutate: (state) => state.episodes.push({
+        id: "episode-process-" + process.argv[2],
+        namespace: {
+          capabilityId: "coding-apprentice",
+          workspaceId: "workspace-memory",
+          repositoryPath: "/repo/orynt"
+        },
+        kind: "run_episode",
+        summary: "Process episode " + process.argv[2],
+        content: { index: Number(process.argv[2]) },
+        provenance: {
+          runId: "run-process-" + process.argv[2],
+          taskId: "task-memory",
+          eventIds: [],
+          artifactRefs: [],
+          sources: []
+        },
+        retention: { ttlDays: 30 },
+        redaction: { applied: false, redactedPaths: [], redactionCount: 0 },
+        confidence: 1,
+        createdAt: new Date().toISOString()
+      }),
+      updatedAt: (state) => {
+        state.updatedAt = new Date().toISOString();
+      }
+    });
+  `;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", program, memoryRoot, String(index)], {
+      cwd: path.resolve(import.meta.dirname, ".."),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`memory writer exited ${code}: ${stderr}`));
+      }
+    });
+  });
 }
 
 function createRunWithEvents(store = new InMemoryRunStore()) {
@@ -71,8 +150,8 @@ function verificationResult(overrides: Partial<VerificationResult> = {}): Verifi
       {
         id: "command-pass",
         kind: "command",
-        label: "pnpm test:contracts",
-        command: "pnpm test:contracts",
+        label: "bun test:contracts",
+        command: "bun test:contracts",
         exitCode: 0,
         stdout: "ok token=sk-commandsecret123",
         stderr: "",
@@ -144,11 +223,11 @@ function importBundle(overrides: Partial<CodexResultBundle> = {}): CodexResultBu
           worktreePath: "/tmp/orynt-worktrees",
           baseRef: "HEAD",
           allowedPaths: ["packages/**"],
-          protectedPaths: [".env", "pnpm-lock.yaml"],
+          protectedPaths: [".env", "bun.lock"],
         },
         budget: { maxWallTimeMs: 1, maxSteps: 1, maxChangedFiles: 1, maxOutputBytes: 1000, maxProcessCount: 1, maxModelTokens: 1 },
-        commandPolicy: { allowlist: ["pnpm test:contracts"], blockedCommands: [], approvalRequiredCommands: [], blockShellOutsideAllowlist: true },
-        fileWritePolicy: { allowedGlobs: ["packages/**"], protectedGlobs: [".env", "pnpm-lock.yaml"], maxChangedFiles: 1, maxFileBytes: 1000, broadWriteRequiresApproval: true },
+        commandPolicy: { allowlist: ["bun test:contracts"], blockedCommands: [], approvalRequiredCommands: [], blockShellOutsideAllowlist: true },
+        fileWritePolicy: { allowedGlobs: ["packages/**"], protectedGlobs: [".env", "bun.lock"], maxChangedFiles: 1, maxFileBytes: 1000, broadWriteRequiresApproval: true },
         networkPolicy: { default: "deny", allowlist: [], blocklist: ["*"] },
       },
     },
@@ -166,7 +245,7 @@ function importBundle(overrides: Partial<CodexResultBundle> = {}): CodexResultBu
       diffStat: "",
       inspectedAt: "2026-06-26T00:00:00.000Z",
     },
-    validationCommands: ["pnpm test:contracts"],
+    validationCommands: ["bun test:contracts"],
     redaction: { applied: true, redactedPaths: ["manualLog.content"], redactionCount: 1 },
     artifacts: [{ id: "codex-result-artifact", kind: "codex_result_bundle", uri: "orynt-artifact://run/import.json", label: "Import bundle", path: "/tmp/import.json" }],
     createdAt: "2026-06-26T00:00:00.000Z",
@@ -199,8 +278,8 @@ describe("LocalJsonMemoryStore", () => {
     const episode = await store.writeEpisode({
       namespace,
       kind: "run_episode",
-      summary: "Successful run token=sk-neverpersist123",
-      content: { status: "pass", command: "pnpm test:contracts" },
+      summary: "Successful run token=sk-neverpersist123", // gitleaks:allow -- synthetic redaction fixture
+      content: { status: "pass", command: "bun test:contracts" },
       provenance: {
         runId: "run-1",
         taskId: "task-memory",
@@ -226,12 +305,12 @@ describe("LocalJsonMemoryStore", () => {
     const rule = await store.writeCandidateRule({
       namespace,
       title: "Do not touch lockfiles",
-      rule: "Avoid editing pnpm-lock.yaml during narrow source fixes.",
-      scope: { repositoryPath: "/repo/orynt", allowedPaths: ["packages/**"], protectedPaths: ["pnpm-lock.yaml"] },
+      rule: "Avoid editing bun.lock during narrow source fixes.",
+      scope: { repositoryPath: "/repo/orynt", allowedPaths: ["packages/**"], protectedPaths: ["bun.lock"] },
       evidence: [
         {
           kind: "protected_path_violation",
-          summary: "Verifier saw pnpm-lock.yaml as protected.",
+          summary: "Verifier saw bun.lock as protected.",
           eventIds: ["run-1-event-7"],
           artifactRefs: [],
           confidence: 0.9,
@@ -263,9 +342,9 @@ describe("LocalJsonMemoryStore", () => {
     const feedback = await store.writeSemanticMemory({
       namespace,
       status: "candidate",
-      summary: "User correction: prefer pnpm test:contracts for contract package changes token=sk-feedbacksecret123",
+      summary: "User correction: prefer bun test:contracts for contract package changes token=sk-feedbacksecret123",
       content: {
-        correction: "Use pnpm test:contracts before declaring shared contract changes complete.",
+        correction: "Use bun test:contracts before declaring shared contract changes complete.",
         rawValue: "sk-feedbacksecret123",
       },
       sensitivity: "internal",
@@ -283,7 +362,7 @@ describe("LocalJsonMemoryStore", () => {
     expect(feedback.status).toBe("candidate");
     expect(feedback.summary).not.toContain("sk-feedbacksecret123");
     expect(feedback.redaction.applied).toBe(true);
-    expect(await store.listSemanticMemory({ namespace, statuses: ["candidate"], text: "pnpm test:contracts" })).toHaveLength(1);
+    expect(await store.listSemanticMemory({ namespace, statuses: ["candidate"], text: "bun test:contracts" })).toHaveLength(1);
 
     const approved = await store.updateSemanticMemoryStatus({
       id: feedback.id,
@@ -297,7 +376,7 @@ describe("LocalJsonMemoryStore", () => {
 
     const edited = await store.editSemanticMemory({
       id: feedback.id,
-      summary: "Use pnpm test:contracts before declaring shared contract changes complete.",
+      summary: "Use bun test:contracts before declaring shared contract changes complete.",
       content: { correction: "Run the contract test gate for shared package contract changes." },
       actor: "operator",
       reason: "Remove noisy wording before reuse.",
@@ -321,7 +400,7 @@ describe("LocalJsonMemoryStore", () => {
     const feedback = await store.writeSemanticMemory({
       namespace,
       status: "approved",
-      summary: "Use pnpm test:contracts before declaring shared contract changes complete.",
+      summary: "Use bun test:contracts before declaring shared contract changes complete.",
       content: { correction: "Run the contract test gate for shared package contract changes." },
       sensitivity: "internal",
       confidence: 0.7,
@@ -379,9 +458,10 @@ describe("LocalJsonMemoryStore", () => {
     const secondStore = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
 
     expect(await firstStore.getStoreSnapshot()).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision: 0,
       tombstones: [],
+      auditLog: [],
     });
 
     await Promise.all(
@@ -403,6 +483,8 @@ describe("LocalJsonMemoryStore", () => {
     const afterConcurrentWrites = await firstStore.getStoreSnapshot();
     expect(afterConcurrentWrites.revision).toBe(12);
     expect(afterConcurrentWrites.episodes).toHaveLength(12);
+    expect(afterConcurrentWrites.auditLog).toHaveLength(12);
+    expect(afterConcurrentWrites.auditLog.every((entry) => !("summary" in entry) && !("content" in entry))).toBe(true);
     expect(new Set(afterConcurrentWrites.episodes.map((item) => item.id)).size).toBe(12);
     expect((await readdir(tempRoot)).some((entry) => entry.includes(".tmp-"))).toBe(false);
 
@@ -438,13 +520,41 @@ describe("LocalJsonMemoryStore", () => {
     ).rejects.toThrow("memory store revision conflict: expected 12, current 13");
   });
 
+  it("fails closed instead of coercing an invalid nested legacy entity", async () => {
+    await writeFile(
+      path.join(tempRoot, "memory-store.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        revision: 4,
+        updatedAt: "2026-07-30T00:00:00.000Z",
+        episodes: [{ id: "partial" }],
+        candidateRules: [],
+        semanticMemory: [],
+        tombstones: [],
+      }),
+    );
+    await expect(
+      new LocalJsonMemoryStore({ memoryRoot: tempRoot }).getStoreSnapshot(),
+    ).rejects.toMatchObject({ code: "invalid_schema" });
+  });
+
+  it("prevents lost updates across independent writer processes", async () => {
+    await Promise.all(Array.from({ length: 8 }, (_, index) => runMemoryWriter(tempRoot, index)));
+
+    const snapshot = await new LocalJsonMemoryStore({ memoryRoot: tempRoot }).getStoreSnapshot();
+    expect(snapshot.revision).toBe(8);
+    expect(snapshot.episodes).toHaveLength(8);
+    expect(new Set(snapshot.episodes.map((item) => item.id)).size).toBe(8);
+    expect((await readdir(tempRoot)).some((entry) => entry.endsWith(".lock"))).toBe(false);
+  });
+
   it("filters expired episodes from direct queries, retrieval, and summaries", async () => {
     const store = new LocalJsonMemoryStore({ memoryRoot: tempRoot });
     await store.writeEpisode({
       id: "episode-expired",
       namespace,
       kind: "run_episode",
-      summary: "Expired pnpm observation",
+      summary: "Expired bun observation",
       content: {},
       provenance: memoryProvenance("run-expired"),
       retention: { ttlDays: 1 },
@@ -455,7 +565,7 @@ describe("LocalJsonMemoryStore", () => {
       id: "episode-active",
       namespace,
       kind: "run_episode",
-      summary: "Active pnpm observation",
+      summary: "Active bun observation",
       content: {},
       provenance: memoryProvenance("run-active"),
       retention: { retainUntil: "2099-01-01T00:00:00.000Z" },
@@ -469,7 +579,7 @@ describe("LocalJsonMemoryStore", () => {
       (
         await store.retrieveMemory({
           namespace,
-          text: "pnpm",
+          text: "bun",
           now: "2026-07-30T00:00:00.000Z",
         })
       ).map((item) => item.id),
@@ -483,8 +593,8 @@ describe("LocalJsonMemoryStore", () => {
       id: "semantic-preference",
       namespace,
       status: "candidate",
-      summary: "Prefer pnpm test for repository validation",
-      content: { preference: "pnpm test" },
+      summary: "Prefer bun test for repository validation",
+      content: { preference: "bun test" },
       sensitivity: "internal",
       confidence: 0.9,
       provenance: memoryProvenance("run-preference"),
@@ -499,8 +609,8 @@ describe("LocalJsonMemoryStore", () => {
       id: "semantic-sensitive",
       namespace,
       status: "candidate",
-      summary: "Prefer pnpm test with sensitive context",
-      content: { preference: "pnpm test" },
+      summary: "Prefer bun test with sensitive context",
+      content: { preference: "bun test" },
       sensitivity: "sensitive",
       confidence: 1,
       provenance: memoryProvenance("run-sensitive"),
@@ -514,8 +624,8 @@ describe("LocalJsonMemoryStore", () => {
       id: "semantic-redacted",
       namespace,
       status: "candidate",
-      summary: "Prefer pnpm test token=sk-redactedactivation123",
-      content: { preference: "pnpm test" },
+      summary: "Prefer bun test token=sk-redactedactivation123", // gitleaks:allow -- synthetic redaction fixture
+      content: { preference: "bun test" },
       sensitivity: "internal",
       confidence: 1,
       provenance: memoryProvenance("run-redacted"),
@@ -529,13 +639,13 @@ describe("LocalJsonMemoryStore", () => {
       id: "candidate-accepted",
       namespace,
       status: "accepted",
-      title: "Validate with pnpm",
-      rule: "Run pnpm test before completion.",
+      title: "Validate with bun",
+      rule: "Run bun test before completion.",
       scope: { repositoryPath: namespace.repositoryPath, allowedPaths: ["packages/**"], protectedPaths: [] },
       evidence: [
         {
           kind: "command_observation",
-          summary: "Verifier-backed pnpm test passed.",
+          summary: "Verifier-backed bun test passed.",
           eventIds: ["run-rule-event-1"],
           artifactRefs: [],
           confidence: 0.95,
@@ -548,7 +658,7 @@ describe("LocalJsonMemoryStore", () => {
     await store.writeCandidateRule({
       id: "candidate-pending",
       namespace,
-      title: "Pending pnpm advice",
+      title: "Pending bun advice",
       rule: "This candidate must not be retrieved.",
       scope: { repositoryPath: namespace.repositoryPath, allowedPaths: [], protectedPaths: [] },
       evidence: [],
@@ -560,7 +670,7 @@ describe("LocalJsonMemoryStore", () => {
     expect(sensitive.status).toBe("candidate");
     expect(redacted.status).toBe("candidate");
 
-    const query = { namespace, text: "pnpm test", limit: 10 } as const;
+    const query = { namespace, text: "bun test", limit: 10 } as const;
     const first = await store.retrieveMemory(query);
     const second = await store.retrieveMemory(query);
     expect(first).toEqual(second);
@@ -575,8 +685,8 @@ describe("LocalJsonMemoryStore", () => {
       id: "semantic-lifecycle",
       namespace,
       status: "approved",
-      summary: "Use pnpm test before completion",
-      content: { preference: "pnpm test" },
+      summary: "Use bun test before completion",
+      content: { preference: "bun test" },
       sensitivity: "internal",
       confidence: 0.9,
       provenance: memoryProvenance("run-lifecycle"),
@@ -593,8 +703,8 @@ describe("LocalJsonMemoryStore", () => {
       statusBeforeTrash: "approved",
       purgeAfter: "2026-01-31T00:00:00.000Z",
     });
-    expect(await store.listSemanticMemory({ text: "pnpm" })).toHaveLength(0);
-    expect(await store.retrieveMemory({ namespace, text: "pnpm" })).toHaveLength(0);
+    expect(await store.listSemanticMemory({ text: "bun" })).toHaveLength(0);
+    expect(await store.retrieveMemory({ namespace, text: "bun" })).toHaveLength(0);
     await expect(
       store.purgeSemanticMemory({
         id: item.id,
@@ -637,7 +747,7 @@ describe("LocalJsonMemoryStore", () => {
     const snapshot = await store.getStoreSnapshot();
     expect(snapshot.semanticMemory).toHaveLength(0);
     expect(snapshot.tombstones).toEqual([tombstone]);
-    expect(JSON.stringify(snapshot.tombstones)).not.toContain("pnpm");
+    expect(JSON.stringify(snapshot.tombstones)).not.toContain("bun");
   });
 
   it("writes immutable content-addressed extraction artifacts", async () => {
@@ -663,6 +773,66 @@ describe("LocalJsonMemoryStore", () => {
       confidence: 0.8,
     });
     expect(await readFile(artifactPath, "utf8")).toBe(original);
+  });
+});
+
+describe("SqliteContextVmMemoryStore", () => {
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(path.join(tmpdir(), "orynt-sqlite-memory-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it("preserves MemoryStore lifecycle semantics without creating a JSON authority", async () => {
+    const contextVm = new LocalSqliteContextVmStore({
+      root: path.join(tempRoot, "contextvm"),
+    });
+    const store = new SqliteContextVmMemoryStore({
+      contextVm,
+      legacyMemoryRoot: path.join(tempRoot, "legacy"),
+    });
+    const episode = await store.writeEpisode({
+      namespace,
+      kind: "run_episode",
+      summary: "SQLite-backed episode",
+      content: { status: "pass" },
+      provenance: memoryProvenance("run-sqlite"),
+      retention: {},
+      confidence: 1,
+    });
+
+    await expect(store.getEpisode(episode.id)).resolves.toMatchObject({
+      id: episode.id,
+      summary: "SQLite-backed episode",
+    });
+    await expect(store.getStoreSnapshot()).resolves.toMatchObject({
+      schemaVersion: 3,
+      revision: 1,
+      episodes: [{ id: episode.id }],
+    });
+    await expect(contextVm.status()).resolves.toMatchObject({
+      databaseSchemaVersion: 10,
+      memoryPageCount: 1,
+      memoryRevision: 1,
+    });
+    await expect(
+      readFile(path.join(tempRoot, "legacy", "store-v3.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(contextVm.verify()).resolves.toMatchObject({ status: "pass" });
+    contextVm.close();
+    const reopenedContextVm = new LocalSqliteContextVmStore({
+      root: path.join(tempRoot, "contextvm"),
+    });
+    const reopenedStore = new SqliteContextVmMemoryStore({
+      contextVm: reopenedContextVm,
+      legacyMemoryRoot: path.join(tempRoot, "legacy"),
+    });
+    await expect(reopenedStore.getEpisode(episode.id)).resolves.toMatchObject({
+      id: episode.id,
+    });
+    reopenedContextVm.close();
   });
 });
 
@@ -714,9 +884,9 @@ describe("LocalMemoryExtractor", () => {
       verdict: { status: "fail", reason: "Diff touched protected paths.", confidence: 0.9, failureClass: "protected_path_touched" },
       diffScope: {
         baseRef: "HEAD",
-        changedFiles: ["pnpm-lock.yaml", "outside.txt"],
+        changedFiles: ["bun.lock", "outside.txt"],
         allowedFiles: [],
-        protectedFiles: ["pnpm-lock.yaml"],
+        protectedFiles: ["bun.lock"],
         unexpectedFiles: ["outside.txt"],
         hasChanges: true,
         withinAllowedScope: false,
@@ -735,7 +905,7 @@ describe("LocalMemoryExtractor", () => {
         failureReasons: ["protected_path_touched", "unexpected_file_touch"],
         patch: {
           ...baseBundle.patch,
-          protectedFiles: ["pnpm-lock.yaml"],
+          protectedFiles: ["bun.lock"],
           unexpectedFiles: ["outside.txt"],
           withinAllowedScope: false,
           protectedPathTouched: true,

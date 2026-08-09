@@ -1,0 +1,23 @@
+:root {
+  color-scheme: dark;
+}
+
+body {
+  font-family: system-ui;
+}
+
+.calculator {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.display {
+  grid-column: 1 / -1;
+  font-size: 2rem;
+  text-align: right;
+}
+
+.key {
+  padding: 1rem;
+}

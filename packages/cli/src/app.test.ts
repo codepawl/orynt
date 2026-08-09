@@ -1,12 +1,179 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "bun:test";
+import {
+  createClaudeModelTierConfiguration,
+  createOpencodeGoModelTierConfiguration,
+  createSingleModelTierConfiguration,
+} from "@codepawl/shared";
+import type { ProviderUsageSnapshotV1 } from "@codepawl/model-runtime";
 
 import { runCliApplication } from "./app";
 import { INTERRUPTED_INPUT } from "./composer";
+import type { DoctorReportV1 } from "./doctor";
+
+const headlessTaskPlanner = vi.fn(async (request: { prompt: string }) => ({
+  disposition: "action" as const,
+  reply: "Ready to execute.",
+  conversationSummary: "Prepared a bounded repository task plan.",
+  action: {
+    instruction: request.prompt,
+    rationale: "Explicitly approved headless repository task.",
+    operations: ["write" as const],
+    estimatedPaths: ["README.md"],
+    estimatedChangedFiles: 1,
+    helperTasks: [],
+    taskPlan: {
+      summary: request.prompt,
+      requirements: [{
+        id: "headless-prompt",
+        text: request.prompt,
+        source: "user_prompt" as const,
+        kind: "outcome" as const,
+        required: true,
+      }],
+      tasks: [{
+        id: "headless-change",
+        title: "Execute the approved repository change",
+        instruction: request.prompt,
+        kind: "change" as const,
+        dependencies: [],
+        requirementIds: ["headless-prompt"],
+        authority: "single_writer" as const,
+        operations: ["write" as const],
+        expectedPaths: ["README.md"],
+        doneWhen: ["The approved repository task is complete."],
+        evidence: [{
+          id: "headless-diff",
+          requirementIds: ["headless-prompt"],
+          kind: "diff" as const,
+          description: "Inspect the bounded repository diff.",
+          path: "README.md",
+        }],
+      }],
+      allowedOperations: ["read" as const, "write" as const],
+    },
+  },
+}));
+
+function doctorReport(
+  overrides: Partial<DoctorReportV1> = {},
+): DoctorReportV1 {
+  return {
+    schemaVersion: 1,
+    kind: "orynt_doctor_report",
+    generatedAt: "2026-08-04T00:00:00.000Z",
+    status: "healthy",
+    summary: {
+      passed: 1,
+      warnings: 0,
+      failed: 0,
+      skipped: 0,
+      durationMs: 10,
+    },
+    context: {
+      oryntVersion: "0.1.0",
+      bunVersion: "1.3.14",
+      platform: "linux",
+      architecture: "x64",
+      repositoryPath: "/work/orynt",
+      stateRoot: "/state/orynt",
+    },
+    checks: [{
+      id: "workspace.repository",
+      group: "workspace",
+      label: "Repository",
+      status: "pass",
+      required: true,
+      summary: "ready",
+      evidence: { gitRoot: "/work/orynt" },
+      cause: null,
+      remediation: null,
+      durationMs: 1,
+    }],
+    ...overrides,
+  };
+}
+
+function usageSnapshot(
+  overrides: Partial<ProviderUsageSnapshotV1> = {},
+): ProviderUsageSnapshotV1 {
+  return {
+    schemaVersion: 1,
+    kind: "orynt_provider_usage",
+    generatedAt: "2026-08-04T00:00:00.000Z",
+    status: "ready",
+    provider: {
+      id: "codex",
+      label: "Codex",
+      transport: "app_server",
+    },
+    account: { type: "chatgpt", plan: "pro" },
+    meters: [{
+      id: "codex",
+      label: "Codex",
+      primary: true,
+      windows: [{
+        id: "primary",
+        label: "7d",
+        usedPercent: 40,
+        remainingPercent: 60,
+      }],
+    }],
+    issues: [],
+    ...overrides,
+  };
+}
 
 describe("Orynt CLI application", () => {
+  it("coordinates startup phases only for the default interactive launch", async () => {
+    const events: string[] = [];
+    const startup = {
+      update: vi.fn((label: string) => events.push(`update:${label}`)),
+      settle: vi.fn(),
+      fail: vi.fn(),
+      stop: vi.fn(() => events.push("stop")),
+    };
+
+    const exitCode = await runCliApplication([], {
+      cwd: "/work/orynt",
+      isTTY: true,
+      color: false,
+      write: vi.fn(),
+      ask: async () => "/exit",
+      clear: vi.fn(),
+      beginStartupActivity: vi.fn((label: string) => {
+        events.push(`begin:${label}`);
+        return startup;
+      }),
+      loadPreferences: async () => {
+        events.push("preferences");
+        return {
+          schemaVersion: 6,
+          activityDetails: "important",
+          appearance: { color: true, motion: true, richText: true },
+        };
+      },
+      probeProvider: async () => {
+        events.push("probe");
+        return { ready: true, detail: "Authenticated" };
+      },
+      run: vi.fn(),
+      hasAcknowledgedStartupBoundary: async () => true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      "begin:Loading workspace",
+      "preferences",
+      "update:Checking Codex",
+      "probe",
+      "stop",
+    ]);
+  });
+
   it("prints help without probing provider state or opening an interactive session", async () => {
     const output: string[] = [];
     const probeProvider = vi.fn();
+    const beginStartupActivity = vi.fn();
     const hasAcknowledgedStartupBoundary = vi.fn();
 
     const exitCode = await runCliApplication(["--help"], {
@@ -16,6 +183,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider,
+      beginStartupActivity,
       run: vi.fn(),
       hasAcknowledgedStartupBoundary,
     });
@@ -23,6 +191,7 @@ describe("Orynt CLI application", () => {
     expect(exitCode).toBe(0);
     expect(output.join("\n")).toContain("Usage: orynt [options] [prompt]");
     expect(probeProvider).not.toHaveBeenCalled();
+    expect(beginStartupActivity).not.toHaveBeenCalled();
     expect(hasAcknowledgedStartupBoundary).not.toHaveBeenCalled();
   });
 
@@ -86,6 +255,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run,
     });
 
@@ -103,6 +273,665 @@ describe("Orynt CLI application", () => {
     ]);
   });
 
+  it("attaches product UI guidance to an eligible headless frontend task", async () => {
+    const run = vi.fn(async () => ({
+      runId: "run-ui-skill",
+      status: "pass" as const,
+      artifactRoot: "/artifacts/run-ui-skill",
+      artifactManifestPath: "/artifacts/run-ui-skill/manifest.json",
+      eventCount: 0,
+      events: [],
+    }));
+    const snapshotSkills = vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      runId: "headless-ui",
+      createdAt: "2026-08-07T00:00:00.000Z",
+      digest: "a".repeat(64),
+      skills: [{
+        skillId: "orynt-builtin:product-ui-design",
+        digest: "b".repeat(64),
+        source: "runtime" as const,
+        instructions: "Build honest product UI.",
+      }],
+    }));
+    const uiPlanner = vi.fn(async (request: { prompt: string }) => {
+      const result = await headlessTaskPlanner(request);
+      result.action.estimatedPaths = ["index.html", "styles.css"];
+      result.action.taskPlan.tasks[0]!.expectedPaths = [
+        "index.html",
+        "styles.css",
+      ];
+      result.action.taskPlan.tasks[0]!.evidence[0]!.path = "index.html";
+      return result;
+    });
+
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "Build", "a", "responsive", "project", "board"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: vi.fn(),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn: uiPlanner,
+        snapshotSkills,
+        run,
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(snapshotSkills).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repositoryPath: "/work/orynt",
+        skillIds: ["orynt-builtin:product-ui-design"],
+      }),
+    );
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedSkillIds: ["orynt-builtin:product-ui-design"],
+        skillContext: expect.objectContaining({
+          skills: [
+            expect.objectContaining({
+              skillId: "orynt-builtin:product-ui-design",
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("does not attach product UI guidance to a marketing landing page", async () => {
+    const run = vi.fn(async () => ({
+      runId: "run-marketing",
+      status: "pass" as const,
+      artifactRoot: "/artifacts/run-marketing",
+      artifactManifestPath: "/artifacts/run-marketing/manifest.json",
+      eventCount: 0,
+      events: [],
+    }));
+    const snapshotSkills = vi.fn();
+    const marketingPlanner = vi.fn(async (request: { prompt: string }) => {
+      const result = await headlessTaskPlanner(request);
+      result.action.estimatedPaths = ["index.html", "styles.css"];
+      result.action.taskPlan.tasks[0]!.expectedPaths = [
+        "index.html",
+        "styles.css",
+      ];
+      result.action.taskPlan.tasks[0]!.evidence[0]!.path = "index.html";
+      return result;
+    });
+
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "Build", "a", "responsive", "marketing", "landing", "page"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: vi.fn(),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn: marketingPlanner,
+        snapshotSkills,
+        run,
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(snapshotSkills).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("fails before implementation when selected product UI guidance cannot be snapshotted", async () => {
+    const output: string[] = [];
+    const run = vi.fn();
+    const uiPlanner = vi.fn(async (request: { prompt: string }) => {
+      const result = await headlessTaskPlanner(request);
+      result.action.estimatedPaths = ["index.html"];
+      result.action.taskPlan.tasks[0]!.expectedPaths = ["index.html"];
+      result.action.taskPlan.tasks[0]!.evidence[0]!.path = "index.html";
+      return result;
+    });
+
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "Build", "a", "responsive", "project", "board"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: (value) => output.push(value),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn: uiPlanner,
+        run,
+      },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(JSON.parse(output.at(-1) ?? "{}")).toMatchObject({
+      kind: "error",
+      code: "HEADLESS_SKILL_CONTEXT_UNAVAILABLE",
+    });
+  });
+
+  it("keeps a negated safety boundary on the requested medium implementation tier", async () => {
+    const requests: any[] = [];
+    const exitCode = await runCliApplication(
+      [
+        "run",
+        "--jsonl",
+        "--approve-once",
+        "--role-model",
+        "implementer=gpt-5.6-luna",
+        "--role-effort",
+        "implementer=medium",
+        "Update",
+        "the",
+        "calculator.",
+        "Do",
+        "not",
+        "access",
+        "secrets",
+        "or",
+        "credentials.",
+      ],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: vi.fn(),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({
+          ready: true,
+          detail: "Authenticated",
+        }),
+        turn: headlessTaskPlanner,
+        run: async (request) => {
+          requests.push(request);
+          return {
+            runId: "run-routing",
+            status: "pass",
+            artifactRoot: "/artifacts/run-routing",
+            artifactManifestPath: "/artifacts/run-routing/manifest.json",
+            eventCount: 0,
+            events: [],
+          };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests[0]).toMatchObject({
+      modelId: "gpt-5.6-luna",
+      thinkingEffort: "medium",
+      orchestration: {
+        profile: {
+          roles: {
+            implementer: {
+              modelId: "gpt-5.6-luna",
+              thinkingEffort: "medium",
+              modelTier: "medium",
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("records every pre-work model stage, including skill routing, with its cost", async () => {
+    const requests: any[] = [];
+    const planner = vi.fn(async (request: any) => {
+      // Each stage reports its own usage, the way the real turn does: the
+      // context snapshot arrives first, then the stage that consumed it.
+      for (const [name, inputTokens] of [
+        ["prompt_understanding", 4_000],
+        ["skill_routing", 1_500],
+        ["coordinator_inference", 20_000],
+      ] as const) {
+        request.onContext?.({
+          schemaVersion: 1,
+          state: "active",
+          capacity: {
+            schemaVersion: 1,
+            modelId: "claude-haiku-4-5",
+            source: "provider",
+          },
+          usage: {
+            schemaVersion: 1,
+            current: {
+              inputTokens,
+              cachedInputTokens: 0,
+              outputTokens: 100,
+              reasoningOutputTokens: 0,
+              totalTokens: inputTokens + 100,
+            },
+            precision: "provider",
+            observedAt: "2026-08-08T00:00:00.000Z",
+          },
+          thresholds: { warnPercent: 75, compactPercent: 85, hardPercent: 95 },
+          providerThreadGeneration: 1,
+          compactionCount: 0,
+          recoveryCount: 0,
+          overflowRetryCount: 0,
+        });
+        request.onTelemetry?.({ kind: "stage", name, durationMs: 1_000 });
+      }
+      return await headlessTaskPlanner(request);
+    });
+
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "update", "the", "README"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: vi.fn(),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn: planner,
+        listModels: async () =>
+          ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"].map((id) => ({
+            id,
+            providerId: "anthropic-api" as const,
+            label: id,
+            supportedThinkingEfforts: ["medium" as const, "high" as const],
+          })),
+        loadPreferences: async () => ({
+          schemaVersion: 1 as const,
+          workingConfig: {
+            repositoryPath: "/work/orynt",
+            modelId: "claude-sonnet-5",
+            thinkingEffort: "high" as const,
+            modelTierConfiguration: createClaudeModelTierConfiguration(),
+          },
+        }),
+        run: async (request) => {
+          requests.push(request);
+          return {
+            runId: "run-invocations",
+            status: "pass",
+            artifactRoot: "/artifacts/run-invocations",
+            artifactManifestPath: "/artifacts/run-invocations/manifest.json",
+            eventCount: 0,
+            events: [],
+          };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    const invocations = requests[0].orchestration.priorInvocations;
+    expect(invocations.map((entry: any) => entry.phase)).toEqual([
+      "prompt_understanding",
+      "skill_routing",
+      "coordination",
+    ]);
+    expect(invocations.map((entry: any) => entry.taskId)).toEqual([
+      "headless-prompt-understanding",
+      "headless-skill-routing",
+      "headless-coordinator",
+    ]);
+    expect(invocations.map((entry: any) => entry.inputTokens)).toEqual([
+      4_000,
+      1_500,
+      20_000,
+    ]);
+    // Every pre-work invocation carries a cost, so triage spend is no longer
+    // invisible in the run's evidence.
+    for (const invocation of invocations) {
+      expect(invocation.estimatedCostUsd).toBeGreaterThan(0);
+    }
+  });
+
+  it("records a deterministic understanding stage as a zero-token invocation", async () => {
+    const requests: any[] = [];
+    const planner = vi.fn(async (request: any) => {
+      request.onTelemetry?.({
+        kind: "stage",
+        name: "prompt_understanding",
+        durationMs: 3,
+        deterministic: true,
+      });
+      request.onTelemetry?.({
+        kind: "stage",
+        name: "coordinator_inference",
+        durationMs: 900,
+      });
+      return await headlessTaskPlanner(request);
+    });
+
+    await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "update", "the", "README"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: vi.fn(),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn: planner,
+        run: async (request) => {
+          requests.push(request);
+          return {
+            runId: "run-deterministic",
+            status: "pass",
+            artifactRoot: "/artifacts/run-deterministic",
+            artifactManifestPath: "/artifacts/run-deterministic/manifest.json",
+            eventCount: 0,
+            events: [],
+          };
+        },
+      },
+    );
+
+    const [understanding, coordination] =
+      requests[0].orchestration.priorInvocations;
+    // The gate still appears in the evidence, so a skipped provider call reads
+    // as a deterministic decision rather than a missing step.
+    expect(understanding).toMatchObject({
+      phase: "prompt_understanding",
+      executionKind: "deterministic",
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      estimatedCostUsd: 0,
+    });
+    expect(coordination).toMatchObject({
+      phase: "coordination",
+      executionKind: "model",
+    });
+  });
+
+  it("records OpenCode invocations without a per-token cost", async () => {
+    const requests: any[] = [];
+    const planner = vi.fn(async (request: any) => {
+      request.onContext?.({
+        schemaVersion: 1,
+        state: "active",
+        capacity: { schemaVersion: 1, modelId: "glm-5.2", source: "provider" },
+        usage: {
+          schemaVersion: 1,
+          current: {
+            inputTokens: 200_000,
+            cachedInputTokens: 0,
+            outputTokens: 20_000,
+            reasoningOutputTokens: 0,
+            totalTokens: 220_000,
+          },
+          precision: "provider",
+          observedAt: "2026-08-09T00:00:00.000Z",
+        },
+        thresholds: { warnPercent: 75, compactPercent: 85, hardPercent: 95 },
+        providerThreadGeneration: 1,
+        compactionCount: 0,
+        recoveryCount: 0,
+        overflowRetryCount: 0,
+      });
+      request.onTelemetry?.({
+        kind: "stage",
+        name: "coordinator_inference",
+        durationMs: 900,
+      });
+      return await headlessTaskPlanner(request);
+    });
+
+    await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "update", "the", "README"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: vi.fn(),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn: planner,
+        listModels: async () =>
+          ["deepseek-v4-flash", "glm-5.2", "gpt-5.6-luna"].map((id) => ({
+            id,
+            providerId: "opencode-api" as const,
+            label: id,
+            supportedThinkingEfforts: ["medium" as const, "high" as const],
+          })),
+        loadPreferences: async () => ({
+          schemaVersion: 1 as const,
+          workingConfig: {
+            repositoryPath: "/work/orynt",
+            modelId: "glm-5.2",
+            thinkingEffort: "high" as const,
+            modelTierConfiguration: createOpencodeGoModelTierConfiguration(),
+          },
+        }),
+        run: async (request) => {
+          requests.push(request);
+          return {
+            runId: "run-opencode",
+            status: "pass",
+            artifactRoot: "/artifacts/run-opencode",
+            artifactManifestPath: "/artifacts/run-opencode/manifest.json",
+            eventCount: 0,
+            events: [],
+          };
+        },
+      },
+    );
+
+    const [invocation] = requests[0].orchestration.priorInvocations;
+    expect(invocation.providerId).toBe("opencode-api");
+    expect(invocation.inputTokens).toBe(200_000);
+    // A flat monthly plan spends nothing per token, so a large token count must
+    // still produce no charge.
+    expect(invocation.estimatedCostUsd).toBeNull();
+  });
+
+  it("leaves an invocation cost absent when the model carries no catalog price", async () => {
+    const requests: any[] = [];
+    const planner = vi.fn(async (request: any) => {
+      request.onContext?.({
+        schemaVersion: 1,
+        state: "active",
+        capacity: {
+          schemaVersion: 1,
+          modelId: "gpt-5.6-luna",
+          source: "provider",
+        },
+        usage: {
+          schemaVersion: 1,
+          current: {
+            inputTokens: 4_000,
+            cachedInputTokens: 0,
+            outputTokens: 100,
+            reasoningOutputTokens: 0,
+            totalTokens: 4_100,
+          },
+          precision: "provider",
+          observedAt: "2026-08-08T00:00:00.000Z",
+        },
+        thresholds: { warnPercent: 75, compactPercent: 85, hardPercent: 95 },
+        providerThreadGeneration: 1,
+        compactionCount: 0,
+        recoveryCount: 0,
+        overflowRetryCount: 0,
+      });
+      request.onTelemetry?.({
+        kind: "stage",
+        name: "prompt_understanding",
+        durationMs: 1_000,
+      });
+      return await headlessTaskPlanner(request);
+    });
+
+    await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "update", "the", "README"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: vi.fn(),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn: planner,
+        run: async (request) => {
+          requests.push(request);
+          return {
+            runId: "run-unpriced",
+            status: "pass",
+            artifactRoot: "/artifacts/run-unpriced",
+            artifactManifestPath: "/artifacts/run-unpriced/manifest.json",
+            eventCount: 0,
+            events: [],
+          };
+        },
+      },
+    );
+
+    const [invocation] = requests[0].orchestration.priorInvocations;
+    expect(invocation.inputTokens).toBe(4_000);
+    expect(invocation.estimatedCostUsd).toBeNull();
+  });
+
+  it("skips conditional model review after a bounded verifier pass", async () => {
+    const readOnlyRole = vi.fn();
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "update", "the", "README"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: vi.fn(),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({
+          ready: true,
+          detail: "Authenticated",
+        }),
+        turn: headlessTaskPlanner,
+        readOnlyRole,
+        run: async (request) => {
+          expect(await request.postVerificationReview?.({
+            runId: "run-review",
+            repositoryPath: "/work/orynt",
+            sandboxWorktreePath: "/work/sandbox",
+            status: "pass",
+            summary: "Verifier passed.",
+          })).toBeUndefined();
+          return {
+            runId: "run-review",
+            status: "pass",
+            artifactRoot: "/artifacts/run-review",
+            artifactManifestPath: "/artifacts/run-review/manifest.json",
+            eventCount: 0,
+            events: [],
+          };
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(readOnlyRole).not.toHaveBeenCalled();
+  });
+
+  it("fails closed before a headless run when prompt clarification is required", async () => {
+    const output: string[] = [];
+    const run = vi.fn();
+    const turn = vi.fn(async () => ({
+      disposition: "clarify" as const,
+      reply: "Which validation command should define completion?",
+      conversationSummary: "Need an explicit validation command.",
+      promptUnderstandingBasis: {
+        rawPrompt: "update the CLI",
+        acceptanceCriteria: [],
+        clarificationAnswers: [],
+        confirmedAssumptions: [],
+      },
+      promptUnderstanding: {
+        schemaVersion: 1 as const,
+        promptId: "prompt-understanding-1",
+        outcome: "repository_action" as const,
+        readiness: "clarification_required" as const,
+        reply: "Which validation command should define completion?",
+        refinedBrief: null,
+        questions: [{
+          id: "validation-command",
+          prompt: "Which validation command should define completion?",
+          rationale: "It changes the acceptance gate.",
+          kind: "validation" as const,
+          options: [{
+            id: "focused-test",
+            label: "Focused test",
+            description: "Run the smallest relevant test.",
+            recommended: true,
+          }, {
+            id: "full-suite",
+            label: "Full suite",
+            description: "Run all CLI tests.",
+            recommended: false,
+          }],
+        }],
+        assumptions: [],
+      },
+    }));
+
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "update", "the", "CLI"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: (value) => output.push(value),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn,
+        run,
+      },
+    );
+
+    expect(exitCode).toBe(2);
+    expect(turn).toHaveBeenCalledOnce();
+    expect(run).not.toHaveBeenCalled();
+    expect(JSON.parse(output.at(-1) ?? "{}")).toMatchObject({
+      schemaVersion: 1,
+      kind: "error",
+      classification: "planning",
+      code: "PROMPT_CLARIFICATION_REQUIRED",
+      promptUnderstanding: expect.objectContaining({
+        readiness: "clarification_required",
+      }),
+    });
+  });
+
+  it("classifies trusted task-plan validation failures as planning errors", async () => {
+    const output: string[] = [];
+    const run = vi.fn();
+    const turn = vi.fn(async (request: { prompt: string }) => {
+      const result = await headlessTaskPlanner(request);
+      result.action.taskPlan.tasks[0]!.operations = ["write", "write"];
+      return result;
+    });
+
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "update", "the", "repo"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: (value) => output.push(value),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn,
+        run,
+      },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(JSON.parse(output.at(-1) ?? "{}")).toMatchObject({
+      kind: "error",
+      classification: "planning",
+      code: "TASK_PLAN_INVALID",
+      message: "Repository task operations must be unique.",
+    });
+  });
+
   it("renders the same final agent report and verified facts for human headless runs", async () => {
     const output: string[] = [];
     const exitCode = await runCliApplication(["run", "--approve-once", "audit"], {
@@ -113,6 +942,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run: async (request) => {
         request.onEvent({ type: "run_started", payload: { summary: "started" } });
         request.onEvent({ type: "codex_execution_started", payload: { summary: "running" } });
@@ -176,6 +1006,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run: async () => {
         throw new Error("Codex exited with status 1");
       },
@@ -190,6 +1021,54 @@ describe("Orynt CLI application", () => {
     });
   });
 
+  it("preserves finalized run evidence when a headless repository run fails", async () => {
+    const output: string[] = [];
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "audit"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: (value) => output.push(value),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        turn: headlessTaskPlanner,
+        run: async () => {
+          throw Object.assign(new Error("Managed verifier failed."), {
+            runId: "run-failed-1",
+            artifactRoot: "/artifacts/run-failed-1",
+            artifactManifestPath:
+              "/artifacts/run-failed-1/artifact-manifest.json",
+            eventLogPath: "/artifacts/run-failed-1/run-events.json",
+            outcome: {
+              schemaVersion: 1,
+              status: "fail",
+              stage: "verification",
+              classification: "verification",
+              code: "validation_failed",
+              retryable: false,
+              message: "Managed verifier failed.",
+              verifierFailureClass: "test_failure",
+            },
+          });
+        },
+      },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(output.at(-1) ?? "{}")).toMatchObject({
+      schemaVersion: 1,
+      kind: "result",
+      runId: "run-failed-1",
+      status: "fail",
+      classification: "verification",
+      failureClass: "test_failure",
+      artifactManifestPath:
+        "/artifacts/run-failed-1/artifact-manifest.json",
+      eventLogPath: "/artifacts/run-failed-1/run-events.json",
+    });
+  });
+
   it("escapes controls in human headless output while preserving JSONL data", async () => {
     const malicious = "\u001b]52;c;owned\u0007\r\n\u202espoof";
     const humanOutput: string[] = [];
@@ -200,6 +1079,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run: async () => {
         throw new Error(`failure-${malicious}`);
       },
@@ -222,6 +1102,7 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       run: async () => {
         throw new Error(`failure-${malicious}`);
       },
@@ -245,12 +1126,17 @@ describe("Orynt CLI application", () => {
       ask: vi.fn(),
       clear: vi.fn(),
       probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: headlessTaskPlanner,
       loadPreferences: async () => ({
         schemaVersion: 1 as const,
         workingConfig: {
           repositoryPath: "/work/saved",
           modelId: "gpt-saved",
           thinkingEffort: "xhigh" as const,
+          modelTierConfiguration: createSingleModelTierConfiguration(
+            "gpt-tier-saved",
+            "high",
+          ),
         },
       }),
       persistWorkingConfig,
@@ -290,12 +1176,23 @@ describe("Orynt CLI application", () => {
       ],
       dependencies,
     );
+    await runCliApplication(
+      [
+        "run",
+        "--jsonl",
+        "--approve-once",
+        "--profile",
+        "quality",
+        "inspect",
+      ],
+      dependencies,
+    );
 
     expect(requests).toEqual([
       expect.objectContaining({
         repositoryPath: "/work/saved",
-        modelId: "gpt-saved",
-        thinkingEffort: "xhigh",
+        modelId: "gpt-tier-saved",
+        thinkingEffort: "high",
         orchestration: expect.objectContaining({
           profile: expect.objectContaining({ preset: "custom" }),
         }),
@@ -304,6 +1201,14 @@ describe("Orynt CLI application", () => {
         repositoryPath: "/work/flag",
         modelId: "gpt-flag",
         thinkingEffort: "low",
+        orchestration: expect.objectContaining({
+          profile: expect.objectContaining({ preset: "custom" }),
+        }),
+      }),
+      expect.objectContaining({
+        repositoryPath: "/work/saved",
+        modelId: "gpt-5.6-terra",
+        thinkingEffort: "high",
         orchestration: expect.objectContaining({
           profile: expect.objectContaining({ preset: "custom" }),
         }),
@@ -334,7 +1239,7 @@ describe("Orynt CLI application", () => {
       hasAcknowledgedStartupBoundary: async () => true,
     });
     expect(savedOutput.join("\n")).toContain("/work/saved");
-    expect(savedOutput.join("\n")).toContain("custom · gpt-saved/gpt-saved");
+    expect(savedOutput.join("\n")).toContain("› Custom model setup");
 
     const resumedOutput: string[] = [];
     await runCliApplication(
@@ -379,9 +1284,90 @@ describe("Orynt CLI application", () => {
       },
     );
     expect(resumedOutput.join("\n")).toContain("/work/resumed");
-    expect(resumedOutput.join("\n")).toContain(
-      "custom · gpt-flag/gpt-resumed",
+    expect(resumedOutput.join("\n")).toContain("› Custom model setup");
+  });
+
+  it("keeps terminal width live through the app boundary", async () => {
+    const output: string[] = [];
+    const answers = ["hello", "/exit"];
+    let answerIndex = 0;
+    let viewportWidth = 60;
+
+    await runCliApplication([], {
+      cwd: "/work/current",
+      isTTY: true,
+      color: false,
+      get width() {
+        return viewportWidth;
+      },
+      write: (value) => output.push(value),
+      ask: async () => answers[answerIndex++] ?? "/exit",
+      clear: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: vi.fn(async (request) => {
+        viewportWidth = 32;
+        request.onActivity?.({
+          kind: "message",
+          itemId: "message-1",
+          text: "Done.",
+          status: "completed",
+        });
+        return {
+          disposition: "answer" as const,
+          reply: "Done.",
+          conversationSummary: "Done.",
+        };
+      }),
+      run: vi.fn(),
+      hasAcknowledgedStartupBoundary: async () => true,
+    });
+
+    const duration = output.find((value) => value.includes("Crafted in"));
+    expect(duration).toMatch(
+      /^\n *─{1,7} ✦ Crafted in (?:<1s|1s) ─{1,7}$/u,
     );
+    expect(duration?.slice(1).length).toBeLessThanOrEqual(31);
+  });
+
+  it("routes turn duration variants through the responsive centered writer", async () => {
+    const output: string[] = [];
+    const centered: string[][] = [];
+    const answers = ["hello", "/exit"];
+    let answerIndex = 0;
+
+    await runCliApplication([], {
+      cwd: "/work/current",
+      isTTY: true,
+      color: false,
+      width: 60,
+      write: (value) => output.push(value),
+      writeCentered: (variants) => centered.push([...variants]),
+      ask: async () => answers[answerIndex++] ?? "/exit",
+      clear: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      turn: vi.fn(async (request) => {
+        request.onActivity?.({
+          kind: "message",
+          itemId: "message-1",
+          text: "Done.",
+          status: "completed",
+        });
+        return {
+          disposition: "answer" as const,
+          reply: "Done.",
+          conversationSummary: "Done.",
+        };
+      }),
+      run: vi.fn(),
+      hasAcknowledgedStartupBoundary: async () => true,
+    });
+
+    expect(centered).toHaveLength(1);
+    expect(centered[0]?.[0]).toMatch(
+      /^\n─────── ✦ Crafted in (?:<1s|1s) ───────$/u,
+    );
+    expect(centered[0]?.at(-1)).toMatch(/^\n✦ (?:<1s|1s)$/u);
+    expect(output.some((value) => value.includes("Crafted in"))).toBe(false);
   });
 
   it("uses an interactively selected model on the next ordinary launch", async () => {
@@ -440,9 +1426,7 @@ describe("Orynt CLI application", () => {
         }),
       }),
     );
-    expect(reopenedOutput.join("\n")).toContain(
-      "custom · gpt-persisted/gpt-5.5",
-    );
+    expect(reopenedOutput.join("\n")).toContain("› Custom model setup");
   });
 
   it("bootstraps working config once from the latest session without resuming it", async () => {
@@ -508,15 +1492,52 @@ describe("Orynt CLI application", () => {
     });
     expect(loadSession).toHaveBeenCalledOnce();
     expect(firstOutput.join("\n")).toContain("/work/latest");
-    expect(firstOutput.join("\n")).toContain(
-      "custom · gpt-latest/gpt-latest",
-    );
+    expect(firstOutput.join("\n")).toContain("› Custom model setup");
     expect(firstOutput.join("\n")).not.toContain("do not resume");
     expect(secondOutput.join("\n")).toContain("/work/latest");
-    expect(secondOutput.join("\n")).toContain(
-      "custom · gpt-latest/gpt-latest",
-    );
+    expect(secondOutput.join("\n")).toContain("› Custom model setup");
     expect(secondOutput.join("\n")).not.toContain("do not resume");
+  });
+
+  it("does not bootstrap working config from a session in Trash", async () => {
+    const output: string[] = [];
+    const persistWorkingConfig = vi.fn(async () => undefined);
+    const trashedLatest = {
+      schemaVersion: 1 as const,
+      sessionId: "session-trashed-latest",
+      repositoryPath: "/work/trashed",
+      modelId: "gpt-trashed",
+      thinkingEffort: "medium" as const,
+      mode: "plan" as const,
+      acceptanceCriteria: [],
+      trashedAt: "2026-08-04T00:00:00.000Z",
+      createdAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+    };
+
+    await runCliApplication([], {
+      cwd: "/work/current",
+      isTTY: true,
+      color: false,
+      write: (value) => output.push(value),
+      ask: async () => "/exit",
+      clear: vi.fn(),
+      probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+      run: vi.fn(),
+      loadPreferences: async () => ({ schemaVersion: 2 }),
+      loadSession: async (sessionId) =>
+        sessionId === "latest" ? trashedLatest : undefined,
+      persistWorkingConfig,
+      hasAcknowledgedStartupBoundary: async () => true,
+    });
+
+    expect(persistWorkingConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ repositoryPath: "/work/current" }),
+    );
+    expect(persistWorkingConfig).not.toHaveBeenCalledWith(
+      expect.objectContaining({ repositoryPath: "/work/trashed" }),
+    );
+    expect(output.join("\n")).toContain("/work/current");
   });
 
   it("clears resumed repository context before the first turn when --repo overrides it", async () => {
@@ -596,12 +1617,167 @@ describe("Orynt CLI application", () => {
       clear: vi.fn(),
       probeProvider: vi.fn(),
       run,
-      diagnose: async () => ["TTY: ready", "Repository: ready"],
+      diagnose: async () => doctorReport(),
     });
 
     expect(exitCode).toBe(0);
-    expect(output.join("\n")).toContain("TTY: ready");
+    expect(output.join("\n")).toContain("Orynt doctor");
+    expect(output.join("\n")).toContain("Repository");
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("renders headless provider usage without opening a model session", async () => {
+    const output: string[] = [];
+    const readProviderUsage = vi.fn(async () => usageSnapshot());
+    const probeProvider = vi.fn();
+    const run = vi.fn();
+
+    const exitCode = await runCliApplication(["usage"], {
+      cwd: "/work/orynt",
+      isTTY: true,
+      color: false,
+      write: (value) => output.push(value),
+      ask: vi.fn(),
+      clear: vi.fn(),
+      probeProvider,
+      run,
+      readProviderUsage,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(readProviderUsage).toHaveBeenCalledWith("quota");
+    expect(output.join("\n")).toContain("Codex usage · ready");
+    expect(output.join("\n")).toContain("60% left");
+    expect(probeProvider).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("emits complete provider usage JSON and reports degraded status", async () => {
+    const output: string[] = [];
+    const readProviderUsage = vi.fn(async () => usageSnapshot({
+      status: "degraded",
+      analytics: {
+        lifetimeTokens: 1_234,
+        dailyUsage: [{ startDate: "2026-08-03", tokens: 100 }],
+      },
+      issues: [{
+        code: "CODEX_ANALYTICS_UNAVAILABLE",
+        message: "Partial provider data.",
+        severity: "warning",
+      }],
+    }));
+
+    const exitCode = await runCliApplication(["usage", "--json"], {
+      cwd: "/work/orynt",
+      isTTY: false,
+      write: (value) => output.push(value),
+      ask: vi.fn(),
+      clear: vi.fn(),
+      probeProvider: vi.fn(),
+      run: vi.fn(),
+      readProviderUsage,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(readProviderUsage).toHaveBeenCalledWith("full");
+    expect(JSON.parse(output[0] ?? "{}")).toMatchObject({
+      schemaVersion: 1,
+      kind: "orynt_provider_usage",
+      status: "degraded",
+      analytics: {
+        lifetimeTokens: 1_234,
+        dailyUsage: [{ startDate: "2026-08-03", tokens: 100 }],
+      },
+    });
+  });
+
+  it("runs live doctor probes only after explicit confirmation", async () => {
+    const output: string[] = [];
+    const diagnose = vi.fn(async () => doctorReport({
+      checks: [{
+        id: "live.tier.heavy",
+        group: "live",
+        label: "Heavy tier",
+        status: "pass",
+        required: true,
+        summary: "ready · gpt-5.6-sol · high",
+        evidence: { sentinelMatched: true },
+        cause: null,
+        remediation: null,
+        durationMs: 20,
+      }],
+    }));
+    const exitCode = await runCliApplication(
+      ["doctor", "--live", "--confirm-live"],
+      {
+        cwd: "/work/orynt",
+        isTTY: true,
+        write: (value) => output.push(value),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: vi.fn(),
+        run: vi.fn(),
+        diagnose,
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(diagnose).toHaveBeenCalledWith(
+      expect.objectContaining({ live: true }),
+    );
+    expect(output.join("\n")).toContain("Heavy tier");
+  });
+
+  it("emits structured doctor JSON and fails required health checks", async () => {
+    const output: string[] = [];
+    const failed = doctorReport({
+      status: "unhealthy",
+      summary: {
+        passed: 0,
+        warnings: 0,
+        failed: 1,
+        skipped: 0,
+        durationMs: 10,
+      },
+      checks: [{
+        id: "provider.authentication",
+        group: "provider",
+        label: "Authentication",
+        status: "fail",
+        required: true,
+        summary: "sign-in required",
+        evidence: { authenticated: false },
+        cause: "No authenticated Codex session.",
+        remediation: {
+          description: "Authenticate Codex through Orynt setup.",
+          command: "orynt setup",
+        },
+        durationMs: 1,
+      }],
+    });
+    const exitCode = await runCliApplication(["doctor", "--json"], {
+      cwd: "/work/orynt",
+      isTTY: false,
+      write: (value) => output.push(value),
+      ask: vi.fn(),
+      clear: vi.fn(),
+      probeProvider: vi.fn(),
+      run: vi.fn(),
+      diagnose: async () => failed,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(output[0] ?? "{}")).toMatchObject({
+      schemaVersion: 1,
+      kind: "orynt_doctor_report",
+      status: "unhealthy",
+      checks: [
+        expect.objectContaining({
+          id: "provider.authentication",
+          status: "fail",
+        }),
+      ],
+    });
   });
 
   it("loads and persists onboarding only for an interactive TTY session", async () => {
@@ -680,5 +1856,189 @@ describe("Orynt CLI application", () => {
 
     expect(exitCode).toBe(2);
     expect(output.join("\n")).toContain("Session not found: missing");
+  });
+
+  it("rejects an explicitly requested session in Trash", async () => {
+    const output: string[] = [];
+    const ask = vi.fn();
+    const exitCode = await runCliApplication(
+      ["--resume", "session-trashed"],
+      {
+        cwd: "/work/orynt",
+        isTTY: false,
+        write: (value) => output.push(value),
+        ask,
+        clear: vi.fn(),
+        probeProvider: async () => ({ ready: true, detail: "Authenticated" }),
+        run: vi.fn(),
+        loadSession: async () => ({
+          schemaVersion: 1,
+          sessionId: "session-trashed",
+          repositoryPath: "/work/orynt",
+          modelId: "gpt-5.5",
+          thinkingEffort: "high",
+          mode: "plan",
+          acceptanceCriteria: [],
+          trashedAt: "2026-08-04T00:00:00.000Z",
+          createdAt: "2026-07-29T00:00:00.000Z",
+          updatedAt: "2026-08-04T00:00:00.000Z",
+        }),
+      },
+    );
+
+    expect(exitCode).toBe(2);
+    expect(ask).not.toHaveBeenCalled();
+    expect(output.join("\n")).toContain(
+      "Session is in Trash: session-trashed",
+    );
+    expect(output.join("\n")).toContain(
+      "orynt sessions restore session-trashed",
+    );
+  });
+
+  it("emits stable read-only setup status in human and JSON modes", async () => {
+    const status = {
+      ready: false,
+      detail: "No authenticated Codex CLI session was detected.",
+      code: "CODEX_AUTH_REQUIRED" as const,
+      nextAction: "login" as const,
+      remediationCommand: "orynt setup",
+    };
+    const human: string[] = [];
+    const json: string[] = [];
+    await expect(runCliApplication(["setup", "--check"], {
+      cwd: "/work/orynt",
+      isTTY: false,
+      write: (value) => human.push(value),
+      ask: vi.fn(),
+      clear: vi.fn(),
+      probeProvider: async () => status,
+      run: vi.fn(),
+    })).resolves.toBe(1);
+    await expect(runCliApplication(["setup", "--check", "--json"], {
+      cwd: "/work/orynt",
+      isTTY: false,
+      write: (value) => json.push(value),
+      ask: vi.fn(),
+      clear: vi.fn(),
+      probeProvider: async () => status,
+      run: vi.fn(),
+    })).resolves.toBe(1);
+    expect(human.join("\n")).toContain("CODEX_AUTH_REQUIRED");
+    expect(JSON.parse(json[0] ?? "{}")).toMatchObject({
+      schemaVersion: 1,
+      kind: "codex_setup_status",
+      code: "CODEX_AUTH_REQUIRED",
+      nextAction: "login",
+    });
+  });
+
+  it("runs explicit setup only in a TTY", async () => {
+    const ready = {
+      ready: true,
+      detail: "Logged in using ChatGPT · app-server ready",
+      code: "CODEX_READY" as const,
+      nextAction: "none" as const,
+    };
+    const setupProvider = vi.fn(async () => ({
+      outcome: "ready" as const,
+      status: ready,
+    }));
+    await expect(runCliApplication(["setup"], {
+      cwd: "/work/orynt",
+      isTTY: true,
+      write: vi.fn(),
+      ask: vi.fn(),
+      clear: vi.fn(),
+      probeProvider: vi.fn(),
+      setupProvider,
+      run: vi.fn(),
+    })).resolves.toBe(0);
+    expect(setupProvider).toHaveBeenCalledOnce();
+
+    await expect(runCliApplication(["setup"], {
+      cwd: "/work/orynt",
+      isTTY: false,
+      write: vi.fn(),
+      ask: vi.fn(),
+      clear: vi.fn(),
+      probeProvider: vi.fn(),
+      setupProvider,
+      run: vi.fn(),
+    })).resolves.toBe(2);
+    expect(setupProvider).toHaveBeenCalledOnce();
+  });
+
+  it("repairs Codex before an interactive prompt and preserves that prompt", async () => {
+    const unavailable = {
+      ready: false,
+      detail: "Not logged in",
+      code: "CODEX_AUTH_REQUIRED" as const,
+      nextAction: "login" as const,
+    };
+    const ready = {
+      ready: true,
+      detail: "Logged in using ChatGPT · app-server ready",
+      code: "CODEX_READY" as const,
+      nextAction: "none" as const,
+    };
+    const setupProvider = vi.fn(async () => ({
+      outcome: "ready" as const,
+      status: ready,
+    }));
+    const turn = vi.fn(async () => ({
+      disposition: "respond" as const,
+      reply: "Repository inspected.",
+      conversationSummary: "Inspection complete.",
+    }));
+    const probeProvider = vi.fn()
+      .mockResolvedValueOnce(unavailable)
+      .mockResolvedValue(ready);
+    await expect(runCliApplication(["inspect", "the", "repository"], {
+      cwd: "/work/orynt",
+      isTTY: true,
+      color: false,
+      write: vi.fn(),
+      ask: async () => "/exit",
+      clear: vi.fn(),
+      probeProvider,
+      setupProvider,
+      turn,
+      run: vi.fn(),
+    })).resolves.toBe(0);
+    expect(setupProvider).toHaveBeenCalledWith(unavailable);
+    expect(turn).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "inspect the repository" }),
+    );
+  });
+
+  it("never prompts headless work and emits the readiness code", async () => {
+    const output: string[] = [];
+    const setupProvider = vi.fn();
+    const exitCode = await runCliApplication(
+      ["run", "--jsonl", "--approve-once", "audit"],
+      {
+        cwd: "/work/orynt",
+        isTTY: true,
+        write: (value) => output.push(value),
+        ask: vi.fn(),
+        clear: vi.fn(),
+        probeProvider: async () => ({
+          ready: false,
+          detail: "Codex executable missing",
+          code: "CODEX_CLI_MISSING",
+          nextAction: "install",
+        }),
+        setupProvider,
+        run: vi.fn(),
+      },
+    );
+    expect(exitCode).toBe(1);
+    expect(setupProvider).not.toHaveBeenCalled();
+    expect(JSON.parse(output[0] ?? "{}")).toMatchObject({
+      kind: "error",
+      classification: "environment",
+      code: "CODEX_CLI_MISSING",
+    });
   });
 });

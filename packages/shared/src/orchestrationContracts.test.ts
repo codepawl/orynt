@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import {
   classifyAutoOrchestrationPreset,
   createLegacySingleModelProfile,
   createOrchestrationPreset,
+  ORCHESTRATION_PROVIDER_IDS,
+  providerBilling,
+  providerFacts,
+  providerReportsCacheTokens,
   resolveOrchestrationProfile,
   validateOrchestrationRecoveryTask,
   validateOrchestrationPlan,
@@ -96,6 +100,19 @@ describe("multi-model orchestration contracts", () => {
     ).toThrow("Custom coordinator model is unavailable");
   });
 
+  it("blocks an unavailable custom effort instead of silently substituting one", () => {
+    const profile = createLegacySingleModelProfile("gpt-5.6-terra", "xhigh");
+    expect(() =>
+      resolveOrchestrationProfile(
+        profile,
+        catalog.map((model) => ({
+          ...model,
+          supportedThinkingEfforts: [...model.supportedThinkingEfforts],
+        })),
+      ),
+    ).toThrow("Custom coordinator thinking effort is unavailable: xhigh");
+  });
+
   it("enforces depth, helper, dependency, and single-writer invariants", () => {
     const profile = createOrchestrationPreset("balanced");
     const plan: OrchestrationPlan = {
@@ -141,12 +158,29 @@ describe("multi-model orchestration contracts", () => {
               ...plan.tasks[1]!,
               id: "implementer-2",
               dependencies: [],
+              expectedPaths: ["src/other.ts"],
             },
           ],
         },
         profile,
       ),
-    ).toThrow("exactly one implementer");
+    ).not.toThrow();
+    expect(() =>
+      validateOrchestrationPlan(
+        {
+          ...plan,
+          tasks: [
+            ...plan.tasks,
+            {
+              ...plan.tasks[1]!,
+              id: "implementer-2",
+              dependencies: [],
+            },
+          ],
+        },
+        profile,
+      ),
+    ).toThrow("disjoint writer paths");
     expect(() =>
       validateOrchestrationPlan(
         {
@@ -179,7 +213,7 @@ describe("multi-model orchestration contracts", () => {
         },
         profile,
       ),
-    ).toThrow("exactly one implementer");
+    ).toThrow("bounded writer leases");
     expect(() =>
       validateOrchestrationPlan(
         plan,
@@ -243,5 +277,44 @@ describe("multi-model orchestration contracts", () => {
         profile,
       )
     ).toThrow("cannot expand approved paths");
+  });
+});
+
+describe("provider traits", () => {
+  it("classifies every registered provider", () => {
+    // The point of this test is coverage, not the individual values: a new
+    // provider id must not reach production without someone deciding how it
+    // bills and whether it reports cache tokens.
+    for (const providerId of ORCHESTRATION_PROVIDER_IDS) {
+      const facts = providerFacts(providerId);
+      expect(facts).toBeDefined();
+      expect(["per_token", "subscription"]).toContain(facts!.billing);
+      expect(typeof facts!.reportsCacheTokens).toBe("boolean");
+    }
+  });
+
+  it("separates subscription plans from per-token APIs", () => {
+    expect(providerBilling("codex-cli")).toBe("subscription");
+    expect(providerBilling("opencode-api")).toBe("subscription");
+    expect(providerBilling("anthropic-api")).toBe("per_token");
+    expect(providerBilling("openai-api")).toBe("per_token");
+  });
+
+  it("records that OpenCode reports no prompt-cache counts", () => {
+    expect(providerReportsCacheTokens("anthropic-api")).toBe(true);
+    expect(providerReportsCacheTokens("opencode-api")).toBe(false);
+  });
+
+  it("withholds both judgements for an unrecognized provider", () => {
+    // Unknown must fail toward saying nothing, never toward inventing a price.
+    expect(providerFacts("mystery-api")).toBeUndefined();
+    expect(providerBilling("mystery-api")).toBe("subscription");
+    expect(providerReportsCacheTokens("mystery-api")).toBe(false);
+  });
+
+  it("does not hand back a mutable copy of the trait table", () => {
+    const facts = providerFacts("opencode-api")!;
+    facts.billing = "per_token";
+    expect(providerBilling("opencode-api")).toBe("subscription");
   });
 });
