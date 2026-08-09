@@ -11,6 +11,11 @@ on:
 permissions:
   contents: read
   security-events: write
+  # `analyze` reads the workflow run it belongs to. Without this the step ends
+  # with "Resource not accessible by integration" against
+  # GET /repos/{owner}/{repo}/actions/runs/{run_id}, after the scan itself has
+  # already succeeded.
+  actions: read
 
 jobs:
   analyze:
