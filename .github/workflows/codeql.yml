@@ -19,6 +19,13 @@ permissions:
 
 jobs:
   analyze:
+    # Code scanning needs GitHub Advanced Security, which this repository does
+    # not have while it is private. The scan itself succeeds and only the
+    # upload fails, so a private run reports a failure nobody can act on. The
+    # job starts working on its own once the repository becomes public, which
+    # is the point where docs/release/github-publication.md turns code scanning
+    # on and requires this check.
+    if: github.event.repository.visibility == 'public'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

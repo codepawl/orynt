@@ -70,7 +70,8 @@ improving` in the repo description.
 - [ ] Protect tags that match `v*`.
 - [ ] Turn on Dependabot alerts and security updates.
 - [ ] Turn on secret scanning and push protection.
-- [ ] Turn on code scanning.
+- [ ] Turn on code scanning. The CodeQL workflow skips itself while the
+      repository is private and starts running once it is public.
 - [ ] Turn on Issues.
 - [ ] Keep Discussions and Projects off until someone owns them.
 - [ ] Keep the wiki off unless it has a clear job.

@@ -4,11 +4,15 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
+// Permissive licences only. BlueOak-1.0.0 is OSI approved and asks for less
+// than MIT does; minimatch 10 moved to it from ISC, and it reaches the CLI
+// through bash-language-server.
 const ALLOWED_LICENSES = new Set([
   "Apache-2.0",
   "Apache-2.0 OR MIT",
   "BSD-2-Clause",
   "BSD-3-Clause",
+  "BlueOak-1.0.0",
   "ISC",
   "MIT",
   "MIT OR Apache-2.0",
