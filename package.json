@@ -83,7 +83,7 @@
     "walkthrough:real-codex": "bun run --filter @codepawl/coding-apprentice build && bun run scripts/real-codex-walkthrough.mjs"
   },
   "devDependencies": {
-    "@types/bun": "1.3.10",
+    "@types/bun": "1.3.14",
     "@types/node": "^26.0.1"
   },
   "workspaces": [
